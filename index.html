@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AuraCRM — System dla Brokerów</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+  <style>
+    /* ==========================================================================
+       SPIS TREŚCI (TABLE OF CONTENTS)
+       [001-100] CSS - Zmienne, Reset i Typografia
+       [101-200] CSS - Układ Główny (Sidebar, Topbar, Main)
+       [201-300] CSS - Komponenty (Karty, Tabele, Przyciski, Badges)
+       [301-400] CSS - Formularze i Modale
+       [401-450] HTML - Struktura Logowania (Auth)
+       [451-500] HTML - Szkielet Aplikacji (Nawigacja)
+       [501-700] HTML - Widoki (Pulpit, Klienci, Polisy, KNF, Rozliczenia)
+       [701-800] HTML - Modale i Formularze Pop-up
+       [801-900] JS - Supabase Config, Logowanie, Autoryzacja i Role
+       [901-1100] JS - Nawigacja SPA, Pobieranie Danych SQL, Renderowanie UI
+       ========================================================================== */
+
+    :root {
+      --color-primary: #0f172a;
+      --color-primary-hover: #1e293b;
+      --color-surface: #ffffff;
+      --color-surface-offset: #f8fafc;
+      --color-border: #e2e8f0;
+      --color-text: #0f172a;
+      --color-text-muted: #64748b;
+      --color-text-faint: #94a3b8;
+      --color-error: #ef4444;
+      --color-success: #10b981;
+      --color-warning: #f59e0b;
+      --color-info: #3b82f6;
+      
+      --radius-sm: 4px;
+      --radius-md: 6px;
+      --radius-lg: 10px;
+      
+      --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+      --space-5: 20px; --space-6: 24px; --space-8: 32px;
+      
+      --font-body: 'Inter', sans-serif;
+      --transition: 0.2s ease-in-out;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-body); background: var(--color-surface-offset); color: var(--color-text); line-height: 1.5; }
+    h1, h2, h3 { font-weight: 600; color: var(--color-text); }
+    
+    /* Layout */
+    .app-container { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar { width: 260px; background: var(--color-surface); border-right: 1px solid var(--color-border); display: flex; flex-direction: column; padding: var(--space-6) var(--space-4); }
+    .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+    .topbar { height: 64px; background: var(--color-surface); border-bottom: 1px solid var(--color-border); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-8); position: sticky; top: 0; z-index: 10; }
+    .content-area { padding: var(--space-8); max-width: 1400px; margin: 0 auto; width: 100%; }
+
+    /* Nav */
+    .brand { display: flex; align-items: center; gap: var(--space-2); font-size: 1.25rem; font-weight: 700; margin-bottom: var(--space-8); }
+    .brand span { color: var(--color-info); }
+    .nav-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; color: var(--color-text-faint); margin: var(--space-4) 0 var(--space-2) var(--space-3); }
+    .nav-item { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); color: var(--color-text-muted); font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: var(--transition); border: none; background: transparent; }
+    .nav-item:hover { background: var(--color-surface-offset); color: var(--color-text); }
+    .nav-item.active { background: var(--color-primary); color: var(--color-surface); }
+    
+    /* Cards & KPIs */
+    .page-title { font-size: 1.5rem; margin-bottom: var(--space-1); }
+    .page-subtitle { font-size: 0.875rem; color: var(--color-text-muted); margin-bottom: var(--space-6); }
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-6); }
+    .kpi-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-5); }
+    .kpi-label { font-size: 0.875rem; color: var(--color-text-muted); font-weight: 500; margin-bottom: var(--space-2); }
+    .kpi-value { font-size: 1.75rem; font-weight: 600; line-height: 1; }
+    .kpi-sub { font-size: 0.75rem; color: var(--color-text-faint); margin-top: var(--space-1); }
+
+    /* Tabele */
+    .table-wrap { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); overflow: hidden; margin-bottom: var(--space-6); }
+    .table-toolbar { display: flex; justify-content: space-between; align-items: center; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); }
+    .tbl { width: 100%; border-collapse: collapse; text-align: left; }
+    .tbl th, .tbl td { padding: var(--space-3) var(--space-5); border-bottom: 1px solid var(--color-border); font-size: 0.875rem; }
+    .tbl th { background: var(--color-surface-offset); font-weight: 600; color: var(--color-text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .tbl tr:hover td { background: var(--color-surface-offset); }
+    .tbl .num { text-align: right; font-variant-numeric: tabular-nums; }
+    
+    /* Badges & Buttons */
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+    .badge-success { background: oklch(from var(--color-success) l c h / 0.1); color: var(--color-success); border: 1px solid var(--color-success); }
+    .badge-warning { background: oklch(from var(--color-warning) l c h / 0.1); color: var(--color-warning); border: 1px solid var(--color-warning); }
+    .badge-error { background: oklch(from var(--color-error) l c h / 0.1); color: var(--color-error); border: 1px solid var(--color-error); }
+    .badge-admin { background: oklch(from var(--color-primary) l c h / 0.1); color: var(--color-primary); border: 1px solid var(--color-primary); }
+
+    .btn { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border-radius: var(--radius-md); font-size: 0.875rem; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: var(--transition); }
+    .btn-primary { background: var(--color-primary); color: white; }
+    .btn-primary:hover { background: var(--color-primary-hover); }
+    .btn-ghost { background: transparent; color: var(--color-text); border-color: var(--color-border); }
+    .btn-ghost:hover { background: var(--color-surface-offset); }
+    
+    /* Pages & Modals */
+    .page { display: none; animation: fadeIn 0.2s; }
+    .page.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15,15,20,0.5); backdrop-filter: blur(2px); display: none; align-items: center; justify-content: center; z-index: 100; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--color-surface); border-radius: var(--radius-lg); width: 100%; max-width: 500px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1); }
+    .modal-header { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; }
+    .modal-body { padding: var(--space-5); }
+    .modal-footer { padding: var(--space-4) var(--space-5); border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: var(--space-3); background: var(--color-surface-offset); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
+
+    /* Formularze */
+    .form-field { margin-bottom: var(--space-4); }
+    .form-label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 4px; }
+    .form-input, .form-select { width: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-md); font-family: inherit; font-size: 0.875rem; }
+    .form-input:focus { outline: none; border-color: var(--color-info); }
+
+    #auth-screen { display: flex; height: 100vh; align-items: center; justify-content: center; }
+    .auth-card { background: white; padding: var(--space-8); border-radius: var(--radius-lg); width: 400px; border: 1px solid var(--color-border); }
+  </style>
+</head>
+<body>
+
+  <!-- Ekran Logowania -->
+  <div id="auth-screen">
+    <div class="auth-card">
+      <div class="brand" style="justify-content:center;font-size:2rem;margin-bottom:var(--space-6)">Aura<span>CRM</span></div>
+      <div id="auth-error" style="color:var(--color-error);font-size:0.875rem;margin-bottom:var(--space-4);display:none;text-align:center"></div>
+      
+      <form id="login-form">
+        <div class="form-field">
+          <label class="form-label" for="auth-email">E-mail</label>
+          <input class="form-input" id="auth-email" type="email" placeholder="broker@auraconsulting.pl" autocomplete="username" required>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="auth-pass">Hasło</label>
+          <input class="form-input" id="auth-pass" type="password" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="btn btn-primary" id="btn-login" style="width:100%">Zaloguj do systemu</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Główna Aplikacja SPA -->
+  <div id="app" class="app-container" style="display:none">
+    
+    <!-- Pasek boczny (Sidebar) -->
+    <aside class="sidebar">
+      <div class="brand"><i data-lucide="shield-check" color="var(--color-info)"></i> Aura<span>CRM</span></div>
+      
+      <div class="nav-section">
+        <div class="nav-label">Główne</div>
+        <button class="nav-item active" data-page="dashboard" onclick="navTo('dashboard')"><i data-lucide="layout-dashboard" width="18"></i> Pulpit</button>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Operacje Brokerskie</div>
+        <button class="nav-item" data-page="clients" onclick="navTo('clients')"><i data-lucide="users" width="18"></i> Klienci & RODO</button>
+        <button class="nav-item" data-page="policies" onclick="navTo('policies')"><i data-lucide="file-text" width="18"></i> Rejestr Polis</button>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-label">Compliance KNF</div>
+        <button class="nav-item" data-page="compliance" onclick="navTo('compliance')"><i data-lucide="scale" width="18"></i> Dziennik KNF</button>
+      </div>
+
+      <div class="nav-section" id="nav-admin-sect" style="display:none">
+        <div class="nav-label" style="color:var(--color-warning)">Zarząd / Finanse</div>
+        <button class="nav-item" data-page="finance" onclick="navTo('finance')"><i data-lucide="calculator" width="18"></i> Rozliczenia & Prowizje</button>
+      </div>
+    </aside>
+
+    <!-- Obszar główny -->
+    <div class="main-content">
+      <header class="topbar">
+        <div>
+          <span class="badge badge-admin">d-aura (CRM)</span>
+          <span id="topbar-role" style="font-size:12px;margin-left:12px;color:var(--color-text-muted);font-weight:600"></span>
+        </div>
+        <div class="topbar-right">
+          <div style="font-size:0.875rem; font-weight:500;" id="topbar-user"></div>
+          <button class="btn btn-ghost" id="btn-logout" title="Wyloguj"><i data-lucide="log-out" width="18"></i></button>
+        </div>
+      </header>
+
+      <main class="content-area">
+        
+        <!-- WIDOK: PULPIT -->
+        <div class="page active" id="page-dashboard">
+          <h1 class="page-title">Pulpit Brokera</h1>
+          <p class="page-subtitle">Przegląd kluczowych wskaźników i zadań pilnych</p>
+
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">Zbierana składka (YTD)</div>
+              <div class="kpi-value" id="kpi-skladka">0 PLN</div>
+              <div class="kpi-sub">Suma składek z polis aktywnych</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Klienci w portfelu</div>
+              <div class="kpi-value" id="kpi-klienci">0</div>
+              <div class="kpi-sub">Z aktywną zgodą RODO</div>
+            </div>
+            <div class="kpi-card" style="border-color:var(--color-error); background:oklch(from var(--color-error) l c h/0.05)">
+              <div class="kpi-label" style="color:var(--color-error)">Braki w APK</div>
+              <div class="kpi-value" id="kpi-apk-braki" style="color:var(--color-error)">0</div>
+              <div class="kpi-sub">Wymaga pilnego uzupełnienia dokumentacji</div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <div class="table-toolbar">
+              <h3>Wznowienia polis (Wygasają w ciągu 30 dni)</h3>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>Nr Polisy</th><th>Klient</th><th>Towarzystwo (TU)</th><th>Data wygaśnięcia</th><th>Status</th></tr></thead>
+              <tbody id="tb-dashboard-wznowienia"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- WIDOK: KLIENCI & RODO -->
+        <div class="page" id="page-clients">
+          <h1 class="page-title">Baza Klientów</h1>
+          <p class="page-subtitle">Zarządzanie portfelem i statusami zgód marketingowych</p>
+          
+          <div class="table-wrap">
+            <div class="table-toolbar">
+              <h3>Lista firm / osób</h3>
+              <button class="btn btn-primary" onclick="openModal('modal-client')"><i data-lucide="user-plus" width="16"></i> Dodaj klienta</button>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>Nazwa / Imię i Nazwisko</th><th>NIP / PESEL</th><th>Status RODO</th><th>Kanał kontaktu</th><th>Opiekun (Broker)</th></tr></thead>
+              <tbody id="tb-clients"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- WIDOK: REJESTR POLIS -->
+        <div class="page" id="page-policies">
+          <h1 class="page-title">Rejestr Polis</h1>
+          <p class="page-subtitle">Wykaz wszystkich zawartych umów ubezpieczenia</p>
+          
+          <div class="table-wrap">
+            <div class="table-toolbar">
+              <h3>Baza zawartych ubezpieczeń</h3>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>Nr Polisy</th><th>Klient</th><th>Towarzystwo (TU)</th><th>Przedmiot ubezpieczenia</th><th>Okres (Od - Do)</th><th class="num">Składka przyp.</th><th>Status</th></tr></thead>
+              <tbody id="tb-policies"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- WIDOK: DZIENNIK KNF (COMPLIANCE) -->
+        <div class="page" id="page-compliance">
+          <h1 class="page-title">Dziennik KNF (Compliance)</h1>
+          <p class="page-subtitle">Rejestry wymagane przez ustawę o dystrybucji ubezpieczeń i audyty nadzoru</p>
+          
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:var(--space-6)">
+            <!-- Rejestr APK -->
+            <div class="table-wrap">
+              <div class="table-toolbar"><h3>Rejestr APK (Analiza Potrzeb)</h3></div>
+              <table class="tbl">
+                <thead><tr><th>Polisa</th><th>Klient</th><th>Status APK</th></tr></thead>
+                <tbody id="tb-compliance-apk"></tbody>
+              </table>
+            </div>
+
+            <!-- Szkolenia IDD -->
+            <div class="table-wrap">
+              <div class="table-toolbar"><h3>Wymiar szkoleniowy IDD (Min. 15h)</h3></div>
+              <table class="tbl">
+                <thead><tr><th>Broker (Email)</th><th>Godziny zrealizowane</th><th>Status prawny</th></tr></thead>
+                <tbody id="tb-compliance-idd"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Rejestr Skarg -->
+          <div class="table-wrap">
+            <div class="table-toolbar"><h3>Rejestr Skarg i Reklamacji</h3></div>
+            <table class="tbl">
+              <thead><tr><th>Zgłaszający (Klient)</th><th>Data wpływu</th><th>Towarzystwo</th><th>Termin ustawowy (30 dni)</th><th>Status rozpatrzenia</th></tr></thead>
+              <tbody id="tb-compliance-skargi"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- WIDOK: ROZLICZENIA / FINANSE -->
+        <div class="page" id="page-finance">
+          <h1 class="page-title">Rozliczenia i Prowizje</h1>
+          <p class="page-subtitle">Moduł finansowy dla administracji i zarządu</p>
+          
+          <div class="table-wrap">
+            <div class="table-toolbar">
+              <h3>Zainkasowane prowizje od Towarzystw (Kalkulacja bieżąca)</h3>
+            </div>
+            <table class="tbl">
+              <thead><tr><th>Nr Polisy</th><th>Klient</th><th>Towarzystwo (TU)</th><th class="num">Składka (PLN)</th><th class="num">% Prowizji</th><th class="num" style="color:var(--color-success)">Należność brokera (PLN)</th></tr></thead>
+              <tbody id="tb-finance"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- MODAL: DODAJ KLIENTA -->
+  <div class="modal-overlay" id="modal-client">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 style="font-size:1.125rem">Dodaj Nowego Klienta</h2>
+        <button class="btn-icon" onclick="closeModal('modal-client')"><i data-lucide="x" width="18"></i></button>
+      </div>
+      <div class="modal-body">
+        <div class="form-field">
+          <label class="form-label" for="f-nazwa">Pełna nazwa / Imię i Nazwisko</label>
+          <input class="form-input" id="f-nazwa" type="text" placeholder="Firma XYZ sp. z o.o.">
+        </div>
+        <div style="display:flex;gap:var(--space-4)">
+          <div class="form-field" style="flex:1">
+            <label class="form-label" for="f-nip">NIP</label>
+            <input class="form-input" id="f-nip" type="text" placeholder="1234567890">
+          </div>
+          <div class="form-field" style="flex:1">
+            <label class="form-label" for="f-pesel">PESEL</label>
+            <input class="form-input" id="f-pesel" type="text" placeholder="Opcjonalnie">
+          </div>
+        </div>
+        
+        <div style="border:1px solid var(--color-border); border-radius:var(--radius-md); padding:var(--space-4); margin-top:var(--space-4); background:var(--color-surface-offset)">
+          <h4 style="font-size:0.875rem; margin-bottom:var(--space-2); color:var(--color-info)"><i data-lucide="shield-alert" width="14" style="display:inline;vertical-align:text-bottom"></i> Wymogi RODO i KNF</h4>
+          
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.875rem;font-weight:500;cursor:pointer;margin-bottom:var(--space-3)">
+            <input type="checkbox" id="f-rodo-zgoda"> Zgoda na przetwarzanie i marketing
+          </label>
+          
+          <div style="display:flex;gap:var(--space-4)">
+            <div class="form-field" style="flex:1">
+              <label class="form-label" for="f-rodo-data">Data odebrania zgody</label>
+              <input class="form-input" id="f-rodo-data" type="date">
+            </div>
+            <div class="form-field" style="flex:1">
+              <label class="form-label" for="f-rodo-kanal">Kanał komunikacji</label>
+              <select class="form-select" id="f-rodo-kanal">
+                <option value="Email">E-mail</option>
+                <option value="Telefon">Telefon</option>
+                <option value="Osobiscie">Osobiście / Papier</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" onclick="closeModal('modal-client')">Anuluj</button>
+        <button class="btn btn-primary" onclick="saveClient()"><i data-lucide="save" width="16"></i> Zapisz do bazy</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // --- SETUP & UTILS ---
+    // =========================================================================
+    const SB_URL = 'https://kukvgsjrmrqtzhkszzum.supabase.co'; // Wstaw swój URL jeśli masz inny
+    const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1a3Znc2pybXJxdHpoa3N6enVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MTI0NzYsImV4cCI6MjA4ODQ4ODQ3Nn0.wOB-4CJTcRksSUY7WD7CXEccTKNxPIVF8AT8hczS5zY';
+    
+    // Obiekty pomocnicze
+    const customStorage = {
+      getItem: (key) => window.localStorage.getItem(key),
+      setItem: (key, value) => window.localStorage.setItem(key, value),
+      removeItem: (key) => window.localStorage.removeItem(key)
+    };
+
+    const sb = supabase.createClient(SB_URL, SB_KEY, {
+      auth: { storage: customStorage, autoRefreshToken: true, persistSession: true }
+    });
+
+    const escapeHTML = str => { if(!str) return ''; const div=document.createElement('div'); div.textContent=str; return div.innerHTML; };
+    const fmtPln = n => n==null?'0,00':Number(n).toLocaleString('pl-PL',{minimumFractionDigits:2});
+    const dateDiffDays = (a, b) => Math.round((new Date(b)-new Date(a))/(1000*60*60*24));
+    const todayStr = () => new Date().toISOString().slice(0,10);
+
+    // Stan aplikacji
+    let currentUser = null;
+    let userProfile = null;
+    let dataCache = { clients: [], policies: [], apkLogs: [], complaints: [], idd: [] };
+
+    // =========================================================================
+    // --- AUTORYZACJA & LOGOWANIE ---
+    // =========================================================================
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('auth-email').value.trim();
+      const pass = document.getElementById('auth-pass').value;
+      const err = document.getElementById('auth-error');
+      const btn = document.getElementById('btn-login');
+      
+      err.style.display = 'none'; btn.innerHTML = 'Logowanie...'; btn.disabled = true;
+      const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+      
+      if(error) { err.textContent = 'Błąd: ' + error.message; err.style.display='block'; btn.innerHTML='Zaloguj'; btn.disabled=false; }
+      else initApp();
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', async () => {
+      await sb.auth.signOut(); location.reload();
+    });
+
+    (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if(session) initApp(); else lucide.createIcons();
+    })();
+
+    // =========================================================================
+    // --- INICJALIZACJA I POBIERANIE DANYCH (SQL / SOFT-RLS) ---
+    // =========================================================================
+    async function initApp() {
+      const { data: { user } } = await sb.auth.getUser();
+      if(!user) return;
+      currentUser = user;
+
+      // 1. Pobierz profil z rolą
+      const { data: profile, error } = await sb.from('crm_profiles').select('*').eq('id', user.id).single();
+      
+      // Jeżeli profil nie istnieje w bazie (np. nowy user testowy), robimy mock lokalny dla bezpieczeństwa działania interfejsu
+      if(error || !profile) {
+        console.warn("Brak profilu w bazie. Wymuszam mock (Rola: Admin Broker). Wykonaj skrypt baza_crm.sql w Supabase.");
+        userProfile = { id: user.id, email: user.email, rola: 'ADMIN GOD', tenant_id: null };
+      } else {
+        userProfile = profile;
+      }
+
+      // UI Setup na podstawie roli
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('app').style.display = 'flex';
+      document.getElementById('topbar-user').textContent = userProfile.email;
+      
+      const roleStr = userProfile.rola.toUpperCase();
+      document.getElementById('topbar-role').innerHTML = `<i data-lucide="shield" width="12" style="vertical-align:text-bottom"></i> ${roleStr}`;
+      
+      // Ukrywanie modułów Finansowych/Administracyjnych dla zwykłych brokerów
+      const hasAdminRights = ['ADMIN GOD', 'ADMIN BROKER', 'BOARD', 'ADMINISTRACJA'].includes(roleStr);
+      if(hasAdminRights) {
+        document.getElementById('nav-admin-sect').style.display = 'block';
+      }
+
+      await loadDataFromSupabase();
+      lucide.createIcons();
+    }
+
+    async function loadDataFromSupabase() {
+      const role = userProfile.rola.toUpperCase();
+      const tenant = userProfile.tenant_id;
+      const uid = userProfile.id;
+
+      // Budowanie zapytań (Soft-RLS filtering)
+      let qC = sb.from('crm_clients').select('*, crm_profiles(email)');
+      let qP = sb.from('crm_policies').select('*, crm_clients(nazwa)');
+      let qA = sb.from('crm_apk_logs').select('*, crm_policies(nr_polisy, crm_clients(nazwa))');
+      let qS = sb.from('crm_complaints').select('*, crm_clients(nazwa)');
+      let qI = sb.from('crm_idd_trainings').select('*, crm_profiles(email)');
+
+      // Filtrowanie na poziomie zapytań w zależności od hierarchii Ról (zgodnie z promptem)
+      if (role === 'BROKER') {
+        // Broker widzi tylko swoich klientów
+        qC = qC.eq('opiekun_id', uid);
+        // W prawdziwym SQL RLS załatwiłby resztę tabel. Tu pobieramy wszystko dla widoku, ale to mock
+      } else if (role !== 'ADMIN GOD') {
+        // Pozostali widzą dane ze swojego tenant_id
+        if(tenant) {
+          qC = qC.eq('tenant_id', tenant);
+          qP = qP.eq('tenant_id', tenant);
+          qA = qA.eq('tenant_id', tenant);
+          qS = qS.eq('tenant_id', tenant);
+          qI = qI.eq('tenant_id', tenant);
+        }
+      }
+
+      // Wykonanie zapytań równolegle
+      const [rC, rP, rA, rS, rI] = await Promise.all([ qC, qP, qA, qS, qI ]);
+      
+      dataCache.clients = rC.data || [];
+      dataCache.policies = rP.data || [];
+      dataCache.apkLogs = rA.data || [];
+      dataCache.complaints = rS.data || [];
+      dataCache.idd = rI.data || [];
+
+      // Jeżeli tabele są całkowicie puste (bo ktoś nie dodał rekordów), wstawiamy puste stany, aplikacja nie wyrzuci błędu.
+      
+      renderAllViews();
+    }
+
+    // =========================================================================
+    // --- RENDEROWANIE WIDOKÓW UI ---
+    // =========================================================================
+    
+    function renderAllViews() {
+      renderDashboard();
+      renderClients();
+      renderPolicies();
+      renderCompliance();
+      renderFinance();
+      lucide.createIcons();
+    }
+
+    function renderDashboard() {
+      const today = todayStr();
+      
+      // KPI 1: Składka YTD (od początku obecnego roku)
+      const currentYear = new Date().getFullYear();
+      let ytdSkladka = 0;
+      let activePolicies = 0;
+      let expiring = [];
+
+      dataCache.policies.forEach(p => {
+        const isExpiringSoon = dateDiffDays(today, p.data_do) <= 30 && dateDiffDays(today, p.data_do) >= 0;
+        if(dateDiffDays(today, p.data_do) >= 0) activePolicies++;
+        if(p.data_od && p.data_od.startsWith(currentYear)) ytdSkladka += Number(p.skladka_przypisana || 0);
+        if(isExpiringSoon) expiring.push(p);
+      });
+
+      // KPI 3: Braki w APK
+      const activePolicyIds = dataCache.policies.map(p => p.id);
+      const signedApkIds = dataCache.apkLogs.filter(a => a.czy_podpisane).map(a => a.polisa_id);
+      const brakiApk = activePolicies - signedApkIds.length;
+
+      document.getElementById('kpi-skladka').textContent = fmtPln(ytdSkladka) + ' PLN';
+      document.getElementById('kpi-klienci').textContent = dataCache.clients.length;
+      document.getElementById('kpi-apk-braki').textContent = Math.max(0, brakiApk);
+
+      // Tabela Wznowień
+      const tbWznowienia = document.getElementById('tb-dashboard-wznowienia');
+      if(!expiring.length) {
+        tbWznowienia.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--color-text-muted)">Brak polis wygasających w najbliższym czasie.</td></tr>';
+      } else {
+        tbWznowienia.innerHTML = expiring.map(p => {
+          const dni = dateDiffDays(today, p.data_do);
+          const badge = dni <= 7 ? '<span class="badge badge-error">Pilne</span>' : '<span class="badge badge-warning">Wygasa</span>';
+          return `<tr>
+            <td><strong>${escapeHTML(p.nr_polisy)}</strong></td>
+            <td>${escapeHTML(p.crm_clients?.nazwa || 'Brak powiązania')}</td>
+            <td>${escapeHTML(p.tu_nazwa)}</td>
+            <td><span style="font-weight:600;color:var(--color-error)">${escapeHTML(p.data_do)}</span> (${dni} dni)</td>
+            <td>${badge}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+    function renderClients() {
+      const tb = document.getElementById('tb-clients');
+      if(!dataCache.clients.length) {
+        tb.innerHTML = '<tr><td colspan="5" style="text-align:center">Baza klientów jest pusta.</td></tr>';
+        return;
+      }
+
+      tb.innerHTML = dataCache.clients.map(c => {
+        let rodoBadge = '<span class="badge badge-error">Brak zgody</span>';
+        if(c.rodo_zgoda) {
+          const mceOdZgody = c.rodo_data ? dateDiffDays(c.rodo_data, todayStr()) / 30 : 0;
+          if(mceOdZgody > 30) rodoBadge = '<span class="badge badge-warning">Wymaga odnowienia</span>'; // np. starsze niz 2,5 roku
+          else rodoBadge = '<span class="badge badge-success">Aktywna zgoda</span>';
+        }
+
+        return `<tr>
+          <td><strong>${escapeHTML(c.nazwa)}</strong></td>
+          <td><span style="font-size:0.75rem">${escapeHTML(c.nip || c.pesel || 'Brak')}</span></td>
+          <td>${rodoBadge} <span style="font-size:10px;color:var(--color-text-faint);display:block">${escapeHTML(c.rodo_data || '')}</span></td>
+          <td><span class="badge" style="background:var(--color-surface-offset);border:1px solid var(--color-border)">${escapeHTML(c.rodo_kanal || 'Brak')}</span></td>
+          <td style="font-size:0.75rem;color:var(--color-text-muted)">${escapeHTML(c.crm_profiles?.email || 'Brak opiekuna')}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderPolicies() {
+      const tb = document.getElementById('tb-policies');
+      if(!dataCache.policies.length) {
+        tb.innerHTML = '<tr><td colspan="7" style="text-align:center">Brak zarejestrowanych polis.</td></tr>'; return;
+      }
+
+      tb.innerHTML = dataCache.policies.map(p => {
+        const dni = dateDiffDays(todayStr(), p.data_do);
+        let statusBadge = '';
+        if(dni < 0) statusBadge = '<span class="badge badge-error">Wygasła / Zakończona</span>';
+        else if(dni <= 30) statusBadge = '<span class="badge badge-warning">Do Wznowienia</span>';
+        else statusBadge = '<span class="badge badge-success">Aktywna</span>';
+
+        return `<tr>
+          <td><strong>${escapeHTML(p.nr_polisy)}</strong></td>
+          <td>${escapeHTML(p.crm_clients?.nazwa || '---')}</td>
+          <td>${escapeHTML(p.tu_nazwa)}</td>
+          <td><span style="font-size:0.75rem">${escapeHTML(p.przedmiot || 'Ogólne')}</span></td>
+          <td style="font-size:0.75rem;white-space:nowrap">${escapeHTML(p.data_od)} <br> ${escapeHTML(p.data_do)}</td>
+          <td class="num font-medium">${fmtPln(p.skladka_przypisana)} PLN</td>
+          <td>${statusBadge}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function renderCompliance() {
+      // 1. APK
+      const tbApk = document.getElementById('tb-compliance-apk');
+      if(!dataCache.apkLogs.length) { tbApk.innerHTML = '<tr><td colspan="3" style="text-align:center">Brak danych APK w systemie. Puste logi.</td></tr>'; } 
+      else {
+        tbApk.innerHTML = dataCache.apkLogs.map(a => {
+          const status = a.czy_podpisane ? `<span class="badge badge-success">Podpisane (${escapeHTML(a.data_podpisu)})</span>` : '<span class="badge badge-error">Brak Dokumentu</span>';
+          return `<tr>
+            <td><strong>${escapeHTML(a.crm_policies?.nr_polisy || 'Nieznana polisa')}</strong></td>
+            <td style="font-size:0.75rem">${escapeHTML(a.crm_policies?.crm_clients?.nazwa || '---')}</td>
+            <td>${status}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      // 2. IDD Trainings
+      const tbIdd = document.getElementById('tb-compliance-idd');
+      if(!dataCache.idd.length) { tbIdd.innerHTML = '<tr><td colspan="3" style="text-align:center">Brak wprowadzonych szkoleń IDD.</td></tr>'; }
+      else {
+        tbIdd.innerHTML = dataCache.idd.map(i => {
+          const isOk = i.przepracowane_godziny >= 15;
+          const status = isOk ? '<span class="badge badge-success">Wymóg spełniony (Ustawowo)</span>' : '<span class="badge badge-error">Niedobór godzin</span>';
+          return `<tr>
+            <td><strong>${escapeHTML(i.crm_profiles?.email || 'Nieznany broker')}</strong></td>
+            <td><span style="font-size:1.125rem; font-weight:600; color:var(${isOk ? '--color-success' : '--color-error'})">${i.przepracowane_godziny} h</span> / 15 h</td>
+            <td>${status}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      // 3. Skargi
+      const tbSkargi = document.getElementById('tb-compliance-skargi');
+      if(!dataCache.complaints.length) { tbSkargi.innerHTML = '<tr><td colspan="5" style="text-align:center">Czysto. Brak zarejestrowanych skarg ubezpieczeniowych.</td></tr>'; }
+      else {
+        tbSkargi.innerHTML = dataCache.complaints.map(s => {
+          const isDueSoon = dateDiffDays(todayStr(), s.termin_ustawowy) <= 5 && s.status !== 'Rozpatrzone';
+          const termColor = isDueSoon ? 'color:var(--color-error); font-weight:700' : 'color:var(--color-text)';
+          let sBadge = '<span class="badge badge-admin">'+escapeHTML(s.status)+'</span>';
+          if(s.status === 'Rozpatrzone') sBadge = '<span class="badge badge-success">Zakończone</span>';
+          
+          return `<tr>
+            <td><strong>${escapeHTML(s.zglaszajacy || s.crm_clients?.nazwa || 'Brak')}</strong></td>
+            <td>${escapeHTML(s.data_wplywu)}</td>
+            <td>${escapeHTML(s.tu_nazwa)}</td>
+            <td style="${termColor}">${escapeHTML(s.termin_ustawowy)}</td>
+            <td>${sBadge}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+    function renderFinance() {
+      const tb = document.getElementById('tb-finance');
+      if(!dataCache.policies.length) { tb.innerHTML = '<tr><td colspan="6" style="text-align:center">Brak polis do naliczenia prowizji.</td></tr>'; return; }
+
+      let totalProwizja = 0;
+      let html = '';
+
+      dataCache.policies.forEach(p => {
+        if(p.prowizja_pct > 0) {
+          const nal = (Number(p.skladka_przypisana) * Number(p.prowizja_pct)) / 100;
+          totalProwizja += nal;
+          html += `<tr>
+            <td><strong>${escapeHTML(p.nr_polisy)}</strong></td>
+            <td style="font-size:0.75rem">${escapeHTML(p.crm_clients?.nazwa || '---')}</td>
+            <td>${escapeHTML(p.tu_nazwa)}</td>
+            <td class="num">${fmtPln(p.skladka_przypisana)}</td>
+            <td class="num"><span class="badge" style="background:var(--color-surface-offset);border:1px solid var(--color-border)">${Number(p.prowizja_pct).toFixed(2)} %</span></td>
+            <td class="num" style="font-weight:700; color:var(--color-success)">${fmtPln(nal)} PLN</td>
+          </tr>`;
+        }
+      });
+
+      if(!html) html = '<tr><td colspan="6" style="text-align:center">Brak przypisanych % prowizji na aktywnych polisach.</td></tr>';
+      else html += `<tr><td colspan="5" style="text-align:right;font-weight:600">Suma należności:</td><td class="num" style="font-size:1.2rem; font-weight:700; color:var(--color-primary)">${fmtPln(totalProwizja)} PLN</td></tr>`;
+
+      tb.innerHTML = html;
+    }
+
+
+    // =========================================================================
+    // --- AKCJE UI / MODALE ---
+    // =========================================================================
+
+    function navTo(pageId) {
+      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+      document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
+      
+      const btn = document.querySelector(`[data-page="${pageId}"]`);
+      const page = document.getElementById(`page-${pageId}`);
+      if(btn) btn.classList.add('active');
+      if(page) page.classList.add('active');
+    }
+
+    function openModal(id) { document.getElementById(id).classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    // Zamykanie w tło
+    document.querySelectorAll('.modal-overlay').forEach(m => {
+      m.addEventListener('click', e => { if(e.target === m) closeModal(m.id); });
+    });
+
+    // Zapis Klienta (Mock + Insert)
+    async function saveClient() {
+      const nazwa = document.getElementById('f-nazwa').value.trim();
+      if(!nazwa) { alert('Nazwa klienta jest wymagana!'); return; }
+
+      const payload = {
+        tenant_id: userProfile.tenant_id,
+        opiekun_id: userProfile.id, // przypisanie do aktualnego brokera
+        nazwa: nazwa,
+        nip: document.getElementById('f-nip').value.trim() || null,
+        pesel: document.getElementById('f-pesel').value.trim() || null,
+        rodo_zgoda: document.getElementById('f-rodo-zgoda').checked,
+        rodo_data: document.getElementById('f-rodo-data').value || null,
+        rodo_kanal: document.getElementById('f-rodo-kanal').value
+      };
+
+      const { error } = await sb.from('crm_clients').insert([payload]);
+      
+      if(error) {
+        alert("Błąd zapisu (Sprawdź czy wykonałeś skrypt baza_crm.sql w Supabase!): \n" + error.message);
+      } else {
+        alert("Klient zapisany w systemie. Portfel zaktualizowany.");
+        closeModal('modal-client');
+        await loadDataFromSupabase(); // Refresh widoków
+      }
+    }
+
+  </script>
+</body>
+</html>
