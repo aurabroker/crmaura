@@ -42,6 +42,9 @@ export interface Insurer {
 	krs: string | null;
 }
 
+export type TypUmowy = 'jednostkowa' | 'generalna';
+export type UgPodtyp = 'flota' | 'gwarancje' | 'cpm' | 'car_ear';
+
 export interface Policy {
 	id: string;
 	tenant_id: string;
@@ -59,9 +62,29 @@ export interface Policy {
 	prowizja_pct: number;
 	prowizja_przypisana: number;
 	prowizja_zainkasowana: number;
+	typ_umowy: TypUmowy;
+	ug_podtyp: UgPodtyp | null;
+	parent_id: string | null;
+	skladka_zaliczkowa: number;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string } | null;
+}
+
+export interface PolicyAnnex {
+	id: string;
+	tenant_id: string;
+	polisa_id: string;
+	nr_aneksu: string;
+	typ: 'korekta' | 'doubezpieczenie' | 'zmiana_zakresu' | 'inne';
+	data_aneksu: string;
+	opis: string | null;
+	delta_skladka: number;
+	delta_prowizja: number;
+	new_data_do: string | null;
+	new_skladka_przypisana: number | null;
+	new_prowizja_pct: number | null;
+	created_at?: string;
 }
 
 export interface Claim {
@@ -99,5 +122,4 @@ export interface ApkLog {
 	crm_policies?: { nr_polisy: string; crm_clients?: { nazwa: string } | null } | null;
 }
 
-// For Supabase generic client typing
 export type Database = Record<string, unknown>;

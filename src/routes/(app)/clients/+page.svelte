@@ -2,14 +2,16 @@
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
+	import type { Client } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search } from 'lucide-svelte';
+	import { Search, Pencil } from 'lucide-svelte';
 
 	let search = $state('');
 	let showModal = $state(false);
+	let editingClient = $state<Client | null>(null);
 
-	// Form state
+	// Shared form state
 	let fNazwa = $state('');
 	let fUlica = $state('');
 	let fNip = $state('');
@@ -31,12 +33,28 @@
 		)
 	);
 
-	async function saveClient() {
+	function openNew() {
+		editingClient = null;
+		fNazwa = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
+		fRodo = false; fRodoData = ''; fRodoKanal = 'E-mail'; formError = '';
+		showModal = true;
+	}
+
+	function openEdit(c: Client) {
+		editingClient = c;
+		fNazwa = c.nazwa; fUlica = c.ulica ?? ''; fNip = c.nip ?? '';
+		fRegon = c.regon ?? ''; fKrs = c.krs ?? ''; fPesel = c.pesel ?? '';
+		fRodo = c.rodo_zgoda; fRodoData = c.rodo_data ?? '';
+		fRodoKanal = c.rodo_kanal ?? 'E-mail'; formError = '';
+		showModal = true;
+	}
+
+	function closeModal() { showModal = false; editingClient = null; formError = ''; }
+
+	async function save() {
 		if (!fNazwa.trim()) { formError = 'Pole Nazwa jest wymagane.'; return; }
 		saving = true; formError = '';
-		const { error } = await sb.from('crm_clients').insert([{
-			tenant_id: appState.profile!.tenant_id,
-			opiekun_id: appState.profile!.id,
+		const payload = {
 			nazwa: fNazwa.trim(),
 			ulica: fUlica.trim() || null,
 			nip: fNip.trim() || null,
@@ -46,21 +64,27 @@
 			rodo_zgoda: fRodo,
 			rodo_data: fRodoData || null,
 			rodo_kanal: fRodoKanal
-		}]);
+		};
+
+		let error;
+		if (editingClient) {
+			({ error } = await sb.from('crm_clients').update(payload).eq('id', editingClient.id));
+		} else {
+			({ error } = await sb.from('crm_clients').insert([{
+				tenant_id: appState.profile!.tenant_id,
+				opiekun_id: appState.profile!.id,
+				...payload
+			}]));
+		}
 		saving = false;
 		if (error) { formError = error.message; return; }
-		showModal = false;
+		closeModal();
 		const { data } = await sb.from('crm_clients').select('*');
 		appState.clients = (data ?? []) as typeof appState.clients;
-		resetForm();
 	}
 
-	function resetForm() {
-		fNazwa = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
-		fRodo = false; fRodoData = ''; fRodoKanal = 'E-mail'; formError = '';
-	}
-
-	function closeModal() { showModal = false; resetForm(); }
+	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
 <svelte:head><title>Klienci — AuraCRM</title></svelte:head>
@@ -70,7 +94,7 @@
 		<h1 class="text-2xl font-semibold text-slate-900">Klienci</h1>
 		<p class="text-sm text-slate-500 mt-1">Zarządzanie portfelem i statusami RODO</p>
 	</div>
-	<button onclick={() => showModal = true} class="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+	<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 		+ Nowy Klient
 	</button>
 </div>
@@ -78,11 +102,7 @@
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
-		<input
-			bind:value={search}
-			placeholder="Szukaj po nazwie lub NIP..."
-			class="flex-1 text-sm outline-none text-slate-700 placeholder:text-slate-400"
-		/>
+		<input bind:value={search} placeholder="Szukaj po nazwie lub NIP..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
 	<table class="w-full text-left text-sm">
 		<thead>
@@ -112,12 +132,14 @@
 						{/if}
 					</td>
 					<td class="px-5 py-3">
-						<button
-							onclick={() => goto(`/clients/${c.id}`)}
-							class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 transition-colors"
-						>
-							Profil 360°
-						</button>
+						<div class="flex items-center gap-1">
+							<button onclick={() => goto(`/clients/${c.id}`)} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 transition-colors">
+								Profil 360°
+							</button>
+							<button onclick={() => openEdit(c)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+								<Pencil size={14} />
+							</button>
+						</div>
 					</td>
 				</tr>
 			{:else}
@@ -127,59 +149,43 @@
 	</table>
 </div>
 
-<Modal title="Nowy Klient" open={showModal} onclose={closeModal}>
+<Modal title={editingClient ? `Edytuj — ${editingClient.nazwa}` : 'Nowy Klient'} open={showModal} onclose={closeModal}>
 	{#snippet footer()}
 		<button onclick={closeModal} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveClient} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : 'Zapisz Klienta'}
+		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{saving ? 'Zapisywanie...' : editingClient ? 'Zapisz zmiany' : 'Zapisz Klienta'}
 		</button>
 	{/snippet}
 
 	{#if formError}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-
 	<div class="space-y-3">
 		<div>
-			<label class="block text-sm font-medium text-slate-700 mb-1">Nazwa firmy / Imię i Nazwisko *</label>
-			<input bind:value={fNazwa} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			<label class={labelCls}>Nazwa firmy / Imię i Nazwisko *</label>
+			<input bind:value={fNazwa} class={inputCls} />
 		</div>
 		<div>
-			<label class="block text-sm font-medium text-slate-700 mb-1">Ulica i miasto</label>
-			<input bind:value={fUlica} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			<label class={labelCls}>Ulica i miasto</label>
+			<input bind:value={fUlica} class={inputCls} />
 		</div>
 		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class="block text-sm font-medium text-slate-700 mb-1">NIP</label>
-				<input bind:value={fNip} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-			</div>
-			<div>
-				<label class="block text-sm font-medium text-slate-700 mb-1">REGON</label>
-				<input bind:value={fRegon} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-			</div>
-			<div>
-				<label class="block text-sm font-medium text-slate-700 mb-1">KRS</label>
-				<input bind:value={fKrs} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-			</div>
-			<div>
-				<label class="block text-sm font-medium text-slate-700 mb-1">PESEL</label>
-				<input bind:value={fPesel} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-			</div>
+			<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
+			<div><label class={labelCls}>REGON</label><input bind:value={fRegon} class={inputCls} /></div>
+			<div><label class={labelCls}>KRS</label><input bind:value={fKrs} class={inputCls} /></div>
+			<div><label class={labelCls}>PESEL</label><input bind:value={fPesel} class={inputCls} /></div>
 		</div>
 		<div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
 			<label class="flex items-center gap-2 font-semibold text-sm cursor-pointer mb-3">
-				<input type="checkbox" bind:checked={fRodo} class="rounded" />
-				Zgoda RODO odebrana
+				<input type="checkbox" bind:checked={fRodo} class="rounded" /> Zgoda RODO odebrana
 			</label>
 			<div class="grid grid-cols-2 gap-3">
 				<div>
-					<label class="block text-sm font-medium text-slate-700 mb-1">Data zgody</label>
-					<input type="date" bind:value={fRodoData} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+					<label class={labelCls}>Data zgody</label>
+					<input type="date" bind:value={fRodoData} class={inputCls} />
 				</div>
 				<div>
-					<label class="block text-sm font-medium text-slate-700 mb-1">Kanał</label>
-					<select bind:value={fRodoKanal} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-						<option>E-mail</option>
-						<option>Telefon</option>
-						<option>Osobiście</option>
+					<label class={labelCls}>Kanał</label>
+					<select bind:value={fRodoKanal} class={inputCls}>
+						<option>E-mail</option><option>Telefon</option><option>Osobiście</option>
 					</select>
 				</div>
 			</div>

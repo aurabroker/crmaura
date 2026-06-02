@@ -42,9 +42,10 @@
 
 		appState.profile = profile as typeof appState.profile;
 
-		const [rC, rP, rCl, rV, rA, rI, rPr] = await Promise.all([
+		const [rC, rP, rAnn, rCl, rV, rA, rI, rPr] = await Promise.all([
 			sb.from('crm_clients').select('*'),
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa)'),
+			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
 			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
 			sb.from('crm_vehicles').select('*'),
 			sb.from('crm_apk_logs').select('*, crm_policies(nr_polisy, crm_clients(nazwa))'),
@@ -54,6 +55,7 @@
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		appState.annexes = (rAnn.data ?? []) as typeof appState.annexes;
 		appState.claims = (rCl.data ?? []) as typeof appState.claims;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.apk = (rA.data ?? []) as typeof appState.apk;
