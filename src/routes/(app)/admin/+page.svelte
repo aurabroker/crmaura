@@ -40,7 +40,7 @@
 	let editingUser = $state<Profile | null>(null);
 
 	let iEmail = $state(''); let iNazwa = $state(''); let iRole = $state('BROKER'); let iStanowisko = $state('');
-	let inviting = $state(false); let inviteError = $state(''); let inviteSuccess = $state('');
+	let inviting = $state(false); let inviteError = $state(''); let inviteSuccess = $state(''); let tempPassword = $state('');
 
 	let uRole = $state('BROKER'); let uNazwa = $state(''); let uStanowisko = $state('');
 	let savingUser = $state(false); let userError = $state('');
@@ -67,7 +67,9 @@
 		});
 		inviting=false;
 		if (!res.ok) { const d = await res.json(); inviteError = d.message ?? 'Błąd'; return; }
-		inviteSuccess = `Zaproszenie wysłane na ${iEmail}`;
+		const d = await res.json();
+		tempPassword = d.tempPassword ?? '';
+		inviteSuccess = iEmail;
 		iEmail=''; iNazwa=''; iRole='BROKER'; iStanowisko='';
 		const { data } = await sb.from('crm_profiles').select('*');
 		appState.brokers = (data??[]) as typeof appState.brokers;
@@ -145,8 +147,8 @@
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
 			<h2 class="font-semibold text-slate-900">Zespół (Brokerzy)</h2>
-			<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
-				<UserPlus size={13} /> Zaproś użytkownika
+			<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
+				<UserPlus size={13} /> Dodaj użytkownika
 			</button>
 		</div>
 		<table class="w-full text-left text-sm">
@@ -207,19 +209,22 @@
 </Modal>
 
 <!-- Modal: Zaproś użytkownika -->
-<Modal title="Zaproś użytkownika do systemu" open={showInvite} onclose={() => { showInvite=false; inviteSuccess=''; }}>
+<Modal title="Utwórz konto użytkownika" open={showInvite} onclose={() => { showInvite=false; inviteSuccess=''; tempPassword=''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showInvite=false; inviteSuccess=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+		<button onclick={() => { showInvite=false; inviteSuccess=''; tempPassword=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 		{#if !inviteSuccess}
 			<button onclick={inviteUser} disabled={inviting} class="flex items-center gap-2 px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-				<Mail size={14} /> {inviting ? 'Wysyłanie...' : 'Wyślij zaproszenie'}
+				<UserPlus size={14} /> {inviting ? 'Tworzenie...' : 'Utwórz konto'}
 			</button>
 		{/if}
 	{/snippet}
 	{#if inviteError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{inviteError}</div>{/if}
 	{#if inviteSuccess}
-		<div class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
-			✓ {inviteSuccess}
+		<div class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 space-y-2">
+			<div>✓ Konto utworzone dla <strong>{inviteSuccess}</strong></div>
+			<div>Tymczasowe hasło (przekaż użytkownikowi):</div>
+			<div class="font-mono text-base bg-white border border-emerald-300 rounded px-3 py-2 tracking-widest select-all">{tempPassword}</div>
+			<div class="text-xs text-emerald-600">Użytkownik może zmienić hasło po zalogowaniu w ustawieniach konta.</div>
 		</div>
 	{:else}
 		<div class="space-y-3">

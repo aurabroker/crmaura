@@ -5,6 +5,13 @@ import type { RequestHandler } from './$types';
 
 const SERVICE_ROLE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY ?? '';
 
+function generatePassword(): string {
+	const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
+	let pass = '';
+	for (let i = 0; i < 12; i++) pass += chars[Math.floor(Math.random() * chars.length)];
+	return pass;
+}
+
 export const POST: RequestHandler = async ({ request }) => {
 	if (!SERVICE_ROLE_KEY) throw error(500, 'Service role key not configured');
 
@@ -21,16 +28,19 @@ export const POST: RequestHandler = async ({ request }) => {
 		auth: { autoRefreshToken: false, persistSession: false }
 	});
 
-	// Zaproś użytkownika emailem
-	const { data: inviteData, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
-		data: { imie_nazwisko, rola: role }
+	const tempPassword = generatePassword();
+
+	const { data: userData, error: createErr } = await admin.auth.admin.createUser({
+		email,
+		password: tempPassword,
+		email_confirm: true,
+		user_metadata: { imie_nazwisko, rola: role }
 	});
 
-	if (inviteErr) throw error(400, inviteErr.message);
+	if (createErr) throw error(400, createErr.message);
 
-	// Utwórz profil w crm_profiles
 	const { error: profileErr } = await admin.from('crm_profiles').upsert({
-		id: inviteData.user.id,
+		id: userData.user.id,
 		email,
 		imie_nazwisko: imie_nazwisko || null,
 		rola: role,
@@ -39,5 +49,5 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	if (profileErr) throw error(500, profileErr.message);
 
-	return json({ success: true, userId: inviteData.user.id });
+	return json({ success: true, userId: userData.user.id, tempPassword });
 };
