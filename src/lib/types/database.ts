@@ -122,4 +122,18 @@ export interface ApkLog {
 	crm_policies?: { nr_polisy: string; crm_clients?: { nazwa: string } | null } | null;
 }
 
+export interface PolicyPayment {
+	id: string;
+	tenant_id: string;
+	polisa_id: string;
+	nr_raty: number;
+	data_platnosci: string;
+	kwota: number;
+	status: 'Oczekująca' | 'Opłacona' | 'Zaległa';
+	data_oplacenia: string | null;
+	notatka: string | null;
+	created_at?: string;
+	crm_policies?: { nr_polisy: string; crm_clients?: { nazwa: string } | null } | null;
+}
+
 export type Database = Record<string, unknown>;
