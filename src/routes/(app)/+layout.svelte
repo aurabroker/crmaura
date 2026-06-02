@@ -6,7 +6,8 @@
 	import { appState, isAdmin, isFinance } from '$lib/stores/app.svelte';
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale,
-		Settings, Plus, LogOut, ShieldCheck, ChevronDown
+		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
+		AlertTriangle
 	} from 'lucide-svelte';
 
 	let { children } = $props();
@@ -17,10 +18,16 @@
 		{ href: '/dashboard', label: 'Pulpit', icon: LayoutDashboard, always: true },
 		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
 		{ href: '/policies', label: 'Polisy', icon: FileText, always: true },
+		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, always: true },
+		{ href: '/payments', label: 'Płatności', icon: Calculator, always: true },
 		{ href: '/finance', label: 'Rozliczenia', icon: Calculator, show: isFinance(appState.profile) },
 		{ href: '/knf-report', label: 'Raport KNF', icon: Scale, show: isAdmin(appState.profile) },
 		{ href: '/admin', label: 'Administracja', icon: Settings, show: isAdmin(appState.profile) }
 	]);
+
+	const activeClaims = $derived(
+		appState.claims.filter((c) => c.status === 'W toku' || c.status === 'Zgłoszona').length
+	);
 
 	async function loadData() {
 		const { data: { user } } = await sb.auth.getUser();
@@ -42,9 +49,15 @@
 
 		appState.profile = profile as typeof appState.profile;
 
-		const [rC, rP, rCl, rV, rA, rI, rPr] = await Promise.all([
+		// Dashboard prefs
+		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
+		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
+
+		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr] = await Promise.all([
 			sb.from('crm_clients').select('*'),
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa)'),
+			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
+			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci'),
 			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
 			sb.from('crm_vehicles').select('*'),
 			sb.from('crm_apk_logs').select('*, crm_policies(nr_polisy, crm_clients(nazwa))'),
@@ -54,6 +67,8 @@
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		appState.annexes = (rAnn.data ?? []) as typeof appState.annexes;
+		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		appState.claims = (rCl.data ?? []) as typeof appState.claims;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.apk = (rA.data ?? []) as typeof appState.apk;
@@ -86,7 +101,6 @@
 {:else}
 <div class="min-h-screen flex flex-col bg-slate-50" style="font-family: 'Inter', sans-serif">
 
-	<!-- Topbar -->
 	<header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-40 shadow-sm">
 		<div class="flex items-center gap-6">
 			<a href="/dashboard" class="flex items-center gap-2 font-bold text-xl text-slate-900">
@@ -98,13 +112,18 @@
 					{#if item.always || item.show}
 						<a
 							href={item.href}
-							class="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+							class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
 								{currentPath.startsWith(item.href)
 									? 'bg-slate-900 text-white'
 									: 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}"
 						>
 							<item.icon size={15} />
 							{item.label}
+							{#if item.href === '/claims' && activeClaims > 0}
+								<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+									{activeClaims > 9 ? '9+' : activeClaims}
+								</span>
+							{/if}
 						</a>
 					{/if}
 				{/each}
@@ -112,7 +131,6 @@
 		</div>
 
 		<div class="flex items-center gap-4">
-			<!-- Global ADD button -->
 			<div class="relative">
 				<button
 					onclick={(e) => { e.stopPropagation(); addMenuOpen = !addMenuOpen; }}
@@ -123,15 +141,21 @@
 					<ChevronDown size={14} />
 				</button>
 				{#if addMenuOpen}
-					<div class="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-52 overflow-hidden z-50">
+					<div class="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-56 overflow-hidden z-50">
 						<a href="/policies?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
-							<FileText size={15} /> Nowa Polisa
+							<FileText size={15} /> Nowa Polisa / UG
 						</a>
 						<a href="/clients?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<Users size={15} /> Nowy Klient (RODO)
 						</a>
-						<a href="/policies?newclaim=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
-							<Scale size={15} /> Zgłoś Szkodę
+						<a href="/claims?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+							<AlertTriangle size={15} /> Zgłoś Szkodę
+						</a>
+						<a href="/clients?newvehicle=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+							<Plus size={15} /> Dodaj Pojazd
+						</a>
+						<a href="/policies?newguarantee=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
+							<Plus size={15} /> Dodaj Gwarancję
 						</a>
 					</div>
 				{/if}
