@@ -163,7 +163,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Prospects — FRANK</title></svelte:head>
+<svelte:head><title>Prospects — FRANK67 CRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>

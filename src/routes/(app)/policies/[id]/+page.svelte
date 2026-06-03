@@ -134,7 +134,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>{policy?.nr_polisy ?? 'Polisa'} — FRANK</title></svelte:head>
+<svelte:head><title>{policy?.nr_polisy ?? 'Polisa'} — FRANK67 CRM</title></svelte:head>
 
 {#if !policy}
 	<p class="text-slate-400">Polisa nie istnieje lub nie masz dostępu.</p>

@@ -33,7 +33,7 @@
 	}
 </script>
 
-<svelte:head><title>Nowa Polisa — FRANK</title></svelte:head>
+<svelte:head><title>Nowa Polisa — FRANK67 CRM</title></svelte:head>
 
 <div class="max-w-3xl">
 	<div class="flex items-center gap-3 mb-6">

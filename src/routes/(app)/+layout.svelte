@@ -109,7 +109,7 @@
 		<div class="flex items-center gap-6">
 			<a href="/dashboard" class="flex items-center gap-2 font-bold text-xl text-slate-900">
 				<ShieldCheck size={22} class="text-blue-500" />
-				FRANK
+				FRANK67 CRM
 			</a>
 			<nav class="flex items-center gap-1">
 				{#each navItems as item}

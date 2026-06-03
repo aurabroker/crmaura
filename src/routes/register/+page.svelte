@@ -52,14 +52,14 @@
 </script>
 
 <svelte:head>
-	<title>Rejestracja — FRANK</title>
+	<title>Rejestracja — FRANK67 CRM</title>
 </svelte:head>
 
 <div class="min-h-screen bg-slate-50 flex items-center justify-center px-4" style="font-family: 'Inter', sans-serif">
 	<div class="w-full max-w-md">
 		<div class="text-center mb-8">
 			<a href="/login" class="inline-flex items-center gap-2 font-bold text-2xl text-slate-900">
-				FRANK
+				FRANK67 CRM
 			</a>
 			<p class="text-slate-500 text-sm mt-2">Utwórz konto dla swojej kancelarii</p>
 		</div>

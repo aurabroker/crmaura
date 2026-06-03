@@ -126,7 +126,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Klienci — FRANK</title></svelte:head>
+<svelte:head><title>Klienci — FRANK67 CRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>

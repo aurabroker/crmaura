@@ -19,14 +19,14 @@
 	}
 </script>
 
-<svelte:head><title>Logowanie — FRANK</title></svelte:head>
+<svelte:head><title>Logowanie — FRANK67 CRM</title></svelte:head>
 
 <div class="min-h-screen flex items-center justify-center bg-slate-50">
 	<div class="bg-white border border-slate-200 rounded-2xl shadow-xl p-8 w-full max-w-sm">
 
 		<div class="flex items-center justify-center gap-2 mb-8">
 			<ShieldCheck size={28} class="text-blue-500" />
-			<span class="text-2xl font-bold text-slate-900">FRANK</span>
+			<span class="text-2xl font-bold text-slate-900">FRANK67 CRM</span>
 		</div>
 
 		{#if error}
