@@ -163,6 +163,17 @@
 
 			<div class="h-8 w-px bg-slate-200"></div>
 
+			{#if appState.profile?.rola === 'ADMIN GOD'}
+				<a href="/saas-admin" class="text-slate-400 hover:text-slate-700 transition-colors" title="SAAS Admin">
+					<ShieldCheck size={18} />
+				</a>
+			{/if}
+			<a href="/settings" class="text-slate-400 hover:text-slate-700 transition-colors" title="Ustawienia">
+				<Settings size={18} />
+			</a>
+
+			<div class="h-8 w-px bg-slate-200"></div>
+
 			<div class="text-right leading-tight">
 				<div class="text-sm font-semibold text-slate-900">{appState.profile?.imie_nazwisko ?? appState.profile?.email}</div>
 				<div class="text-[11px] text-slate-400 uppercase">{appState.profile?.rola}</div>
