@@ -63,7 +63,7 @@
 		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
 
 		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB] = await Promise.all([
-			sb.from('crm_clients').select('*'),
+			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
 			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci'),
