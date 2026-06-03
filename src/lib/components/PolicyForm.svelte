@@ -8,7 +8,6 @@
 	}
 	let { policy = null, onchange }: Props = $props();
 
-	// Controlled form state — init from policy if editing
 	let fpKlient = $state(policy?.klient_id ?? '');
 	let fpTu = $state(policy?.tu_id ?? '');
 	let fpNr = $state(policy?.nr_polisy ?? '');
@@ -19,21 +18,37 @@
 	let fpPrzedmiot = $state(policy?.przedmiot ?? '');
 	let fpOd = $state(policy?.data_od ?? '');
 	let fpDo = $state(policy?.data_do ?? '');
+	let fpZawarcia = $state((policy as any)?.data_zawarcia ?? '');
 	let fpRaty = $state(policy?.ilosc_rat ?? '1');
 	let fpDatyRat = $state(policy?.daty_rat ?? '');
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
-	let fpSklZaink = $state(policy?.skladka_zainkasowana?.toString() ?? '0');
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
 	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
-	let fpProwZaink = $state(policy?.prowizja_zainkasowana?.toString() ?? '0');
+
+	// Auto-fill data_do (+1 rok) when data_od changes
+	$effect(() => {
+		if (fpOd && !fpDo) {
+			const d = new Date(fpOd);
+			d.setFullYear(d.getFullYear() + 1);
+			d.setDate(d.getDate() - 1);
+			fpDo = d.toISOString().split('T')[0];
+		}
+	});
+
+	// Auto-recalculate commission when % or premium changes
+	$effect(() => {
+		const sklad = parseFloat(fpSklPrzyp) || 0;
+		const pct = parseFloat(fpProwPct) || 0;
+		if (pct > 0 && sklad > 0) {
+			fpProwPrzyp = ((sklad * pct) / 100).toFixed(2);
+		}
+	});
 
 	export function getValues() {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const prowPct = parseFloat(fpProwPct) || 0;
-		let prowPrzyp = parseFloat(fpProwPrzyp);
-		if (isNaN(prowPrzyp) && prowPct > 0) prowPrzyp = (sklPrzyp * prowPct) / 100;
-		else if (isNaN(prowPrzyp)) prowPrzyp = 0;
+		const prowPrzyp = parseFloat(fpProwPrzyp) || (sklPrzyp * prowPct / 100);
 
 		return {
 			klient_id: fpKlient, tu_id: fpTu, nr_polisy: fpNr,
@@ -43,13 +58,14 @@
 			parent_id: fpParentId || null,
 			przedmiot: fpPrzedmiot || null,
 			data_od: fpOd, data_do: fpDo,
+			data_zawarcia: fpZawarcia || null,
 			ilosc_rat: fpRaty, daty_rat: fpDatyRat || null,
 			skladka_przypisana: sklPrzyp,
-			skladka_zainkasowana: parseFloat(fpSklZaink) || 0,
+			skladka_zainkasowana: sklPrzyp,
 			skladka_zaliczkowa: parseFloat(fpSklZaliczkowa) || 0,
 			prowizja_pct: prowPct,
 			prowizja_przypisana: prowPrzyp,
-			prowizja_zainkasowana: parseFloat(fpProwZaink) || 0
+			prowizja_zainkasowana: 0
 		};
 	}
 
@@ -68,6 +84,26 @@
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+
+	// Client search
+	let clientSearch = $state('');
+	const filteredClients = $derived(
+		clientSearch.trim()
+			? appState.clients.filter(c => c.nazwa.toLowerCase().includes(clientSearch.toLowerCase()))
+			: appState.clients
+	);
+	let clientDropOpen = $state(false);
+	const selectedClientName = $derived(appState.clients.find(c => c.id === fpKlient)?.nazwa ?? '');
+
+	// TU search
+	let tuSearch = $state('');
+	const filteredTU = $derived(
+		tuSearch.trim()
+			? appState.insurers.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()))
+			: appState.insurers
+	);
+	let tuDropOpen = $state(false);
+	const selectedTUName = $derived(appState.insurers.find(t => t.id === fpTu)?.nazwa ?? '');
 </script>
 
 <div class="space-y-4">
@@ -76,7 +112,7 @@
 		{#each [['jednostkowa', 'Polisa jednostkowa'], ['generalna', 'Umowa Generalna']] as [val, label]}
 			<button
 				type="button"
-				onclick={() => fpTypUmowy = val}
+				onclick={() => { fpTypUmowy = val; }}
 				class="flex-1 py-2 rounded-lg text-sm font-medium border transition-colors
 					{fpTypUmowy === val
 						? 'bg-slate-900 text-white border-slate-900'
@@ -106,7 +142,6 @@
 			</div>
 		</div>
 	{:else}
-		<!-- Powiązanie z Umową Generalną (opcjonalne) -->
 		{#if generalPolicies.length > 0}
 			<div>
 				<label class={labelCls}>Powiąż z Umową Generalną (opcjonalnie)</label>
@@ -124,6 +159,8 @@
 			<select bind:value={fpRodzaj} class={inputCls}>
 				<option value="majątkowa">Majątkowa</option>
 				<option value="życie">Życie</option>
+				<option value="grupowe_medyczne">Grupowe Medyczne</option>
+				<option value="grupowe_życie">Grupowe życie</option>
 				<option value="komunikacja">Komunikacja</option>
 				<option value="flota">Flota</option>
 				<option value="finansowa">Finansowa (Gwarancje)</option>
@@ -134,21 +171,59 @@
 		</div>
 	{/if}
 
+	<!-- Klient — searchable -->
+	<div>
+		<label class={labelCls}>Klient *</label>
+		<div class="relative">
+			<input
+				type="text"
+				placeholder={selectedClientName || '— wyszukaj klienta —'}
+				value={clientSearch || selectedClientName}
+				oninput={(e) => { clientSearch = (e.target as HTMLInputElement).value; clientDropOpen = true; }}
+				onfocus={() => { clientSearch = ''; clientDropOpen = true; }}
+				onblur={() => setTimeout(() => clientDropOpen = false, 150)}
+				class={inputCls}
+			/>
+			{#if clientDropOpen && filteredClients.length > 0}
+				<div class="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+					{#each filteredClients as c}
+						<button type="button" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+							onmousedown={() => { fpKlient = c.id; clientSearch = ''; clientDropOpen = false; }}>
+							{c.nazwa}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+
+	<!-- TU — searchable -->
+	<div>
+		<label class={labelCls}>Towarzystwo (TU) *</label>
+		<div class="relative">
+			<input
+				type="text"
+				placeholder={selectedTUName || '— wyszukaj TU —'}
+				value={tuSearch || selectedTUName}
+				oninput={(e) => { tuSearch = (e.target as HTMLInputElement).value; tuDropOpen = true; }}
+				onfocus={() => { tuSearch = ''; tuDropOpen = true; }}
+				onblur={() => setTimeout(() => tuDropOpen = false, 150)}
+				class={inputCls}
+			/>
+			{#if tuDropOpen && filteredTU.length > 0}
+				<div class="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+					{#each filteredTU as t}
+						<button type="button" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
+							onmousedown={() => { fpTu = t.id; tuSearch = ''; tuDropOpen = false; }}>
+							{t.nazwa}
+						</button>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	</div>
+
 	<div class="grid grid-cols-2 gap-3">
-		<div>
-			<label class={labelCls}>Klient *</label>
-			<select bind:value={fpKlient} class={inputCls}>
-				<option value="">— wybierz klienta —</option>
-				{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
-			</select>
-		</div>
-		<div>
-			<label class={labelCls}>Towarzystwo (TU) *</label>
-			<select bind:value={fpTu} class={inputCls}>
-				<option value="">— wybierz TU —</option>
-				{#each appState.insurers as t}<option value={t.id}>{t.nazwa}</option>{/each}
-			</select>
-		</div>
 		<div>
 			<label class={labelCls}>Nr Polisy / UG *</label>
 			<input bind:value={fpNr} class={inputCls} />
@@ -158,6 +233,11 @@
 			<input bind:value={fpPrzedmiot} class={inputCls} />
 		</div>
 		<div>
+			<label class={labelCls}>Data zawarcia</label>
+			<input type="date" bind:value={fpZawarcia} class={inputCls} />
+		</div>
+		<div></div>
+		<div>
 			<label class={labelCls}>Data od *</label>
 			<input type="date" bind:value={fpOd} class={inputCls} />
 		</div>
@@ -165,6 +245,7 @@
 			<label class={labelCls}>Data do *</label>
 			<input type="date" bind:value={fpDo} class={inputCls} />
 		</div>
+		{#if fpTypUmowy !== 'generalna'}
 		<div>
 			<label class={labelCls}>Raty</label>
 			<select bind:value={fpRaty} class={inputCls}>
@@ -178,6 +259,7 @@
 			<label class={labelCls}>Daty rat</label>
 			<input bind:value={fpDatyRat} placeholder="np. 01.01, 01.06" class={inputCls} />
 		</div>
+		{/if}
 	</div>
 
 	<hr class="border-slate-200" />
@@ -185,12 +267,8 @@
 
 	<div class="grid grid-cols-2 gap-3">
 		<div>
-			<label class={labelCls}>Składka Przypisana (PLN) *</label>
+			<label class={labelCls}>Składka (PLN) *</label>
 			<input type="number" step="0.01" bind:value={fpSklPrzyp} class={inputCls} />
-		</div>
-		<div>
-			<label class={labelCls}>Składka Zainkasowana</label>
-			<input type="number" step="0.01" bind:value={fpSklZaink} class={inputCls} />
 		</div>
 		{#if fpTypUmowy === 'generalna'}
 			<div>
@@ -205,10 +283,6 @@
 		<div>
 			<label class={labelCls}>Prowizja Przypisana</label>
 			<input type="number" step="0.01" bind:value={fpProwPrzyp} placeholder="Auto z %" class={inputCls} />
-		</div>
-		<div>
-			<label class={labelCls}>Prowizja Zainkasowana</label>
-			<input type="number" step="0.01" bind:value={fpProwZaink} class={inputCls} />
 		</div>
 	</div>
 </div>
