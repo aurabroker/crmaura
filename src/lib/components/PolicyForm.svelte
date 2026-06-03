@@ -92,6 +92,10 @@
 
 	const generalPolicies = $derived(appState.policies.filter(p => p.typ_umowy === 'generalna'));
 
+	const isAuraTenant = $derived(
+		appState.tenantNazwa.toLowerCase().includes('aura')
+	);
+
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const inputSmCls = 'w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-xs font-medium text-slate-600 mb-1';
@@ -134,7 +138,7 @@
 		<div>
 			<label class={labelCls}>Podtyp Umowy Generalnej *</label>
 			<div class="grid grid-cols-2 gap-1.5">
-				{#each [['flota','Flota (pojazdy)'],['gwarancje','Gwarancje ubezpieczeniowe'],['cpm','Maszyny budowlane (CPM)'],['car_ear','Budowy-Montaż (CAR/EAR)'],['oc_beauty','OC Branża Beauty']] as [val, label]}
+				{#each [['flota','Flota (pojazdy)'],['gwarancje','Gwarancje ubezpieczeniowe'],['cpm','Maszyny budowlane (CPM)'],['car_ear','Budowy-Montaż (CAR/EAR)'], ...(isAuraTenant ? [['oc_beauty','OC Branża Beauty']] : [])] as [val, label]}
 					<button type="button" onclick={() => fpUgPodtyp = val}
 						class="py-1.5 px-3 rounded-lg text-sm border text-left transition-colors
 							{fpUgPodtyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
