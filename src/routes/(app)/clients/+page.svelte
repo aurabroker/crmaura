@@ -6,6 +6,8 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Search, Pencil } from 'lucide-svelte';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 
 	let search = $state('');
 	let showModal = $state(false);
@@ -82,6 +84,43 @@
 		const { data } = await sb.from('crm_clients').select('*');
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
+
+	// --- Dodaj pojazd (z wyborem klienta) ---
+	let showVehicle = $state(false);
+	let vKlient = $state('');
+	let vMarka = $state(''); let vModel = $state(''); let vRej = $state('');
+	let vVin = $state(''); let vRok = $state(''); let vUwagi = $state('');
+	let savingV = $state(false); let vehicleError = $state('');
+
+	function openNewVehicle() {
+		vKlient = ''; vMarka = ''; vModel = ''; vRej = ''; vVin = ''; vRok = ''; vUwagi = '';
+		vehicleError = ''; showVehicle = true;
+	}
+
+	async function saveVehicle() {
+		if (!vKlient || !vRej) { vehicleError = 'Wybierz klienta i podaj nr rejestracyjny.'; return; }
+		savingV = true; vehicleError = '';
+		const { error } = await sb.from('crm_vehicles').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			klient_id: vKlient,
+			nr_rejestracyjny: vRej.trim(),
+			marka: vMarka.trim() || null,
+			model: vModel.trim() || null,
+			rok_produkcji: vRok ? parseInt(vRok) : null,
+			vin: vVin.trim() || null,
+			uwagi: vUwagi.trim() || null
+		}]);
+		savingV = false;
+		if (error) { vehicleError = error.message; return; }
+		showVehicle = false;
+		const { data } = await sb.from('crm_vehicles').select('*');
+		appState.vehicles = (data ?? []) as typeof appState.vehicles;
+	}
+
+	onMount(() => {
+		if ($page.url.searchParams.get('newvehicle') === '1') openNewVehicle();
+		if ($page.url.searchParams.get('new') === '1') openNew();
+	});
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
@@ -189,6 +228,34 @@
 					</select>
 				</div>
 			</div>
+		</div>
+	</div>
+</Modal>
+
+<!-- Modal: Dodaj Pojazd -->
+<Modal title="Dodaj Pojazd" open={showVehicle} onclose={() => { showVehicle = false; vehicleError = ''; }}>
+	{#snippet footer()}
+		<button onclick={() => { showVehicle = false; vehicleError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveVehicle} disabled={savingV} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingV ? 'Zapisywanie...' : 'Dodaj pojazd'}
+		</button>
+	{/snippet}
+	{#if vehicleError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{vehicleError}</div>{/if}
+	<div class="space-y-3">
+		<div>
+			<label class={labelCls}>Klient *</label>
+			<select bind:value={vKlient} class={inputCls}>
+				<option value="">— wybierz klienta —</option>
+				{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
+			</select>
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div><label class={labelCls}>Nr rejestracyjny *</label><input bind:value={vRej} class={inputCls} placeholder="WA 12345" /></div>
+			<div><label class={labelCls}>VIN</label><input bind:value={vVin} class={inputCls} /></div>
+			<div><label class={labelCls}>Marka</label><input bind:value={vMarka} class={inputCls} placeholder="Toyota" /></div>
+			<div><label class={labelCls}>Model</label><input bind:value={vModel} class={inputCls} placeholder="Corolla" /></div>
+			<div><label class={labelCls}>Rok produkcji</label><input type="number" bind:value={vRok} class={inputCls} placeholder="2022" /></div>
+			<div><label class={labelCls}>Uwagi</label><input bind:value={vUwagi} class={inputCls} /></div>
 		</div>
 	</div>
 </Modal>

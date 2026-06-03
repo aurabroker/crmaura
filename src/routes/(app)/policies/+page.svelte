@@ -7,6 +7,8 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
 	import { Search, Pencil, FilePlus2, ChevronDown, ChevronRight } from 'lucide-svelte';
+	import { page } from '$app/stores';
+	import { onMount } from 'svelte';
 
 	let search = $state('');
 	let filterTyp = $state<'all' | 'jednostkowa' | 'generalna'>('all');
@@ -180,6 +182,23 @@
 		flota: 'Flota', gwarancje: 'Gwarancje', cpm: 'CPM', car_ear: 'CAR/EAR'
 	};
 
+	// Preset typ_umowy/ug_podtyp for new policy form
+	let presetTyp = $state<'jednostkowa' | 'generalna'>('jednostkowa');
+	let presetUgPodtyp = $state('');
+
+	function openNewPolicy(typ: 'jednostkowa' | 'generalna' = 'jednostkowa', ugPodtyp = '') {
+		presetTyp = typ;
+		presetUgPodtyp = ugPodtyp;
+		formError = '';
+		showPolicy = true;
+	}
+
+	onMount(() => {
+		const p = $page.url.searchParams;
+		if (p.get('new') === '1') openNewPolicy();
+		if (p.get('newguarantee') === '1') openNewPolicy('generalna', 'gwarancje');
+	});
+
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
@@ -195,7 +214,7 @@
 		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
 			Zgłoś Szkodę
 		</button>
-		<button onclick={() => { showPolicy = true; formError = ''; }} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+		<button onclick={() => openNewPolicy()} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 			+ Nowa Polisa / UG
 		</button>
 	</div>
@@ -336,7 +355,7 @@
 		</button>
 	{/snippet}
 	{#if formError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-	<PolicyForm bind:this={newPolicyForm} />
+	<PolicyForm bind:this={newPolicyForm} policy={{ typ_umowy: presetTyp, ug_podtyp: presetUgPodtyp } as any} />
 </Modal>
 
 <!-- Modal: Edytuj Polisę -->
