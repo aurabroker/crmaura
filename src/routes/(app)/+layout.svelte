@@ -7,7 +7,7 @@
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
-		AlertTriangle
+		AlertTriangle, RefreshCw, Target, Coins
 	} from 'lucide-svelte';
 
 	let { children } = $props();
@@ -19,9 +19,13 @@
 		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
 		{ href: '/policies', label: 'Polisy', icon: FileText, always: true },
 		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, show: isBroker() },
+		{ href: '/renewals', label: 'Odnowienia', icon: RefreshCw, always: true },
+		{ href: '/prospects', label: 'Prospects', icon: Target, always: true },
 		{ href: '/payments', label: 'Płatności', icon: Calculator, always: true },
+		{ href: '/commission', label: 'Prowizja', icon: Coins, always: true },
 		{ href: '/finance', label: 'Rozliczenia', icon: Calculator, show: isFinance(appState.profile) },
 		{ href: '/knf-report', label: 'Raporty', icon: Scale, show: isAdmin(appState.profile) && isBroker() },
+		{ href: '/settings', label: 'Ustawienia', icon: Settings, always: true },
 		{ href: '/admin', label: 'Administracja', icon: Settings, show: isAdmin(appState.profile) }
 	]);
 

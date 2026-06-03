@@ -66,6 +66,10 @@ export interface Policy {
 	ug_podtyp: UgPodtyp | null;
 	parent_id: string | null;
 	skladka_zaliczkowa: number;
+	data_zawarcia: string | null;
+	rozliczenie_status: string | null;
+	rozliczenie_kwota_tu: number | null;
+	rozliczenie_plik: string | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string } | null;
@@ -134,6 +138,34 @@ export interface PolicyPayment {
 	notatka: string | null;
 	created_at?: string;
 	crm_policies?: { nr_polisy: string; crm_clients?: { nazwa: string } | null } | null;
+}
+
+export interface Prospect {
+	id: string;
+	tenant_id: string;
+	nazwa: string;
+	nip: string | null;
+	adres: string | null;
+	telefon: string | null;
+	email: string | null;
+	branza: string | null;
+	notatki: string | null;
+	broker_id: string | null;
+	status: string;
+	created_at?: string;
+	crm_profiles?: { imie_nazwisko: string | null } | null;
+}
+
+export interface CommissionSettlement {
+	id: string;
+	tenant_id: string;
+	broker_id: string;
+	miesiac: string;
+	kwota_przypisana: number;
+	kwota_rozliczona: number;
+	status: string;
+	zamkniete_at: string | null;
+	created_at?: string;
 }
 
 export type Database = Record<string, unknown>;
