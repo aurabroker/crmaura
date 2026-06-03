@@ -169,4 +169,15 @@ export interface CommissionSettlement {
 	created_at?: string;
 }
 
+export interface PolicyBroker {
+	id: string;
+	tenant_id: string;
+	polisa_id: string;
+	broker_id: string;
+	rola: 'akwizycja' | 'obsługa' | 'opiekun';
+	udzial_pct: number;
+	created_at?: string;
+	crm_profiles?: { imie_nazwisko: string | null; email: string } | null;
+}
+
 export type Database = Record<string, unknown>;

@@ -7,12 +7,59 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
-	import { ArrowLeft, Pencil, FilePlus2 } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2 } from 'lucide-svelte';
+	import type { PolicyBroker } from '$lib/types/database';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
 	const annexes = $derived(appState.annexes.filter(a => a.polisa_id === policyId));
 	const payments = $derived(appState.payments.filter(p => p.polisa_id === policyId));
+	const polisaBrokers = $derived(appState.policyBrokers.filter(pb => pb.polisa_id === policyId));
+
+	// Policy brokers management
+	let showBrokers = $state(false);
+	let pbBrokerId = $state('');
+	let pbRola = $state<'akwizycja' | 'obsługa' | 'opiekun'>('akwizycja');
+	let pbUdzial = $state('100');
+	let savingPB = $state(false);
+	let pbError = $state('');
+
+	async function reloadPolicyBrokers() {
+		const { data } = await sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)');
+		appState.policyBrokers = (data ?? []) as typeof appState.policyBrokers;
+	}
+
+	async function addBroker() {
+		if (!pbBrokerId) { pbError = 'Wybierz brokera.'; return; }
+		savingPB = true; pbError = '';
+		const { error } = await sb.from('crm_policy_brokers').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			polisa_id: policyId,
+			broker_id: pbBrokerId,
+			rola: pbRola,
+			udzial_pct: parseFloat(pbUdzial) || 100
+		}]);
+		savingPB = false;
+		if (error) { pbError = error.message; return; }
+		pbBrokerId = ''; pbRola = 'akwizycja'; pbUdzial = '100';
+		await reloadPolicyBrokers();
+	}
+
+	async function removeBroker(pb: PolicyBroker) {
+		await sb.from('crm_policy_brokers').delete().eq('id', pb.id);
+		await reloadPolicyBrokers();
+	}
+
+	const rolaLabel: Record<string, string> = {
+		akwizycja: 'Akwizycja',
+		obsługa: 'Obsługa',
+		opiekun: 'Opiekun'
+	};
+	const rolaVariant: Record<string, 'success' | 'info' | 'neutral'> = {
+		akwizycja: 'success',
+		obsługa: 'info',
+		opiekun: 'neutral'
+	};
 
 	const st = $derived(policy ? policyStatus(policy.data_do) : null);
 
@@ -110,6 +157,9 @@
 			</div>
 		</div>
 		<div class="flex gap-2">
+			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
+				<Users size={14} /> Podział prowizji {#if polisaBrokers.length > 0}<span class="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-semibold">{polisaBrokers.length}</span>{/if}
+			</button>
 			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<FilePlus2 size={14} /> Aneks
 			</button>
@@ -142,6 +192,32 @@
 			{#if policy.przedmiot}<p class="text-xs text-slate-400">{policy.przedmiot}</p>{/if}
 		</div>
 	</div>
+
+	<!-- Podział prowizji (mini-panel jeśli są wpisy) -->
+	{#if polisaBrokers.length > 0}
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
+		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+			<p class="text-sm font-semibold text-slate-700 flex items-center gap-2"><Users size={14} /> Podział prowizji</p>
+			<button onclick={() => { showBrokers = true; pbError = ''; }} class="text-xs text-slate-500 hover:text-slate-800">Zarządzaj</button>
+		</div>
+		<div class="divide-y divide-slate-100">
+			{#each polisaBrokers as pb}
+				<div class="px-5 py-3 flex items-center justify-between">
+					<div>
+						<span class="font-medium text-sm">{pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email ?? '—'}</span>
+					</div>
+					<div class="flex items-center gap-3">
+						<Badge variant={rolaVariant[pb.rola]}>{rolaLabel[pb.rola]}</Badge>
+						{#if pb.rola !== 'opiekun'}
+							<span class="text-sm font-semibold text-slate-700">{pb.udzial_pct}%</span>
+							<span class="text-xs text-slate-400">{fmtPln((policy.prowizja_przypisana ?? 0) * pb.udzial_pct / 100)}</span>
+						{/if}
+					</div>
+				</div>
+			{/each}
+		</div>
+	</div>
+	{/if}
 
 	<!-- Terminy rat -->
 	{#if policy.daty_rat}
@@ -268,5 +344,79 @@
 			<div><label class={labelCls}>Nowy % Prowizji</label><input type="number" step="0.01" bind:value={axNewProwizjaPct} class={inputCls} /></div>
 		</div>
 	</div>
+</Modal>
+{/if}
+
+<!-- Modal: Podział prowizji -->
+{#if policy}
+<Modal title="Podział prowizji — {policy.nr_polisy}" open={showBrokers} onclose={() => { showBrokers = false; pbError = ''; }}>
+	{#snippet footer()}
+		<button onclick={() => { showBrokers = false; pbError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+	{/snippet}
+
+	{#if polisaBrokers.length > 0}
+	<div class="mb-4 divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+		{#each polisaBrokers as pb}
+			<div class="flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50">
+				<div class="flex items-center gap-3">
+					<Badge variant={rolaVariant[pb.rola]}>{rolaLabel[pb.rola]}</Badge>
+					<span class="text-sm font-medium">{pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email ?? '—'}</span>
+				</div>
+				<div class="flex items-center gap-4">
+					{#if pb.rola !== 'opiekun'}
+						<div class="text-right">
+							<span class="text-sm font-semibold">{pb.udzial_pct}%</span>
+							<span class="text-xs text-slate-400 ml-1">({fmtPln((policy.prowizja_przypisana ?? 0) * pb.udzial_pct / 100)})</span>
+						</div>
+					{:else}
+						<span class="text-xs text-slate-400">bez prowizji</span>
+					{/if}
+					<button onclick={() => removeBroker(pb)} class="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors">
+						<Trash2 size={13} />
+					</button>
+				</div>
+			</div>
+		{/each}
+	</div>
+	{/if}
+
+	<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Dodaj osobę</p>
+	{#if pbError}<div class="mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{pbError}</div>{/if}
+	<div class="flex gap-2 items-end">
+		<div class="flex-1">
+			<label class="block text-xs font-medium text-slate-600 mb-1">Broker / Osoba</label>
+			<select bind:value={pbBrokerId} class={inputCls}>
+				<option value="">— wybierz —</option>
+				{#each appState.brokers as b}
+					<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>
+				{/each}
+			</select>
+		</div>
+		<div class="w-36">
+			<label class="block text-xs font-medium text-slate-600 mb-1">Rola</label>
+			<select bind:value={pbRola} class={inputCls}>
+				<option value="akwizycja">Akwizycja</option>
+				<option value="obsługa">Obsługa</option>
+				<option value="opiekun">Opiekun (bez prow.)</option>
+			</select>
+		</div>
+		{#if pbRola !== 'opiekun'}
+		<div class="w-24">
+			<label class="block text-xs font-medium text-slate-600 mb-1">Udział %</label>
+			<input type="number" min="0" max="100" step="1" bind:value={pbUdzial} class={inputCls} />
+		</div>
+		{/if}
+		<button onclick={addBroker} disabled={savingPB} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60 shrink-0">
+			{savingPB ? '...' : '+ Dodaj'}
+		</button>
+	</div>
+
+	{#if polisaBrokers.filter(pb => pb.rola !== 'opiekun').length > 1}
+		{@const suma = polisaBrokers.filter(pb => pb.rola !== 'opiekun').reduce((s, pb) => s + pb.udzial_pct, 0)}
+		<div class="mt-3 text-xs {Math.abs(suma - 100) > 0.1 ? 'text-red-600 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'} border rounded-lg px-3 py-2">
+			Suma udziałów: <strong>{suma}%</strong>
+			{#if Math.abs(suma - 100) > 0.1} ⚠️ nie sumuje się do 100%{:else} ✓{/if}
+		</div>
+	{/if}
 </Modal>
 {/if}

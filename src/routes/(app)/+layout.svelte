@@ -47,14 +47,15 @@
 
 		appState.profile = profile as typeof appState.profile;
 
-		const { data: tenant } = await sb.from('crm_tenants').select('typ').eq('id', profile.tenant_id).single();
+		const { data: tenant } = await sb.from('crm_tenants').select('typ, nazwa').eq('id', profile.tenant_id).single();
 		appState.tenantTyp = (tenant?.typ as typeof appState.tenantTyp) ?? 'broker';
+		appState.tenantNazwa = tenant?.nazwa ?? '';
 
 		// Dashboard prefs
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
 		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
 
-		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr] = await Promise.all([
+		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB] = await Promise.all([
 			sb.from('crm_clients').select('*'),
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
@@ -63,7 +64,8 @@
 			sb.from('crm_vehicles').select('*'),
 			sb.from('crm_apk_logs').select('*, crm_policies(nr_polisy, crm_clients(nazwa))'),
 			sb.from('crm_insurers').select('*').order('nazwa'),
-			sb.from('crm_profiles').select('*')
+			sb.from('crm_profiles').select('*'),
+			sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)')
 		]);
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
@@ -75,6 +77,7 @@
 		appState.apk = (rA.data ?? []) as typeof appState.apk;
 		appState.insurers = (rI.data ?? []) as typeof appState.insurers;
 		appState.brokers = (rPr.data ?? []) as typeof appState.brokers;
+		appState.policyBrokers = (rPB.data ?? []) as typeof appState.policyBrokers;
 		initialized = true;
 	}
 
