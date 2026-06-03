@@ -8,6 +8,7 @@
 
 	const typParam = $page.url.searchParams.get('typ') as 'jednostkowa' | 'generalna' | null;
 	const podtypParam = $page.url.searchParams.get('podtyp') ?? '';
+	const klientParam = $page.url.searchParams.get('klient') ?? '';
 
 	let policyForm = $state<ReturnType<typeof PolicyForm> | null>(null);
 	let saving = $state(false);
@@ -52,6 +53,7 @@
 		<PolicyForm
 			bind:this={policyForm}
 			policy={{ typ_umowy: typParam ?? 'jednostkowa', ug_podtyp: podtypParam } as any}
+			presetKlient={klientParam}
 		/>
 	</div>
 

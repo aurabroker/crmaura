@@ -4,11 +4,12 @@
 
 	interface Props {
 		policy?: Policy | null;
+		presetKlient?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, onchange }: Props = $props();
+	let { policy = null, presetKlient = '', onchange }: Props = $props();
 
-	let fpKlient = $state(policy?.klient_id ?? '');
+	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpTu = $state(policy?.tu_id ?? '');
 	let fpNr = $state(policy?.nr_polisy ?? '');
 	let fpRodzaj = $state(policy?.rodzaj ?? 'majątkowa');
@@ -21,28 +22,25 @@
 	let fpZawarcia = $state((policy as any)?.data_zawarcia ?? '');
 	let fpRaty = $state(policy?.ilosc_rat ?? '1');
 
-	// Parse existing daty_rat (comma-separated ISO dates) into array
 	function parseDatyRat(raw: string | null | undefined, count: number): string[] {
 		const parts = (raw ?? '').split(',').map(s => s.trim()).filter(Boolean);
-		const arr = Array.from({ length: count }, (_, i) => parts[i] ?? '');
-		return arr;
+		return Array.from({ length: count }, (_, i) => parts[i] ?? '');
 	}
 
 	let fpDatyRatArr = $state<string[]>(parseDatyRat(policy?.daty_rat, parseInt(policy?.ilosc_rat ?? '1')));
 
-	// Resize array when fpRaty changes
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		if (fpDatyRatArr.length !== n) {
 			fpDatyRatArr = Array.from({ length: n }, (_, i) => fpDatyRatArr[i] ?? '');
 		}
 	});
+
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
 	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
 
-	// Auto-fill data_do (+1 rok) when data_od changes
 	$effect(() => {
 		if (fpOd && !fpDo) {
 			const d = new Date(fpOd);
@@ -52,7 +50,6 @@
 		}
 	});
 
-	// Auto-recalculate commission when % or premium changes
 	$effect(() => {
 		const sklad = parseFloat(fpSklPrzyp) || 0;
 		const pct = parseFloat(fpProwPct) || 0;
@@ -65,7 +62,6 @@
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const prowPct = parseFloat(fpProwPct) || 0;
 		const prowPrzyp = parseFloat(fpProwPrzyp) || (sklPrzyp * prowPct / 100);
-
 		return {
 			klient_id: fpKlient, tu_id: fpTu, nr_polisy: fpNr,
 			rodzaj: fpTypUmowy === 'generalna' ? `umowa_generalna_${fpUgPodtyp}` : fpRodzaj,
@@ -94,14 +90,12 @@
 		return null;
 	}
 
-	const generalPolicies = $derived(
-		appState.policies.filter((p) => p.typ_umowy === 'generalna')
-	);
+	const generalPolicies = $derived(appState.policies.filter(p => p.typ_umowy === 'generalna'));
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
-	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputSmCls = 'w-full border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const labelCls = 'block text-xs font-medium text-slate-600 mb-1';
 
-	// Client search
 	let clientSearch = $state('');
 	const filteredClients = $derived(
 		clientSearch.trim()
@@ -111,7 +105,6 @@
 	let clientDropOpen = $state(false);
 	const selectedClientName = $derived(appState.clients.find(c => c.id === fpKlient)?.nazwa ?? '');
 
-	// TU search
 	let tuSearch = $state('');
 	const filteredTU = $derived(
 		tuSearch.trim()
@@ -121,20 +114,17 @@
 	let tuDropOpen = $state(false);
 	const selectedTU = $derived(appState.insurers.find(t => t.id === fpTu));
 	const selectedTUName = $derived(selectedTU ? (selectedTU.skrot ? `${selectedTU.skrot} — ${selectedTU.nazwa}` : selectedTU.nazwa) : '');
+
+	const ratyCount = $derived(parseInt(fpRaty) || 1);
 </script>
 
-<div class="space-y-4">
-	<!-- Typ umowy toggle -->
-	<div class="flex gap-3">
+<div class="space-y-3">
+	<!-- Typ umowy -->
+	<div class="flex gap-2">
 		{#each [['jednostkowa', 'Polisa jednostkowa'], ['generalna', 'Umowa Generalna']] as [val, label]}
-			<button
-				type="button"
-				onclick={() => { fpTypUmowy = val; }}
-				class="flex-1 py-2 rounded-lg text-sm font-medium border transition-colors
-					{fpTypUmowy === val
-						? 'bg-slate-900 text-white border-slate-900'
-						: 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}"
-			>
+			<button type="button" onclick={() => { fpTypUmowy = val; }}
+				class="flex-1 py-1.5 rounded-lg text-sm font-medium border transition-colors
+					{fpTypUmowy === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}">
 				{label}
 			</button>
 		{/each}
@@ -143,16 +133,11 @@
 	{#if fpTypUmowy === 'generalna'}
 		<div>
 			<label class={labelCls}>Podtyp Umowy Generalnej *</label>
-			<div class="grid grid-cols-2 gap-2">
-				{#each [['flota','Flota (pojazdy)'],['gwarancje','Gwarancje ubezpieczeniowe'],['cpm','Maszyny budowlane (CPM)'],['car_ear','Budowy-Montaż (CAR/EAR)'],['oc_beauty','OC Branża Beauty (WA50/003353/24/A)']] as [val, label]}
-					<button
-						type="button"
-						onclick={() => fpUgPodtyp = val}
-						class="py-2 px-3 rounded-lg text-sm border text-left transition-colors
-							{fpUgPodtyp === val
-								? 'bg-blue-50 text-blue-700 border-blue-400'
-								: 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}"
-					>
+			<div class="grid grid-cols-2 gap-1.5">
+				{#each [['flota','Flota (pojazdy)'],['gwarancje','Gwarancje ubezpieczeniowe'],['cpm','Maszyny budowlane (CPM)'],['car_ear','Budowy-Montaż (CAR/EAR)'],['oc_beauty','OC Branża Beauty']] as [val, label]}
+					<button type="button" onclick={() => fpUgPodtyp = val}
+						class="py-1.5 px-3 rounded-lg text-sm border text-left transition-colors
+							{fpUgPodtyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
 						{label}
 					</button>
 				{/each}
@@ -170,7 +155,6 @@
 				</select>
 			</div>
 		{/if}
-
 		<div>
 			<label class={labelCls}>Rodzaj polisy *</label>
 			<select bind:value={fpRodzaj} class={inputCls}>
@@ -189,12 +173,11 @@
 		</div>
 	{/if}
 
-	<!-- Klient — searchable -->
+	<!-- Klient -->
 	<div>
 		<label class={labelCls}>Klient *</label>
 		<div class="relative">
-			<input
-				type="text"
+			<input type="text"
 				placeholder={selectedClientName || '— wyszukaj klienta —'}
 				value={clientSearch || selectedClientName}
 				oninput={(e) => { clientSearch = (e.target as HTMLInputElement).value; clientDropOpen = true; }}
@@ -215,12 +198,11 @@
 		</div>
 	</div>
 
-	<!-- TU — searchable -->
+	<!-- TU -->
 	<div>
 		<label class={labelCls}>Towarzystwo (TU) *</label>
 		<div class="relative">
-			<input
-				type="text"
+			<input type="text"
 				placeholder={selectedTUName || '— wyszukaj TU —'}
 				value={tuSearch || selectedTUName}
 				oninput={(e) => { tuSearch = (e.target as HTMLInputElement).value; tuDropOpen = true; }}
@@ -241,7 +223,8 @@
 		</div>
 	</div>
 
-	<div class="grid grid-cols-2 gap-3">
+	<!-- Nr polisy + przedmiot + daty -->
+	<div class="grid grid-cols-2 gap-2">
 		<div>
 			<label class={labelCls}>Nr Polisy / UG *</label>
 			<input bind:value={fpNr} class={inputCls} />
@@ -263,39 +246,42 @@
 			<label class={labelCls}>Data do *</label>
 			<input type="date" bind:value={fpDo} class={inputCls} />
 		</div>
-		{#if fpTypUmowy !== 'generalna'}
-		<div class="col-span-2">
-			<label class={labelCls}>Liczba rat</label>
-			<div class="flex gap-2">
+	</div>
+
+	<!-- Raty + terminy inline -->
+	{#if fpTypUmowy !== 'generalna'}
+	<div>
+		<label class={labelCls}>Liczba rat i terminy płatności</label>
+		<div class="flex items-start gap-3">
+			<!-- przyciski rat -->
+			<div class="flex flex-col gap-1 shrink-0">
 				{#each [['1','Jednorazowo'],['2','2 raty'],['4','4 raty'],['12','12 rat']] as [val, lbl]}
 					<button type="button" onclick={() => fpRaty = val}
-						class="flex-1 py-1.5 rounded-lg text-sm border transition-colors
+						class="w-28 py-1.5 rounded-lg text-sm border text-center transition-colors
 							{fpRaty === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
 						{lbl}
 					</button>
 				{/each}
 			</div>
-		</div>
-		{#if parseInt(fpRaty) > 1}
-		<div class="col-span-2">
-			<label class={labelCls}>Terminy płatności rat</label>
-			<div class="grid grid-cols-{Math.min(parseInt(fpRaty), 4)} gap-2">
+			<!-- terminy dat -->
+			{#if ratyCount > 1}
+			<div class="flex-1 grid gap-1.5" style="grid-template-columns: repeat({Math.min(ratyCount, 4)}, 1fr)">
 				{#each fpDatyRatArr as _, i}
 					<div>
-						<div class="text-[11px] text-slate-400 mb-1">Rata {i + 1}</div>
-						<input type="date" bind:value={fpDatyRatArr[i]} class={inputCls} />
+						<div class="text-[10px] text-slate-400 mb-1">Rata {i + 1}</div>
+						<input type="date" bind:value={fpDatyRatArr[i]} class={inputSmCls} />
 					</div>
 				{/each}
 			</div>
+			{/if}
 		</div>
-		{/if}
-		{/if}
 	</div>
+	{/if}
 
-	<hr class="border-slate-200" />
-	<p class="text-sm font-semibold text-blue-600">Dane Finansowe</p>
+	<hr class="border-slate-100" />
+	<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">Dane Finansowe</p>
 
-	<div class="grid grid-cols-2 gap-3">
+	<div class="grid grid-cols-2 gap-2">
 		<div>
 			<label class={labelCls}>Składka (PLN) *</label>
 			<input type="number" step="0.01" bind:value={fpSklPrzyp} class={inputCls} />

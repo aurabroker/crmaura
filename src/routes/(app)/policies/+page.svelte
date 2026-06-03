@@ -271,14 +271,16 @@
 								</button>
 							{/if}
 							<div>
-								<div class="font-medium">{p.nr_polisy}</div>
+								<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
 								{#if axs.length > 0}
 									<div class="text-[10px] text-blue-500">{axs.length} aneks{axs.length > 1 ? 'ów' : ''}</div>
 								{/if}
 							</div>
 						</div>
 					</td>
-					<td class="px-5 py-3">{p.crm_clients?.nazwa ?? '—'}</td>
+					<td class="px-5 py-3">
+						<a href="/clients/{p.klient_id}" class="hover:text-blue-700 hover:underline">{p.crm_clients?.nazwa ?? '—'}</a>
+					</td>
 					<td class="px-5 py-3">
 						{#if p.crm_insurers?.skrot}
 							<span class="font-mono font-semibold text-blue-700" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
@@ -331,8 +333,10 @@
 					{#each children as ch}
 						{@const chSt = policyStatus(ch.data_do)}
 						<tr class="border-t border-slate-100 bg-slate-50/80">
-							<td class="pl-12 pr-5 py-2.5 font-medium text-sm">↳ {ch.nr_polisy}</td>
-							<td class="px-5 py-2.5 text-sm">{ch.crm_clients?.nazwa ?? '—'}</td>
+							<td class="pl-12 pr-5 py-2.5 text-sm">↳ <a href="/policies/{ch.id}" class="font-medium text-blue-700 hover:underline">{ch.nr_polisy}</a></td>
+							<td class="px-5 py-2.5 text-sm">
+								<a href="/clients/{ch.klient_id}" class="hover:text-blue-700 hover:underline">{ch.crm_clients?.nazwa ?? '—'}</a>
+							</td>
 							<td class="px-5 py-2.5 text-sm">
 							{#if ch.crm_insurers?.skrot}
 								<span class="font-mono font-semibold text-blue-700" title={ch.crm_insurers.nazwa}>{ch.crm_insurers.skrot}</span>
