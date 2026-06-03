@@ -36,6 +36,7 @@ export interface Insurer {
 	id: string;
 	tenant_id: string;
 	nazwa: string;
+	skrot: string | null;
 	dzial: 'Majątkowy' | 'Życiowy';
 	ulica: string | null;
 	nip: string | null;
@@ -72,7 +73,7 @@ export interface Policy {
 	rozliczenie_plik: string | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
-	crm_insurers?: { nazwa: string } | null;
+	crm_insurers?: { nazwa: string; skrot: string | null } | null;
 }
 
 export interface PolicyAnnex {

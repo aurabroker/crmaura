@@ -56,7 +56,7 @@
 
 		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr] = await Promise.all([
 			sb.from('crm_clients').select('*'),
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa)'),
+			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
 			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci'),
 			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
@@ -143,7 +143,7 @@
 				</button>
 				{#if addMenuOpen}
 					<div class="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-56 overflow-hidden z-50">
-						<a href="/policies?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+						<a href="/policies/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<FileText size={15} /> Nowa Polisa / UG
 						</a>
 						<a href="/clients?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
@@ -157,7 +157,7 @@
 						<a href="/clients?newvehicle=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<Plus size={15} /> Dodaj Pojazd
 						</a>
-						<a href="/policies?newguarantee=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
+						<a href="/policies/new?typ=generalna&podtyp=gwarancje" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
 							<Plus size={15} /> Dodaj Gwarancję
 						</a>
 					</div>
@@ -188,7 +188,7 @@
 	</header>
 
 	<main class="flex-1">
-		<div class="max-w-screen-xl mx-auto px-8 py-6">
+		<div class="max-w-[1800px] mx-auto px-8 py-6">
 			{@render children()}
 		</div>
 	</main>

@@ -18,17 +18,17 @@
 	// --- TU ---
 	let showTU = $state(false);
 	let editingTU = $state<Insurer | null>(null);
-	let fNazwa = $state(''); let fDzial = $state('Majątkowy');
+	let fNazwa = $state(''); let fSkrot = $state(''); let fDzial = $state('Majątkowy');
 	let fUlica = $state(''); let fNip = $state(''); let fKrs = $state('');
 	let savingTU = $state(false); let tuError = $state('');
 
-	function openNewTU() { editingTU = null; fNazwa=''; fDzial='Majątkowy'; fUlica=''; fNip=''; fKrs=''; tuError=''; showTU=true; }
-	function openEditTU(t: Insurer) { editingTU=t; fNazwa=t.nazwa; fDzial=t.dzial; fUlica=t.ulica??''; fNip=t.nip??''; fKrs=t.krs??''; tuError=''; showTU=true; }
+	function openNewTU() { editingTU = null; fNazwa=''; fSkrot=''; fDzial='Majątkowy'; fUlica=''; fNip=''; fKrs=''; tuError=''; showTU=true; }
+	function openEditTU(t: Insurer) { editingTU=t; fNazwa=t.nazwa; fSkrot=t.skrot??''; fDzial=t.dzial; fUlica=t.ulica??''; fNip=t.nip??''; fKrs=t.krs??''; tuError=''; showTU=true; }
 
 	async function saveTU() {
 		if (!fNazwa.trim()) { tuError='Podaj nazwę TU'; return; }
 		savingTU=true; tuError='';
-		const payload = { nazwa: fNazwa.trim(), dzial: fDzial, ulica: fUlica||null, nip: fNip||null, krs: fKrs||null };
+		const payload = { nazwa: fNazwa.trim(), skrot: fSkrot.trim()||null, dzial: fDzial, ulica: fUlica||null, nip: fNip||null, krs: fKrs||null };
 		let error;
 		if (editingTU) ({ error } = await sb.from('crm_insurers').update(payload).eq('id', editingTU.id));
 		else ({ error } = await sb.from('crm_insurers').insert([{ tenant_id: appState.profile!.tenant_id, ...payload }]));
@@ -118,6 +118,7 @@
 		<table class="w-full text-left text-sm">
 			<thead>
 				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<th class="px-5 py-3">Skrót</th>
 					<th class="px-5 py-3">Nazwa</th>
 					<th class="px-5 py-3">Dział</th>
 					<th class="px-5 py-3">NIP / KRS</th>
@@ -127,6 +128,13 @@
 			<tbody>
 				{#each appState.insurers as t}
 					<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<td class="px-5 py-3">
+							{#if t.skrot}
+								<span class="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">{t.skrot}</span>
+							{:else}
+								<span class="text-slate-300 text-xs">—</span>
+							{/if}
+						</td>
 						<td class="px-5 py-3">
 							<div class="font-medium">{t.nazwa}</div>
 							{#if t.ulica}<div class="text-xs text-slate-400">{t.ulica}</div>{/if}
@@ -197,14 +205,17 @@
 	{/snippet}
 	{#if tuError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{tuError}</div>{/if}
 	<div class="space-y-3">
+		<div class="grid grid-cols-3 gap-3">
+			<div class="col-span-2"><label class={labelCls}>Nazwa TU *</label><input bind:value={fNazwa} class={inputCls} /></div>
+			<div><label class={labelCls}>Skrót (np. PZU, HDI)</label><input bind:value={fSkrot} class={inputCls} placeholder="np. PZU" /></div>
+		</div>
 		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>Nazwa TU *</label><input bind:value={fNazwa} class={inputCls} /></div>
 			<div>
 				<label class={labelCls}>Dział *</label>
 				<select bind:value={fDzial} class={inputCls}><option>Majątkowy</option><option>Życiowy</option></select>
 			</div>
+			<div><label class={labelCls}>Adres</label><input bind:value={fUlica} class={inputCls} /></div>
 		</div>
-		<div><label class={labelCls}>Adres</label><input bind:value={fUlica} class={inputCls} /></div>
 		<div class="grid grid-cols-2 gap-3">
 			<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
 			<div><label class={labelCls}>KRS</label><input bind:value={fKrs} class={inputCls} /></div>
