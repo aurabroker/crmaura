@@ -5,10 +5,14 @@
 	import KpiCard from '$lib/components/KpiCard.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { dndzone } from 'svelte-dnd-action';
-	import { Settings2 } from 'lucide-svelte';
+	import { Settings2, TrendingUp, TrendingDown } from 'lucide-svelte';
+	import { isBroker } from '$lib/stores/app.svelte';
 
 	const today = todayStr();
 	const thisYear = new Date().getFullYear();
+	const thisMonth = today.slice(0, 7); // "YYYY-MM"
+	const lastMonthDate = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1);
+	const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
 	// --- Obliczenia KPI ---
 	const renewals = $derived(
@@ -53,6 +57,75 @@
 		appState.payments.filter((p) => p.status === 'Zaległa' || (p.status === 'Oczekująca' && p.data_platnosci < today))
 	);
 
+	// --- Nowe widżety ---
+
+	// top_clients: top 5 klientów wg liczby polis
+	const topClients = $derived(() => {
+		const map = new Map<string, { nazwa: string; count: number; skladka: number }>();
+		for (const p of appState.policies) {
+			const id = p.klient_id;
+			const nazwa = p.crm_clients?.nazwa ?? id;
+			const existing = map.get(id);
+			if (existing) {
+				existing.count++;
+				existing.skladka += p.skladka_przypisana ?? 0;
+			} else {
+				map.set(id, { nazwa, count: 1, skladka: p.skladka_przypisana ?? 0 });
+			}
+		}
+		return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+	});
+
+	// expiring_payments: płatności w ciągu 7 dni
+	const in7days = new Date();
+	in7days.setDate(in7days.getDate() + 7);
+	const in7daysStr = in7days.toISOString().slice(0, 10);
+	const expiringPayments = $derived(
+		appState.payments.filter((p) => p.status === 'Oczekująca' && p.data_platnosci >= today && p.data_platnosci <= in7daysStr)
+			.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci))
+	);
+
+	// policies_by_insurer: top 5 TU wg liczby polis
+	const policiesByInsurer = $derived(() => {
+		const map = new Map<string, { nazwa: string; count: number }>();
+		for (const p of appState.policies) {
+			const id = p.tu_id;
+			const nazwa = p.crm_insurers?.nazwa ?? id;
+			const existing = map.get(id);
+			if (existing) { existing.count++; }
+			else { map.set(id, { nazwa, count: 1 }); }
+		}
+		const sorted = [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5);
+		const max = sorted[0]?.count ?? 1;
+		return sorted.map((i) => ({ ...i, pct: Math.round((i.count / max) * 100) }));
+	});
+
+	// monthly_premium: składka przypisana w bieżącym miesiącu vs poprzedni
+	const premiumThisMonth = $derived(
+		appState.policies
+			.filter((p) => p.data_od?.startsWith(thisMonth))
+			.reduce((s, p) => s + (p.skladka_przypisana ?? 0), 0)
+	);
+	const premiumLastMonth = $derived(
+		appState.policies
+			.filter((p) => p.data_od?.startsWith(lastMonth))
+			.reduce((s, p) => s + (p.skladka_przypisana ?? 0), 0)
+	);
+	const premiumTrend = $derived(premiumThisMonth >= premiumLastMonth ? 'up' : 'down');
+
+	// claims_stats: liczba szkód wg statusu
+	const claimsStats = $derived(() => {
+		const statuses = ['Zgłoszona', 'W toku', 'Wypłacona', 'Odmowa'];
+		return statuses.map((s) => ({
+			status: s,
+			count: appState.claims.filter((c) => c.status === s).length,
+			color: s === 'Zgłoszona' ? 'bg-blue-100 text-blue-700' :
+				s === 'W toku' ? 'bg-amber-100 text-amber-700' :
+				s === 'Wypłacona' ? 'bg-green-100 text-green-700' :
+				'bg-red-100 text-red-700'
+		}));
+	});
+
 	// --- Personalizacja drag & drop ---
 	const ALL_WIDGETS = [
 		{ id: 'renewals', label: 'Wznowienia' },
@@ -60,6 +133,11 @@
 		{ id: 'clients', label: 'Klienci' },
 		{ id: 'renewal_rate', label: 'Skuteczność odnowień' },
 		{ id: 'payments', label: 'Zaległe płatności' },
+		{ id: 'top_clients', label: 'Top klienci' },
+		{ id: 'expiring_payments', label: 'Nadchodzące raty' },
+		{ id: 'policies_by_insurer', label: 'Polisy wg TU' },
+		{ id: 'monthly_premium', label: 'Składka miesięczna' },
+		{ id: 'claims_stats', label: 'Statystyki szkód' },
 	];
 
 	let configMode = $state(false);
@@ -221,7 +299,7 @@
 
 <!-- Zaległe płatności mini-lista -->
 {#if appState.dashboardWidgets.includes('payments') && overduePayments.length > 0}
-<div class="bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden">
+<div class="bg-white border border-red-200 rounded-xl shadow-sm overflow-hidden mb-6">
 	<div class="px-5 py-4 border-b border-red-200 flex items-center justify-between">
 		<h2 class="font-semibold text-red-700">Zaległe płatności</h2>
 		<a href="/payments" class="text-xs text-red-500 hover:underline">Zobacz wszystkie →</a>
@@ -248,5 +326,136 @@
 			{/each}
 		</tbody>
 	</table>
+</div>
+{/if}
+
+<!-- Top klienci -->
+{#if appState.dashboardWidgets.includes('top_clients')}
+<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-6">
+	<div class="px-5 py-4 border-b border-slate-200">
+		<h2 class="font-semibold text-slate-900">Top 5 klientów wg liczby polis</h2>
+	</div>
+	<table class="w-full text-left text-sm">
+		<thead>
+			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+				<th class="px-5 py-3">Klient</th>
+				<th class="px-5 py-3 text-right">Liczba polis</th>
+				<th class="px-5 py-3 text-right">Łączna składka</th>
+			</tr>
+		</thead>
+		<tbody>
+			{#each topClients() as c, i}
+				<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<td class="px-5 py-3 font-medium">
+						<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-xs text-slate-500 mr-2">{i + 1}</span>
+						{c.nazwa}
+					</td>
+					<td class="px-5 py-3 text-right font-semibold text-slate-700">{c.count}</td>
+					<td class="px-5 py-3 text-right text-slate-600">{fmtPln(c.skladka)} PLN</td>
+				</tr>
+			{:else}
+				<tr><td colspan="3" class="px-5 py-6 text-center text-slate-400">Brak danych</td></tr>
+			{/each}
+		</tbody>
+	</table>
+</div>
+{/if}
+
+<!-- Nadchodzące raty (7 dni) -->
+{#if appState.dashboardWidgets.includes('expiring_payments')}
+<div class="bg-white border border-amber-200 rounded-xl shadow-sm overflow-hidden mb-6">
+	<div class="px-5 py-4 border-b border-amber-200 flex items-center justify-between">
+		<h2 class="font-semibold text-amber-700">Raty płatności — najbliższe 7 dni</h2>
+		<span class="text-xs text-amber-500">{expiringPayments.length} rat</span>
+	</div>
+	{#if expiringPayments.length === 0}
+		<p class="px-5 py-6 text-center text-slate-400 text-sm">Brak nadchodzących rat w ciągu 7 dni</p>
+	{:else}
+		<table class="w-full text-left text-sm">
+			<thead>
+				<tr class="bg-amber-50 text-[11px] font-semibold text-amber-500 uppercase tracking-wide">
+					<th class="px-5 py-3">Polisa</th>
+					<th class="px-5 py-3">Klient</th>
+					<th class="px-5 py-3">Rata</th>
+					<th class="px-5 py-3">Termin</th>
+					<th class="px-5 py-3 text-right">Kwota</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each expiringPayments as pay}
+					<tr class="border-t border-amber-100 hover:bg-amber-50">
+						<td class="px-5 py-3 font-medium">{pay.crm_policies?.nr_polisy ?? '—'}</td>
+						<td class="px-5 py-3">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</td>
+						<td class="px-5 py-3">Rata {pay.nr_raty}</td>
+						<td class="px-5 py-3 text-amber-600 font-medium">{pay.data_platnosci}</td>
+						<td class="px-5 py-3 text-right font-semibold">{fmtPln(pay.kwota)} PLN</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	{/if}
+</div>
+{/if}
+
+<!-- Polisy wg TU — wykres słupkowy CSS -->
+{#if appState.dashboardWidgets.includes('policies_by_insurer')}
+<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-6">
+	<h2 class="font-semibold text-slate-900 mb-4">Polisy wg TU (top 5)</h2>
+	{#if policiesByInsurer().length === 0}
+		<p class="text-center text-slate-400 text-sm py-4">Brak danych</p>
+	{:else}
+		<div class="space-y-3">
+			{#each policiesByInsurer() as item}
+				<div class="flex items-center gap-3">
+					<span class="text-sm text-slate-600 w-32 truncate shrink-0">{item.nazwa}</span>
+					<div class="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
+						<div class="h-4 bg-blue-500 rounded-full transition-all" style="width: {item.pct}%"></div>
+					</div>
+					<span class="text-sm font-semibold text-slate-700 w-8 text-right shrink-0">{item.count}</span>
+				</div>
+			{/each}
+		</div>
+	{/if}
+</div>
+{/if}
+
+<!-- Składka miesięczna -->
+{#if appState.dashboardWidgets.includes('monthly_premium')}
+<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-6">
+	<h2 class="font-semibold text-slate-900 mb-1">Składka przypisana — bieżący miesiąc</h2>
+	<p class="text-xs text-slate-400 mb-4">{thisMonth.replace('-', '.')}</p>
+	<div class="flex items-end gap-4">
+		<div>
+			<div class="text-3xl font-bold text-slate-900">{fmtPln(premiumThisMonth)} <span class="text-sm font-normal text-slate-400">PLN</span></div>
+			<div class="flex items-center gap-1 mt-1 text-sm">
+				{#if premiumTrend === 'up'}
+					<TrendingUp size={16} class="text-emerald-500" />
+					<span class="text-emerald-600">Wzrost vs poprzedni miesiąc</span>
+				{:else}
+					<TrendingDown size={16} class="text-red-500" />
+					<span class="text-red-600">Spadek vs poprzedni miesiąc</span>
+				{/if}
+			</div>
+		</div>
+		<div class="ml-auto text-right">
+			<div class="text-sm text-slate-400">Poprzedni miesiąc</div>
+			<div class="text-lg font-semibold text-slate-500">{fmtPln(premiumLastMonth)} PLN</div>
+		</div>
+	</div>
+</div>
+{/if}
+
+<!-- Statystyki szkód (tylko broker) -->
+{#if appState.dashboardWidgets.includes('claims_stats') && isBroker()}
+<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-6">
+	<h2 class="font-semibold text-slate-900 mb-4">Statystyki szkód</h2>
+	<div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+		{#each claimsStats() as stat}
+			<div class="rounded-xl p-3 {stat.color}">
+				<div class="text-2xl font-bold">{stat.count}</div>
+				<div class="text-xs font-medium mt-0.5">{stat.status}</div>
+			</div>
+		{/each}
+	</div>
 </div>
 {/if}
