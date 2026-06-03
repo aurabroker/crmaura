@@ -53,7 +53,7 @@
 	}
 </script>
 
-<svelte:head><title>Odnowienia — FRANK</title></svelte:head>
+<svelte:head><title>Odnowienia — FRANK67 CRM</title></svelte:head>
 
 <div class="space-y-6">
 	<h1 class="text-2xl font-bold text-slate-900">Odnowienia</h1>

@@ -78,7 +78,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Rozliczenia — FRANK</title></svelte:head>
+<svelte:head><title>Rozliczenia — FRANK67 CRM</title></svelte:head>
 
 <h1 class="text-2xl font-semibold text-slate-900 mb-1">Rozliczenia i Prowizje</h1>
 <p class="text-sm text-slate-500 mb-6">Moduł administracji ubezpieczeniowej</p>

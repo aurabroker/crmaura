@@ -32,7 +32,7 @@
 	);
 </script>
 
-<svelte:head><title>Raport KNF — FRANK</title></svelte:head>
+<svelte:head><title>Raport KNF — FRANK67 CRM</title></svelte:head>
 
 <h1 class="text-2xl font-semibold text-amber-600 mb-1">Oficjalny Raport KNF</h1>
 <p class="text-sm text-slate-500 mb-6">

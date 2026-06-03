@@ -1,4 +1,4 @@
-<svelte:head><title>Ustawienia — FRANK</title></svelte:head>
+<svelte:head><title>Ustawienia — FRANK67 CRM</title></svelte:head>
 
 <script lang="ts">
 	import { sb } from '$lib/supabase';

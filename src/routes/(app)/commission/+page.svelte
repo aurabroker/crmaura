@@ -127,7 +127,7 @@
 	const statusLabel = (s: string) => (s === 'zamkniety' ? 'Rozliczony' : 'Otwarty');
 </script>
 
-<svelte:head><title>Twoja Prowizja — FRANK</title></svelte:head>
+<svelte:head><title>Twoja Prowizja — FRANK67 CRM</title></svelte:head>
 
 <div class="mb-6">
 	<h1 class="text-2xl font-semibold text-slate-900">Twoja Prowizja</h1>

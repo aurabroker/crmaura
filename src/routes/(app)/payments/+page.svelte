@@ -111,7 +111,7 @@
 	const totalPending = $derived(filtered.filter((p) => p.status !== 'Opłacona').reduce((s, p) => s + Number(p.kwota), 0));
 </script>
 
-<svelte:head><title>Płatności — FRANK</title></svelte:head>
+<svelte:head><title>Płatności — FRANK67 CRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
