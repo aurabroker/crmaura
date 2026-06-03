@@ -81,7 +81,7 @@
 		saving = false;
 		if (error) { formError = error.message; return; }
 		closeModal();
-		const { data } = await sb.from('crm_clients').select('*');
+		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
 
@@ -130,7 +130,7 @@
 
 <div class="flex items-center justify-between mb-6">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Klienci</h1>
+		<h1 class="text-2xl font-semibold text-slate-900">Klienci <span class="text-slate-400 text-lg font-normal">({appState.clients.length})</span></h1>
 		<p class="text-sm text-slate-500 mt-1">Zarządzanie portfelem i statusami RODO</p>
 	</div>
 	<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
