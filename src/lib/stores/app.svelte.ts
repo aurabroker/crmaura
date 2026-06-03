@@ -12,8 +12,13 @@ export const appState = $state({
 	insurers: [] as Insurer[],
 	brokers: [] as Profile[],
 	dashboardWidgets: ['renewals','claims','clients','renewal_rate','payments'] as string[],
+	tenantTyp: 'broker' as 'broker' | 'agent',
 	loading: false
 });
+
+export function isBroker(): boolean {
+	return appState.tenantTyp === 'broker';
+}
 
 export function isAdmin(profile: Profile | null): boolean {
 	if (!profile) return false;

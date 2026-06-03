@@ -3,6 +3,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	let nazwa_firmy = $state('');
+	let typ = $state<'broker' | 'agent'>('broker');
 	let email = $state('');
 	let imie_nazwisko = $state('');
 	let password = $state('');
@@ -34,7 +35,7 @@
 			const res = await fetch('/api/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ nazwa_firmy, email, imie_nazwisko, password })
+				body: JSON.stringify({ nazwa_firmy, typ, email, imie_nazwisko, password })
 			});
 			const data = await res.json();
 			if (!res.ok) {
@@ -78,6 +79,21 @@
 					<div>
 						<label class={labelCls} for="nazwa_firmy">Nazwa firmy / kancelarii *</label>
 						<input id="nazwa_firmy" class={inputCls} type="text" bind:value={nazwa_firmy} required />
+					</div>
+					<div>
+						<label class={labelCls}>Typ działalności *</label>
+						<div class="grid grid-cols-2 gap-2">
+							<button type="button" onclick={() => typ = 'broker'}
+								class="px-3 py-2 rounded-lg text-sm font-medium border transition-colors
+									{typ === 'broker' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+								Broker ubezpieczeniowy
+							</button>
+							<button type="button" onclick={() => typ = 'agent'}
+								class="px-3 py-2 rounded-lg text-sm font-medium border transition-colors
+									{typ === 'agent' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+								Agent ubezpieczeniowy
+							</button>
+						</div>
 					</div>
 					<div>
 						<label class={labelCls} for="email">Email admina *</label>

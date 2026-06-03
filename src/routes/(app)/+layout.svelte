@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { sb } from '$lib/supabase';
-	import { appState, isAdmin, isFinance } from '$lib/stores/app.svelte';
+	import { appState, isAdmin, isFinance, isBroker } from '$lib/stores/app.svelte';
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
@@ -18,10 +18,10 @@
 		{ href: '/dashboard', label: 'Pulpit', icon: LayoutDashboard, always: true },
 		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
 		{ href: '/policies', label: 'Polisy', icon: FileText, always: true },
-		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, always: true },
+		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, show: isBroker() },
 		{ href: '/payments', label: 'Płatności', icon: Calculator, always: true },
 		{ href: '/finance', label: 'Rozliczenia', icon: Calculator, show: isFinance(appState.profile) },
-		{ href: '/knf-report', label: 'Raport KNF', icon: Scale, show: isAdmin(appState.profile) },
+		{ href: '/knf-report', label: 'Raporty', icon: Scale, show: isAdmin(appState.profile) && isBroker() },
 		{ href: '/admin', label: 'Administracja', icon: Settings, show: isAdmin(appState.profile) }
 	]);
 
@@ -42,6 +42,9 @@
 		}
 
 		appState.profile = profile as typeof appState.profile;
+
+		const { data: tenant } = await sb.from('crm_tenants').select('typ').eq('id', profile.tenant_id).single();
+		appState.tenantTyp = (tenant?.typ as typeof appState.tenantTyp) ?? 'broker';
 
 		// Dashboard prefs
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
@@ -113,7 +116,7 @@
 						>
 							<item.icon size={15} />
 							{item.label}
-							{#if item.href === '/claims' && activeClaims > 0}
+							{#if item.href === '/claims' && activeClaims > 0 && isBroker()}
 								<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
 									{activeClaims > 9 ? '9+' : activeClaims}
 								</span>
@@ -142,9 +145,11 @@
 						<a href="/clients?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<Users size={15} /> Nowy Klient (RODO)
 						</a>
+						{#if isBroker()}
 						<a href="/claims?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<AlertTriangle size={15} /> Zgłoś Szkodę
 						</a>
+						{/if}
 						<a href="/clients?newvehicle=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<Plus size={15} /> Dodaj Pojazd
 						</a>

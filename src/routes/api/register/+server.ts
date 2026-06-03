@@ -4,7 +4,8 @@ import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
-	const { nazwa_firmy, email, imie_nazwisko, password } = body;
+	const { nazwa_firmy, typ, email, imie_nazwisko, password } = body;
+	const tenantTyp = typ === 'agent' ? 'agent' : 'broker';
 
 	if (!nazwa_firmy || !email || !imie_nazwisko || !password) {
 		throw error(400, { message: 'Wszystkie pola są wymagane.' });
@@ -30,7 +31,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	const { data: tenant, error: tenantErr } = await admin
 		.from('crm_tenants')
-		.insert([{ nazwa: nazwa_firmy }])
+		.insert([{ nazwa: nazwa_firmy, typ: tenantTyp }])
 		.select()
 		.single();
 
