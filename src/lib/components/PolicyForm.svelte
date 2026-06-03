@@ -127,7 +127,7 @@
 		<div>
 			<label class={labelCls}>Podtyp Umowy Generalnej *</label>
 			<div class="grid grid-cols-2 gap-2">
-				{#each [['flota','Flota (pojazdy)'],['gwarancje','Gwarancje ubezpieczeniowe'],['cpm','Maszyny budowlane (CPM)'],['car_ear','Budowy-Montaż (CAR/EAR)']] as [val, label]}
+				{#each [['flota','Flota (pojazdy)'],['gwarancje','Gwarancje ubezpieczeniowe'],['cpm','Maszyny budowlane (CPM)'],['car_ear','Budowy-Montaż (CAR/EAR)'],['oc_beauty','OC Branża Beauty (WA50/003353/24/A)']] as [val, label]}
 					<button
 						type="button"
 						onclick={() => fpUgPodtyp = val}
@@ -161,6 +161,7 @@
 				<option value="życie">Życie</option>
 				<option value="grupowe_medyczne">Grupowe Medyczne</option>
 				<option value="grupowe_życie">Grupowe życie</option>
+				<option value="utrata_dochodu">Ubezpieczenie utraty dochodu</option>
 				<option value="komunikacja">Komunikacja</option>
 				<option value="flota">Flota</option>
 				<option value="finansowa">Finansowa (Gwarancje)</option>
