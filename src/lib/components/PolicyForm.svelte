@@ -20,7 +20,23 @@
 	let fpDo = $state(policy?.data_do ?? '');
 	let fpZawarcia = $state((policy as any)?.data_zawarcia ?? '');
 	let fpRaty = $state(policy?.ilosc_rat ?? '1');
-	let fpDatyRat = $state(policy?.daty_rat ?? '');
+
+	// Parse existing daty_rat (comma-separated ISO dates) into array
+	function parseDatyRat(raw: string | null | undefined, count: number): string[] {
+		const parts = (raw ?? '').split(',').map(s => s.trim()).filter(Boolean);
+		const arr = Array.from({ length: count }, (_, i) => parts[i] ?? '');
+		return arr;
+	}
+
+	let fpDatyRatArr = $state<string[]>(parseDatyRat(policy?.daty_rat, parseInt(policy?.ilosc_rat ?? '1')));
+
+	// Resize array when fpRaty changes
+	$effect(() => {
+		const n = parseInt(fpRaty) || 1;
+		if (fpDatyRatArr.length !== n) {
+			fpDatyRatArr = Array.from({ length: n }, (_, i) => fpDatyRatArr[i] ?? '');
+		}
+	});
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
@@ -59,7 +75,7 @@
 			przedmiot: fpPrzedmiot || null,
 			data_od: fpOd, data_do: fpDo,
 			data_zawarcia: fpZawarcia || null,
-			ilosc_rat: fpRaty, daty_rat: fpDatyRat || null,
+			ilosc_rat: fpRaty, daty_rat: fpDatyRatArr.filter(Boolean).join(', ') || null,
 			skladka_przypisana: sklPrzyp,
 			skladka_zainkasowana: sklPrzyp,
 			skladka_zaliczkowa: parseFloat(fpSklZaliczkowa) || 0,
@@ -103,7 +119,8 @@
 			: appState.insurers
 	);
 	let tuDropOpen = $state(false);
-	const selectedTUName = $derived(appState.insurers.find(t => t.id === fpTu)?.nazwa ?? '');
+	const selectedTU = $derived(appState.insurers.find(t => t.id === fpTu));
+	const selectedTUName = $derived(selectedTU ? (selectedTU.skrot ? `${selectedTU.skrot} — ${selectedTU.nazwa}` : selectedTU.nazwa) : '');
 </script>
 
 <div class="space-y-4">
@@ -216,7 +233,7 @@
 					{#each filteredTU as t}
 						<button type="button" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
 							onmousedown={() => { fpTu = t.id; tuSearch = ''; tuDropOpen = false; }}>
-							{t.nazwa}
+							{#if t.skrot}<span class="font-mono font-semibold text-blue-700 mr-1">{t.skrot}</span>{/if}{t.nazwa}
 						</button>
 					{/each}
 				</div>
@@ -247,19 +264,31 @@
 			<input type="date" bind:value={fpDo} class={inputCls} />
 		</div>
 		{#if fpTypUmowy !== 'generalna'}
-		<div>
-			<label class={labelCls}>Raty</label>
-			<select bind:value={fpRaty} class={inputCls}>
-				<option value="1">1 rata</option>
-				<option value="2">2 raty</option>
-				<option value="4">4 raty</option>
-				<option value="12">12 rat</option>
-			</select>
+		<div class="col-span-2">
+			<label class={labelCls}>Liczba rat</label>
+			<div class="flex gap-2">
+				{#each [['1','Jednorazowo'],['2','2 raty'],['4','4 raty'],['12','12 rat']] as [val, lbl]}
+					<button type="button" onclick={() => fpRaty = val}
+						class="flex-1 py-1.5 rounded-lg text-sm border transition-colors
+							{fpRaty === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+						{lbl}
+					</button>
+				{/each}
+			</div>
 		</div>
-		<div>
-			<label class={labelCls}>Daty rat</label>
-			<input bind:value={fpDatyRat} placeholder="np. 01.01, 01.06" class={inputCls} />
+		{#if parseInt(fpRaty) > 1}
+		<div class="col-span-2">
+			<label class={labelCls}>Terminy płatności rat</label>
+			<div class="grid grid-cols-{Math.min(parseInt(fpRaty), 4)} gap-2">
+				{#each fpDatyRatArr as _, i}
+					<div>
+						<div class="text-[11px] text-slate-400 mb-1">Rata {i + 1}</div>
+						<input type="date" bind:value={fpDatyRatArr[i]} class={inputCls} />
+					</div>
+				{/each}
+			</div>
 		</div>
+		{/if}
 		{/if}
 	</div>
 

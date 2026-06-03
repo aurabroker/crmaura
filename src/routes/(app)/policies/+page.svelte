@@ -9,6 +9,7 @@
 	import { Search, Pencil, FilePlus2, ChevronDown, ChevronRight } from 'lucide-svelte';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 
 	let search = $state('');
 	let filterTyp = $state<'all' | 'jednostkowa' | 'generalna'>('all');
@@ -70,7 +71,7 @@
 
 	async function reloadPolicies() {
 		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa)'),
+			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
@@ -214,7 +215,7 @@
 		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
 			Zgłoś Szkodę
 		</button>
-		<button onclick={() => openNewPolicy()} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+		<button onclick={() => goto('/policies/new')} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 			+ Nowa Polisa / UG
 		</button>
 	</div>
@@ -245,7 +246,8 @@
 				<th class="px-5 py-3">Klient</th>
 				<th class="px-5 py-3">TU</th>
 				<th class="px-5 py-3">Rodzaj / Typ</th>
-				<th class="px-5 py-3">Okres</th>
+				<th class="px-5 py-3">OD</th>
+				<th class="px-5 py-3">DO</th>
 				<th class="px-5 py-3 text-right">Składka</th>
 				<th class="px-5 py-3">Status</th>
 				<th class="px-5 py-3">Akcje</th>
@@ -277,7 +279,13 @@
 						</div>
 					</td>
 					<td class="px-5 py-3">{p.crm_clients?.nazwa ?? '—'}</td>
-					<td class="px-5 py-3">{p.crm_insurers?.nazwa ?? '—'}</td>
+					<td class="px-5 py-3">
+						{#if p.crm_insurers?.skrot}
+							<span class="font-mono font-semibold text-blue-700" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
+						{:else}
+							{p.crm_insurers?.nazwa ?? '—'}
+						{/if}
+					</td>
 					<td class="px-5 py-3">
 						{#if isUG}
 							<Badge variant="info">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</Badge>
@@ -285,7 +293,8 @@
 							<Badge variant="neutral">{p.rodzaj}</Badge>
 						{/if}
 					</td>
-					<td class="px-5 py-3 text-xs">{p.data_od}<br/>{p.data_do}</td>
+					<td class="px-5 py-3 text-xs">{p.data_od}</td>
+					<td class="px-5 py-3 text-xs">{p.data_do}</td>
 					<td class="px-5 py-3 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
 					<td class="px-5 py-3">
 						<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
@@ -324,9 +333,16 @@
 						<tr class="border-t border-slate-100 bg-slate-50/80">
 							<td class="pl-12 pr-5 py-2.5 font-medium text-sm">↳ {ch.nr_polisy}</td>
 							<td class="px-5 py-2.5 text-sm">{ch.crm_clients?.nazwa ?? '—'}</td>
-							<td class="px-5 py-2.5 text-sm">{ch.crm_insurers?.nazwa ?? '—'}</td>
+							<td class="px-5 py-2.5 text-sm">
+							{#if ch.crm_insurers?.skrot}
+								<span class="font-mono font-semibold text-blue-700" title={ch.crm_insurers.nazwa}>{ch.crm_insurers.skrot}</span>
+							{:else}
+								{ch.crm_insurers?.nazwa ?? '—'}
+							{/if}
+						</td>
 							<td class="px-5 py-2.5"><Badge variant="neutral">{ch.rodzaj}</Badge></td>
-							<td class="px-5 py-2.5 text-xs">{ch.data_od}<br/>{ch.data_do}</td>
+							<td class="px-5 py-2.5 text-xs">{ch.data_od}</td>
+							<td class="px-5 py-2.5 text-xs">{ch.data_do}</td>
 							<td class="px-5 py-2.5 text-right">{fmtPln(ch.skladka_przypisana)}</td>
 							<td class="px-5 py-2.5">
 								<Badge variant={chSt.badge === 'badge-error' ? 'error' : chSt.badge === 'badge-warning' ? 'warning' : 'success'}>{chSt.label}</Badge>
@@ -340,7 +356,7 @@
 					{/each}
 				{/if}
 			{:else}
-				<tr><td colspan="8" class="px-5 py-8 text-center text-slate-400">Brak polis</td></tr>
+				<tr><td colspan="9" class="px-5 py-8 text-center text-slate-400">Brak polis</td></tr>
 			{/each}
 		</tbody>
 	</table>
