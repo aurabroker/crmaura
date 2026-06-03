@@ -33,18 +33,12 @@
 		const { data: { user } } = await sb.auth.getUser();
 		if (!user) { goto('/login'); return; }
 
-		let { data: profile } = await sb.from('crm_profiles').select('*').eq('id', user.id).single();
+		const { data: profile } = await sb.from('crm_profiles').select('*').eq('id', user.id).single();
 
 		if (!profile || !profile.tenant_id) {
-			let { data: tenant } = await sb.from('crm_tenants').select('id').limit(1).single();
-			let tId: string;
-			if (!tenant) {
-				const res = await sb.from('crm_tenants').insert({ nazwa: 'Aura Brokers' }).select().single();
-				tId = res.data!.id;
-			} else { tId = tenant.id; }
-			const profPayload = { id: user.id, email: user.email!, rola: 'ADMIN GOD' as const, tenant_id: tId, imie_nazwisko: 'Główny Administrator' };
-			await sb.from('crm_profiles').upsert(profPayload);
-			profile = profPayload as typeof profile;
+			await sb.auth.signOut();
+			goto('/login');
+			return;
 		}
 
 		appState.profile = profile as typeof appState.profile;

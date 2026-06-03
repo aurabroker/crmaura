@@ -10,18 +10,29 @@
 	let tenants = $state<Tenant[]>([]);
 	let allProfiles = $state<ProfileRow[]>([]);
 	let loading = $state(true);
+	let loadError = $state('');
 
 	onMount(async () => {
 		if (appState.profile?.rola !== 'ADMIN GOD') {
 			goto('/dashboard');
 			return;
 		}
-		const [tRes, pRes] = await Promise.all([
-			sb.from('crm_tenants').select('*').order('created_at', { ascending: false }),
-			sb.from('crm_profiles').select('*')
-		]);
-		tenants = (tRes.data ?? []) as Tenant[];
-		allProfiles = (pRes.data ?? []) as ProfileRow[];
+		const { data: { session } } = await sb.auth.getSession();
+		if (!session) { goto('/login'); return; }
+
+		const res = await fetch('/api/saas-admin/tenants', {
+			headers: { 'Authorization': `Bearer ${session.access_token}` }
+		});
+
+		if (!res.ok) {
+			loadError = 'Brak uprawnień lub błąd serwera';
+			loading = false;
+			return;
+		}
+
+		const data = await res.json();
+		tenants = data.tenants;
+		allProfiles = data.profiles;
 		loading = false;
 	});
 
@@ -40,11 +51,12 @@
 
 {#if loading}
 	<div class="flex items-center justify-center py-20 text-slate-400 text-sm">Ładowanie...</div>
+{:else if loadError}
+	<div class="flex items-center justify-center py-20 text-red-500 text-sm">{loadError}</div>
 {:else}
 <div class="space-y-6">
 	<h1 class="text-2xl font-bold text-slate-900">SAAS Admin — Wszystkie firmy</h1>
 
-	<!-- Summary -->
 	<div class="grid grid-cols-2 gap-4 max-w-sm">
 		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
 			<div class="text-2xl font-bold text-slate-900">{tenants.length}</div>
@@ -56,7 +68,6 @@
 		</div>
 	</div>
 
-	<!-- Table -->
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 		<table class="w-full text-sm">
 			<thead class="bg-slate-50 border-b border-slate-200">

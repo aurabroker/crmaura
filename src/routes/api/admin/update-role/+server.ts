@@ -1,12 +1,9 @@
 import { json, error } from '@sveltejs/kit';
-import { createClient } from '@supabase/supabase-js';
-import { SB_URL } from '$lib/supabase';
+import { requireAdmin } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
-const SERVICE_ROLE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY ?? '';
-
 export const POST: RequestHandler = async ({ request }) => {
-	if (!SERVICE_ROLE_KEY) throw error(500, 'Service role key not configured');
+	const { profile, admin } = await requireAdmin(request);
 
 	const { user_id, role, imie_nazwisko, stanowisko } = await request.json() as {
 		user_id: string;
@@ -15,9 +12,16 @@ export const POST: RequestHandler = async ({ request }) => {
 		stanowisko: string;
 	};
 
-	const admin = createClient(SB_URL, SERVICE_ROLE_KEY, {
-		auth: { autoRefreshToken: false, persistSession: false }
-	});
+	if (!user_id || !role) throw error(400, 'Podaj user_id i rolę');
+
+	const { data: target } = await admin.from('crm_profiles')
+		.select('tenant_id')
+		.eq('id', user_id)
+		.single();
+
+	if (!target || target.tenant_id !== profile.tenant_id) {
+		throw error(403, 'Nie możesz edytować użytkowników spoza swojej firmy');
+	}
 
 	const { error: err } = await admin.from('crm_profiles').update({
 		rola: role,

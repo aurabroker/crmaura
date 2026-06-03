@@ -10,6 +10,11 @@
 
 	onMount(() => { if (!isAdmin(appState.profile)) goto('/dashboard'); });
 
+	async function authHeaders(): Promise<Record<string, string>> {
+		const { data: { session } } = await sb.auth.getSession();
+		return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` };
+	}
+
 	// --- TU ---
 	let showTU = $state(false);
 	let editingTU = $state<Insurer | null>(null);
@@ -57,12 +62,11 @@
 		inviting=true; inviteError=''; inviteSuccess='';
 		const res = await fetch('/api/admin/invite', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: await authHeaders(),
 			body: JSON.stringify({
 				email: iEmail.trim(),
 				role: iRole,
-				imie_nazwisko: iNazwa.trim() || null,
-				tenant_id: appState.profile!.tenant_id
+				imie_nazwisko: iNazwa.trim() || null
 			})
 		});
 		inviting=false;
@@ -80,7 +84,7 @@
 		savingUser=true; userError='';
 		const res = await fetch('/api/admin/update-role', {
 			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
+			headers: await authHeaders(),
 			body: JSON.stringify({ user_id: editingUser.id, role: uRole, imie_nazwisko: uNazwa, stanowisko: uStanowisko })
 		});
 		savingUser=false;

@@ -1,32 +1,24 @@
 import { json, error } from '@sveltejs/kit';
-import { createClient } from '@supabase/supabase-js';
-import { SB_URL } from '$lib/supabase';
+import { requireAdmin } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
-
-const SERVICE_ROLE_KEY = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY ?? '';
 
 function generatePassword(): string {
 	const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#';
-	let pass = '';
-	for (let i = 0; i < 12; i++) pass += chars[Math.floor(Math.random() * chars.length)];
-	return pass;
+	const bytes = new Uint8Array(12);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes, (b) => chars[b % chars.length]).join('');
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-	if (!SERVICE_ROLE_KEY) throw error(500, 'Service role key not configured');
+	const { profile, admin } = await requireAdmin(request);
 
-	const { email, role, imie_nazwisko, tenant_id } = await request.json() as {
+	const { email, role, imie_nazwisko } = await request.json() as {
 		email: string;
 		role: string;
 		imie_nazwisko: string;
-		tenant_id: string;
 	};
 
-	if (!email || !role || !tenant_id) throw error(400, 'Missing required fields');
-
-	const admin = createClient(SB_URL, SERVICE_ROLE_KEY, {
-		auth: { autoRefreshToken: false, persistSession: false }
-	});
+	if (!email || !role) throw error(400, 'Podaj email i rolę');
 
 	const tempPassword = generatePassword();
 
@@ -44,7 +36,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		email,
 		imie_nazwisko: imie_nazwisko || null,
 		rola: role,
-		tenant_id
+		tenant_id: profile.tenant_id
 	});
 
 	if (profileErr) throw error(500, profileErr.message);
