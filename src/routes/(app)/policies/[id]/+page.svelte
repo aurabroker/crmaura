@@ -15,6 +15,10 @@
 	const annexes = $derived(appState.annexes.filter(a => a.polisa_id === policyId));
 	const payments = $derived(appState.payments.filter(p => p.polisa_id === policyId));
 	const polisaBrokers = $derived(appState.policyBrokers.filter(pb => pb.polisa_id === policyId));
+	// Child policies (certyfikaty) for UG
+	const childPolicies = $derived(appState.policies.filter(p => p.parent_id === policyId));
+	const childSkladka = $derived(childPolicies.reduce((s, p) => s + (p.skladka_przypisana ?? 0), 0));
+	const childProwizja = $derived(childPolicies.reduce((s, p) => s + (p.prowizja_przypisana ?? 0), 0));
 
 	// Policy brokers management
 	let showBrokers = $state(false);
@@ -228,6 +232,53 @@
 				<span class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm">Rata {i+1}: <strong>{d.trim()}</strong></span>
 			{/each}
 		</div>
+	</div>
+	{/if}
+
+	<!-- Polisy podrzędne (certyfikaty) UG -->
+	{#if childPolicies.length > 0}
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
+		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+			<p class="text-sm font-semibold text-slate-700">Polisy w ramach UG ({childPolicies.length})</p>
+			<div class="flex gap-4 text-xs text-slate-500">
+				<span>Łączna składka: <strong class="text-slate-900">{fmtPln(childSkladka)}</strong></span>
+				<span>Łączna prowizja: <strong class="text-emerald-700">{fmtPln(childProwizja)}</strong></span>
+			</div>
+		</div>
+		<table class="w-full text-sm text-left">
+			<thead>
+				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<th class="px-5 py-2">Nr polisy</th>
+					<th class="px-5 py-2">Klient</th>
+					<th class="px-5 py-2">OD</th>
+					<th class="px-5 py-2">DO</th>
+					<th class="px-5 py-2 text-right">Składka</th>
+					<th class="px-5 py-2 text-right">Prowizja</th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each childPolicies as cp}
+					{@const cst = policyStatus(cp.data_do)}
+					<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<td class="px-5 py-2">
+							<a href="/policies/{cp.id}" class="font-medium text-blue-700 hover:underline">{cp.nr_polisy}</a>
+						</td>
+						<td class="px-5 py-2 text-slate-600">
+							<a href="/clients/{cp.klient_id}" class="hover:text-blue-700 hover:underline">{cp.crm_clients?.nazwa ?? '—'}</a>
+						</td>
+						<td class="px-5 py-2 text-slate-500">{cp.data_od ?? '—'}</td>
+						<td class="px-5 py-2 text-slate-500">{cp.data_do ?? '—'}</td>
+						<td class="px-5 py-2 text-right font-medium">{fmtPln(cp.skladka_przypisana)}</td>
+						<td class="px-5 py-2 text-right text-emerald-600">{fmtPln(cp.prowizja_przypisana)}</td>
+					</tr>
+				{/each}
+				<tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+					<td colspan="4" class="px-5 py-2 text-sm text-slate-600">SUMA</td>
+					<td class="px-5 py-2 text-right">{fmtPln(childSkladka)}</td>
+					<td class="px-5 py-2 text-right text-emerald-700">{fmtPln(childProwizja)}</td>
+				</tr>
+			</tbody>
+		</table>
 	</div>
 	{/if}
 
