@@ -175,9 +175,8 @@
 			<input type="number" step="0.01" bind:value={settleKwotaTU} class={inputCls} />
 			<p class="text-xs text-slate-400 mt-1">Jeśli mniejsza od przypisanej — polisa rozliczona częściowo</p>
 		</div>
-		{@const preview = ((parseFloat(settleKwotaTU) || 0) * settlePolicy.prowizja_pct) / 100}
 		<div class="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">
-			Prowizja do zainkasowania: <strong class="text-emerald-700">{fmtPln(preview)}</strong>
+			Prowizja do zainkasowania: <strong class="text-emerald-700">{fmtPln(((parseFloat(settleKwotaTU) || 0) * settlePolicy.prowizja_pct) / 100)}</strong>
 		</div>
 	</div>
 	{/if}
