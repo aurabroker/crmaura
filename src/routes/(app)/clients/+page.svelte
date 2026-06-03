@@ -116,9 +116,10 @@
 		appState.vehicles = (data ?? []) as typeof appState.vehicles;
 	}
 
-	onMount(() => {
-		if ($page.url.searchParams.get('newvehicle') === '1') openNewVehicle();
-		if ($page.url.searchParams.get('new') === '1') openNew();
+	$effect(() => {
+		const params = $page.url.searchParams;
+		if (params.get('newvehicle') === '1') openNewVehicle();
+		if (params.get('new') === '1') openNew();
 	});
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
