@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { KeyRound } from 'lucide-svelte';
+	import { KeyRound, RefreshCw } from 'lucide-svelte';
 
 	type Tenant = { id: string; nazwa: string; created_at: string };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
@@ -22,6 +22,11 @@
 	let resetLoading = $state(false);
 	let resetError = $state('');
 	let resetSuccess = $state('');
+
+	// Sync state
+	let syncLoading = $state(false);
+	let syncResult = $state('');
+	let syncLog = $state<{started_at: string; records_synced: number; status: string; error: string | null}[]>([]);
 
 	onMount(async () => {
 		if (appState.profile?.rola !== 'ADMIN GOD') {
@@ -45,7 +50,37 @@
 		tenants = data.tenants;
 		allProfiles = data.profiles;
 		loading = false;
+		loadSyncLog();
 	});
+
+	async function loadSyncLog() {
+		const { data } = await sb.from('crm_sync_log')
+			.select('started_at, records_synced, status, error')
+			.eq('source', 'beauty.crm_companies')
+			.order('started_at', { ascending: false })
+			.limit(5);
+		syncLog = (data ?? []) as typeof syncLog;
+	}
+
+	async function triggerSync() {
+		syncLoading = true; syncResult = '';
+		try {
+			const { data: { session } } = await sb.auth.getSession();
+			const res = await fetch('https://kukvgsjrmrqtzhkszzum.supabase.co/functions/v1/sync-beauty-companies', {
+				method: 'POST',
+				headers: { 'Authorization': `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+				body: '{}'
+			});
+			const json = await res.json();
+			if (res.ok) syncResult = `Zsynchronizowano ${json.synced} firm`;
+			else syncResult = `Błąd: ${json.error}`;
+		} catch (e: any) {
+			syncResult = `Błąd połączenia: ${e.message}`;
+		} finally {
+			syncLoading = false;
+			await loadSyncLog();
+		}
+	}
 
 	function profilesFor(tenantId: string) {
 		return allProfiles.filter((p) => p.tenant_id === tenantId);
@@ -173,6 +208,45 @@
 				{/if}
 			</tbody>
 		</table>
+	</div>
+
+	<!-- Sync BEAUTY -->
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+		<div class="flex items-center justify-between mb-3">
+			<div>
+				<h2 class="text-sm font-semibold text-slate-900">Synchronizacja BEAUTY → Aura Expert</h2>
+				<p class="text-xs text-slate-500 mt-0.5">Klienci z crm_companies (BEAUTY) → crm_clients. Automatycznie o 7:00.</p>
+			</div>
+			<button
+				onclick={triggerSync}
+				disabled={syncLoading}
+				class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+			>
+				<RefreshCw size={14} class={syncLoading ? 'animate-spin' : ''} />
+				{syncLoading ? 'Synchronizuję...' : 'Aktualizuj teraz'}
+			</button>
+		</div>
+		{#if syncResult}
+			<p class="text-sm {syncResult.startsWith('Błąd') ? 'text-red-600' : 'text-emerald-600'} mb-3">{syncResult}</p>
+		{/if}
+		{#if syncLog.length > 0}
+			<table class="w-full text-xs text-slate-600">
+				<thead><tr class="text-slate-400 text-left border-b border-slate-100">
+					<th class="pb-1">Data</th><th class="pb-1">Rekordów</th><th class="pb-1">Status</th>
+				</tr></thead>
+				<tbody>
+					{#each syncLog as log}
+						<tr class="border-b border-slate-50">
+							<td class="py-1">{new Date(log.started_at).toLocaleString('pl-PL')}</td>
+							<td class="py-1">{log.records_synced ?? '—'}</td>
+							<td class="py-1 {log.status === 'error' ? 'text-red-500' : log.status === 'done' ? 'text-emerald-600' : 'text-amber-500'}">
+								{log.status}{log.error ? `: ${log.error}` : ''}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		{/if}
 	</div>
 </div>
 {/if}
