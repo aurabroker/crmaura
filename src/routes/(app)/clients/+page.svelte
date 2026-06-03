@@ -100,15 +100,14 @@
 	async function saveVehicle() {
 		if (!vKlient || !vRej) { vehicleError = 'Wybierz klienta i podaj nr rejestracyjny.'; return; }
 		savingV = true; vehicleError = '';
+		const markaModel = [vMarka.trim(), vModel.trim()].filter(Boolean).join(' ') || 'Nieznany';
 		const { error } = await sb.from('crm_vehicles').insert([{
 			tenant_id: appState.profile!.tenant_id,
 			klient_id: vKlient,
 			nr_rejestracyjny: vRej.trim(),
-			marka: vMarka.trim() || null,
-			model: vModel.trim() || null,
+			marka_model: markaModel,
 			rok_produkcji: vRok ? parseInt(vRok) : null,
-			vin: vVin.trim() || null,
-			uwagi: vUwagi.trim() || null
+			vin: vVin.trim() || null
 		}]);
 		savingV = false;
 		if (error) { vehicleError = error.message; return; }
@@ -255,7 +254,6 @@
 			<div><label class={labelCls}>Marka</label><input bind:value={vMarka} class={inputCls} placeholder="Toyota" /></div>
 			<div><label class={labelCls}>Model</label><input bind:value={vModel} class={inputCls} placeholder="Corolla" /></div>
 			<div><label class={labelCls}>Rok produkcji</label><input type="number" bind:value={vRok} class={inputCls} placeholder="2022" /></div>
-			<div><label class={labelCls}>Uwagi</label><input bind:value={vUwagi} class={inputCls} /></div>
 		</div>
 	</div>
 </Modal>
