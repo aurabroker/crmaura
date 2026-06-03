@@ -7,12 +7,19 @@
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
-		AlertTriangle, RefreshCw, Target, Coins
+		AlertTriangle, RefreshCw, Target, Coins, RotateCcw
 	} from 'lucide-svelte';
 
 	let { children } = $props();
 	let addMenuOpen = $state(false);
 	let initialized = $state(false);
+	let refreshing = $state(false);
+
+	async function refreshData() {
+		refreshing = true;
+		await loadData();
+		refreshing = false;
+	}
 
 	const navItems = $derived([
 		{ href: '/dashboard', label: 'Pulpit', icon: LayoutDashboard, always: true },
@@ -174,6 +181,9 @@
 					<ShieldCheck size={18} />
 				</a>
 			{/if}
+			<button onclick={refreshData} disabled={refreshing} class="text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-40" title="Odśwież dane">
+				<RotateCcw size={16} class={refreshing ? 'animate-spin' : ''} />
+			</button>
 			<a href="/settings" class="text-slate-400 hover:text-slate-700 transition-colors" title="Ustawienia">
 				<Settings size={18} />
 			</a>
