@@ -208,7 +208,7 @@
 	}
 </script>
 
-<svelte:head><title>Pulpit — AuraCRM</title></svelte:head>
+<svelte:head><title>Pulpit — FRANK</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>

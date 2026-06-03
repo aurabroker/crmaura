@@ -203,7 +203,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Polisy — AuraCRM</title></svelte:head>
+<svelte:head><title>Polisy — FRANK</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>

@@ -11,7 +11,7 @@
 	const rows = $derived(appState.policies.filter((p) => p.prowizja_przypisana > 0 || p.prowizja_pct > 0));
 </script>
 
-<svelte:head><title>Rozliczenia — AuraCRM</title></svelte:head>
+<svelte:head><title>Rozliczenia — FRANK</title></svelte:head>
 
 <h1 class="text-2xl font-semibold text-slate-900 mb-1">Rozliczenia i Prowizje</h1>
 <p class="text-sm text-slate-500 mb-6">Moduł administracji ubezpieczeniowej</p>

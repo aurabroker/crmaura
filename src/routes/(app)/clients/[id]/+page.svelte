@@ -97,7 +97,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>{client?.nazwa ?? 'Klient'} — AuraCRM</title></svelte:head>
+<svelte:head><title>{client?.nazwa ?? 'Klient'} — FRANK</title></svelte:head>
 
 {#if !client}
 	<p class="text-slate-400">Klient nie istnieje lub nie masz dostępu.</p>
