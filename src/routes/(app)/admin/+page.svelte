@@ -110,49 +110,52 @@
 
 <div class="grid grid-cols-2 gap-6 mb-6">
 	<!-- TU -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-			<h2 class="font-semibold text-slate-900">Towarzystwa Ubezpieczeniowe</h2>
-			<button onclick={openNewTU} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50">+ Dodaj TU</button>
-		</div>
-		<table class="w-full text-left text-sm">
-			<thead>
-				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-5 py-3">Skrót</th>
-					<th class="px-5 py-3">Nazwa</th>
-					<th class="px-5 py-3">Dział</th>
-					<th class="px-5 py-3">NIP / KRS</th>
-					<th class="px-5 py-3"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each appState.insurers as t}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
-						<td class="px-5 py-3">
-							{#if t.skrot}
-								<span class="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">{t.skrot}</span>
-							{:else}
-								<span class="text-slate-300 text-xs">—</span>
-							{/if}
-						</td>
-						<td class="px-5 py-3">
-							<div class="font-medium">{t.nazwa}</div>
-							{#if t.ulica}<div class="text-xs text-slate-400">{t.ulica}</div>{/if}
-						</td>
-						<td class="px-5 py-3"><Badge variant="info">{t.dzial}</Badge></td>
-						<td class="px-5 py-3 text-xs text-slate-500">
-							{#if t.nip}NIP: {t.nip}<br/>{/if}
-							{#if t.krs}KRS: {t.krs}{/if}
-						</td>
-						<td class="px-5 py-3">
-							<button onclick={() => openEditTU(t)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
-						</td>
-					</tr>
-				{:else}
-					<tr><td colspan="4" class="px-5 py-6 text-center text-slate-400">Brak TU</td></tr>
-				{/each}
-			</tbody>
-		</table>
+	<div class="space-y-4">
+		{#each [['Majątkowy', 'Majątkowe'], ['Życiowy', 'Życiowe']] as [dzial, label]}
+			{@const tuDzial = appState.insurers.filter(t => t.dzial === dzial)}
+			<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+				<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+					<h2 class="font-semibold text-slate-900">TU — {label} <span class="text-xs font-normal text-slate-400">({tuDzial.length})</span></h2>
+					<button onclick={openNewTU} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50">+ Dodaj TU</button>
+				</div>
+				<table class="w-full text-left text-sm">
+					<thead>
+						<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+							<th class="px-5 py-3">Skrót</th>
+							<th class="px-5 py-3">Nazwa</th>
+							<th class="px-5 py-3">NIP / KRS</th>
+							<th class="px-5 py-3"></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each tuDzial as t}
+							<tr class="border-t border-slate-100 hover:bg-slate-50">
+								<td class="px-5 py-3">
+									{#if t.skrot}
+										<span class="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">{t.skrot}</span>
+									{:else}
+										<span class="text-slate-300 text-xs">—</span>
+									{/if}
+								</td>
+								<td class="px-5 py-3">
+									<div class="font-medium">{t.nazwa}</div>
+									{#if t.ulica}<div class="text-xs text-slate-400">{t.ulica}</div>{/if}
+								</td>
+								<td class="px-5 py-3 text-xs text-slate-500">
+									{#if t.nip}NIP: {t.nip}<br/>{/if}
+									{#if t.krs}KRS: {t.krs}{/if}
+								</td>
+								<td class="px-5 py-3">
+									<button onclick={() => openEditTU(t)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
+								</td>
+							</tr>
+						{:else}
+							<tr><td colspan="4" class="px-5 py-6 text-center text-slate-400">Brak TU {label.toLowerCase()}</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/each}
 	</div>
 
 	<!-- Brokerzy -->
