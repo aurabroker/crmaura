@@ -6,7 +6,6 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import PolicyForm from '$lib/components/PolicyForm.svelte';
 	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2 } from 'lucide-svelte';
 	import type { PolicyBroker } from '$lib/types/database';
 
@@ -102,30 +101,6 @@
 		ugEditOpen = false; ugEditSaving = false;
 	}
 
-	// Edit modal
-	let showEdit = $state(false);
-	let editForm = $state<ReturnType<typeof PolicyForm> | null>(null);
-	let saving = $state(false);
-	let formError = $state('');
-
-	async function saveEdit() {
-		if (!editForm || !policy) return;
-		const err = editForm.isValid();
-		if (err) { formError = err; return; }
-		saving = true; formError = '';
-		const vals = editForm.getValues();
-		const { error } = await sb.from('crm_policies').update(vals).eq('id', policy.id);
-		saving = false;
-		if (error) { formError = error.message; return; }
-		showEdit = false;
-		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
-			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
-		]);
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
-		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
-	}
-
 	// Annex modal
 	let showAnnex = $state(false);
 	let axNr = $state(''); let axTyp = $state<'korekta'|'doubezpieczenie'|'zmiana_zakresu'|'inne'>('korekta');
@@ -202,9 +177,9 @@
 			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<FilePlus2 size={14} /> Aneks
 			</button>
-			<button onclick={() => { showEdit = true; formError = ''; }} class="flex items-center gap-1.5 text-sm bg-slate-900 text-white rounded-lg px-3 py-2 hover:bg-slate-700">
+			<a href="/policies/{policyId}/edit" class="flex items-center gap-1.5 text-sm bg-slate-900 text-white rounded-lg px-3 py-2 hover:bg-slate-700">
 				<Pencil size={14} /> Edytuj
-			</button>
+			</a>
 		</div>
 	</div>
 
@@ -412,19 +387,6 @@
 	</div>
 	{/if}
 {/if}
-
-<!-- Modal: Edytuj -->
-{#if policy}
-<Modal title="Edytuj Polisę — {policy.nr_polisy}" open={showEdit} onclose={() => { showEdit = false; formError = ''; }}>
-	{#snippet footer()}
-		<button onclick={() => { showEdit = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveEdit} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : 'Zapisz zmiany'}
-		</button>
-	{/snippet}
-	{#if formError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-	<PolicyForm bind:this={editForm} {policy} />
-</Modal>
 
 <!-- Modal: Aneks -->
 <Modal title="Aneks do polisy {policy.nr_polisy}" open={showAnnex} onclose={() => { showAnnex = false; axError = ''; }}>
