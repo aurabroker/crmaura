@@ -192,10 +192,16 @@
 
 	let tuSearch = $state('');
 	let tuOpen = $state(false);
+	const udTU = ['ceu', 'leadenhall'];
+	const availableTU = $derived(
+		isUD
+			? appState.insurers.filter(t => udTU.some(k => (t.skrot ?? t.nazwa).toLowerCase().includes(k)))
+			: appState.insurers
+	);
 	const filteredTU = $derived(
 		tuSearch.trim()
-			? appState.insurers.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()) || (t.skrot ?? '').toLowerCase().includes(tuSearch.toLowerCase()))
-			: appState.insurers
+			? availableTU.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()) || (t.skrot ?? '').toLowerCase().includes(tuSearch.toLowerCase()))
+			: availableTU
 	);
 	const selectedTU = $derived(appState.insurers.find(t => t.id === fpTu));
 	const selectedTUName = $derived(selectedTU ? (selectedTU.skrot ? `${selectedTU.skrot} — ${selectedTU.nazwa}` : selectedTU.nazwa) : '');
