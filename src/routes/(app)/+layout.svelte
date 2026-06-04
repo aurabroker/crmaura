@@ -62,7 +62,7 @@
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
 		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
 
-		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB] = await Promise.all([
+		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
@@ -72,7 +72,8 @@
 			sb.from('crm_apk_logs').select('*, crm_policies(nr_polisy, crm_clients(nazwa))'),
 			sb.from('crm_insurers').select('*').order('nazwa'),
 			sb.from('crm_profiles').select('*'),
-			sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)')
+			sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)'),
+			sb.from('crm_client_contacts').select('*')
 		]);
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
@@ -85,6 +86,7 @@
 		appState.insurers = (rI.data ?? []) as typeof appState.insurers;
 		appState.brokers = (rPr.data ?? []) as typeof appState.brokers;
 		appState.policyBrokers = (rPB.data ?? []) as typeof appState.policyBrokers;
+		appState.clientContacts = (rCC.data ?? []) as typeof appState.clientContacts;
 		initialized = true;
 	}
 
@@ -164,7 +166,7 @@
 							<AlertTriangle size={15} /> Zgłoś Szkodę
 						</a>
 						{/if}
-						<a href="/clients?newvehicle=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+						<a href="/vehicles/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<Plus size={15} /> Dodaj Pojazd
 						</a>
 						<a href="/policies/new?typ=generalna&podtyp=gwarancje" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">

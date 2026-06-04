@@ -20,7 +20,9 @@ export interface Client {
 	id: string;
 	tenant_id: string;
 	opiekun_id: string | null;
+	typ: 'firma' | 'osoba';
 	nazwa: string;
+	nazwa_skrocona: string | null;
 	ulica: string | null;
 	nip: string | null;
 	pesel: string | null;
@@ -29,6 +31,18 @@ export interface Client {
 	rodo_zgoda: boolean;
 	rodo_data: string | null;
 	rodo_kanal: string | null;
+	created_at?: string;
+}
+
+export interface ClientContact {
+	id: string;
+	tenant_id: string;
+	klient_id: string;
+	imie_nazwisko: string;
+	stanowisko: string | null;
+	telefon: string | null;
+	email: string | null;
+	notatki: string | null;
 	created_at?: string;
 }
 
@@ -44,7 +58,7 @@ export interface Insurer {
 }
 
 export type TypUmowy = 'jednostkowa' | 'generalna';
-export type UgPodtyp = 'flota' | 'gwarancje' | 'cpm' | 'car_ear';
+export type UgPodtyp = 'flota' | 'gwarancje' | 'cpm' | 'car_ear' | 'oc_beauty';
 
 export interface Policy {
 	id: string;
@@ -65,6 +79,7 @@ export interface Policy {
 	prowizja_zainkasowana: number;
 	typ_umowy: TypUmowy;
 	ug_podtyp: UgPodtyp | null;
+	ug_default_prowizja_pct: number | null;
 	parent_id: string | null;
 	skladka_zaliczkowa: number;
 	data_zawarcia: string | null;
@@ -116,6 +131,10 @@ export interface Vehicle {
 	marka_model: string;
 	vin: string | null;
 	rok_produkcji: number | null;
+	rodzaj_pojazdu: string | null;
+	moc: number | null;
+	pojemnosc_silnika: number | null;
+	ladownosc: number | null;
 }
 
 export interface ApkLog {

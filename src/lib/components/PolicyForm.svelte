@@ -40,6 +40,7 @@
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
 	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
+	let fpUgDefaultProwizja = $state(policy?.ug_default_prowizja_pct?.toString() ?? '');
 
 	$effect(() => {
 		if (fpOd && !fpDo) {
@@ -58,6 +59,16 @@
 		}
 	});
 
+	// Auto-fill prowizja from parent UG default
+	$effect(() => {
+		if (fpParentId && !policy) {
+			const parent = appState.policies.find(p => p.id === fpParentId);
+			if (parent?.ug_default_prowizja_pct) {
+				fpProwPct = parent.ug_default_prowizja_pct.toString();
+			}
+		}
+	});
+
 	export function getValues() {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const prowPct = parseFloat(fpProwPct) || 0;
@@ -67,6 +78,7 @@
 			rodzaj: fpTypUmowy === 'generalna' ? `umowa_generalna_${fpUgPodtyp}` : fpRodzaj,
 			typ_umowy: fpTypUmowy,
 			ug_podtyp: fpTypUmowy === 'generalna' ? fpUgPodtyp || null : null,
+			ug_default_prowizja_pct: fpTypUmowy === 'generalna' ? (parseFloat(fpUgDefaultProwizja) || null) : null,
 			parent_id: fpParentId || null,
 			przedmiot: fpPrzedmiot || null,
 			data_od: fpOd, data_do: fpDo,
@@ -79,6 +91,15 @@
 			prowizja_przypisana: prowPrzyp,
 			prowizja_zainkasowana: 0
 		};
+	}
+
+	export function getDatyRat(): { nr: number; data: string; kwota: number }[] {
+		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
+		const n = parseInt(fpRaty) || 1;
+		const kwotaRaty = n > 0 ? sklPrzyp / n : sklPrzyp;
+		return fpDatyRatArr
+			.map((d, i) => ({ nr: i + 1, data: d.trim(), kwota: kwotaRaty }))
+			.filter(r => r.data);
 	}
 
 	export function isValid(): string | null {
@@ -120,6 +141,7 @@
 	const selectedTUName = $derived(selectedTU ? (selectedTU.skrot ? `${selectedTU.skrot} — ${selectedTU.nazwa}` : selectedTU.nazwa) : '');
 
 	const ratyCount = $derived(parseInt(fpRaty) || 1);
+	const RATY_OPCJE = ['1','2','3','4','6','12','24'];
 </script>
 
 <div class="space-y-3">
@@ -157,6 +179,12 @@
 						<option value={ug.id}>{ug.nr_polisy} ({ug.ug_podtyp}) — {ug.crm_clients?.nazwa}</option>
 					{/each}
 				</select>
+				{#if fpParentId}
+					{@const parentUg = generalPolicies.find(p => p.id === fpParentId)}
+					{#if parentUg?.ug_default_prowizja_pct}
+						<p class="text-[11px] text-blue-600 mt-1">Domyślna prowizja UG: {parentUg.ug_default_prowizja_pct}%</p>
+					{/if}
+				{/if}
 			</div>
 		{/if}
 		<div>
@@ -194,7 +222,7 @@
 					{#each filteredClients as c}
 						<button type="button" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
 							onmousedown={() => { fpKlient = c.id; clientSearch = ''; clientDropOpen = false; }}>
-							{c.nazwa}
+							{c.nazwa_skrocona ?? c.nazwa}
 						</button>
 					{/each}
 				</div>
@@ -257,27 +285,23 @@
 	<div>
 		<label class={labelCls}>Liczba rat i terminy płatności</label>
 		<div class="flex items-start gap-3">
-			<!-- przyciski rat -->
-			<div class="flex flex-col gap-1 shrink-0">
-				{#each [['1','Jednorazowo'],['2','2 raty'],['4','4 raty'],['12','12 rat']] as [val, lbl]}
-					<button type="button" onclick={() => fpRaty = val}
-						class="w-28 py-1.5 rounded-lg text-sm border text-center transition-colors
-							{fpRaty === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
-						{lbl}
-					</button>
-				{/each}
+			<!-- dropdown rat -->
+			<div class="shrink-0">
+				<select bind:value={fpRaty} class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-32">
+					{#each RATY_OPCJE as opt}
+						<option value={opt}>{opt === '1' ? 'Jednorazowo' : `${opt} rat`}</option>
+					{/each}
+				</select>
 			</div>
-			<!-- terminy dat -->
-			{#if ratyCount > 1}
+			<!-- terminy dat — zawsze widoczne (dla każdej liczby rat) -->
 			<div class="flex-1 grid gap-1.5" style="grid-template-columns: repeat({Math.min(ratyCount, 4)}, 1fr)">
 				{#each fpDatyRatArr as _, i}
 					<div>
-						<div class="text-[10px] text-slate-400 mb-1">Rata {i + 1}</div>
+						<div class="text-[10px] text-slate-400 mb-1">{ratyCount === 1 ? 'Termin płatności' : `Rata ${i + 1}`}</div>
 						<input type="date" bind:value={fpDatyRatArr[i]} class={inputSmCls} />
 					</div>
 				{/each}
 			</div>
-			{/if}
 		</div>
 	</div>
 	{/if}
@@ -294,6 +318,10 @@
 			<div>
 				<label class={labelCls}>Składka Zaliczkowa</label>
 				<input type="number" step="0.01" bind:value={fpSklZaliczkowa} class={inputCls} />
+			</div>
+			<div>
+				<label class={labelCls}>Domyślna prowizja dla polis (%) </label>
+				<input type="number" step="0.01" bind:value={fpUgDefaultProwizja} class={inputCls} placeholder="np. 15" />
 			</div>
 		{/if}
 		<div>

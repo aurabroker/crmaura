@@ -96,6 +96,10 @@
 	const statusVariant = (s: string) =>
 		s === 'Opłacona' ? 'success' : s === 'Zaległa' ? 'error' : 'warning';
 
+	function isOverdue(pay: PolicyPayment): boolean {
+		return pay.status === 'Oczekująca' && pay.data_platnosci < today;
+	}
+
 	// Miesiące do filtra
 	const months = $derived(() => {
 		const set = new Set<string>();
@@ -172,7 +176,7 @@
 			<table class="w-full text-left text-sm">
 				<tbody>
 					{#each pays as pay}
-						<tr class="border-t first:border-t-0 border-slate-100 hover:bg-slate-50 {pay.status === 'Zaległa' ? 'bg-red-50/40' : ''}">
+						<tr class="border-t first:border-t-0 border-slate-100 hover:bg-slate-50 {pay.status === 'Zaległa' || isOverdue(pay) ? 'bg-red-50/40' : ''}">
 							<td class="px-5 py-3 font-medium">{pay.crm_policies?.nr_polisy ?? '—'}</td>
 							<td class="px-5 py-3">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</td>
 							<td class="px-5 py-3 text-slate-500 text-xs">Rata {pay.nr_raty}</td>

@@ -5,16 +5,16 @@
 	import type { Client } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil } from 'lucide-svelte';
+	import { Search, Pencil, Building2, User } from 'lucide-svelte';
 	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
 
 	let search = $state('');
 	let showModal = $state(false);
 	let editingClient = $state<Client | null>(null);
+	let modalTyp = $state<'firma' | 'osoba'>('firma');
 
-	// Shared form state
 	let fNazwa = $state('');
+	let fNazwaSkrocona = $state('');
 	let fUlica = $state('');
 	let fNip = $state('');
 	let fRegon = $state('');
@@ -31,21 +31,22 @@
 			(c) =>
 				!search ||
 				c.nazwa.toLowerCase().includes(search.toLowerCase()) ||
+				(c.nazwa_skrocona ?? '').toLowerCase().includes(search.toLowerCase()) ||
 				(c.nip ?? '').includes(search)
 		)
 	);
 
-	function openNew() {
-		editingClient = null;
-		fNazwa = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
+	function openNew(typ: 'firma' | 'osoba') {
+		editingClient = null; modalTyp = typ;
+		fNazwa = ''; fNazwaSkrocona = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
 		fRodo = false; fRodoData = ''; fRodoKanal = 'E-mail'; formError = '';
 		showModal = true;
 	}
 
 	function openEdit(c: Client) {
-		editingClient = c;
-		fNazwa = c.nazwa; fUlica = c.ulica ?? ''; fNip = c.nip ?? '';
-		fRegon = c.regon ?? ''; fKrs = c.krs ?? ''; fPesel = c.pesel ?? '';
+		editingClient = c; modalTyp = c.typ ?? 'firma';
+		fNazwa = c.nazwa; fNazwaSkrocona = c.nazwa_skrocona ?? ''; fUlica = c.ulica ?? '';
+		fNip = c.nip ?? ''; fRegon = c.regon ?? ''; fKrs = c.krs ?? ''; fPesel = c.pesel ?? '';
 		fRodo = c.rodo_zgoda; fRodoData = c.rodo_data ?? '';
 		fRodoKanal = c.rodo_kanal ?? 'E-mail'; formError = '';
 		showModal = true;
@@ -57,12 +58,14 @@
 		if (!fNazwa.trim()) { formError = 'Pole Nazwa jest wymagane.'; return; }
 		saving = true; formError = '';
 		const payload = {
+			typ: modalTyp,
 			nazwa: fNazwa.trim(),
+			nazwa_skrocona: fNazwaSkrocona.trim() || null,
 			ulica: fUlica.trim() || null,
-			nip: fNip.trim() || null,
-			pesel: fPesel.trim() || null,
-			regon: fRegon.trim() || null,
-			krs: fKrs.trim() || null,
+			nip: modalTyp === 'firma' ? (fNip.trim() || null) : null,
+			pesel: modalTyp === 'osoba' ? (fPesel.trim() || null) : null,
+			regon: modalTyp === 'firma' ? (fRegon.trim() || null) : null,
+			krs: modalTyp === 'firma' ? (fKrs.trim() || null) : null,
 			rodo_zgoda: fRodo,
 			rodo_data: fRodoData || null,
 			rodo_kanal: fRodoKanal
@@ -85,45 +88,19 @@
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
 
-	// --- Dodaj pojazd (z wyborem klienta) ---
-	let showVehicle = $state(false);
-	let vKlient = $state('');
-	let vMarka = $state(''); let vModel = $state(''); let vRej = $state('');
-	let vVin = $state(''); let vRok = $state(''); let vUwagi = $state('');
-	let savingV = $state(false); let vehicleError = $state('');
-
-	function openNewVehicle() {
-		vKlient = ''; vMarka = ''; vModel = ''; vRej = ''; vVin = ''; vRok = ''; vUwagi = '';
-		vehicleError = ''; showVehicle = true;
-	}
-
-	async function saveVehicle() {
-		if (!vKlient || !vRej) { vehicleError = 'Wybierz klienta i podaj nr rejestracyjny.'; return; }
-		savingV = true; vehicleError = '';
-		const markaModel = [vMarka.trim(), vModel.trim()].filter(Boolean).join(' ') || 'Nieznany';
-		const { error } = await sb.from('crm_vehicles').insert([{
-			tenant_id: appState.profile!.tenant_id,
-			klient_id: vKlient,
-			nr_rejestracyjny: vRej.trim(),
-			marka_model: markaModel,
-			rok_produkcji: vRok ? parseInt(vRok) : null,
-			vin: vVin.trim() || null
-		}]);
-		savingV = false;
-		if (error) { vehicleError = error.message; return; }
-		showVehicle = false;
-		const { data } = await sb.from('crm_vehicles').select('*');
-		appState.vehicles = (data ?? []) as typeof appState.vehicles;
-	}
-
 	$effect(() => {
 		const params = $page.url.searchParams;
-		if (params.get('newvehicle') === '1') openNewVehicle();
-		if (params.get('new') === '1') openNew();
+		if (params.get('new') === '1') openNew('firma');
 	});
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+
+	const modalTitle = $derived(
+		editingClient
+			? `Edytuj — ${editingClient.nazwa}`
+			: modalTyp === 'firma' ? 'Nowa Firma' : 'Nowa Osoba'
+	);
 </script>
 
 <svelte:head><title>Klienci — FRANK67 CRM</title></svelte:head>
@@ -133,9 +110,14 @@
 		<h1 class="text-2xl font-semibold text-slate-900">Klienci <span class="text-slate-400 text-lg font-normal">({appState.clients.length})</span></h1>
 		<p class="text-sm text-slate-500 mt-1">Zarządzanie portfelem i statusami RODO</p>
 	</div>
-	<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
-		+ Nowy Klient
-	</button>
+	<div class="flex gap-2">
+		<button onclick={() => openNew('firma')} class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<Building2 size={15} /> Dodaj Firmę
+		</button>
+		<button onclick={() => openNew('osoba')} class="flex items-center gap-1.5 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors">
+			<User size={15} /> Dodaj Osobę
+		</button>
+	</div>
 </div>
 
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -147,7 +129,7 @@
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
 				<th class="px-5 py-3">Nazwa / Adres</th>
-				<th class="px-5 py-3">NIP / KRS</th>
+				<th class="px-5 py-3">NIP / PESEL</th>
 				<th class="px-5 py-3">RODO</th>
 				<th class="px-5 py-3">Akcje</th>
 			</tr>
@@ -156,12 +138,23 @@
 			{#each filtered as c}
 				<tr class="border-t border-slate-100 hover:bg-slate-50">
 					<td class="px-5 py-3">
-						<div class="font-medium text-slate-900">{c.nazwa}</div>
-						{#if c.ulica}<div class="text-xs text-slate-400">{c.ulica}</div>{/if}
+						<div class="flex items-center gap-2">
+							{#if c.typ === 'osoba'}
+								<User size={13} class="text-slate-400 shrink-0" />
+							{:else}
+								<Building2 size={13} class="text-slate-400 shrink-0" />
+							{/if}
+							<div>
+								<div class="font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa}</div>
+								{#if c.nazwa_skrocona}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
+								{#if c.ulica}<div class="text-xs text-slate-400">{c.ulica}</div>{/if}
+							</div>
+						</div>
 					</td>
 					<td class="px-5 py-3 text-xs text-slate-500">
 						{#if c.nip}NIP: {c.nip}<br/>{/if}
-						{#if c.krs}KRS: {c.krs}{/if}
+						{#if c.pesel}PESEL: {c.pesel}{/if}
+						{#if c.krs}<br/>KRS: {c.krs}{/if}
 					</td>
 					<td class="px-5 py-3">
 						{#if c.rodo_zgoda}
@@ -188,30 +181,40 @@
 	</table>
 </div>
 
-<Modal title={editingClient ? `Edytuj — ${editingClient.nazwa}` : 'Nowy Klient'} open={showModal} onclose={closeModal}>
+<Modal title={modalTitle} open={showModal} onclose={closeModal}>
 	{#snippet footer()}
 		<button onclick={closeModal} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : editingClient ? 'Zapisz zmiany' : 'Zapisz Klienta'}
+			{saving ? 'Zapisywanie...' : editingClient ? 'Zapisz zmiany' : (modalTyp === 'firma' ? 'Zapisz Firmę' : 'Zapisz Osobę')}
 		</button>
 	{/snippet}
 
 	{#if formError}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
 	<div class="space-y-3">
 		<div>
-			<label class={labelCls}>Nazwa firmy / Imię i Nazwisko *</label>
+			<label class={labelCls}>{modalTyp === 'firma' ? 'Nazwa firmy *' : 'Imię i Nazwisko *'}</label>
 			<input bind:value={fNazwa} class={inputCls} />
+		</div>
+		<div>
+			<label class={labelCls}>Nazwa skrócona (wyświetlana domyślnie)</label>
+			<input bind:value={fNazwaSkrocona} class={inputCls} placeholder={modalTyp === 'firma' ? 'np. Kowalski sp. z o.o.' : ''} />
 		</div>
 		<div>
 			<label class={labelCls}>Ulica i miasto</label>
 			<input bind:value={fUlica} class={inputCls} />
 		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
-			<div><label class={labelCls}>REGON</label><input bind:value={fRegon} class={inputCls} /></div>
-			<div><label class={labelCls}>KRS</label><input bind:value={fKrs} class={inputCls} /></div>
-			<div><label class={labelCls}>PESEL</label><input bind:value={fPesel} class={inputCls} /></div>
-		</div>
+		{#if modalTyp === 'firma'}
+			<div class="grid grid-cols-2 gap-3">
+				<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
+				<div><label class={labelCls}>REGON</label><input bind:value={fRegon} class={inputCls} /></div>
+				<div class="col-span-2"><label class={labelCls}>KRS</label><input bind:value={fKrs} class={inputCls} /></div>
+			</div>
+		{:else}
+			<div>
+				<label class={labelCls}>PESEL</label>
+				<input bind:value={fPesel} class={inputCls} />
+			</div>
+		{/if}
 		<div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
 			<label class="flex items-center gap-2 font-semibold text-sm cursor-pointer mb-3">
 				<input type="checkbox" bind:checked={fRodo} class="rounded" /> Zgoda RODO odebrana
@@ -228,33 +231,6 @@
 					</select>
 				</div>
 			</div>
-		</div>
-	</div>
-</Modal>
-
-<!-- Modal: Dodaj Pojazd -->
-<Modal title="Dodaj Pojazd" open={showVehicle} onclose={() => { showVehicle = false; vehicleError = ''; }}>
-	{#snippet footer()}
-		<button onclick={() => { showVehicle = false; vehicleError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveVehicle} disabled={savingV} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-			{savingV ? 'Zapisywanie...' : 'Dodaj pojazd'}
-		</button>
-	{/snippet}
-	{#if vehicleError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{vehicleError}</div>{/if}
-	<div class="space-y-3">
-		<div>
-			<label class={labelCls}>Klient *</label>
-			<select bind:value={vKlient} class={inputCls}>
-				<option value="">— wybierz klienta —</option>
-				{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
-			</select>
-		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>Nr rejestracyjny *</label><input bind:value={vRej} class={inputCls} placeholder="WA 12345" /></div>
-			<div><label class={labelCls}>VIN</label><input bind:value={vVin} class={inputCls} /></div>
-			<div><label class={labelCls}>Marka</label><input bind:value={vMarka} class={inputCls} placeholder="Toyota" /></div>
-			<div><label class={labelCls}>Model</label><input bind:value={vModel} class={inputCls} placeholder="Corolla" /></div>
-			<div><label class={labelCls}>Rok produkcji</label><input type="number" bind:value={vRok} class={inputCls} placeholder="2022" /></div>
 		</div>
 	</div>
 </Modal>

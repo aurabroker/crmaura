@@ -4,16 +4,17 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus } from '$lib/utils';
-	import type { Claim, Vehicle } from '$lib/types/database';
+	import type { Claim, Vehicle, ClientContact } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2 } from 'lucide-svelte';
 
 	const clientId = $derived($page.params.id);
 	const client = $derived(appState.clients.find(c => c.id === clientId));
 	const clientPolicies = $derived(appState.policies.filter(p => p.klient_id === clientId));
 	const clientVehicles = $derived(appState.vehicles.filter(v => v.klient_id === clientId));
 	const clientClaims = $derived(appState.claims.filter(c => c.klient_id === clientId));
+	const clientContacts = $derived(appState.clientContacts.filter(cc => cc.klient_id === clientId));
 
 	const totalPrzyp = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
 	const totalOpl = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
@@ -26,7 +27,40 @@
 	const hasVehicles = $derived(clientVehicles.length > 0);
 	const hasClaims = $derived(clientClaims.length > 0);
 
-	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo'>('polisy');
+	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty'>('polisy');
+
+	// Contact persons
+	let showContact = $state(false);
+	let editingContact = $state<ClientContact | null>(null);
+	let ccImie = $state(''); let ccStanowisko = $state('');
+	let ccTelefon = $state(''); let ccEmail = $state('');
+	let ccNotatki = $state(''); let savingCC = $state(false); let ccError = $state('');
+
+	function openNewContact() { editingContact = null; ccImie = ''; ccStanowisko = ''; ccTelefon = ''; ccEmail = ''; ccNotatki = ''; ccError = ''; showContact = true; }
+	function openEditContact(cc: ClientContact) { editingContact = cc; ccImie = cc.imie_nazwisko; ccStanowisko = cc.stanowisko ?? ''; ccTelefon = cc.telefon ?? ''; ccEmail = cc.email ?? ''; ccNotatki = cc.notatki ?? ''; ccError = ''; showContact = true; }
+
+	async function saveContact() {
+		if (!ccImie.trim()) { ccError = 'Imię i nazwisko jest wymagane.'; return; }
+		savingCC = true; ccError = '';
+		const payload = { imie_nazwisko: ccImie.trim(), stanowisko: ccStanowisko.trim() || null, telefon: ccTelefon.trim() || null, email: ccEmail.trim() || null, notatki: ccNotatki.trim() || null };
+		let error;
+		if (editingContact) {
+			({ error } = await sb.from('crm_client_contacts').update(payload).eq('id', editingContact.id));
+		} else {
+			({ error } = await sb.from('crm_client_contacts').insert([{ tenant_id: appState.profile!.tenant_id, klient_id: clientId, ...payload }]));
+		}
+		savingCC = false;
+		if (error) { ccError = error.message; return; }
+		showContact = false;
+		const { data } = await sb.from('crm_client_contacts').select('*');
+		appState.clientContacts = (data ?? []) as typeof appState.clientContacts;
+	}
+
+	async function deleteContact(cc: ClientContact) {
+		await sb.from('crm_client_contacts').delete().eq('id', cc.id);
+		const { data } = await sb.from('crm_client_contacts').select('*');
+		appState.clientContacts = (data ?? []) as typeof appState.clientContacts;
+	}
 
 	// Dashboard modals
 	let dashModal = $state<'polisy' | 'pojazdy' | 'szkody' | 'grupowe' | 'skladki' | null>(null);
@@ -91,9 +125,10 @@
 				<ArrowLeft size={16} /> Klienci
 			</button>
 			<div>
-				<h1 class="text-2xl font-semibold text-slate-900">{client.nazwa}</h1>
+				<h1 class="text-2xl font-semibold text-slate-900">{client.nazwa_skrocona ?? client.nazwa}</h1>
+				{#if client.nazwa_skrocona}<p class="text-xs text-slate-400">{client.nazwa}</p>{/if}
 				<p class="text-sm text-slate-500 mt-0.5">
-					{#if client.nip}NIP: {client.nip} · {/if}{#if client.rodo_zgoda}<span class="text-emerald-600">RODO ✓</span>{:else}<span class="text-red-500">BRAK RODO</span>{/if}
+					{#if client.nip}NIP: {client.nip} · {/if}{#if client.pesel}PESEL: {client.pesel} · {/if}{#if client.rodo_zgoda}<span class="text-emerald-600">RODO ✓</span>{:else}<span class="text-red-500">BRAK RODO</span>{/if}
 				</p>
 			</div>
 		</div>
@@ -162,11 +197,11 @@
 
 	<!-- Tabs -->
 	<div class="flex gap-6 border-b border-slate-200 mb-4">
-		{#each (['polisy', 'pojazdy', 'szkody', 'saldo'] as const) as tab}
+		{#each (['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty'] as const) as tab}
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
@@ -216,7 +251,7 @@
 
 	{:else if activeTab === 'pojazdy'}
 		<div class="flex justify-end mb-3">
-			<button onclick={openNewVehicle} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<button onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 				<Plus size={14} /> Dodaj pojazd
 			</button>
 		</div>
@@ -296,6 +331,46 @@
 			</table>
 		</div>
 
+	{:else if activeTab === 'kontakty'}
+		<div class="flex justify-end mb-3">
+			<button onclick={openNewContact} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+				<UserPlus size={14} /> Dodaj osobę kontaktową
+			</button>
+		</div>
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			<table class="w-full text-left text-sm">
+				<thead>
+					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<th class="px-5 py-3">Imię i Nazwisko</th>
+						<th class="px-5 py-3">Stanowisko</th>
+						<th class="px-5 py-3">Telefon</th>
+						<th class="px-5 py-3">E-mail</th>
+						<th class="px-5 py-3">Notatki</th>
+						<th class="px-5 py-3"></th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each clientContacts as cc}
+						<tr class="border-t border-slate-100 hover:bg-slate-50">
+							<td class="px-5 py-3 font-medium">{cc.imie_nazwisko}</td>
+							<td class="px-5 py-3 text-slate-500">{cc.stanowisko ?? '—'}</td>
+							<td class="px-5 py-3">{cc.telefon ?? '—'}</td>
+							<td class="px-5 py-3">{cc.email ?? '—'}</td>
+							<td class="px-5 py-3 text-xs text-slate-400">{cc.notatki ?? ''}</td>
+							<td class="px-5 py-3">
+								<div class="flex gap-1">
+									<button onclick={() => openEditContact(cc)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
+									<button onclick={() => deleteContact(cc)} class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
+								</div>
+							</td>
+						</tr>
+					{:else}
+						<tr><td colspan="6" class="px-5 py-6 text-center text-slate-400">Brak osób kontaktowych</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+
 	{:else if activeTab === 'saldo'}
 		<div class="grid grid-cols-3 gap-4">
 			<div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
@@ -313,6 +388,24 @@
 		</div>
 	{/if}
 {/if}
+
+<!-- Modal: Osoba kontaktowa -->
+<Modal title={editingContact ? 'Edytuj Kontakt' : 'Dodaj Osobę Kontaktową'} open={showContact} onclose={() => { showContact = false; editingContact = null; }}>
+	{#snippet footer()}
+		<button onclick={() => { showContact = false; editingContact = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveContact} disabled={savingCC} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingCC ? 'Zapisywanie...' : editingContact ? 'Zapisz zmiany' : 'Dodaj kontakt'}
+		</button>
+	{/snippet}
+	{#if ccError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{ccError}</div>{/if}
+	<div class="grid grid-cols-2 gap-3">
+		<div class="col-span-2"><label class={labelCls}>Imię i Nazwisko *</label><input bind:value={ccImie} class={inputCls} /></div>
+		<div><label class={labelCls}>Stanowisko</label><input bind:value={ccStanowisko} class={inputCls} /></div>
+		<div><label class={labelCls}>Telefon</label><input bind:value={ccTelefon} class={inputCls} /></div>
+		<div class="col-span-2"><label class={labelCls}>E-mail</label><input type="email" bind:value={ccEmail} class={inputCls} /></div>
+		<div class="col-span-2"><label class={labelCls}>Notatki</label><textarea bind:value={ccNotatki} rows="2" class={inputCls}></textarea></div>
+	</div>
+</Modal>
 
 <!-- Modal: Pojazd -->
 <Modal title={editingVehicle ? 'Edytuj Pojazd' : 'Dodaj Pojazd'} open={showVehicle} onclose={() => { showVehicle = false; editingVehicle = null; }}>
