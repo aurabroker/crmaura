@@ -7,7 +7,8 @@
 	import type { Claim, Vehicle, ClientContact } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2 } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check } from 'lucide-svelte';
+	import { todayStr } from '$lib/utils';
 
 	const clientId = $derived($page.params.id);
 	const client = $derived(appState.clients.find(c => c.id === clientId));
@@ -15,6 +16,7 @@
 	const clientVehicles = $derived(appState.vehicles.filter(v => v.klient_id === clientId));
 	const clientClaims = $derived(appState.claims.filter(c => c.klient_id === clientId));
 	const clientContacts = $derived(appState.clientContacts.filter(cc => cc.klient_id === clientId));
+	const clientApk = $derived(appState.apkForms.filter(f => f.klient_id === clientId));
 
 	const totalPrzyp = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
 	const totalOpl = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
@@ -27,7 +29,59 @@
 	const hasVehicles = $derived(clientVehicles.length > 0);
 	const hasClaims = $derived(clientClaims.length > 0);
 
-	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty'>('polisy');
+	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty' | 'apk'>('polisy');
+
+	// APK
+	const APK_APP_URL = 'https://apk.aurabroker.pl';
+	let showNewApk = $state(false);
+	let savingApk = $state(false);
+	let apkErr = $state('');
+	let apkAdvisor = $state('');
+	let apkMode = $state<'client'|'advisor'>('client');
+	let apkToken = $state('');
+	let apkCopied = $state(false);
+	const apkLink = $derived(apkToken ? `${APK_APP_URL}?token=${apkToken}` : '');
+
+	function genRef() { return 'APK-' + Math.random().toString(36).slice(2,10).toUpperCase(); }
+	function genToken() { return Math.random().toString(36).slice(2,8).toUpperCase() + Math.random().toString(36).slice(2,8).toUpperCase(); }
+
+	async function createApk() {
+		savingApk = true; apkErr = '';
+		const ref = genRef(); const token = genToken();
+		const { data: form, error: e1 } = await sb.from('apk_forms').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			klient_id: clientId,
+			ref_number: ref,
+			client_name: client!.nazwa,
+			advisor_name: apkAdvisor || null,
+			form_date: todayStr(),
+			mode: apkMode,
+			status: 'draft',
+			form_data: {}
+		}]).select('id').single();
+		if (e1) { savingApk = false; apkErr = e1.message; return; }
+		const expires = new Date(); expires.setDate(expires.getDate() + 30);
+		await sb.from('apk_tokens').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			token, form_id: form!.id,
+			advisor_name: apkAdvisor || null,
+			status: 'pending', expires_at: expires.toISOString()
+		}]);
+		await sb.from('apk_audit').insert([{ form_id: form!.id, event: 'created', actor: apkAdvisor || 'system' }]);
+		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false });
+		appState.apkForms = (data ?? []) as typeof appState.apkForms;
+		savingApk = false; apkToken = token;
+	}
+
+	async function copyApkLink() {
+		await navigator.clipboard.writeText(apkLink);
+		apkCopied = true; setTimeout(() => apkCopied = false, 2000);
+	}
+
+	function closeApkModal() {
+		showNewApk = false; apkToken = ''; apkErr = '';
+		apkAdvisor = appState.profile?.imie_nazwisko ?? ''; apkMode = 'client';
+	}
 
 	// Contact persons
 	let showContact = $state(false);
@@ -197,11 +251,11 @@
 
 	<!-- Tabs -->
 	<div class="flex gap-6 border-b border-slate-200 mb-4">
-		{#each (['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty'] as const) as tab}
+		{#each (['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty', 'apk'] as const) as tab}
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
@@ -386,6 +440,58 @@
 				<p class="text-2xl font-semibold text-{totalPrzyp - totalOpl > 0 ? 'red-600' : 'slate-900'}">{fmtPln(totalPrzyp - totalOpl)}</p>
 			</div>
 		</div>
+
+	{:else if activeTab === 'apk'}
+		<div class="flex items-center justify-between mb-4">
+			<p class="text-sm text-slate-500">Formularze APK dla tego klienta</p>
+			<button onclick={() => { apkAdvisor = appState.profile?.imie_nazwisko ?? ''; showNewApk = true; }}
+				class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700">
+				<Plus size={14} /> Nowy APK
+			</button>
+		</div>
+
+		{#if clientApk.length === 0}
+			<div class="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
+				<ClipboardList size={28} class="mx-auto mb-2 opacity-30" />
+				Brak formularzy APK dla tego klienta
+			</div>
+		{:else}
+			<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+				<table class="w-full text-sm text-left">
+					<thead class="bg-slate-50 border-b border-slate-200">
+						<tr>
+							<th class="px-5 py-3 font-semibold text-slate-600">Ref</th>
+							<th class="px-5 py-3 font-semibold text-slate-600">Doradca</th>
+							<th class="px-5 py-3 font-semibold text-slate-600">Data</th>
+							<th class="px-5 py-3 font-semibold text-slate-600">Status</th>
+							<th class="px-5 py-3 font-semibold text-slate-600">Złożony</th>
+							<th class="px-5 py-3"></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each clientApk as f}
+							<tr class="border-t border-slate-100 hover:bg-slate-50">
+								<td class="px-5 py-3 font-mono text-xs text-slate-500">{f.ref_number}</td>
+								<td class="px-5 py-3 text-slate-600">{f.advisor_name ?? '—'}</td>
+								<td class="px-5 py-3 text-slate-500">{f.form_date}</td>
+								<td class="px-5 py-3">
+									<Badge variant={f.status === 'submitted' ? 'success' : 'neutral'}>
+										{f.status === 'submitted' ? 'Złożony' : 'Szkic'}
+									</Badge>
+								</td>
+								<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
+								<td class="px-5 py-3">
+									<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
+										class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+										<ClipboardList size={12} /> Otwórz
+									</a>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
 	{/if}
 {/if}
 
@@ -522,4 +628,57 @@
 			</div>
 		{/each}
 	</div>
+</Modal>
+
+<!-- Modal: Nowy APK -->
+<Modal title="Nowy formularz APK" open={showNewApk} onclose={closeApkModal}>
+	{#snippet footer()}
+		{#if apkToken}
+			<button onclick={closeApkModal} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Gotowe</button>
+		{:else}
+			<button onclick={closeApkModal} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+			<button onclick={createApk} disabled={savingApk} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+				{savingApk ? 'Tworzenie...' : 'Utwórz i wygeneruj link'}
+			</button>
+		{/if}
+	{/snippet}
+	{#if apkToken}
+		<div class="space-y-4">
+			<div class="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
+				<Check size={20} class="text-emerald-600 shrink-0" />
+				<span class="text-sm text-emerald-700 font-medium">APK utworzone pomyślnie!</span>
+			</div>
+			<div>
+				<label class={labelCls}>Link dla klienta (ważny 30 dni)</label>
+				<div class="flex gap-2">
+					<input readonly value={apkLink} class="{inputCls} bg-slate-50 font-mono text-xs" />
+					<button onclick={copyApkLink}
+						class="flex items-center gap-1 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 shrink-0 {apkCopied ? 'text-emerald-600 border-emerald-300' : 'text-slate-600'}">
+						{#if apkCopied}<Check size={14} /> Skopiowano{:else}<Copy size={14} /> Kopiuj{/if}
+					</button>
+				</div>
+				<p class="text-xs text-slate-400 mt-1">Wyślij ten link klientowi — wypełni formularz APK online</p>
+			</div>
+		</div>
+	{:else}
+		<div class="space-y-4">
+			{#if apkErr}<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{apkErr}</div>{/if}
+			<div>
+				<label class={labelCls}>Doradca</label>
+				<input bind:value={apkAdvisor} class={inputCls} placeholder="Imię i nazwisko doradcy" />
+			</div>
+			<div>
+				<label class={labelCls}>Tryb wypełniania</label>
+				<div class="flex gap-2">
+					{#each [['client','Klient wypełnia sam'],['advisor','Doradca wypełnia z klientem']] as [val, label]}
+						<button type="button" onclick={() => apkMode = val as typeof apkMode}
+							class="flex-1 py-2 text-sm rounded-lg border transition-colors
+								{apkMode === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+							{label}
+						</button>
+					{/each}
+				</div>
+			</div>
+		</div>
+	{/if}
 </Modal>
