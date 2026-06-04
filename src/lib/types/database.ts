@@ -72,6 +72,7 @@ export interface Policy {
 	data_do: string;
 	ilosc_rat: string;
 	daty_rat: string | null;
+	kwoty_rat: string | null;
 	skladka_przypisana: number;
 	skladka_zainkasowana: number;
 	prowizja_pct: number;
