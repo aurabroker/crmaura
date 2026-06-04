@@ -54,7 +54,7 @@
 
 <svelte:head><title>Edytuj Polisę — FRANK67 CRM</title></svelte:head>
 
-<div class="max-w-3xl">
+<div class="max-w-5xl">
 	<div class="flex items-center gap-3 mb-6">
 		<button onclick={() => goto(`/policies/${policyId}`)} class="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
 			<ArrowLeft size={18} />
