@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { appState } from '$lib/stores/app.svelte';
+	import { untrack } from 'svelte';
 	import type { Policy } from '$lib/types/database';
 
 	interface Props {
@@ -52,10 +53,10 @@
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		const start = fpOd ? new Date(fpOd) : null;
-		fpDatyRatArr = Array.from({ length: n }, (_, i) => {
-			if (fpDatyRatArr[i]) return fpDatyRatArr[i]; // keep manually entered
-			return start ? calcDate(start, i, n) : '';
-		});
+		const current = untrack(() => [...fpDatyRatArr]); // read without tracking
+		fpDatyRatArr = Array.from({ length: n }, (_, i) =>
+			current[i] || (start ? calcDate(start, i, n) : '')
+		);
 	});
 
 	// Resize kwoty + recalculate when fpSklPrzyp or fpRaty changes
@@ -63,7 +64,8 @@
 		const n = parseInt(fpRaty) || 1;
 		const sklad = parseFloat(fpSklPrzyp) || 0;
 		const eq = n > 0 ? (sklad / n).toFixed(2) : '0.00';
-		fpKwotypRatArr = Array.from({ length: n }, (_, i) => fpKwotypRatArr[i] ?? eq);
+		const current = untrack(() => [...fpKwotypRatArr]);
+		fpKwotypRatArr = Array.from({ length: n }, (_, i) => current[i] ?? eq);
 	});
 
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
