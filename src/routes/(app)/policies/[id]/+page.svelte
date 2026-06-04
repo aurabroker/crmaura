@@ -67,6 +67,18 @@
 
 	const st = $derived(policy ? policyStatus(policy.data_do) : null);
 
+	// UG default commission inline edit
+	let ugEditOpen = $state(false);
+	let ugEditVal = $state('');
+	let ugEditSaving = $state(false);
+	async function saveUgDefault() {
+		ugEditSaving = true;
+		await sb.from('crm_policies').update({ ug_default_prowizja_pct: parseFloat(ugEditVal) || null }).eq('id', policyId);
+		const { data } = await sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)');
+		appState.policies = (data ?? []) as typeof appState.policies;
+		ugEditOpen = false; ugEditSaving = false;
+	}
+
 	// Edit modal
 	let showEdit = $state(false);
 	let editForm = $state<ReturnType<typeof PolicyForm> | null>(null);
@@ -199,32 +211,25 @@
 
 	<!-- UG: domyślna prowizja -->
 	{#if policy.typ_umowy === 'generalna'}
-	{@const ugDefaultEdit = $state({ editing: false, val: policy.ug_default_prowizja_pct?.toString() ?? '', saving: false })}
 	<div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 flex items-center justify-between">
 		<div>
 			<p class="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Domyślna prowizja dla polis w tej UG</p>
-			{#if ugDefaultEdit.editing}
+			{#if ugEditOpen}
 				<div class="flex items-center gap-2">
-					<input type="number" step="0.01" bind:value={ugDefaultEdit.val}
+					<input type="number" step="0.01" bind:value={ugEditVal}
 						class="border border-blue-300 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="%" />
-					<button onclick={async () => {
-						ugDefaultEdit.saving = true;
-						await sb.from('crm_policies').update({ ug_default_prowizja_pct: parseFloat(ugDefaultEdit.val) || null }).eq('id', policyId);
-						const { data } = await sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)');
-						appState.policies = (data ?? []) as typeof appState.policies;
-						ugDefaultEdit.editing = false; ugDefaultEdit.saving = false;
-					}} disabled={ugDefaultEdit.saving} class="px-3 py-1 bg-blue-700 text-white text-xs rounded-lg hover:bg-blue-800 disabled:opacity-60">
-						{ugDefaultEdit.saving ? '...' : 'Zapisz'}
+					<button onclick={saveUgDefault} disabled={ugEditSaving} class="px-3 py-1 bg-blue-700 text-white text-xs rounded-lg hover:bg-blue-800 disabled:opacity-60">
+						{ugEditSaving ? '...' : 'Zapisz'}
 					</button>
-					<button onclick={() => ugDefaultEdit.editing = false} class="px-3 py-1 border border-blue-300 text-blue-700 text-xs rounded-lg hover:bg-blue-100">Anuluj</button>
+					<button onclick={() => ugEditOpen = false} class="px-3 py-1 border border-blue-300 text-blue-700 text-xs rounded-lg hover:bg-blue-100">Anuluj</button>
 				</div>
 			{:else}
 				<p class="text-2xl font-bold text-blue-900">{policy.ug_default_prowizja_pct != null ? `${policy.ug_default_prowizja_pct}%` : '— nie ustawiono —'}</p>
 				<p class="text-xs text-blue-600 mt-0.5">Automatycznie podpowiadana przy dodawaniu polisy do tej UG</p>
 			{/if}
 		</div>
-		{#if !ugDefaultEdit.editing}
-			<button onclick={() => { ugDefaultEdit.val = policy.ug_default_prowizja_pct?.toString() ?? ''; ugDefaultEdit.editing = true; }}
+		{#if !ugEditOpen}
+			<button onclick={() => { ugEditVal = policy.ug_default_prowizja_pct?.toString() ?? ''; ugEditOpen = true; }}
 				class="flex items-center gap-1 text-xs text-blue-700 border border-blue-300 rounded-lg px-3 py-1.5 hover:bg-blue-100">
 				<Pencil size={12} /> Ustaw
 			</button>
