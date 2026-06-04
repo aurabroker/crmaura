@@ -1,4 +1,4 @@
-import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, PolicyBroker } from '$lib/types/database';
+import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, PolicyBroker, ApkForm } from '$lib/types/database';
 
 export const appState = $state({
 	profile: null as Profile | null,
@@ -16,7 +16,8 @@ export const appState = $state({
 	dashboardWidgets: ['renewals','claims','clients','renewal_rate','payments'] as string[],
 	tenantTyp: 'broker' as 'broker' | 'agent',
 	tenantNazwa: '' as string,
-	loading: false
+	loading: false,
+	apkForms: [] as ApkForm[]
 });
 
 export function isBroker(): boolean {

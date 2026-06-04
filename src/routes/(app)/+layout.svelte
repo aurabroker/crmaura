@@ -5,7 +5,7 @@
 	import { sb } from '$lib/supabase';
 	import { appState, isAdmin, isFinance, isBroker } from '$lib/stores/app.svelte';
 	import {
-		LayoutDashboard, Users, FileText, Calculator, Scale,
+		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
 		AlertTriangle, RefreshCw, Target, Coins, RotateCcw
 	} from 'lucide-svelte';
@@ -26,6 +26,7 @@
 		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
 		{ href: '/policies', label: 'Polisy', icon: FileText, always: true },
 		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, show: isBroker() },
+		{ href: '/apk', label: 'APK', icon: ClipboardList, always: true },
 		{ href: '/renewals', label: 'Odnowienia', icon: RefreshCw, always: true },
 		{ href: '/prospects', label: 'Prospects', icon: Target, always: true },
 		{ href: '/payments', label: 'Płatności', icon: Calculator, always: true },
@@ -62,7 +63,7 @@
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
 		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
 
-		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC] = await Promise.all([
+		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
@@ -73,7 +74,8 @@
 			sb.from('crm_insurers').select('*').order('nazwa'),
 			sb.from('crm_profiles').select('*'),
 			sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)'),
-			sb.from('crm_client_contacts').select('*')
+			sb.from('crm_client_contacts').select('*'),
+			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false })
 		]);
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
@@ -87,6 +89,7 @@
 		appState.brokers = (rPr.data ?? []) as typeof appState.brokers;
 		appState.policyBrokers = (rPB.data ?? []) as typeof appState.policyBrokers;
 		appState.clientContacts = (rCC.data ?? []) as typeof appState.clientContacts;
+		appState.apkForms = (rAPK.data ?? []) as typeof appState.apkForms;
 		initialized = true;
 	}
 

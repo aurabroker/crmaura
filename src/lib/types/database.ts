@@ -215,4 +215,33 @@ export interface PolicyBroker {
 	crm_profiles?: { imie_nazwisko: string | null; email: string } | null;
 }
 
+export interface ApkForm {
+	id: string;
+	tenant_id: string | null;
+	klient_id: string | null;
+	ref_number: string;
+	client_name: string;
+	advisor_name: string | null;
+	form_date: string;
+	mode: 'client' | 'advisor';
+	status: 'draft' | 'submitted';
+	form_data: Record<string, unknown>;
+	submitted_at: string | null;
+	created_at: string;
+	updated_at: string;
+	crm_clients?: { nazwa: string; nazwa_skrocona: string | null } | null;
+}
+
+export interface ApkToken {
+	id: string;
+	tenant_id: string | null;
+	token: string;
+	form_id: string | null;
+	advisor_name: string | null;
+	status: 'pending' | 'used' | 'expired';
+	created_at: string;
+	expires_at: string;
+	used_at: string | null;
+}
+
 export type Database = Record<string, unknown>;
