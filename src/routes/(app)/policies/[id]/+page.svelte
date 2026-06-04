@@ -75,18 +75,28 @@
 	async function saveUgDefault() {
 		ugEditSaving = true;
 		const pct = parseFloat(ugEditVal) || null;
+		const currentPolicyId = policyId; // capture derived value
+
 		// Save default on UG
-		await sb.from('crm_policies').update({ ug_default_prowizja_pct: pct }).eq('id', policyId);
-		// Apply to child policies that have no commission set (prowizja_pct = 0 or null)
+		await sb.from('crm_policies').update({ ug_default_prowizja_pct: pct }).eq('id', currentPolicyId);
+
+		// Apply to child policies without commission — query from DB directly
 		if (pct) {
-			const childrenWithoutProwizja = appState.policies
-				.filter(p => p.parent_id === policyId && (!p.prowizja_pct || p.prowizja_pct === 0));
-			ugEditUpdatedCount = childrenWithoutProwizja.length;
-			for (const child of childrenWithoutProwizja) {
-				const prowizja_przypisana = (child.skladka_przypisana * pct) / 100;
+			const { data: children } = await sb.from('crm_policies')
+				.select('id, skladka_przypisana, prowizja_pct')
+				.eq('parent_id', currentPolicyId);
+
+			const toUpdate = (children ?? []).filter(c => !c.prowizja_pct || Number(c.prowizja_pct) === 0);
+			ugEditUpdatedCount = toUpdate.length;
+
+			for (const child of toUpdate) {
+				const prowizja_przypisana = (Number(child.skladka_przypisana) * pct) / 100;
 				await sb.from('crm_policies').update({ prowizja_pct: pct, prowizja_przypisana }).eq('id', child.id);
 			}
+		} else {
+			ugEditUpdatedCount = 0;
 		}
+
 		const { data } = await sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)');
 		appState.policies = (data ?? []) as typeof appState.policies;
 		ugEditOpen = false; ugEditSaving = false;
