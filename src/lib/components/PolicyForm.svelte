@@ -91,13 +91,14 @@
 		if (pct > 0 && sklad > 0) fpProwPrzyp = ((sklad * pct) / 100).toFixed(2);
 	});
 
-	// Auto-fill prowizja from parent UG whenever selection changes
-	$effect(() => {
-		if (fpParentId) {
-			const parent = appState.policies.find(p => p.id === fpParentId);
-			if (parent?.ug_default_prowizja_pct) fpProwPct = parent.ug_default_prowizja_pct.toString();
+	function onParentUgChange() {
+		const parent = appState.policies.find(p => p.id === fpParentId);
+		if (parent?.ug_default_prowizja_pct) {
+			fpProwPct = parent.ug_default_prowizja_pct.toString();
+			const sklad = parseFloat(fpSklPrzyp) || 0;
+			if (sklad > 0) fpProwPrzyp = ((sklad * parent.ug_default_prowizja_pct) / 100).toFixed(2);
 		}
-	});
+	}
 
 	export function getValues() {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
@@ -213,7 +214,7 @@
 		{:else}
 			<div>
 				<label class={lbl}>Powiąż z Umową Generalną</label>
-				<select bind:value={fpParentId} class={inp}>
+				<select bind:value={fpParentId} onchange={onParentUgChange} class={inp}>
 					<option value="">— bez UG —</option>
 					{#each generalPolicies as ug}
 						<option value={ug.id}>{ug.nr_polisy} ({ug.ug_podtyp})</option>
