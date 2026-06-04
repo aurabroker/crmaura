@@ -162,7 +162,6 @@
 			? appState.clients.filter(c => c.nazwa.toLowerCase().includes(clientSearch.toLowerCase()) || (c.nazwa_skrocona ?? '').toLowerCase().includes(clientSearch.toLowerCase()))
 			: appState.clients
 	);
-	let clientDropOpen = $state(false);
 	const selectedClientName = $derived(appState.clients.find(c => c.id === fpKlient)?.nazwa ?? '');
 
 	let tuSearch = $state('');
@@ -171,7 +170,6 @@
 			? appState.insurers.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()) || (t.skrot ?? '').toLowerCase().includes(tuSearch.toLowerCase()))
 			: appState.insurers
 	);
-	let tuDropOpen = $state(false);
 	const selectedTU = $derived(appState.insurers.find(t => t.id === fpTu));
 	const selectedTUName = $derived(selectedTU ? (selectedTU.skrot ? `${selectedTU.skrot} — ${selectedTU.nazwa}` : selectedTU.nazwa) : '');
 
@@ -248,53 +246,24 @@
 	<div class="grid grid-cols-2 gap-4">
 		<div>
 			<label class={lbl}>Klient *</label>
-			<div class="relative">
-				<input type="text"
-					placeholder={selectedClientName || '— wpisz nazwę klienta —'}
-					value={clientSearch || selectedClientName}
-					oninput={(e) => { clientSearch = (e.target as HTMLInputElement).value; clientDropOpen = true; }}
-					onfocus={() => { clientSearch = ''; clientDropOpen = true; }}
-					onblur={() => setTimeout(() => clientDropOpen = false, 150)}
-					class={inp}
-				/>
-				{#if clientDropOpen && filteredClients.length > 0}
-					<div class="absolute z-[100] left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto">
-						{#each filteredClients as c}
-							<button type="button" class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
-								onmousedown={() => { fpKlient = c.id; clientSearch = ''; clientDropOpen = false; }}>
-								<span class="font-medium">{c.nazwa_skrocona ?? c.nazwa}</span>
-								{#if c.nazwa_skrocona}<span class="text-xs text-slate-400 ml-2">{c.nazwa}</span>{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</div>
+			<input type="text" bind:value={clientSearch} placeholder="Filtruj klientów..." class={inp + ' mb-1'} />
+			<select bind:value={fpKlient} class={inp} size="4">
+				{#each filteredClients as c}
+					<option value={c.id}>{c.nazwa_skrocona ?? c.nazwa}</option>
+				{/each}
+			</select>
 			{#if fpKlient}
 				<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedClientName}</p>
 			{/if}
 		</div>
 		<div>
 			<label class={lbl}>Towarzystwo Ubezpieczeń *</label>
-			<div class="relative">
-				<input type="text"
-					placeholder={selectedTUName || '— wpisz nazwę lub skrót TU —'}
-					value={tuSearch || selectedTUName}
-					oninput={(e) => { tuSearch = (e.target as HTMLInputElement).value; tuDropOpen = true; }}
-					onfocus={() => { tuSearch = ''; tuDropOpen = true; }}
-					onblur={() => setTimeout(() => tuDropOpen = false, 150)}
-					class={inp}
-				/>
-				{#if tuDropOpen && filteredTU.length > 0}
-					<div class="absolute z-[100] left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl max-h-56 overflow-y-auto">
-						{#each filteredTU as t}
-							<button type="button" class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50"
-								onmousedown={() => { fpTu = t.id; tuSearch = ''; tuDropOpen = false; }}>
-								{#if t.skrot}<span class="font-mono font-bold text-blue-700 mr-2">{t.skrot}</span>{/if}{t.nazwa}
-							</button>
-						{/each}
-					</div>
-				{/if}
-			</div>
+			<input type="text" bind:value={tuSearch} placeholder="Filtruj TU..." class={inp + ' mb-1'} />
+			<select bind:value={fpTu} class={inp} size="4">
+				{#each filteredTU as t}
+					<option value={t.id}>{t.skrot ? `${t.skrot} — ${t.nazwa}` : t.nazwa}</option>
+				{/each}
+			</select>
 			{#if fpTu}
 				<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedTUName}</p>
 			{/if}
