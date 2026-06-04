@@ -23,20 +23,39 @@
 		const { error } = await sb.from('crm_policies').update(vals).eq('id', policy.id);
 		if (error) { saving = false; formError = error.message; return; }
 
-		// Regenerate payment records if installment dates changed
+		// Regenerate only unpaid installments; preserve Opłacona/Częściowo opłacona
 		const raty = policyForm.getDatyRat();
 		if (raty.length > 0) {
-			await sb.from('crm_policy_payments').delete().eq('polisa_id', policy.id);
-			await sb.from('crm_policy_payments').insert(
-				raty.map(r => ({
+			const today = new Date().toISOString().split('T')[0];
+			// Find which nr_raty are already settled (do not touch them)
+			const { data: existingPaid } = await sb
+				.from('crm_policy_payments')
+				.select('nr_raty')
+				.eq('polisa_id', policy.id)
+				.in('status', ['Opłacona', 'Częściowo opłacona']);
+			const paidNrs = new Set((existingPaid ?? []).map((p: { nr_raty: number }) => p.nr_raty));
+
+			// Delete only unpaid records
+			await sb
+				.from('crm_policy_payments')
+				.delete()
+				.eq('polisa_id', policy.id)
+				.not('status', 'in', '("Opłacona","Częściowo opłacona")');
+
+			// Insert new records for installment numbers not already settled
+			const toInsert = raty
+				.filter(r => !paidNrs.has(r.nr))
+				.map(r => ({
 					tenant_id: appState.profile!.tenant_id,
 					polisa_id: policy.id,
 					nr_raty: r.nr,
 					data_platnosci: r.data,
 					kwota: r.kwota,
-					status: r.data < new Date().toISOString().split('T')[0] ? 'Zaległa' : 'Oczekująca'
-				}))
-			);
+					status: r.data < today ? 'Zaległa' : 'Oczekująca'
+				}));
+			if (toInsert.length > 0) {
+				await sb.from('crm_policy_payments').insert(toInsert);
+			}
 		}
 
 		const [rP, rA, rPay] = await Promise.all([

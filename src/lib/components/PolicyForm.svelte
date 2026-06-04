@@ -117,7 +117,7 @@
 			daty_rat: fpDatyRatArr.filter(Boolean).join(', ') || null,
 			kwoty_rat: fpKwotypRatArr.filter(Boolean).join(', ') || null,
 			skladka_przypisana: sklPrzyp,
-			skladka_zainkasowana: sklPrzyp,
+			skladka_zainkasowana: policy ? policy.skladka_zainkasowana : 0,
 			skladka_zaliczkowa: parseFloat(fpSklZaliczkowa) || 0,
 			prowizja_pct: prowPct,
 			prowizja_przypisana: prowPrzyp,
