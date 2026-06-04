@@ -20,15 +20,36 @@
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
 		const vals = policyForm.getValues();
-		const { error } = await sb.from('crm_policies').insert([{ tenant_id: appState.profile!.tenant_id, ...vals }]);
-		saving = false;
-		if (error) { formError = error.message; return; }
-		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa)'),
-			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
+		const { data: inserted, error } = await sb.from('crm_policies')
+			.insert([{ tenant_id: appState.profile!.tenant_id, ...vals }])
+			.select('id')
+			.single();
+		if (error) { saving = false; formError = error.message; return; }
+
+		// Auto-create payment records from installment dates
+		const raty = policyForm.getDatyRat();
+		if (raty.length > 0 && inserted?.id) {
+			await sb.from('crm_policy_payments').insert(
+				raty.map(r => ({
+					tenant_id: appState.profile!.tenant_id,
+					polisa_id: inserted.id,
+					nr_raty: r.nr,
+					data_platnosci: r.data,
+					kwota: r.kwota,
+					status: 'Oczekująca'
+				}))
+			);
+		}
+
+		const [rP, rA, rPay] = await Promise.all([
+			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
+			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
+			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci')
 		]);
+		saving = false;
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
 		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
+		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		goto('/policies');
 	}
 </script>
