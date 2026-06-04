@@ -265,6 +265,17 @@
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
 
+	async function revertPayment(pay: PolicyPayment) {
+		await sb.from('crm_policy_payments').update({
+			status: 'Oczekująca',
+			data_oplacenia: null,
+			nota_id: null,
+			prowizja_z_noty: null
+		}).eq('id', pay.id);
+		const { data } = await sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci');
+		appState.payments = (data ?? []) as typeof appState.payments;
+	}
+
 	async function addPayment() {
 		if (!fPolisa || !fData || !fKwota) { formError = 'Wypełnij wymagane pola.'; return; }
 		saving = true; formError = '';
@@ -399,6 +410,10 @@
 											<button onclick={() => markOverdue(pay)} class="px-2 py-1 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">Zaległa</button>
 										{/if}
 									</div>
+								{:else if pay.status === 'Opłacona' || pay.status === 'Częściowo opłacona'}
+									<button onclick={() => revertPayment(pay)} class="px-2 py-1 text-xs border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50" title="Cofnij rozliczenie">
+										↩ Cofnij
+									</button>
 								{/if}
 							</td>
 						</tr>

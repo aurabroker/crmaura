@@ -157,6 +157,7 @@
 	const lbl = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 
 	let clientSearch = $state('');
+	let clientOpen = $state(false);
 	const filteredClients = $derived(
 		clientSearch.trim()
 			? appState.clients.filter(c => c.nazwa.toLowerCase().includes(clientSearch.toLowerCase()) || (c.nazwa_skrocona ?? '').toLowerCase().includes(clientSearch.toLowerCase()))
@@ -165,6 +166,7 @@
 	const selectedClientName = $derived(appState.clients.find(c => c.id === fpKlient)?.nazwa ?? '');
 
 	let tuSearch = $state('');
+	let tuOpen = $state(false);
 	const filteredTU = $derived(
 		tuSearch.trim()
 			? appState.insurers.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()) || (t.skrot ?? '').toLowerCase().includes(tuSearch.toLowerCase()))
@@ -244,27 +246,69 @@
 
 	<!-- Wiersz 2: Klient | TU -->
 	<div class="grid grid-cols-2 gap-4">
+		<!-- Klient -->
 		<div>
 			<label class={lbl}>Klient *</label>
-			<input type="text" bind:value={clientSearch} placeholder="Filtruj klientów..." class={inp + ' mb-1'} />
-			<select bind:value={fpKlient} class={inp} size="4">
-				{#each filteredClients as c}
-					<option value={c.id}>{c.nazwa_skrocona ?? c.nazwa}</option>
-				{/each}
-			</select>
-			{#if fpKlient}
+			<div class="relative"
+				onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { clientOpen = false; clientSearch = ''; } }}>
+				<input type="text"
+					value={clientOpen ? clientSearch : (selectedClientName || '')}
+					placeholder={selectedClientName || '— wpisz nazwę klienta —'}
+					oninput={(e) => { clientSearch = (e.target as HTMLInputElement).value; }}
+					onfocus={() => { clientOpen = true; clientSearch = ''; }}
+					class={inp}
+				/>
+				{#if clientOpen}
+					<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+						{#if filteredClients.length === 0}
+							<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
+						{:else}
+							{#each filteredClients as c}
+								<button tabindex="0" type="button"
+									class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+									onclick={() => { fpKlient = c.id; clientOpen = false; clientSearch = ''; }}>
+									<span class="font-medium">{c.nazwa_skrocona ?? c.nazwa}</span>
+									{#if c.nazwa_skrocona}<span class="text-xs text-slate-400 ml-2">{c.nazwa}</span>{/if}
+								</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+			</div>
+			{#if fpKlient && !clientOpen}
 				<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedClientName}</p>
 			{/if}
 		</div>
+
+		<!-- TU -->
 		<div>
 			<label class={lbl}>Towarzystwo Ubezpieczeń *</label>
-			<input type="text" bind:value={tuSearch} placeholder="Filtruj TU..." class={inp + ' mb-1'} />
-			<select bind:value={fpTu} class={inp} size="4">
-				{#each filteredTU as t}
-					<option value={t.id}>{t.skrot ? `${t.skrot} — ${t.nazwa}` : t.nazwa}</option>
-				{/each}
-			</select>
-			{#if fpTu}
+			<div class="relative"
+				onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { tuOpen = false; tuSearch = ''; } }}>
+				<input type="text"
+					value={tuOpen ? tuSearch : (selectedTUName || '')}
+					placeholder={selectedTUName || '— wpisz nazwę lub skrót TU —'}
+					oninput={(e) => { tuSearch = (e.target as HTMLInputElement).value; }}
+					onfocus={() => { tuOpen = true; tuSearch = ''; }}
+					class={inp}
+				/>
+				{#if tuOpen}
+					<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+						{#if filteredTU.length === 0}
+							<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
+						{:else}
+							{#each filteredTU as t}
+								<button tabindex="0" type="button"
+									class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+									onclick={() => { fpTu = t.id; tuOpen = false; tuSearch = ''; }}>
+									{#if t.skrot}<span class="font-mono font-bold text-blue-700 mr-2">{t.skrot}</span>{/if}{t.nazwa}
+								</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
+			</div>
+			{#if fpTu && !tuOpen}
 				<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedTUName}</p>
 			{/if}
 		</div>
