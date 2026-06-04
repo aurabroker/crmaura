@@ -93,10 +93,13 @@
 
 	function onParentUgChange() {
 		const parent = appState.policies.find(p => p.id === fpParentId);
-		if (parent?.ug_default_prowizja_pct) {
-			fpProwPct = parent.ug_default_prowizja_pct.toString();
-			const sklad = parseFloat(fpSklPrzyp) || 0;
-			if (sklad > 0) fpProwPrzyp = ((sklad * parent.ug_default_prowizja_pct) / 100).toFixed(2);
+		if (parent) {
+			fpTu = parent.tu_id;
+			if (parent.ug_default_prowizja_pct) {
+				fpProwPct = parent.ug_default_prowizja_pct.toString();
+				const sklad = parseFloat(fpSklPrzyp) || 0;
+				if (sklad > 0) fpProwPrzyp = ((sklad * parent.ug_default_prowizja_pct) / 100).toFixed(2);
+			}
 		}
 	}
 
@@ -277,33 +280,41 @@
 		<!-- TU -->
 		<div>
 			<label class={lbl}>Towarzystwo Ubezpieczeń *</label>
-			<div class="relative"
-				onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { tuOpen = false; tuSearch = ''; } }}>
-				<input type="text"
-					value={tuOpen ? tuSearch : (selectedTUName || '')}
-					placeholder={selectedTUName || '— wpisz nazwę lub skrót TU —'}
-					oninput={(e) => { tuSearch = (e.target as HTMLInputElement).value; }}
-					onfocus={() => { tuOpen = true; tuSearch = ''; }}
-					class={inp}
-				/>
-				{#if tuOpen}
-					<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
-						{#if filteredTU.length === 0}
-							<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
-						{:else}
-							{#each filteredTU as t}
-								<button tabindex="0" type="button"
-									class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
-									onclick={() => { fpTu = t.id; tuOpen = false; tuSearch = ''; }}>
-									{#if t.skrot}<span class="font-mono font-bold text-blue-700 mr-2">{t.skrot}</span>{/if}{t.nazwa}
-								</button>
-							{/each}
-						{/if}
-					</div>
+			{#if fpParentId}
+				<div class="{inp} bg-slate-50 text-slate-500 cursor-not-allowed flex items-center gap-2">
+					<span class="text-xs text-slate-400">🔒</span>
+					{selectedTUName || '—'}
+				</div>
+				<p class="text-[11px] text-slate-400 mt-1">TU przypisane z UG — zmień w panelu UG</p>
+			{:else}
+				<div class="relative"
+					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { tuOpen = false; tuSearch = ''; } }}>
+					<input type="text"
+						value={tuOpen ? tuSearch : (selectedTUName || '')}
+						placeholder={selectedTUName || '— wpisz nazwę lub skrót TU —'}
+						oninput={(e) => { tuSearch = (e.target as HTMLInputElement).value; }}
+						onfocus={() => { tuOpen = true; tuSearch = ''; }}
+						class={inp}
+					/>
+					{#if tuOpen}
+						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+							{#if filteredTU.length === 0}
+								<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
+							{:else}
+								{#each filteredTU as t}
+									<button tabindex="0" type="button"
+										class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+										onclick={() => { fpTu = t.id; tuOpen = false; tuSearch = ''; }}>
+										{#if t.skrot}<span class="font-mono font-bold text-blue-700 mr-2">{t.skrot}</span>{/if}{t.nazwa}
+									</button>
+								{/each}
+							{/if}
+						</div>
+					{/if}
+				</div>
+				{#if fpTu && !tuOpen}
+					<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedTUName}</p>
 				{/if}
-			</div>
-			{#if fpTu && !tuOpen}
-				<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedTUName}</p>
 			{/if}
 		</div>
 	</div>
