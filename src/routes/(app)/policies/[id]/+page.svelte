@@ -86,7 +86,7 @@
 				.select('id, skladka_przypisana, prowizja_pct')
 				.eq('parent_id', currentPolicyId);
 
-			const toUpdate = (children ?? []).filter(c => !c.prowizja_pct || Number(c.prowizja_pct) === 0);
+			const toUpdate = (children ?? []).filter(c => !c.prowizja_pct || parseFloat(String(c.prowizja_pct)) === 0);
 			ugEditUpdatedCount = toUpdate.length;
 
 			for (const child of toUpdate) {
