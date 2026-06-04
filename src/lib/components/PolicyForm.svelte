@@ -39,40 +39,31 @@
 		parseFloat(policy?.skladka_przypisana?.toString() ?? '0') || 0
 	));
 
-	// Resize arrays when rata count changes
+	function calcDate(start: Date, i: number, n: number): string {
+		if (n === 1) {
+			const d = new Date(start);
+			d.setDate(d.getDate() + 14);
+			return d.toISOString().split('T')[0];
+		}
+		return new Date(start.getFullYear(), start.getMonth() + i, 25).toISOString().split('T')[0];
+	}
+
+	// Resize dates + auto-fill empty slots when fpOd or fpRaty changes
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
-		if (fpDatyRatArr.length !== n)
-			fpDatyRatArr = Array.from({ length: n }, (_, i) => fpDatyRatArr[i] ?? '');
-		if (fpKwotypRatArr.length !== n) {
-			const sklad = parseFloat(fpSklPrzyp) || 0;
-			const eq = n > 0 ? (sklad / n).toFixed(2) : '0.00';
-			fpKwotypRatArr = Array.from({ length: n }, (_, i) => fpKwotypRatArr[i] ?? eq);
-		}
+		const start = fpOd ? new Date(fpOd) : null;
+		fpDatyRatArr = Array.from({ length: n }, (_, i) => {
+			if (fpDatyRatArr[i]) return fpDatyRatArr[i]; // keep manually entered
+			return start ? calcDate(start, i, n) : '';
+		});
 	});
 
-	// Recalculate kwoty when skladka or rata count changes
+	// Resize kwoty + recalculate when fpSklPrzyp or fpRaty changes
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		const sklad = parseFloat(fpSklPrzyp) || 0;
 		const eq = n > 0 ? (sklad / n).toFixed(2) : '0.00';
-		fpKwotypRatArr = fpKwotypRatArr.map(() => eq);
-	});
-
-	// Auto-fill payment dates only when all empty
-	$effect(() => {
-		if (!fpOd) return;
-		const n = parseInt(fpRaty) || 1;
-		if (!fpDatyRatArr.every(d => !d)) return;
-		const start = new Date(fpOd);
-		fpDatyRatArr = Array.from({ length: n }, (_, i) => {
-			if (n === 1) {
-				const d = new Date(start); d.setDate(d.getDate() + 14);
-				return d.toISOString().split('T')[0];
-			} else {
-				return new Date(start.getFullYear(), start.getMonth() + i, 25).toISOString().split('T')[0];
-			}
-		});
+		fpKwotypRatArr = Array.from({ length: n }, (_, i) => fpKwotypRatArr[i] ?? eq);
 	});
 
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
