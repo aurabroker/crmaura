@@ -71,9 +71,22 @@
 	let ugEditOpen = $state(false);
 	let ugEditVal = $state('');
 	let ugEditSaving = $state(false);
+	let ugEditUpdatedCount = $state(0);
 	async function saveUgDefault() {
 		ugEditSaving = true;
-		await sb.from('crm_policies').update({ ug_default_prowizja_pct: parseFloat(ugEditVal) || null }).eq('id', policyId);
+		const pct = parseFloat(ugEditVal) || null;
+		// Save default on UG
+		await sb.from('crm_policies').update({ ug_default_prowizja_pct: pct }).eq('id', policyId);
+		// Apply to child policies that have no commission set (prowizja_pct = 0 or null)
+		if (pct) {
+			const childrenWithoutProwizja = appState.policies
+				.filter(p => p.parent_id === policyId && (!p.prowizja_pct || p.prowizja_pct === 0));
+			ugEditUpdatedCount = childrenWithoutProwizja.length;
+			for (const child of childrenWithoutProwizja) {
+				const prowizja_przypisana = (child.skladka_przypisana * pct) / 100;
+				await sb.from('crm_policies').update({ prowizja_pct: pct, prowizja_przypisana }).eq('id', child.id);
+			}
+		}
 		const { data } = await sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)');
 		appState.policies = (data ?? []) as typeof appState.policies;
 		ugEditOpen = false; ugEditSaving = false;
@@ -226,6 +239,9 @@
 			{:else}
 				<p class="text-2xl font-bold text-blue-900">{policy.ug_default_prowizja_pct != null ? `${policy.ug_default_prowizja_pct}%` : '— nie ustawiono —'}</p>
 				<p class="text-xs text-blue-600 mt-0.5">Automatycznie podpowiadana przy dodawaniu polisy do tej UG</p>
+				{#if ugEditUpdatedCount > 0}
+					<p class="text-xs text-emerald-700 mt-1">✓ Zaktualizowano {ugEditUpdatedCount} {ugEditUpdatedCount === 1 ? 'polisę' : 'polis'} bez prowizji</p>
+				{/if}
 			{/if}
 		</div>
 		{#if !ugEditOpen}
