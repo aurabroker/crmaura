@@ -388,6 +388,7 @@
 	{/if}
 {/if}
 
+{#if policy}
 <!-- Modal: Aneks -->
 <Modal title="Aneks do polisy {policy.nr_polisy}" open={showAnnex} onclose={() => { showAnnex = false; axError = ''; }}>
 	{#snippet footer()}
