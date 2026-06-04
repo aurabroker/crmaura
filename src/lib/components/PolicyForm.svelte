@@ -33,6 +33,12 @@
 		return Array.from({ length: count }, (_, i) => parts[i] ?? equal);
 	}
 
+	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
+	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
+	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
+	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
+	let fpUgDefaultProwizja = $state(policy?.ug_default_prowizja_pct?.toString() ?? '');
+
 	let fpDatyRatArr = $state<string[]>(parseDatyRat(policy?.daty_rat, parseInt(policy?.ilosc_rat ?? '1')));
 	let fpKwotypRatArr = $state<string[]>(parseKwotyRat(
 		(policy as any)?.kwoty_rat,
@@ -53,7 +59,7 @@
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		const start = fpOd ? new Date(fpOd) : null;
-		const current = untrack(() => [...fpDatyRatArr]); // read without tracking
+		const current = untrack(() => [...fpDatyRatArr]);
 		fpDatyRatArr = Array.from({ length: n }, (_, i) =>
 			current[i] || (start ? calcDate(start, i, n) : '')
 		);
@@ -65,14 +71,8 @@
 		const sklad = parseFloat(fpSklPrzyp) || 0;
 		const eq = n > 0 ? (sklad / n).toFixed(2) : '0.00';
 		const current = untrack(() => [...fpKwotypRatArr]);
-		fpKwotypRatArr = Array.from({ length: n }, (_, i) => current[i] ?? eq);
+		fpKwotypRatArr = Array.from({ length: n }, (_, i) => current[i] || eq);
 	});
-
-	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
-	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
-	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
-	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
-	let fpUgDefaultProwizja = $state(policy?.ug_default_prowizja_pct?.toString() ?? '');
 
 	// Auto data_do from data_od
 	$effect(() => {
