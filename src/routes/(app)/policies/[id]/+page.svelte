@@ -203,7 +203,18 @@
 		<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
 			<p class="text-xs text-slate-500 mb-1">Rodzaj</p>
 			<p class="text-sm font-semibold text-slate-900">{policy.rodzaj}</p>
-			{#if policy.przedmiot}<p class="text-xs text-slate-400">{policy.przedmiot}</p>{/if}
+			{#if policy.przedmiot}
+					{@const _ud = (() => { try { const _p = JSON.parse(policy.przedmiot!); return _p.__ud ? _p : null; } catch { return null; } })()}
+					{#if _ud}
+						<div class="text-xs text-slate-400 space-y-0.5 mt-1">
+							{#if _ud.ctn}<p>Trwała niezdolność: <span class="font-semibold text-slate-600">{Number(_ud.ctn).toLocaleString('pl-PL')} zł</span></p>{/if}
+							{#if _ud.ctc}<p>Czasowa niezdolność: <span class="font-semibold text-slate-600">{Number(_ud.ctc).toLocaleString('pl-PL')} zł</span></p>{/if}
+							{#if _ud.si}<p>Śmierć i inwalidztwo: <span class="font-semibold text-slate-600">{Number(_ud.si).toLocaleString('pl-PL')} zł</span></p>{/if}
+						</div>
+					{:else}
+						<p class="text-xs text-slate-400">{policy.przedmiot}</p>
+					{/if}
+				{/if}
 		</div>
 	</div>
 

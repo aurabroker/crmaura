@@ -18,6 +18,15 @@
 	let fpUgPodtyp = $state(policy?.ug_podtyp ?? '');
 	let fpParentId = $state(policy?.parent_id ?? '');
 	let fpPrzedmiot = $state(policy?.przedmiot ?? '');
+
+	// Utrata dochodu: parse existing przedmiot JSON or start empty
+	function parseUD(raw: string) {
+		try { const p = JSON.parse(raw); if (p.__ud) return p; } catch {}
+		return { __ud: true, ctn: '', ctc: '', si: '' };
+	}
+	let fpUD = $state(parseUD(policy?.przedmiot ?? ''));
+	const isUD = $derived(fpRodzaj === 'utrata_dochodu');
+
 	let fpOd = $state(policy?.data_od ?? '');
 	let fpDo = $state(policy?.data_do ?? '');
 	let fpZawarcia = $state((policy as any)?.data_zawarcia ?? '');
@@ -133,7 +142,7 @@
 			ug_podtyp: fpTypUmowy === 'generalna' ? fpUgPodtyp || null : null,
 			ug_default_prowizja_pct: fpTypUmowy === 'generalna' ? (parseFloat(fpUgDefaultProwizja) || null) : null,
 			parent_id: fpParentId || null,
-			przedmiot: fpPrzedmiot || null,
+			przedmiot: isUD ? JSON.stringify({ __ud: true, ctn: fpUD.ctn, ctc: fpUD.ctc, si: fpUD.si }) : (fpPrzedmiot || null),
 			data_od: fpOd, data_do: fpDo,
 			data_zawarcia: fpZawarcia || null,
 			ilosc_rat: fpRaty,
@@ -346,7 +355,24 @@
 		</div>
 		<div>
 			<label class={lbl}>Przedmiot ubezpieczenia</label>
-			<input bind:value={fpPrzedmiot} class={inp} placeholder="np. budynek, pojazd, OC..." />
+			{#if isUD}
+				<div class="space-y-2">
+					<div class="flex items-center gap-2">
+						<span class="text-xs text-slate-500 w-56 shrink-0">Całkowita trwała niezdolność</span>
+						<input type="number" step="0.01" bind:value={fpUD.ctn} class={inp} placeholder="kwota PLN" />
+					</div>
+					<div class="flex items-center gap-2">
+						<span class="text-xs text-slate-500 w-56 shrink-0">Całkowita czasowa niezdolność</span>
+						<input type="number" step="0.01" bind:value={fpUD.ctc} class={inp} placeholder="kwota PLN" />
+					</div>
+					<div class="flex items-center gap-2">
+						<span class="text-xs text-slate-500 w-56 shrink-0">Śmierć i inwalidztwo</span>
+						<input type="number" step="0.01" bind:value={fpUD.si} class={inp} placeholder="kwota PLN" />
+					</div>
+				</div>
+			{:else}
+				<input bind:value={fpPrzedmiot} class={inp} placeholder="np. budynek, pojazd, OC..." />
+			{/if}
 		</div>
 	</div>
 
