@@ -5,7 +5,21 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { todayStr } from '$lib/utils';
-	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList } from 'lucide-svelte';
+	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download } from 'lucide-svelte';
+	import { saveApkPdf } from '$lib/utils/apkPdf';
+
+	let pdfSaving = $state<string | null>(null); // form.id currently saving
+
+	async function handlePdf(f: ApkForm) {
+		pdfSaving = f.id;
+		try {
+			await saveApkPdf(f);
+			// refresh pdf_url in local state
+			appState.apkForms = appState.apkForms.map(x => x.id === f.id ? { ...x, pdf_url: f.pdf_url } : x);
+		} finally {
+			pdfSaving = null;
+		}
+	}
 
 	const APK_APP_URL = 'https://apk.aurabroker.pl'; // adres React app
 
@@ -196,10 +210,22 @@
 						<td class="px-5 py-3"><Badge variant={statusVariant(f.status)}>{statusLabel(f.status)}</Badge></td>
 						<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
 						<td class="px-5 py-3">
-							<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
-								class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
-								<ExternalLink size={12} /> Otwórz
-							</a>
+							<div class="flex items-center gap-2">
+								<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
+									class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+									<ExternalLink size={12} /> Otwórz
+								</a>
+								<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
+									class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+									<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
+								</button>
+								{#if f.pdf_url}
+									<a href={f.pdf_url} target="_blank" title="Ostatni zapisany PDF"
+										class="text-blue-500 hover:text-blue-700 flex items-center">
+										<Download size={12} />
+									</a>
+								{/if}
+							</div>
 						</td>
 					</tr>
 				{/each}

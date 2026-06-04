@@ -26,6 +26,8 @@
 		"@sveltejs/adapter-cloudflare": "^7.2.8",
 		"@sveltejs/adapter-vercel": "^6.3.3",
 		"@tailwindcss/vite": "^4.3.0",
+		"jspdf": "^4.2.1",
+		"jspdf-autotable": "^5.0.8",
 		"lucide-svelte": "^1.0.1",
 		"svelte-dnd-action": "^0.9.69",
 		"tailwindcss": "^4.3.0",

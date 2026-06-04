@@ -227,6 +227,7 @@ export interface ApkForm {
 	status: 'draft' | 'submitted';
 	form_data: Record<string, unknown>;
 	submitted_at: string | null;
+	pdf_url: string | null;
 	created_at: string;
 	updated_at: string;
 	crm_clients?: { nazwa: string; nazwa_skrocona: string | null } | null;

@@ -7,8 +7,16 @@
 	import type { Claim, Vehicle, ClientContact } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
+	import { saveApkPdf } from '$lib/utils/apkPdf';
+	import type { ApkForm } from '$lib/types/database';
+
+	let pdfSaving = $state<string | null>(null);
+	async function handlePdf(f: ApkForm) {
+		pdfSaving = f.id;
+		try { await saveApkPdf(f); } finally { pdfSaving = null; }
+	}
 
 	const clientId = $derived($page.params.id);
 	const client = $derived(appState.clients.find(c => c.id === clientId));
@@ -481,10 +489,22 @@
 								</td>
 								<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
 								<td class="px-5 py-3">
-									<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
-										class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-										<ClipboardList size={12} /> Otwórz
-									</a>
+									<div class="flex items-center gap-2">
+										<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
+											class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+											<ClipboardList size={12} /> Otwórz
+										</a>
+										<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
+											class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+											<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
+										</button>
+										{#if f.pdf_url}
+											<a href={f.pdf_url} target="_blank" title="Ostatni zapisany PDF"
+												class="text-blue-500 hover:text-blue-700">
+												<Download size={12} />
+											</a>
+										{/if}
+									</div>
 								</td>
 							</tr>
 						{/each}
