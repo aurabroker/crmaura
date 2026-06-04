@@ -52,26 +52,45 @@
 			d.setDate(d.getDate() + 14);
 			return d.toISOString().split('T')[0];
 		}
-		return new Date(start.getFullYear(), start.getMonth() + i, 25).toISOString().split('T')[0];
+		// Rata i+1: 25-ty miesiąca start+i (zawsze w przód od daty_od)
+		const d = new Date(start.getFullYear(), start.getMonth() + i, 25);
+		// Jeśli 25-ty tego miesiąca już minął względem data_od, idź miesiąc dalej
+		if (i === 0 && d <= start) {
+			d.setMonth(d.getMonth() + 1);
+		}
+		return d.toISOString().split('T')[0];
 	}
 
-	// Resize dates + auto-fill empty slots when fpOd or fpRaty changes
+	// Śledź poprzednią liczbę rat (zwykła zmienna, nie $state)
+	let _prevN = parseInt(policy?.ilosc_rat ?? '1');
+
+	// Daty rat: przy zmianie liczby rat → przelicz wszystkie; przy zmianie data_od → wypełnij puste
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		const start = fpOd ? new Date(fpOd) : null;
-		const current = untrack(() => [...fpDatyRatArr]);
-		fpDatyRatArr = Array.from({ length: n }, (_, i) =>
-			current[i] || (start ? calcDate(start, i, n) : '')
-		);
+		const prevN = _prevN;
+		_prevN = n;
+
+		if (n !== prevN) {
+			// Liczba rat zmieniona — przelicz wszystkie daty od nowa
+			fpDatyRatArr = Array.from({ length: n }, (_, i) =>
+				start ? calcDate(start, i, n) : ''
+			);
+		} else {
+			// Tylko data_od zmieniona — wypełnij puste sloty
+			const current = untrack(() => [...fpDatyRatArr]);
+			fpDatyRatArr = Array.from({ length: n }, (_, i) =>
+				current[i] || (start ? calcDate(start, i, n) : '')
+			);
+		}
 	});
 
-	// Resize kwoty + recalculate when fpSklPrzyp or fpRaty changes
+	// Kwoty rat: zawsze przelicz równo (składka / n) przy zmianie składki lub liczby rat
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		const sklad = parseFloat(fpSklPrzyp) || 0;
 		const eq = n > 0 ? (sklad / n).toFixed(2) : '0.00';
-		const current = untrack(() => [...fpKwotypRatArr]);
-		fpKwotypRatArr = Array.from({ length: n }, (_, i) => current[i] || eq);
+		fpKwotypRatArr = Array.from({ length: n }, () => eq);
 	});
 
 	// Auto data_do from data_od
