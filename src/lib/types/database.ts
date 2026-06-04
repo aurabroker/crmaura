@@ -154,11 +154,26 @@ export interface PolicyPayment {
 	nr_raty: number;
 	data_platnosci: string;
 	kwota: number;
-	status: 'Oczekująca' | 'Opłacona' | 'Zaległa';
+	status: 'Oczekująca' | 'Opłacona' | 'Zaległa' | 'Częściowo opłacona';
 	data_oplacenia: string | null;
 	notatka: string | null;
+	nota_id: string | null;
+	prowizja_z_noty: number | null;
 	created_at?: string;
 	crm_policies?: { nr_polisy: string; crm_clients?: { nazwa: string } | null } | null;
+}
+
+export interface CrmNota {
+	id: string;
+	tenant_id: string;
+	numer_noty: string;
+	tu_skrot: string | null;
+	data_zestawienia: string | null;
+	data_importu: string;
+	razem_skladka: number | null;
+	razem_prowizja: number | null;
+	pozycji_count: number | null;
+	created_at?: string;
 }
 
 export interface Prospect {
