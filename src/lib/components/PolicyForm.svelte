@@ -29,11 +29,36 @@
 
 	let fpDatyRatArr = $state<string[]>(parseDatyRat(policy?.daty_rat, parseInt(policy?.ilosc_rat ?? '1')));
 
+	function parseKwotyRat(raw: string | null | undefined, count: number, skladka: number): string[] {
+		const parts = (raw ?? '').split(',').map(s => s.trim()).filter(Boolean);
+		const equal = count > 0 ? (skladka / count).toFixed(2) : '0.00';
+		return Array.from({ length: count }, (_, i) => parts[i] ?? equal);
+	}
+
+	let fpKwotypRatArr = $state<string[]>(parseKwotyRat(
+		(policy as any)?.kwoty_rat,
+		parseInt(policy?.ilosc_rat ?? '1'),
+		parseFloat(policy?.skladka_przypisana?.toString() ?? '0') || 0
+	));
+
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		if (fpDatyRatArr.length !== n) {
 			fpDatyRatArr = Array.from({ length: n }, (_, i) => fpDatyRatArr[i] ?? '');
 		}
+		if (fpKwotypRatArr.length !== n) {
+			const sklad = parseFloat(fpSklPrzyp) || 0;
+			const eq = n > 0 ? (sklad / n).toFixed(2) : '0.00';
+			fpKwotypRatArr = Array.from({ length: n }, (_, i) => fpKwotypRatArr[i] ?? eq);
+		}
+	});
+
+	// Auto-recalculate kwoty when skladka or rata count changes
+	$effect(() => {
+		const n = parseInt(fpRaty) || 1;
+		const sklad = parseFloat(fpSklPrzyp) || 0;
+		const eq = n > 0 ? (sklad / n).toFixed(2) : '0.00';
+		fpKwotypRatArr = fpKwotypRatArr.map(() => eq);
 	});
 
 	// Auto-fill default payment dates when data_od or ilosc_rat changes
@@ -102,7 +127,9 @@
 			przedmiot: fpPrzedmiot || null,
 			data_od: fpOd, data_do: fpDo,
 			data_zawarcia: fpZawarcia || null,
-			ilosc_rat: fpRaty, daty_rat: fpDatyRatArr.filter(Boolean).join(', ') || null,
+			ilosc_rat: fpRaty,
+			daty_rat: fpDatyRatArr.filter(Boolean).join(', ') || null,
+			kwoty_rat: fpKwotypRatArr.filter(Boolean).join(', ') || null,
 			skladka_przypisana: sklPrzyp,
 			skladka_zainkasowana: sklPrzyp,
 			skladka_zaliczkowa: parseFloat(fpSklZaliczkowa) || 0,
@@ -115,9 +142,13 @@
 	export function getDatyRat(): { nr: number; data: string; kwota: number }[] {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const n = parseInt(fpRaty) || 1;
-		const kwotaRaty = n > 0 ? sklPrzyp / n : sklPrzyp;
+		const defaultKwota = n > 0 ? sklPrzyp / n : sklPrzyp;
 		return fpDatyRatArr
-			.map((d, i) => ({ nr: i + 1, data: d.trim(), kwota: kwotaRaty }))
+			.map((d, i) => ({
+				nr: i + 1,
+				data: d.trim(),
+				kwota: parseFloat(fpKwotypRatArr[i]) || defaultKwota
+			}))
 			.filter(r => r.data);
 	}
 
@@ -312,12 +343,13 @@
 					{/each}
 				</select>
 			</div>
-			<!-- terminy dat — zawsze widoczne (dla każdej liczby rat) -->
-			<div class="flex-1 grid gap-1.5" style="grid-template-columns: repeat({Math.min(ratyCount, 4)}, 1fr)">
+			<!-- terminy dat + kwoty — zawsze widoczne -->
+			<div class="flex-1 grid gap-2" style="grid-template-columns: repeat({Math.min(ratyCount, 3)}, 1fr)">
 				{#each fpDatyRatArr as _, i}
-					<div>
-						<div class="text-[10px] text-slate-400 mb-1">{ratyCount === 1 ? 'Termin płatności' : `Rata ${i + 1}`}</div>
-						<input type="date" bind:value={fpDatyRatArr[i]} class={inputSmCls} />
+					<div class="border border-slate-200 rounded-lg p-2 bg-slate-50">
+						<div class="text-[10px] font-semibold text-slate-500 mb-1.5">{ratyCount === 1 ? 'Płatność jednorazowa' : `Rata ${i + 1}`}</div>
+						<input type="date" bind:value={fpDatyRatArr[i]} class={inputSmCls + ' mb-1'} />
+						<input type="number" step="0.01" bind:value={fpKwotypRatArr[i]} placeholder="Kwota" class={inputSmCls} />
 					</div>
 				{/each}
 			</div>
