@@ -91,9 +91,9 @@
 		if (pct > 0 && sklad > 0) fpProwPrzyp = ((sklad * pct) / 100).toFixed(2);
 	});
 
-	// Auto-fill prowizja from parent UG
+	// Auto-fill prowizja from parent UG whenever selection changes
 	$effect(() => {
-		if (fpParentId && !policy) {
+		if (fpParentId) {
 			const parent = appState.policies.find(p => p.id === fpParentId);
 			if (parent?.ug_default_prowizja_pct) fpProwPct = parent.ug_default_prowizja_pct.toString();
 		}
