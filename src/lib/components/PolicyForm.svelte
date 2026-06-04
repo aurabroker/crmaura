@@ -336,6 +336,31 @@
 		</div>
 	</div>
 
+	<!-- Finansowe -->
+	<div class="border-t border-slate-100 pt-4">
+		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">Dane Finansowe</p>
+		<div class="grid grid-cols-3 gap-4">
+			<div>
+				<label class={lbl}>Składka przypisana (PLN) *</label>
+				<input type="number" step="0.01" bind:value={fpSklPrzyp} class={inp} />
+			</div>
+			{#if fpTypUmowy === 'generalna'}
+				<div>
+					<label class={lbl}>Składka zaliczkowa</label>
+					<input type="number" step="0.01" bind:value={fpSklZaliczkowa} class={inp} />
+				</div>
+			{/if}
+			<div>
+				<label class={lbl}>% Prowizji</label>
+				<input type="number" step="0.01" bind:value={fpProwPct} class={inp} />
+			</div>
+			<div>
+				<label class={lbl}>Prowizja przypisana (PLN)</label>
+				<input type="number" step="0.01" bind:value={fpProwPrzyp} placeholder="Auto z %" class={inp} />
+			</div>
+		</div>
+	</div>
+
 	<!-- Wiersz 5: Liczba rat + terminy (każda rata = jeden wiersz) -->
 	{#if fpTypUmowy !== 'generalna'}
 	<div>
@@ -365,30 +390,5 @@
 		</div>
 	</div>
 	{/if}
-
-	<!-- Finansowe -->
-	<div class="border-t border-slate-100 pt-4">
-		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">Dane Finansowe</p>
-		<div class="grid grid-cols-3 gap-4">
-			<div>
-				<label class={lbl}>Składka przypisana (PLN) *</label>
-				<input type="number" step="0.01" bind:value={fpSklPrzyp} class={inp} />
-			</div>
-			{#if fpTypUmowy === 'generalna'}
-				<div>
-					<label class={lbl}>Składka zaliczkowa</label>
-					<input type="number" step="0.01" bind:value={fpSklZaliczkowa} class={inp} />
-				</div>
-			{/if}
-			<div>
-				<label class={lbl}>% Prowizji</label>
-				<input type="number" step="0.01" bind:value={fpProwPct} class={inp} />
-			</div>
-			<div>
-				<label class={lbl}>Prowizja przypisana (PLN)</label>
-				<input type="number" step="0.01" bind:value={fpProwPrzyp} placeholder="Auto z %" class={inp} />
-			</div>
-		</div>
-	</div>
 
 </div>
