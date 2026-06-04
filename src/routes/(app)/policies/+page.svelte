@@ -49,6 +49,7 @@
 
 	// Expanded UG rows
 	let expandedUG = $state(new Set<string>());
+	let flatView = $state(false);
 
 	const toplevelPolicies = $derived(
 		appState.policies
@@ -61,8 +62,20 @@
 			)
 	);
 
-	function childrenOf(id: string) {
-		return appState.policies.filter((p) => p.parent_id === id);
+	const flatPolicies = $derived(
+		appState.policies
+			.filter((p) => filterTyp === 'all' || p.typ_umowy === filterTyp)
+			.filter((p) =>
+				!search ||
+				p.nr_polisy.toLowerCase().includes(search.toLowerCase()) ||
+				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(search.toLowerCase())
+			)
+			.sort((a, b) => a.nr_polisy.localeCompare(b.nr_polisy))
+	);
+
+	function parentNr(parentId: string | null): string {
+		if (!parentId) return '—';
+		return appState.policies.find(p => p.id === parentId)?.nr_polisy ?? '—';
 	}
 
 	function annexesOf(id: string) {
@@ -222,7 +235,7 @@
 </div>
 
 <!-- Filters -->
-<div class="flex gap-3 mb-4">
+<div class="flex gap-3 mb-4 flex-wrap">
 	<div class="flex items-center gap-2 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2">
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nr polisy lub kliencie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
@@ -236,6 +249,11 @@
 			{label}
 		</button>
 	{/each}
+	<button onclick={() => flatView = !flatView}
+		class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
+			{flatView ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+		{flatView ? '↕ Płaski' : '↕ Drzewo'}
+	</button>
 </div>
 
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -246,6 +264,7 @@
 				<th class="px-5 py-3">Klient</th>
 				<th class="px-5 py-3">TU</th>
 				<th class="px-5 py-3">Rodzaj / Typ</th>
+				{#if flatView}<th class="px-5 py-3">UG</th>{/if}
 				<th class="px-5 py-3">OD</th>
 				<th class="px-5 py-3">DO</th>
 				<th class="px-5 py-3 text-right">Składka</th>
@@ -254,6 +273,51 @@
 			</tr>
 		</thead>
 		<tbody>
+			{#if flatView}
+				{#each flatPolicies as p}
+					{@const st = policyStatus(p.data_do)}
+					{@const isUG = p.typ_umowy === 'generalna'}
+					<tr class="border-t border-slate-100 hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
+						<td class="px-5 py-3">
+							<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
+						</td>
+						<td class="px-5 py-3">
+							<a href="/clients/{p.klient_id}" class="hover:text-blue-700 hover:underline">{p.crm_clients?.nazwa ?? '—'}</a>
+						</td>
+						<td class="px-5 py-3">
+							{#if p.crm_insurers?.skrot}
+								<span class="font-mono font-semibold text-blue-700" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
+							{:else}
+								{p.crm_insurers?.nazwa ?? '—'}
+							{/if}
+						</td>
+						<td class="px-5 py-3">
+							{#if isUG}
+								<Badge variant="info">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</Badge>
+							{:else}
+								<Badge variant="neutral">{p.rodzaj}</Badge>
+							{/if}
+						</td>
+						<td class="px-5 py-3 text-xs font-mono text-slate-500">{p.parent_id ? parentNr(p.parent_id) : '—'}</td>
+						<td class="px-5 py-3 text-xs">{p.data_od}</td>
+						<td class="px-5 py-3 text-xs">{p.data_do}</td>
+						<td class="px-5 py-3 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
+						<td class="px-5 py-3">
+							<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+						</td>
+						<td class="px-5 py-3">
+							<div class="flex items-center gap-1">
+								<a href="/policies/{p.id}/edit" title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+									<Pencil size={14} />
+								</a>
+								<button onclick={() => openAnnex(p)} title="Dodaj aneks" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+									<FilePlus2 size={14} />
+								</button>
+							</div>
+						</td>
+					</tr>
+				{/each}
+			{:else}
 			{#each toplevelPolicies as p}
 				{@const st = policyStatus(p.data_do)}
 				{@const children = childrenOf(p.id)}
@@ -362,6 +426,7 @@
 			{:else}
 				<tr><td colspan="9" class="px-5 py-8 text-center text-slate-400">Brak polis</td></tr>
 			{/each}
+			{/if}
 		</tbody>
 	</table>
 </div>
