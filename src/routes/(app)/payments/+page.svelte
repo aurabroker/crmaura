@@ -452,17 +452,17 @@
 			<div class="text-xs text-slate-400">{pays.length} rat · {fmtPln(pays.reduce((s,p) => s+Number(p.kwota),0))} PLN</div>
 		</div>
 		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm border-collapse">
+			<table class="w-full text-left text-sm border-collapse table-fixed">
 				<thead class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
 					<tr>
-						<th class="px-4 py-2 w-8"></th>
-						<th class="px-4 py-2">Polisa</th>
-						<th class="px-4 py-2">Klient</th>
-						<th class="px-4 py-2 w-16 text-center">Rata</th>
-						<th class="px-4 py-2 text-right">Kwota</th>
-						<th class="px-4 py-2 text-right">Prowizja</th>
-						<th class="px-4 py-2">Status</th>
-						<th class="px-4 py-2 text-slate-400">Info</th>
+						<th class="px-4 py-2 w-10"></th>
+						<th class="px-4 py-2 w-[14%]">Polisa</th>
+						<th class="px-4 py-2 w-[22%]">Klient</th>
+						<th class="px-4 py-2 w-[7%] text-center">Rata</th>
+						<th class="px-4 py-2 w-[12%] text-right">Kwota</th>
+						<th class="px-4 py-2 w-[12%] text-right">Prowizja</th>
+						<th class="px-4 py-2 w-[14%]">Status</th>
+						<th class="px-4 py-2">Info</th>
 					</tr>
 				</thead>
 				<tbody>
