@@ -73,9 +73,14 @@
 			.sort((a, b) => a.nr_polisy.localeCompare(b.nr_polisy))
 	);
 
+	// O(1) lookup map instead of O(n) find per row
+	const parentNrMap = $derived(new Map(appState.policies.map(p => [p.id, p.nr_polisy])));
 	function parentNr(parentId: string | null): string {
-		if (!parentId) return '—';
-		return appState.policies.find(p => p.id === parentId)?.nr_polisy ?? '—';
+		return parentId ? (parentNrMap.get(parentId) ?? '—') : '—';
+	}
+
+	function childrenOf(id: string) {
+		return appState.policies.filter(p => p.parent_id === id);
 	}
 
 	function annexesOf(id: string) {

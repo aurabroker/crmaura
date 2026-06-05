@@ -6,8 +6,6 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { fmtPln, todayStr } from '$lib/utils';
 	import { Plus, Check, Search, FileSpreadsheet, AlertTriangle, CheckCircle2 } from 'lucide-svelte';
-	import * as XLSX from 'xlsx';
-
 	const today = todayStr();
 	const currentMonth = $state(today.slice(0, 7));
 
@@ -55,7 +53,8 @@
 		already_settled: boolean;
 	}
 
-	function parseErgoXlsx(file: File): Promise<void> {
+	async function parseErgoXlsx(file: File): Promise<void> {
+		const XLSX = await import('xlsx');
 		return new Promise((resolve, reject) => {
 			const reader = new FileReader();
 			reader.onload = (e) => {

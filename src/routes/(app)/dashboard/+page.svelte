@@ -34,15 +34,12 @@
 		})
 	);
 
+	const renewalKeySet = $derived(
+		new Set(appState.policies.map((p) => `${p.klient_id}|${p.tu_id}|${p.rodzaj}`))
+	);
 	const renewedThisYear = $derived(
 		expiredThisYear.filter((expired) =>
-			appState.policies.some(
-				(p) =>
-					p.klient_id === expired.klient_id &&
-					p.tu_id === expired.tu_id &&
-					p.rodzaj === expired.rodzaj &&
-					p.data_od > expired.data_do
-			)
+			renewalKeySet.has(`${expired.klient_id}|${expired.tu_id}|${expired.rodzaj}`)
 		)
 	);
 
