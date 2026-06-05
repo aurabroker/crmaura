@@ -34,6 +34,11 @@
 	let fAdvisor = $state(appState.profile?.imie_nazwisko ?? '');
 	let fMode = $state<'client' | 'advisor'>('client');
 
+	// RODO consent
+	let rodoZgoda = $state(false);
+	let rodoData = $state('');
+	let rodoKanal = $state<'email' | 'papier' | 'telefon' | 'osobiscie'>('papier');
+
 	const filteredClients = $derived(
 		fKlientSearch.trim()
 			? appState.clients.filter(c => (c.nazwa + ' ' + (c.nazwa_skrocona ?? '')).toLowerCase().includes(fKlientSearch.toLowerCase()))
@@ -95,6 +100,17 @@
 		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 
+		// Jeśli zebrano RODO — zapisz na kliencie
+		if (rodoZgoda && fKlient) {
+			await sb.from('crm_clients').update({
+				rodo_zgoda: true,
+				rodo_data: rodoData || todayStr(),
+				rodo_kanal: rodoKanal
+			}).eq('id', fKlient);
+			const { data: cls } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+			if (cls) appState.clients = cls as typeof appState.clients;
+		}
+
 		saving = false;
 		createdToken = token;
 		createdFormId = form!.id;
@@ -115,6 +131,9 @@
 		fMode = 'client';
 		createdToken = '';
 		createdFormId = '';
+		rodoZgoda = false;
+		rodoData = '';
+		rodoKanal = 'papier';
 	}
 
 	let search = $state('');
@@ -331,6 +350,33 @@
 						</button>
 					{/each}
 				</div>
+			</div>
+
+			<!-- RODO -->
+			<div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+				<p class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">Zgoda RODO (opcjonalnie)</p>
+				<label class="flex items-center gap-2 text-sm cursor-pointer mb-3">
+					<input type="checkbox" bind:checked={rodoZgoda} class="w-4 h-4 accent-blue-600" />
+					<span class="font-medium text-slate-700">Klient wyraził zgodę na przetwarzanie danych</span>
+				</label>
+				{#if rodoZgoda}
+				<div class="grid grid-cols-2 gap-3">
+					<div>
+						<label class="block text-xs font-medium text-slate-600 mb-1">Data zgody</label>
+						<input type="date" bind:value={rodoData} class={inp} />
+					</div>
+					<div>
+						<label class="block text-xs font-medium text-slate-600 mb-1">Kanał</label>
+						<select bind:value={rodoKanal} class={inp}>
+							<option value="papier">Papier</option>
+							<option value="email">Email</option>
+							<option value="telefon">Telefon</option>
+							<option value="osobiscie">Osobiście</option>
+						</select>
+					</div>
+				</div>
+				<p class="text-xs text-slate-400 mt-2">Zgoda zostanie zapisana na karcie klienta.</p>
+				{/if}
 			</div>
 		</div>
 	{/if}

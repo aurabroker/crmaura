@@ -6,13 +6,61 @@
 	import type { Vehicle } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
-	import { Search, Pencil, Plus, Car, User } from 'lucide-svelte';
+	import { Search, Pencil, Plus, Car, User, Shield, Trash2 } from 'lucide-svelte';
+	import { onMount } from 'svelte';
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// --- Tabs ---
-	let activeTab = $state<'vehicles' | 'profile'>('vehicles');
+	let activeTab = $state<'vehicles' | 'profile' | 'rodo'>('vehicles');
+
+	// --- RODO texts ---
+	type RodoText = { id?: string; key: string; label: string; tresc: string; required: boolean; aktywna: boolean; editing?: boolean };
+	let rodoTexts = $state<RodoText[]>([]);
+	let rodoLoading = $state(false);
+	let rodoMsg = $state('');
+
+	const DEFAULT_RODO: RodoText[] = [
+		{ key: 'przetwarzanie', label: 'Przetwarzanie danych osobowych', tresc: 'Wyrażam zgodę na przetwarzanie moich danych osobowych przez [nazwa firmy] w celu wykonania umowy ubezpieczenia i obsługi posprzedażowej zgodnie z RODO.', required: true, aktywna: true },
+		{ key: 'marketing', label: 'Marketing i informacje handlowe', tresc: 'Wyrażam zgodę na otrzymywanie informacji handlowych i marketingowych dotyczących produktów ubezpieczeniowych drogą elektroniczną.', required: false, aktywna: true },
+		{ key: 'profilowanie', label: 'Profilowanie', tresc: 'Wyrażam zgodę na profilowanie moich danych osobowych w celach analitycznych i dopasowania ofert ubezpieczeniowych.', required: false, aktywna: false },
+	];
+
+	onMount(async () => {
+		if (!appState.profile?.tenant_id) return;
+		const { data } = await sb.from('crm_rodo_texts').select('*').eq('tenant_id', appState.profile.tenant_id).order('created_at');
+		if (data && data.length > 0) {
+			rodoTexts = data as RodoText[];
+		} else {
+			rodoTexts = DEFAULT_RODO.map(d => ({ ...d }));
+		}
+	});
+
+	async function saveRodoText(t: RodoText) {
+		rodoLoading = true; rodoMsg = '';
+		const payload = { tenant_id: appState.profile!.tenant_id, key: t.key, label: t.label, tresc: t.tresc, required: t.required, aktywna: t.aktywna };
+		if (t.id) {
+			await sb.from('crm_rodo_texts').update(payload).eq('id', t.id);
+		} else {
+			const { data } = await sb.from('crm_rodo_texts').insert([payload]).select('id').single();
+			if (data) t.id = data.id;
+		}
+		t.editing = false;
+		rodoTexts = [...rodoTexts];
+		rodoLoading = false;
+		rodoMsg = 'Zapisano.';
+		setTimeout(() => rodoMsg = '', 2000);
+	}
+
+	async function deleteRodoText(t: RodoText, idx: number) {
+		if (t.id) await sb.from('crm_rodo_texts').delete().eq('id', t.id);
+		rodoTexts = rodoTexts.filter((_, i) => i !== idx);
+	}
+
+	function addRodoText() {
+		rodoTexts = [...rodoTexts, { key: `zgoda_${Date.now()}`, label: 'Nowa zgoda', tresc: '', required: false, aktywna: true, editing: true }];
+	}
 
 	// --- Profile ---
 	let imie_nazwisko = $state(appState.profile?.imie_nazwisko ?? '');
@@ -196,6 +244,13 @@
 			<User size={16} />
 			Mój profil
 		</button>
+		<button
+			onclick={() => activeTab = 'rodo'}
+			class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'rodo' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+		>
+			<Shield size={16} />
+			Zgody RODO
+		</button>
 	</div>
 
 	<!-- Pojazdy Tab -->
@@ -376,5 +431,91 @@
 				</button>
 			</div>
 		</div>
+	{/if}
+
+	<!-- RODO Tab -->
+	{#if activeTab === 'rodo'}
+	<div class="space-y-4">
+		<div class="flex items-center justify-between">
+			<div>
+				<h2 class="text-lg font-semibold text-slate-800">Treści zgód RODO</h2>
+				<p class="text-sm text-slate-500 mt-0.5">Edytuj teksty zgód wyświetlanych w formularzu APK</p>
+			</div>
+			<div class="flex items-center gap-3">
+				{#if rodoMsg}<span class="text-sm text-emerald-600">{rodoMsg}</span>{/if}
+				<button onclick={addRodoText} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
+					<Plus size={14} /> Dodaj zgodę
+				</button>
+			</div>
+		</div>
+
+		{#each rodoTexts as t, i}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+			<div class="flex items-start justify-between gap-4">
+				<div class="flex-1 min-w-0">
+					{#if t.editing}
+					<div class="space-y-3">
+						<div class="grid grid-cols-2 gap-3">
+							<div>
+								<label class={labelCls}>Klucz (ID)</label>
+								<input bind:value={t.key} class={inputCls} placeholder="np. przetwarzanie" />
+							</div>
+							<div>
+								<label class={labelCls}>Etykieta (tytuł zgody)</label>
+								<input bind:value={t.label} class={inputCls} placeholder="np. Przetwarzanie danych" />
+							</div>
+						</div>
+						<div>
+							<label class={labelCls}>Treść zgody</label>
+							<textarea bind:value={t.tresc} rows="4" class={inputCls} placeholder="Pełny tekst zgody..."></textarea>
+						</div>
+						<div class="flex items-center gap-6">
+							<label class="flex items-center gap-2 text-sm cursor-pointer">
+								<input type="checkbox" bind:checked={t.required} class="w-4 h-4 accent-blue-600" />
+								Obowiązkowa
+							</label>
+							<label class="flex items-center gap-2 text-sm cursor-pointer">
+								<input type="checkbox" bind:checked={t.aktywna} class="w-4 h-4 accent-blue-600" />
+								Aktywna
+							</label>
+						</div>
+						<div class="flex gap-2">
+							<button onclick={() => saveRodoText(t)} disabled={rodoLoading} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
+								{rodoLoading ? 'Zapisywanie...' : 'Zapisz'}
+							</button>
+							<button onclick={() => { t.editing = false; rodoTexts = [...rodoTexts]; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+						</div>
+					</div>
+					{:else}
+					<div>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="font-medium text-slate-900">{t.label}</span>
+							{#if t.required}<span class="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-medium">Obowiązkowa</span>{/if}
+							{#if !t.aktywna}<span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">Nieaktywna</span>{/if}
+						</div>
+						<p class="text-sm text-slate-500 line-clamp-2">{t.tresc}</p>
+					</div>
+					{/if}
+				</div>
+				{#if !t.editing}
+				<div class="flex gap-1 shrink-0">
+					<button onclick={() => { t.editing = true; rodoTexts = [...rodoTexts]; }} class="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+						<Pencil size={14} />
+					</button>
+					<button onclick={() => deleteRodoText(t, i)} class="p-2 text-slate-300 hover:text-red-500 rounded-lg hover:bg-red-50">
+						<Trash2 size={14} />
+					</button>
+				</div>
+				{/if}
+			</div>
+		</div>
+		{/each}
+
+		{#if rodoTexts.length === 0}
+		<div class="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
+			Brak zdefiniowanych zgód RODO. Kliknij "Dodaj zgodę" aby rozpocząć.
+		</div>
+		{/if}
+	</div>
 	{/if}
 </div>

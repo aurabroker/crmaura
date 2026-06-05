@@ -184,66 +184,71 @@
 	</div>
 
 	<!-- Dane polisy -->
-	<div class="grid grid-cols-4 gap-3 mb-5">
-		<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-			<p class="text-xs text-slate-500 mb-1">Składka</p>
-			<p class="text-xl font-semibold text-slate-900">{fmtPln(policy.skladka_przypisana)}</p>
-			<p class="text-xs text-slate-400">{policy.typ_umowy === 'generalna' ? 'Zaliczkowa' : `Raty: ${policy.ilosc_rat}`}</p>
+	<div class="grid gap-3 mb-5" style="grid-template-columns: repeat({policy.typ_umowy === 'generalna' ? 6 : 4}, minmax(0,1fr))">
+		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna składka polis' : 'Składka'}</p>
+			<p class="text-base font-semibold text-slate-900">{fmtPln(policy.typ_umowy === 'generalna' ? childSkladka : policy.skladka_przypisana)}</p>
+			<p class="text-xs text-slate-400">{policy.typ_umowy === 'generalna' ? `${childPolicies.length} polis` : `Raty: ${policy.ilosc_rat}`}</p>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-			<p class="text-xs text-slate-500 mb-1">Okres</p>
+		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5">Okres</p>
 			<p class="text-sm font-semibold text-slate-900">{policy.data_od}</p>
-			<p class="text-sm text-slate-500">{policy.data_do}</p>
+			<p class="text-xs text-slate-400">{policy.data_do}</p>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-			<p class="text-xs text-slate-500 mb-1">Prowizja</p>
-			<p class="text-xl font-semibold text-emerald-600">{fmtPln(policy.prowizja_przypisana)}</p>
+		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna prowizja' : 'Prowizja'}</p>
+			<p class="text-base font-semibold text-emerald-600">{fmtPln(policy.typ_umowy === 'generalna' ? childProwizja : policy.prowizja_przypisana)}</p>
 			<p class="text-xs text-slate-400">{policy.prowizja_pct}%</p>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-			<p class="text-xs text-slate-500 mb-1">Rodzaj</p>
+		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5">Rodzaj</p>
 			<p class="text-sm font-semibold text-slate-900">{policy.rodzaj}</p>
 			{#if policy.przedmiot}
 					{@const _ud = (() => { try { const _p = JSON.parse(policy.przedmiot!); return _p.__ud ? _p : null; } catch { return null; } })()}
 					{#if _ud}
-						<div class="text-xs text-slate-400 space-y-0.5 mt-1">
-							{#if _ud.ctn}<p>Trwała niezdolność: <span class="font-semibold text-slate-600">{Number(_ud.ctn).toLocaleString('pl-PL')} zł</span></p>{/if}
-							{#if _ud.ctc}<p>Czasowa niezdolność: <span class="font-semibold text-slate-600">{Number(_ud.ctc).toLocaleString('pl-PL')} zł</span></p>{/if}
-							{#if _ud.si}<p>Śmierć i inwalidztwo: <span class="font-semibold text-slate-600">{Number(_ud.si).toLocaleString('pl-PL')} zł</span></p>{/if}
+						<div class="text-xs text-slate-400 space-y-0.5 mt-0.5">
+							{#if _ud.ctn}<p>CTN: <span class="font-semibold text-slate-600">{Number(_ud.ctn).toLocaleString('pl-PL')} zł</span></p>{/if}
+							{#if _ud.ctc}<p>CTC: <span class="font-semibold text-slate-600">{Number(_ud.ctc).toLocaleString('pl-PL')} zł</span></p>{/if}
+							{#if _ud.si}<p>SI: <span class="font-semibold text-slate-600">{Number(_ud.si).toLocaleString('pl-PL')} zł</span></p>{/if}
 						</div>
 					{:else}
-						<p class="text-xs text-slate-400">{policy.przedmiot}</p>
+						<p class="text-xs text-slate-400 truncate">{policy.przedmiot}</p>
 					{/if}
 				{/if}
 		</div>
+		{#if policy.typ_umowy === 'generalna'}
+		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5">Liczba polis</p>
+			<p class="text-base font-semibold text-slate-900">{childPolicies.length}</p>
+			<p class="text-xs text-slate-400">certyfikatów</p>
+		</div>
+		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5">Śr. prowizja</p>
+			<p class="text-base font-semibold text-emerald-600">{childPolicies.length > 0 ? fmtPln(childProwizja / childPolicies.length) : '—'}</p>
+			<p class="text-xs text-slate-400">na polisę</p>
+		</div>
+		{/if}
 	</div>
 
-	<!-- UG: domyślna prowizja -->
+	<!-- UG: domyślna prowizja (compact inline) -->
 	{#if policy.typ_umowy === 'generalna'}
-	<div class="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-5 flex items-center justify-between">
-		<div>
-			<p class="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">Domyślna prowizja dla polis w tej UG</p>
-			{#if ugEditOpen}
-				<div class="flex items-center gap-2">
-					<input type="number" step="0.01" bind:value={ugEditVal}
-						class="border border-blue-300 rounded-lg px-2 py-1 text-sm w-24 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="%" />
-					<button onclick={saveUgDefault} disabled={ugEditSaving} class="px-3 py-1 bg-blue-700 text-white text-xs rounded-lg hover:bg-blue-800 disabled:opacity-60">
-						{ugEditSaving ? '...' : 'Zapisz'}
-					</button>
-					<button onclick={() => ugEditOpen = false} class="px-3 py-1 border border-blue-300 text-blue-700 text-xs rounded-lg hover:bg-blue-100">Anuluj</button>
-				</div>
-			{:else}
-				<p class="text-2xl font-bold text-blue-900">{policy.ug_default_prowizja_pct != null ? `${policy.ug_default_prowizja_pct}%` : '— nie ustawiono —'}</p>
-				<p class="text-xs text-blue-600 mt-0.5">Automatycznie podpowiadana przy dodawaniu polisy do tej UG</p>
-				{#if ugEditUpdatedCount > 0}
-					<p class="text-xs text-emerald-700 mt-1">✓ Zaktualizowano {ugEditUpdatedCount} {ugEditUpdatedCount === 1 ? 'polisę' : 'polis'} bez prowizji</p>
-				{/if}
+	<div class="inline-flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 mb-5">
+		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide whitespace-nowrap">Domyślna prowizja UG:</p>
+		{#if ugEditOpen}
+			<input type="number" step="0.01" bind:value={ugEditVal}
+				class="border border-blue-300 rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="%" />
+			<button onclick={saveUgDefault} disabled={ugEditSaving} class="px-3 py-1 bg-blue-700 text-white text-xs rounded-lg hover:bg-blue-800 disabled:opacity-60">
+				{ugEditSaving ? '...' : 'Zapisz'}
+			</button>
+			<button onclick={() => ugEditOpen = false} class="px-2 py-1 border border-blue-300 text-blue-700 text-xs rounded-lg hover:bg-blue-100">✕</button>
+		{:else}
+			<span class="text-base font-bold text-blue-900">{policy.ug_default_prowizja_pct != null ? `${policy.ug_default_prowizja_pct}%` : '—'}</span>
+			{#if ugEditUpdatedCount > 0}
+				<span class="text-xs text-emerald-700">✓ zaktualizowano {ugEditUpdatedCount} polis</span>
 			{/if}
-		</div>
-		{#if !ugEditOpen}
 			<button onclick={() => { ugEditVal = policy.ug_default_prowizja_pct?.toString() ?? ''; ugEditOpen = true; }}
-				class="flex items-center gap-1 text-xs text-blue-700 border border-blue-300 rounded-lg px-3 py-1.5 hover:bg-blue-100">
-				<Pencil size={12} /> Ustaw
+				class="flex items-center gap-1 text-xs text-blue-700 border border-blue-300 rounded-lg px-2 py-1 hover:bg-blue-100">
+				<Pencil size={11} /> Zmień
 			</button>
 		{/if}
 	</div>
@@ -277,13 +282,22 @@
 
 	<!-- Terminy rat -->
 	{#if policy.daty_rat}
+	{@const datyArr = policy.daty_rat.split(',').map(d => d.trim()).filter(Boolean)}
 	<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm mb-5">
-		<p class="text-xs font-semibold text-slate-500 uppercase mb-2">Terminy płatności rat</p>
-		<div class="flex flex-wrap gap-2">
-			{#each policy.daty_rat.split(',') as d, i}
-				<span class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm">Rata {i+1}: <strong>{d.trim()}</strong></span>
-			{/each}
-		</div>
+		<p class="text-xs font-semibold text-slate-500 uppercase mb-2">Terminy płatności rat ({datyArr.length})</p>
+		{#if datyArr.length >= 12}
+			<div class="grid grid-cols-2 gap-x-6 gap-y-1.5">
+				{#each datyArr as d, i}
+					<span class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm">Rata {i+1}: <strong>{d}</strong></span>
+				{/each}
+			</div>
+		{:else}
+			<div class="flex flex-wrap gap-2">
+				{#each datyArr as d, i}
+					<span class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm">Rata {i+1}: <strong>{d}</strong></span>
+				{/each}
+			</div>
+		{/if}
 	</div>
 	{/if}
 

@@ -184,6 +184,27 @@
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+
+	// Opiekun klienta
+	let editingOpiekun = $state(false);
+	let selectedOpiekun = $state(client?.opiekun_id ?? '');
+	let savingOpiekun = $state(false);
+
+	const opiekunNazwa = $derived(() => {
+		const id = client?.opiekun_id;
+		if (!id) return null;
+		const p = appState.brokers.find(b => b.id === id);
+		return p?.imie_nazwisko ?? p?.email ?? null;
+	});
+
+	async function saveOpiekun() {
+		savingOpiekun = true;
+		await sb.from('crm_clients').update({ opiekun_id: selectedOpiekun || null }).eq('id', clientId);
+		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+		appState.clients = (data ?? []) as typeof appState.clients;
+		savingOpiekun = false;
+		editingOpiekun = false;
+	}
 </script>
 
 <svelte:head><title>{client?.nazwa ?? 'Klient'} — FRANK67 CRM</title></svelte:head>
@@ -203,6 +224,23 @@
 				<p class="text-sm text-slate-500 mt-0.5">
 					{#if client.nip}NIP: {client.nip} · {/if}{#if client.pesel}PESEL: {client.pesel} · {/if}{#if client.rodo_zgoda}<span class="text-emerald-600">RODO ✓</span>{:else}<span class="text-red-500">BRAK RODO</span>{/if}
 				</p>
+				<!-- Opiekun klienta -->
+				<div class="flex items-center gap-2 mt-1">
+					{#if editingOpiekun}
+						<select bind:value={selectedOpiekun} class="border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+							<option value="">— brak opiekuna —</option>
+							{#each appState.brokers as b}
+								<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>
+							{/each}
+						</select>
+						<button onclick={saveOpiekun} disabled={savingOpiekun} class="px-2 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">{savingOpiekun ? '...' : 'Zapisz'}</button>
+						<button onclick={() => editingOpiekun = false} class="px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
+					{:else}
+						<span class="text-xs text-slate-400">Opiekun:</span>
+						<span class="text-xs font-medium text-slate-700">{opiekunNazwa() ?? '— brak —'}</span>
+						<button onclick={() => { selectedOpiekun = client.opiekun_id ?? ''; editingOpiekun = true; }} class="text-xs text-blue-600 hover:underline">zmień</button>
+					{/if}
+				</div>
 			</div>
 		</div>
 		<button

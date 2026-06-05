@@ -5,8 +5,25 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { KeyRound, RefreshCw } from 'lucide-svelte';
 
-	type Tenant = { id: string; nazwa: string; created_at: string };
+	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean> };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
+
+	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
+		{ key: 'gwarancje', label: 'Gwarancje ubezpieczeniowe' },
+		{ key: 'kalendarz', label: 'Kalendarz / Zadania' },
+	];
+
+	function hasFeature(tenant: Tenant, key: string): boolean {
+		return !!(tenant.features?.[key]);
+	}
+
+	async function toggleFeature(tenant: Tenant, key: string) {
+		const current = tenant.features ?? {};
+		const next = { ...current, [key]: !current[key] };
+		await sb.from('crm_tenants').update({ features: next }).eq('id', tenant.id);
+		tenant.features = next;
+		tenants = [...tenants]; // trigger reactivity
+	}
 
 	let tenants = $state<Tenant[]>([]);
 	let allProfiles = $state<ProfileRow[]>([]);
@@ -47,7 +64,10 @@
 		}
 
 		const data = await res.json();
-		tenants = data.tenants;
+		// Enrich with features from crm_tenants (direct query since ADMIN GOD)
+		const { data: tenantData } = await sb.from('crm_tenants').select('id, features');
+		const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean> }) => [t.id, t.features ?? {}]));
+		tenants = data.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id) ?? {} }));
 		allProfiles = data.profiles;
 		loading = false;
 		loadSyncLog();
@@ -171,6 +191,7 @@
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Data rejestracji</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Użytkownicy</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Admin</th>
+					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Funkcje opcjonalne</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Akcje</th>
 				</tr>
@@ -184,6 +205,22 @@
 						<td class="px-4 py-3 text-slate-500">{formatDate(tenant.created_at)}</td>
 						<td class="px-4 py-3 text-slate-700">{count}</td>
 						<td class="px-4 py-3 text-slate-600">{admin ? (admin.imie_nazwisko ?? admin.email) : '—'}</td>
+						<td class="px-4 py-3">
+							<div class="flex flex-wrap gap-1.5">
+								{#each OPTIONAL_FEATURES as feat}
+									<button
+										onclick={() => toggleFeature(tenant, feat.key)}
+										class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors
+											{hasFeature(tenant, feat.key)
+												? 'bg-blue-100 text-blue-700 border-blue-300'
+												: 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'}"
+									>
+										{#if hasFeature(tenant, feat.key)}✓{:else}○{/if}
+										{feat.label}
+									</button>
+								{/each}
+							</div>
+						</td>
 						<td class="px-4 py-3">
 							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">Aktywny</span>
 						</td>
