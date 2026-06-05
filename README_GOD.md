@@ -15,7 +15,8 @@
 | Storage | Supabase Storage (bucket: `apk-pdfs`) |
 | Deploy | Cloudflare (adapter-cloudflare) |
 | PDF | jsPDF + jspdf-autotable |
-| Excel import | SheetJS (`xlsx`) |
+| Excel import | SheetJS (`xlsx`) — ładowany dynamicznie (`await import('xlsx')`) |
+| Email | Resend API — per tenant, klucz w `crm_tenants.resend_api_key` |
 
 ---
 
@@ -56,7 +57,7 @@ src/
       knf-report/           # Raporty KNF
       settings/             # Ustawienia
       admin/                # Administracja (ADMIN BROKER)
-      saas-admin/           # SaaS admin (ADMIN GOD only)
+      saas-admin/           # SaaS admin (ADMIN GOD only) — tenanci, funkcje, Resend keys
 ```
 
 ---
@@ -66,7 +67,8 @@ src/
 ### `crm_policies`
 Polisy ubezpieczeniowe. Pola niestandardowe:
 - `typ_umowy`: `jednostkowa` | `generalna`
-- `ug_podtyp`: `flota` | `gwarancje` | `cpm` | `car_ear` | `oc_beauty`
+- `ug_podtyp`: `flota` | `gwarancje` | `cpm` | `car_ear` | `oc_beauty` | `beauty_tax`
+- `rodzaj`: `majątkowa` | `życie` | `grupowe_medyczne` | `grupowe_życie` | `utrata_dochodu` | `komunikacja` | `flota` | `finansowa` | `OC` | `techniczna` | `karno_skarbowa` | `polisa_obca` | `umowa_generalna_*`
 - `parent_id` → FK do `crm_policies.id` (polisa podpięta pod UG)
 - `daty_rat`: string CSV dat płatności rat, np. `"2025-01-25, 2025-02-25"`
 - `kwoty_rat`: string CSV kwot rat, np. `"500.00, 500.00"`
@@ -79,6 +81,14 @@ Raty płatności polis.
 - `nota_id` → FK do `crm_noty` (powiązanie z rozliczeniem ERGO)
 - `prowizja_z_noty` — prowizja wynikająca z noty TU
 - Zmiana `status` lub `kwota` → trigger automatycznie aktualizuje `crm_policies`
+
+### `crm_tenants`
+Konfiguracja tenantów SaaS.
+- `features`: JSONB — opcjonalne funkcje per tenant (`gwarancje`, `kalendarz`)
+- `resend_api_key`: klucz API Resend do wysyłki przypomnień e-mail
+
+### `crm_rodo_texts`
+Treści zgód RODO per tenant. Pola: `key`, `label`, `tresc`, `required`, `aktywna`.
 
 ### `crm_noty`
 Zestawienia prowizyjne importowane z XLSX (np. ERGO).
@@ -100,6 +110,13 @@ Log zdarzeń APK (created, submitted, itp.).
 ## Multi-tenancy
 
 Każda tabela ma kolumnę `tenant_id`. RLS (Row Level Security) filtruje dane przez funkcję `get_my_tenant_id()`. Użytkownik widzi tylko dane swojego tenanta.
+
+`crm_profiles` ładowane w layout z filtrem `.eq('tenant_id', profile.tenant_id)` — brak wycieku cross-tenant.
+
+### Funkcje opcjonalne per tenant
+Pole `features` (JSONB) w `crm_tenants`. Włączane przez ADMIN GOD w `/saas-admin`:
+- `gwarancje` — moduł gwarancji ubezpieczeniowych
+- `kalendarz` — kalendarz i zadania
 
 ### Role użytkowników
 | Rola | Uprawnienia |
@@ -130,6 +147,7 @@ appState.brokers        // crm_profiles
 appState.apkForms       // apk_forms (z join crm_clients)
 appState.profile        // zalogowany użytkownik
 appState.tenantTyp      // 'broker' | 'agent' | ...
+appState.tenantNazwa    // nazwa firmy tenanta
 ```
 
 ---
@@ -163,6 +181,20 @@ Strona `/payments` obsługuje import rozliczenia prowizyjnego z TU ERGO:
 5. Już rozliczone → pomijane (`already_settled`)
 6. Zapis: INSERT do `crm_noty` + UPDATE `crm_policy_payments` (status, kwota, prowizja_z_noty, nota_id, data_oplacenia)
 7. **Cofnięcie**: przycisk "↩ Cofnij" resetuje ratę do `Oczekująca` (trigger DB automatycznie aktualizuje polisę)
+
+---
+
+## Email — przypomnienia o płatnościach
+
+Supabase Edge Function `send-payment-reminders` wysyła przypomnienia przez Resend API.
+
+- Uruchamiana automatycznie **codziennie o 8:00** (cron w `supabase/config.toml`)
+- Dla każdego tenanta z ustawionym `resend_api_key`:
+  - Szuka płatności `status = 'Oczekująca'` z `data_platnosci` w ciągu najbliższych 7 dni
+  - Grupuje po kliencie (email z `crm_clients.email`)
+  - Wysyła jeden zbiorczy mail na klienta z listą rat
+- Klucz Resend ustawiany przez ADMIN GOD w panelu SaaS Admin per tenant
+- `from`: `onboarding@resend.dev` (działa bez własnej domeny)
 
 ---
 
