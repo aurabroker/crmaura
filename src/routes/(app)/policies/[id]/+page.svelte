@@ -280,27 +280,6 @@
 	</div>
 	{/if}
 
-	<!-- Terminy rat -->
-	{#if policy.daty_rat}
-	{@const datyArr = policy.daty_rat.split(',').map(d => d.trim()).filter(Boolean)}
-	<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm mb-5">
-		<p class="text-xs font-semibold text-slate-500 uppercase mb-2">Terminy płatności rat ({datyArr.length})</p>
-		{#if datyArr.length >= 12}
-			<div class="grid grid-cols-2 gap-x-6 gap-y-1.5">
-				{#each datyArr as d, i}
-					<span class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm">Rata {i+1}: <strong>{d}</strong></span>
-				{/each}
-			</div>
-		{:else}
-			<div class="flex flex-wrap gap-2">
-				{#each datyArr as d, i}
-					<span class="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 text-sm">Rata {i+1}: <strong>{d}</strong></span>
-				{/each}
-			</div>
-		{/if}
-	</div>
-	{/if}
-
 	<!-- Polisy podrzędne (certyfikaty) UG -->
 	{#if childPolicies.length > 0}
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
@@ -387,28 +366,18 @@
 		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50">
 			<p class="text-sm font-semibold text-slate-700">Płatności ({payments.length})</p>
 		</div>
-		<table class="w-full text-sm text-left">
-			<thead>
-				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-5 py-2">Rata</th>
-					<th class="px-5 py-2">Termin</th>
-					<th class="px-5 py-2 text-right">Kwota</th>
-					<th class="px-5 py-2">Status</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each payments as pay}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
-						<td class="px-5 py-2">{pay.nr_raty}</td>
-						<td class="px-5 py-2">{pay.data_platnosci}</td>
-						<td class="px-5 py-2 text-right font-medium">{fmtPln(pay.kwota)}</td>
-						<td class="px-5 py-2">
-							<Badge variant={pay.status === 'Opłacona' ? 'success' : pay.status === 'Zaległa' ? 'error' : 'neutral'}>{pay.status}</Badge>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+		<div class="p-4 grid grid-cols-2 gap-2">
+			{#each payments as pay}
+				<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-sm">
+					<span class="text-slate-500 font-medium w-14 shrink-0">Rata {pay.nr_raty}</span>
+					<span class="text-slate-700 flex-1 text-center">{pay.data_platnosci}</span>
+					<span class="font-semibold text-slate-900 w-24 text-right shrink-0">{fmtPln(pay.kwota)}</span>
+					<span class="ml-2 shrink-0">
+						<Badge variant={pay.status === 'Opłacona' ? 'success' : pay.status === 'Zaległa' ? 'error' : 'neutral'}>{pay.status}</Badge>
+					</span>
+				</div>
+			{/each}
+		</div>
 	</div>
 	{/if}
 {/if}
