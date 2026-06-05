@@ -42,6 +42,25 @@
 		return Array.from({ length: count }, (_, i) => parts[i] ?? equal);
 	}
 
+	// Auto-fill default payment dates when data_od or ilosc_rat changes
+	$effect(() => {
+		if (!fpOd) return;
+		const n = parseInt(fpRaty) || 1;
+		const allEmpty = fpDatyRatArr.every(d => !d);
+		if (!allEmpty) return; // don't override manually set dates
+		const start = new Date(fpOd);
+		fpDatyRatArr = Array.from({ length: n }, (_, i) => {
+			if (n === 1) {
+				const d = new Date(start);
+				d.setDate(d.getDate() + 14);
+				return d.toISOString().split('T')[0];
+			} else {
+				const d = new Date(start.getFullYear(), start.getMonth() + i, 25);
+				return d.toISOString().split('T')[0];
+			}
+		});
+	});
+
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
