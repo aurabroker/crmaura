@@ -3,9 +3,9 @@
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { KeyRound, RefreshCw } from 'lucide-svelte';
+	import { KeyRound, RefreshCw, Mail } from 'lucide-svelte';
 
-	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean> };
+	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_api_key?: string | null };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
 
 	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
@@ -40,6 +40,21 @@
 	let resetError = $state('');
 	let resetSuccess = $state('');
 
+	// Resend API key state
+	let editingResend = $state<string | null>(null);
+	let resendInput = $state('');
+	let savingResend = $state(false);
+
+	async function saveResendKey(tenant: Tenant) {
+		savingResend = true;
+		const val = resendInput.trim() || null;
+		await sb.from('crm_tenants').update({ resend_api_key: val }).eq('id', tenant.id);
+		tenant.resend_api_key = val;
+		tenants = [...tenants];
+		editingResend = null;
+		savingResend = false;
+	}
+
 	// Sync state
 	let syncLoading = $state(false);
 	let syncResult = $state('');
@@ -65,9 +80,9 @@
 
 		const data = await res.json();
 		// Enrich with features from crm_tenants (direct query since ADMIN GOD)
-		const { data: tenantData } = await sb.from('crm_tenants').select('id, features');
-		const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean> }) => [t.id, t.features ?? {}]));
-		tenants = data.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id) ?? {} }));
+		const { data: tenantData } = await sb.from('crm_tenants').select('id, features, resend_api_key');
+		const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean>; resend_api_key?: string | null }) => [t.id, { features: t.features ?? {}, resend_api_key: t.resend_api_key ?? null }]));
+		tenants = data.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id)?.features ?? {}, resend_api_key: featuresMap.get(t.id)?.resend_api_key ?? null }));
 		allProfiles = data.profiles;
 		loading = false;
 		loadSyncLog();
@@ -192,6 +207,7 @@
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Użytkownicy</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Admin</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Funkcje opcjonalne</th>
+					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Resend API</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
 					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Akcje</th>
 				</tr>
@@ -222,6 +238,44 @@
 							</div>
 						</td>
 						<td class="px-4 py-3">
+							{#if editingResend === tenant.id}
+								<div class="flex items-center gap-1">
+									<input
+										type="text"
+										bind:value={resendInput}
+										placeholder="re_..."
+										class="border border-slate-200 rounded px-2 py-1 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-blue-400"
+									/>
+									<button
+										onclick={() => saveResendKey(tenant)}
+										disabled={savingResend}
+										class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+									>{savingResend ? '…' : 'Zapisz'}</button>
+									<button
+										onclick={() => { editingResend = null; }}
+										class="px-2 py-1 text-xs border border-slate-200 text-slate-600 rounded hover:bg-slate-100"
+									>✕</button>
+								</div>
+							{:else if tenant.resend_api_key}
+								<button
+									onclick={() => { editingResend = tenant.id; resendInput = tenant.resend_api_key ?? ''; }}
+									class="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-blue-600"
+									title="Edytuj klucz Resend"
+								>
+									<Mail size={12} />
+									re_****…{tenant.resend_api_key.slice(-4)}
+								</button>
+							{:else}
+								<button
+									onclick={() => { editingResend = tenant.id; resendInput = ''; }}
+									class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-blue-600"
+								>
+									<Mail size={12} />
+									Dodaj klucz
+								</button>
+							{/if}
+						</td>
+						<td class="px-4 py-3">
 							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">Aktywny</span>
 						</td>
 						<td class="px-4 py-3">
@@ -240,7 +294,7 @@
 				{/each}
 				{#if tenants.length === 0}
 					<tr>
-						<td colspan="6" class="px-4 py-8 text-center text-slate-400">Brak firm</td>
+						<td colspan="8" class="px-4 py-8 text-center text-slate-400">Brak firm</td>
 					</tr>
 				{/if}
 			</tbody>
