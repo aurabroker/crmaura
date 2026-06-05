@@ -1,4 +1,4 @@
-import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, PolicyBroker, ApkForm } from '$lib/types/database';
+import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, InsurerBranch, InsurerContact, PolicyBroker, ApkForm } from '$lib/types/database';
 
 export const appState = $state({
 	profile: null as Profile | null,
@@ -10,6 +10,8 @@ export const appState = $state({
 	vehicles: [] as Vehicle[],
 	apk: [] as ApkLog[],
 	insurers: [] as Insurer[],
+	insurerBranches: [] as InsurerBranch[],
+	insurerContacts: [] as InsurerContact[],
 	brokers: [] as Profile[],
 	policyBrokers: [] as PolicyBroker[],
 	clientContacts: [] as ClientContact[],

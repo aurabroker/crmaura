@@ -57,6 +57,31 @@ export interface Insurer {
 	krs: string | null;
 }
 
+export interface InsurerBranch {
+	id: string;
+	tenant_id: string;
+	tu_id: string;
+	nazwa: string;
+	adres: string | null;
+	telefon: string | null;
+	email: string | null;
+	created_at?: string;
+}
+
+export interface InsurerContact {
+	id: string;
+	tenant_id: string;
+	tu_id: string;
+	branch_id: string | null;
+	imie_nazwisko: string;
+	stanowisko: string | null;
+	telefon: string | null;
+	email: string | null;
+	notatki: string | null;
+	created_at?: string;
+	crm_insurer_branches?: { nazwa: string } | null;
+}
+
 export type TypUmowy = 'jednostkowa' | 'generalna';
 export type UgPodtyp = 'flota' | 'gwarancje' | 'cpm' | 'car_ear' | 'oc_beauty';
 
@@ -87,9 +112,13 @@ export interface Policy {
 	rozliczenie_status: string | null;
 	rozliczenie_kwota_tu: number | null;
 	rozliczenie_plik: string | null;
+	deleted_at: string | null;
+	deletion_reason: string | null;
+	tu_contact_id: string | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;
+	crm_insurer_contacts?: { imie_nazwisko: string; stanowisko: string | null; crm_insurer_branches?: { nazwa: string } | null } | null;
 }
 
 export interface PolicyAnnex {

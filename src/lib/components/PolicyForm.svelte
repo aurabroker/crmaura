@@ -138,6 +138,17 @@
 		if (pct > 0 && sklad > 0) fpProwPrzyp = ((sklad * pct) / 100).toFixed(2);
 	});
 
+	// Auto-preset for beauty_tax: force Colonnade TU + karno_skarbowa rodzaj
+	$effect(() => {
+		if (fpTypUmowy === 'generalna' && fpUgPodtyp === 'beauty_tax') {
+			const colonnade = appState.insurers.find(t =>
+				(t.skrot ?? t.nazwa).toLowerCase().includes('colonnade') ||
+				t.nazwa.toLowerCase().includes('colonnade')
+			);
+			if (colonnade) fpTu = colonnade.id;
+		}
+	});
+
 	function onParentUgChange() {
 		const parent = appState.policies.find(p => p.id === fpParentId);
 		if (parent) {
@@ -154,9 +165,10 @@
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const prowPct = parseFloat(fpProwPct) || 0;
 		const prowPrzyp = parseFloat(fpProwPrzyp) || (sklPrzyp * prowPct / 100);
+		const ugRodzaj = fpUgPodtyp === 'beauty_tax' ? 'karno_skarbowa' : `umowa_generalna_${fpUgPodtyp}`;
 		return {
 			klient_id: fpKlient, tu_id: fpTu, nr_polisy: fpNr,
-			rodzaj: fpTypUmowy === 'generalna' ? `umowa_generalna_${fpUgPodtyp}` : fpRodzaj,
+			rodzaj: fpTypUmowy === 'generalna' ? ugRodzaj : fpRodzaj,
 			typ_umowy: fpTypUmowy,
 			ug_podtyp: fpTypUmowy === 'generalna' ? fpUgPodtyp || null : null,
 			ug_default_prowizja_pct: fpTypUmowy === 'generalna' ? (parseFloat(fpUgDefaultProwizja) || null) : null,
@@ -333,12 +345,12 @@
 		<!-- TU -->
 		<div>
 			<label class={lbl}>Towarzystwo Ubezpieczeń *</label>
-			{#if fpParentId}
+			{#if fpParentId || (fpTypUmowy === 'generalna' && fpUgPodtyp === 'beauty_tax')}
 				<div class="{inp} bg-slate-50 text-slate-500 cursor-not-allowed flex items-center gap-2">
 					<span class="text-xs text-slate-400">🔒</span>
 					{selectedTUName || '—'}
 				</div>
-				<p class="text-[11px] text-slate-400 mt-1">TU przypisane z UG — zmień w panelu UG</p>
+				<p class="text-[11px] text-slate-400 mt-1">{fpUgPodtyp === 'beauty_tax' ? 'Polisa podatkowa — TU: Colonnade (stałe)' : 'TU przypisane z UG — zmień w panelu UG'}</p>
 			{:else}
 				<div class="relative"
 					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { tuOpen = false; tuSearch = ''; } }}>
