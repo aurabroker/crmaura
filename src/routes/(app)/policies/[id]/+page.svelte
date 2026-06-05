@@ -6,7 +6,7 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2 } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound } from 'lucide-svelte';
 	import type { PolicyBroker } from '$lib/types/database';
 
 	const policyId = $derived($page.params.id);
@@ -144,6 +144,65 @@
 		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
 	}
 
+	// --- Delete (soft) ---
+	let showDelete = $state(false);
+	let deletionReason = $state('');
+	let deleting = $state(false);
+	let deleteError = $state('');
+
+	async function softDelete() {
+		if (!deletionReason.trim()) { deleteError = 'Podaj uzasadnienie usunięcia.'; return; }
+		deleting = true; deleteError = '';
+		const { error } = await sb.from('crm_policies')
+			.update({ deleted_at: new Date().toISOString(), deletion_reason: deletionReason.trim() })
+			.eq('id', policyId);
+		deleting = false;
+		if (error) { deleteError = error.message; return; }
+		// Remove from local state
+		appState.policies = appState.policies.filter(p => p.id !== policyId);
+		goto('/policies');
+	}
+
+	// --- TU Contact ---
+	let showContact = $state(false);
+	let contactBranchId = $state('');
+	let contactPersonId = $state('');
+	let savingContact = $state(false);
+	let contactError = $state('');
+
+	const tuBranches = $derived(
+		appState.insurerBranches.filter(b => b.tu_id === policy?.tu_id)
+	);
+	const branchContacts = $derived(
+		contactBranchId
+			? appState.insurerContacts.filter(c => c.branch_id === contactBranchId)
+			: appState.insurerContacts.filter(c => c.tu_id === policy?.tu_id && !c.branch_id)
+	);
+
+	async function saveContact() {
+		if (!contactPersonId) { contactError = 'Wybierz osobę.'; return; }
+		savingContact = true; contactError = '';
+		const { error } = await sb.from('crm_policies')
+			.update({ tu_contact_id: contactPersonId })
+			.eq('id', policyId);
+		savingContact = false;
+		if (error) { contactError = error.message; return; }
+		const { data } = await sb.from('crm_policies')
+			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
+			.is('deleted_at', null);
+		appState.policies = (data ?? []) as typeof appState.policies;
+		showContact = false;
+		contactBranchId = ''; contactPersonId = '';
+	}
+
+	async function removeContact() {
+		await sb.from('crm_policies').update({ tu_contact_id: null }).eq('id', policyId);
+		const { data } = await sb.from('crm_policies')
+			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
+			.is('deleted_at', null);
+		appState.policies = (data ?? []) as typeof appState.policies;
+	}
+
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
@@ -180,6 +239,9 @@
 			<a href="/policies/{policyId}/edit" class="flex items-center gap-1.5 text-sm bg-slate-900 text-white rounded-lg px-3 py-2 hover:bg-slate-700">
 				<Pencil size={14} /> Edytuj
 			</a>
+			<button onclick={() => { showDelete = true; deletionReason = ''; deleteError = ''; }} class="flex items-center gap-1.5 text-sm border border-red-200 text-red-600 rounded-lg px-3 py-2 hover:bg-red-50">
+				<Trash2 size={14} /> Usuń
+			</button>
 		</div>
 	</div>
 
@@ -279,6 +341,31 @@
 		</div>
 	</div>
 	{/if}
+
+	<!-- Osoba kontaktowa TU -->
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
+		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+			<p class="text-sm font-semibold text-slate-700 flex items-center gap-2"><UserRound size={14} /> Osoba kontaktowa TU</p>
+			<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; }} class="text-xs text-slate-500 hover:text-slate-800">
+				{policy.tu_contact_id ? 'Zmień' : '+ Przypisz'}
+			</button>
+		</div>
+		{#if policy.crm_insurer_contacts}
+			{@const c = policy.crm_insurer_contacts}
+			<div class="px-5 py-3 flex items-center justify-between">
+				<div>
+					<p class="font-medium text-sm">{c.imie_nazwisko}</p>
+					{#if c.stanowisko}<p class="text-xs text-slate-500">{c.stanowisko}</p>{/if}
+					{#if c.crm_insurer_branches}<p class="text-xs text-blue-600">{c.crm_insurer_branches.nazwa}</p>{/if}
+				</div>
+				<button onclick={removeContact} class="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors" title="Usuń powiązanie">
+					<Trash2 size={13} />
+				</button>
+			</div>
+		{:else}
+			<div class="px-5 py-4 text-sm text-slate-400">Brak przypisanej osoby kontaktowej TU.</div>
+		{/if}
+	</div>
 
 	<!-- Polisy podrzędne (certyfikaty) UG -->
 	{#if childPolicies.length > 0}
@@ -492,5 +579,61 @@
 			{#if Math.abs(suma - 100) > 0.1} ⚠️ nie sumuje się do 100%{:else} ✓{/if}
 		</div>
 	{/if}
+</Modal>
+{/if}
+
+<!-- Modal: Usuń polisę -->
+<Modal title="Usuń polisę — {policy?.nr_polisy}" open={showDelete} onclose={() => showDelete = false}>
+	{#snippet footer()}
+		<button onclick={() => showDelete = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={softDelete} disabled={deleting} class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-60">
+			{deleting ? 'Usuwanie...' : 'Przenieś do Kosza'}
+		</button>
+	{/snippet}
+	{#if deleteError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{deleteError}</div>{/if}
+	<div class="space-y-3">
+		<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
+			Polisa zostanie przeniesiona do Kosza. Administrator może ją przywrócić lub trwale usunąć.
+		</div>
+		<div>
+			<label class={labelCls}>Uzasadnienie usunięcia *</label>
+			<textarea bind:value={deletionReason} rows="3" placeholder="Podaj powód usunięcia polisy..." class={inputCls}></textarea>
+		</div>
+	</div>
+</Modal>
+
+<!-- Modal: Osoba kontaktowa TU -->
+{#if policy}
+<Modal title="Osoba kontaktowa TU — {policy.crm_insurers?.skrot ?? policy.crm_insurers?.nazwa ?? ''}" open={showContact} onclose={() => showContact = false}>
+	{#snippet footer()}
+		<button onclick={() => showContact = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveContact} disabled={savingContact} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingContact ? 'Zapisywanie...' : 'Przypisz osobę'}
+		</button>
+	{/snippet}
+	{#if contactError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{contactError}</div>{/if}
+	<div class="space-y-3">
+		<div>
+			<label class={labelCls}>Oddział</label>
+			<select bind:value={contactBranchId} onchange={() => contactPersonId = ''} class={inputCls}>
+				<option value="">— bez oddziału (centrala) —</option>
+				{#each tuBranches as b}
+					<option value={b.id}>{b.nazwa}</option>
+				{/each}
+			</select>
+		</div>
+		<div>
+			<label class={labelCls}>Osoba *</label>
+			<select bind:value={contactPersonId} class={inputCls}>
+				<option value="">— wybierz osobę —</option>
+				{#each branchContacts as c}
+					<option value={c.id}>{c.imie_nazwisko}{c.stanowisko ? ` — ${c.stanowisko}` : ''}</option>
+				{/each}
+			</select>
+			{#if branchContacts.length === 0}
+				<p class="text-xs text-slate-400 mt-1">Brak osób przypisanych do wybranego oddziału.</p>
+			{/if}
+		</div>
+	</div>
 </Modal>
 {/if}

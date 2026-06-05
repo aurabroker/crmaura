@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, policyStatus } from '$lib/utils';
+	import { fmtPln, policyStatus, rodzajCls, ugPodtypCls } from '$lib/utils';
 	import type { Policy } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -89,7 +89,7 @@
 
 	async function reloadPolicies() {
 		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
+			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
@@ -298,9 +298,9 @@
 						</td>
 						<td class="px-5 py-3">
 							{#if isUG}
-								<Badge variant="info">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</Badge>
+								<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {ugPodtypCls(p.ug_podtyp ?? '')}">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</span>
 							{:else}
-								<Badge variant="neutral">{p.rodzaj}</Badge>
+								<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {rodzajCls(p.rodzaj)}">{p.rodzaj}</span>
 							{/if}
 						</td>
 						<td class="px-5 py-3 text-xs font-mono text-slate-500">{p.parent_id ? parentNr(p.parent_id) : '—'}</td>

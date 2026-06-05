@@ -3,10 +3,10 @@
 	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import type { Insurer, Profile } from '$lib/types/database';
+	import type { Insurer, Profile, InsurerBranch, InsurerContact } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Pencil, UserPlus, Mail } from 'lucide-svelte';
+	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight } from 'lucide-svelte';
 
 	onMount(() => { if (!isAdmin(appState.profile)) goto('/dashboard'); });
 
@@ -99,6 +99,87 @@
 		r === 'ADMIN BROKER' ? 'warning' :
 		r === 'BOARD' ? 'info' : 'neutral';
 
+	// --- Oddziały (Branches) ---
+	let showBranch = $state(false);
+	let editingBranch = $state<InsurerBranch | null>(null);
+	let branchTuId = $state('');
+	let bNazwa = $state(''); let bAdres = $state(''); let bTelefon = $state(''); let bEmail = $state('');
+	let savingBranch = $state(false); let branchError = $state('');
+	let expandedTU = $state(new Set<string>());
+
+	function toggleTU(id: string) {
+		const s = new Set(expandedTU);
+		if (s.has(id)) s.delete(id); else s.add(id);
+		expandedTU = s;
+	}
+
+	function openNewBranch(tuId: string) {
+		editingBranch = null; branchTuId = tuId;
+		bNazwa = ''; bAdres = ''; bTelefon = ''; bEmail = '';
+		branchError = ''; showBranch = true;
+	}
+	function openEditBranch(b: InsurerBranch) {
+		editingBranch = b; branchTuId = b.tu_id;
+		bNazwa = b.nazwa; bAdres = b.adres ?? ''; bTelefon = b.telefon ?? ''; bEmail = b.email ?? '';
+		branchError = ''; showBranch = true;
+	}
+	async function saveBranch() {
+		if (!bNazwa.trim()) { branchError = 'Podaj nazwę oddziału'; return; }
+		savingBranch = true; branchError = '';
+		const payload = { tu_id: branchTuId, nazwa: bNazwa.trim(), adres: bAdres || null, telefon: bTelefon || null, email: bEmail || null };
+		let error;
+		if (editingBranch) {
+			({ error } = await sb.from('crm_insurer_branches').update(payload).eq('id', editingBranch.id));
+		} else {
+			({ error } = await sb.from('crm_insurer_branches').insert([{ tenant_id: appState.profile!.tenant_id, ...payload }]));
+		}
+		savingBranch = false;
+		if (error) { branchError = error.message; return; }
+		showBranch = false;
+		const { data } = await sb.from('crm_insurer_branches').select('*').order('nazwa');
+		appState.insurerBranches = (data ?? []) as typeof appState.insurerBranches;
+	}
+
+	// --- Osoby kontaktowe TU ---
+	let showContactModal = $state(false);
+	let editingContact = $state<InsurerContact | null>(null);
+	let contactTuId = $state('');
+	let cBranchId = $state(''); let cNazwa = $state(''); let cStanowisko = $state('');
+	let cTelefon = $state(''); let cEmail = $state(''); let cNotatki = $state('');
+	let savingContactM = $state(false); let contactMError = $state('');
+
+	function openNewContact(tuId: string, branchId = '') {
+		editingContact = null; contactTuId = tuId;
+		cBranchId = branchId; cNazwa = ''; cStanowisko = ''; cTelefon = ''; cEmail = ''; cNotatki = '';
+		contactMError = ''; showContactModal = true;
+	}
+	function openEditContact(c: InsurerContact) {
+		editingContact = c; contactTuId = c.tu_id;
+		cBranchId = c.branch_id ?? ''; cNazwa = c.imie_nazwisko; cStanowisko = c.stanowisko ?? '';
+		cTelefon = c.telefon ?? ''; cEmail = c.email ?? ''; cNotatki = c.notatki ?? '';
+		contactMError = ''; showContactModal = true;
+	}
+	async function saveContact() {
+		if (!cNazwa.trim()) { contactMError = 'Podaj imię i nazwisko'; return; }
+		savingContactM = true; contactMError = '';
+		const payload = {
+			tu_id: contactTuId, branch_id: cBranchId || null,
+			imie_nazwisko: cNazwa.trim(), stanowisko: cStanowisko || null,
+			telefon: cTelefon || null, email: cEmail || null, notatki: cNotatki || null
+		};
+		let error;
+		if (editingContact) {
+			({ error } = await sb.from('crm_insurer_contacts').update(payload).eq('id', editingContact.id));
+		} else {
+			({ error } = await sb.from('crm_insurer_contacts').insert([{ tenant_id: appState.profile!.tenant_id, ...payload }]));
+		}
+		savingContactM = false;
+		if (error) { contactMError = error.message; return; }
+		showContactModal = false;
+		const { data } = await sb.from('crm_insurer_contacts').select('*, crm_insurer_branches(nazwa)').order('imie_nazwisko');
+		appState.insurerContacts = (data ?? []) as typeof appState.insurerContacts;
+	}
+
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
@@ -129,26 +210,109 @@
 					</thead>
 					<tbody>
 						{#each tuDzial as t}
+							{@const tBranches = appState.insurerBranches.filter(b => b.tu_id === t.id)}
+							{@const tContacts = appState.insurerContacts.filter(c => c.tu_id === t.id)}
+							{@const isExpanded = expandedTU.has(t.id)}
 							<tr class="border-t border-slate-100 hover:bg-slate-50">
 								<td class="px-5 py-3">
-									{#if t.skrot}
-										<span class="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">{t.skrot}</span>
-									{:else}
-										<span class="text-slate-300 text-xs">—</span>
-									{/if}
+									<div class="flex items-center gap-2">
+										<button onclick={() => toggleTU(t.id)} class="text-slate-400 hover:text-slate-700">
+											{#if isExpanded}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
+										</button>
+										{#if t.skrot}
+											<span class="font-mono font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded text-xs">{t.skrot}</span>
+										{:else}
+											<span class="text-slate-300 text-xs">—</span>
+										{/if}
+									</div>
 								</td>
 								<td class="px-5 py-3">
 									<div class="font-medium">{t.nazwa}</div>
 									{#if t.ulica}<div class="text-xs text-slate-400">{t.ulica}</div>{/if}
+									<div class="flex items-center gap-3 mt-1">
+										{#if tBranches.length > 0}
+											<span class="text-[10px] text-slate-400"><Building2 class="inline" size={10} /> {tBranches.length} oddz.</span>
+										{/if}
+										{#if tContacts.length > 0}
+											<span class="text-[10px] text-slate-400"><UserRound class="inline" size={10} /> {tContacts.length} os.</span>
+										{/if}
+									</div>
 								</td>
 								<td class="px-5 py-3 text-xs text-slate-500">
 									{#if t.nip}NIP: {t.nip}<br/>{/if}
 									{#if t.krs}KRS: {t.krs}{/if}
 								</td>
 								<td class="px-5 py-3">
-									<button onclick={() => openEditTU(t)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
+									<div class="flex items-center gap-1">
+										<button onclick={() => openEditTU(t)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100" title="Edytuj TU"><Pencil size={14} /></button>
+										<button onclick={() => openNewBranch(t.id)} class="p-1.5 rounded-lg text-slate-400 hover:text-blue-700 hover:bg-blue-50" title="Dodaj oddział"><Building2 size={14} /></button>
+										<button onclick={() => openNewContact(t.id)} class="p-1.5 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50" title="Dodaj osobę kontaktową"><UserRound size={14} /></button>
+									</div>
 								</td>
 							</tr>
+							{#if isExpanded}
+								<!-- Oddziały -->
+								{#each tBranches as br}
+									{@const brContacts = appState.insurerContacts.filter(c => c.branch_id === br.id)}
+									<tr class="border-t border-slate-100 bg-blue-50/30">
+										<td class="pl-14 pr-5 py-2" colspan="2">
+											<div class="flex items-center gap-2">
+												<Building2 size={12} class="text-blue-500" />
+												<span class="text-sm font-medium text-blue-800">{br.nazwa}</span>
+												{#if br.adres}<span class="text-xs text-slate-400">{br.adres}</span>{/if}
+											</div>
+										</td>
+										<td class="px-5 py-2 text-xs text-slate-500">
+											{#if br.telefon}{br.telefon}{/if}
+											{#if br.email}<br/>{br.email}{/if}
+										</td>
+										<td class="px-5 py-2">
+											<div class="flex items-center gap-1">
+												<button onclick={() => openEditBranch(br)} class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100" title="Edytuj oddział"><Pencil size={13} /></button>
+												<button onclick={() => openNewContact(t.id, br.id)} class="p-1 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50" title="Dodaj osobę do oddziału"><UserRound size={13} /></button>
+											</div>
+										</td>
+									</tr>
+									{#each brContacts as c}
+										<tr class="border-t border-slate-50 bg-emerald-50/20">
+											<td class="pl-20 pr-5 py-2" colspan="2">
+												<div class="flex items-center gap-2">
+													<UserRound size={11} class="text-emerald-600" />
+													<span class="text-sm text-slate-700">{c.imie_nazwisko}</span>
+													{#if c.stanowisko}<span class="text-xs text-slate-400">— {c.stanowisko}</span>{/if}
+												</div>
+											</td>
+											<td class="px-5 py-2 text-xs text-slate-500">
+												{#if c.telefon}{c.telefon}{/if}
+												{#if c.email}<br/>{c.email}{/if}
+											</td>
+											<td class="px-5 py-2">
+												<button onclick={() => openEditContact(c)} class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={13} /></button>
+											</td>
+										</tr>
+									{/each}
+								{/each}
+								<!-- Osoby bez oddziału -->
+								{#each appState.insurerContacts.filter(c => c.tu_id === t.id && !c.branch_id) as c}
+									<tr class="border-t border-slate-50 bg-emerald-50/20">
+										<td class="pl-14 pr-5 py-2" colspan="2">
+											<div class="flex items-center gap-2">
+												<UserRound size={11} class="text-emerald-600" />
+												<span class="text-sm text-slate-700">{c.imie_nazwisko}</span>
+												{#if c.stanowisko}<span class="text-xs text-slate-400">— {c.stanowisko}</span>{/if}
+												<span class="text-[10px] text-slate-300">(centrala)</span>
+											</div>
+										</td>
+										<td class="px-5 py-2 text-xs text-slate-500">
+											{#if c.telefon}{c.telefon}{/if}
+											{#if c.email}<br/>{c.email}{/if}
+										</td>
+										<td class="px-5 py-2">
+											<button onclick={() => openEditContact(c)} class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={13} /></button>
+										</td>
+									</tr>
+								{/each}
+							{/if}
 						{:else}
 							<tr><td colspan="4" class="px-5 py-6 text-center text-slate-400">Brak TU {label.toLowerCase()}</td></tr>
 						{/each}
@@ -284,3 +448,51 @@
 	</div>
 </Modal>
 {/if}
+
+<!-- Modal: Oddział TU -->
+<Modal title={editingBranch ? `Edytuj oddział — ${editingBranch.nazwa}` : 'Nowy Oddział TU'} open={showBranch} onclose={() => { showBranch=false; branchError=''; }}>
+	{#snippet footer()}
+		<button onclick={() => { showBranch=false; branchError=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveBranch} disabled={savingBranch} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingBranch ? 'Zapisywanie...' : editingBranch ? 'Zapisz zmiany' : 'Dodaj oddział'}
+		</button>
+	{/snippet}
+	{#if branchError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{branchError}</div>{/if}
+	<div class="space-y-3">
+		<div><label class={labelCls}>Nazwa oddziału *</label><input bind:value={bNazwa} class={inputCls} placeholder="np. Oddział Warszawa" /></div>
+		<div><label class={labelCls}>Adres</label><input bind:value={bAdres} class={inputCls} /></div>
+		<div class="grid grid-cols-2 gap-3">
+			<div><label class={labelCls}>Telefon</label><input bind:value={bTelefon} class={inputCls} /></div>
+			<div><label class={labelCls}>E-mail</label><input type="email" bind:value={bEmail} class={inputCls} /></div>
+		</div>
+	</div>
+</Modal>
+
+<!-- Modal: Osoba kontaktowa TU -->
+<Modal title={editingContact ? `Edytuj osobę — ${editingContact.imie_nazwisko}` : 'Nowa Osoba Kontaktowa TU'} open={showContactModal} onclose={() => { showContactModal=false; contactMError=''; }}>
+	{#snippet footer()}
+		<button onclick={() => { showContactModal=false; contactMError=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveContact} disabled={savingContactM} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingContactM ? 'Zapisywanie...' : editingContact ? 'Zapisz zmiany' : 'Dodaj osobę'}
+		</button>
+	{/snippet}
+	{#if contactMError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{contactMError}</div>{/if}
+	<div class="space-y-3">
+		<div>
+			<label class={labelCls}>Oddział</label>
+			<select bind:value={cBranchId} class={inputCls}>
+				<option value="">— centrala (bez oddziału) —</option>
+				{#each appState.insurerBranches.filter(b => b.tu_id === contactTuId) as b}
+					<option value={b.id}>{b.nazwa}</option>
+				{/each}
+			</select>
+		</div>
+		<div><label class={labelCls}>Imię i Nazwisko *</label><input bind:value={cNazwa} class={inputCls} /></div>
+		<div><label class={labelCls}>Stanowisko</label><input bind:value={cStanowisko} class={inputCls} placeholder="np. Opiekun klienta" /></div>
+		<div class="grid grid-cols-2 gap-3">
+			<div><label class={labelCls}>Telefon</label><input bind:value={cTelefon} class={inputCls} /></div>
+			<div><label class={labelCls}>E-mail</label><input type="email" bind:value={cEmail} class={inputCls} /></div>
+		</div>
+		<div><label class={labelCls}>Notatki</label><textarea bind:value={cNotatki} rows="2" class={inputCls}></textarea></div>
+	</div>
+</Modal>
