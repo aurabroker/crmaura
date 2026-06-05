@@ -245,4 +245,25 @@ export interface ApkToken {
 	used_at: string | null;
 }
 
+export interface Bond {
+	bond_id: string;
+	bond_tenant_id: string;
+	bond_insurer_id: string;
+	bond_nr: string;
+	bond_rodzaj: string;
+	bond_kontrakt: string | null;
+	bond_inwestor: string | null;
+	bond_beneficjent: string | null;
+	bond_data_od: string;
+	bond_data_do: string;
+	bond_suma: number;
+	bond_stawka: number | null;
+	bond_skladka: number;
+	bond_bez_limitu: boolean;
+	bond_stawka_override: boolean;
+	bond_created_at?: string;
+	bond_tenants?: { bond_nazwa: string; crm_client_id: string | null } | null;
+	bond_insurers?: { bond_nazwa: string } | null;
+}
+
 export type Database = Record<string, unknown>;

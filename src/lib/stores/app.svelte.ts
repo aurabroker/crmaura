@@ -1,4 +1,4 @@
-import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, PolicyBroker, ApkForm } from '$lib/types/database';
+import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, PolicyBroker, ApkForm, Bond } from '$lib/types/database';
 
 export const appState = $state({
 	profile: null as Profile | null,
@@ -17,7 +17,9 @@ export const appState = $state({
 	tenantTyp: 'broker' as 'broker' | 'agent',
 	tenantNazwa: '' as string,
 	loading: false,
-	apkForms: [] as ApkForm[]
+	apkForms: [] as ApkForm[],
+	bondModuleEnabled: false as boolean,
+	bonds: [] as Bond[]
 });
 
 export function isBroker(): boolean {

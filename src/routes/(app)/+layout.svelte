@@ -7,7 +7,7 @@
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
-		AlertTriangle, RefreshCw, Target, Coins, RotateCcw
+		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Landmark
 	} from 'lucide-svelte';
 
 	let { children } = $props();
@@ -34,6 +34,7 @@
 		{ href: '/finance', label: 'Rozliczenia', icon: Calculator, show: isFinance(appState.profile) },
 		{ href: '/knf-report', label: 'Raporty', icon: Scale, show: isAdmin(appState.profile) && isBroker() },
 		{ href: '/settings', label: 'Ustawienia', icon: Settings, always: true },
+		{ href: '/bonds', label: 'Bonds', icon: Landmark, show: appState.bondModuleEnabled },
 		{ href: '/admin', label: 'Administracja', icon: Settings, show: isAdmin(appState.profile) }
 	]);
 
@@ -55,9 +56,10 @@
 
 		appState.profile = profile as typeof appState.profile;
 
-		const { data: tenant } = await sb.from('crm_tenants').select('typ, nazwa').eq('id', profile.tenant_id).single();
+		const { data: tenant } = await sb.from('crm_tenants').select('typ, nazwa, bond_module_enabled').eq('id', profile.tenant_id).single();
 		appState.tenantTyp = (tenant?.typ as typeof appState.tenantTyp) ?? 'broker';
 		appState.tenantNazwa = tenant?.nazwa ?? '';
+		appState.bondModuleEnabled = tenant?.bond_module_enabled ?? false;
 
 		// Dashboard prefs
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
