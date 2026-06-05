@@ -196,6 +196,7 @@
 					<th class="px-5 py-3 font-semibold text-slate-600">Doradca</th>
 					<th class="px-5 py-3 font-semibold text-slate-600">Data</th>
 					<th class="px-5 py-3 font-semibold text-slate-600">Status</th>
+					<th class="px-5 py-3 font-semibold text-slate-600" title="Czy klient otworzył link">Odczyt</th>
 					<th class="px-5 py-3 font-semibold text-slate-600">Złożony</th>
 					<th class="px-5 py-3"></th>
 				</tr>
@@ -208,6 +209,20 @@
 						<td class="px-5 py-3 text-slate-500">{f.advisor_name ?? '—'}</td>
 						<td class="px-5 py-3 text-slate-500">{f.form_date}</td>
 						<td class="px-5 py-3"><Badge variant={statusVariant(f.status)}>{statusLabel(f.status)}</Badge></td>
+						<td class="px-5 py-3">
+							{#if f.apk_tokens?.[0]?.used_at}
+								<span title="Klient otworzył link: {f.apk_tokens[0].used_at!.slice(0,16).replace('T',' ')}"
+									class="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
+									<span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+									Odczytano
+								</span>
+							{:else}
+								<span class="inline-flex items-center gap-1 text-xs text-slate-400">
+									<span class="w-2 h-2 rounded-full bg-slate-300 inline-block"></span>
+									Nie odczytano
+								</span>
+							{/if}
+						</td>
 						<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
 						<td class="px-5 py-3">
 							<div class="flex items-center gap-2">

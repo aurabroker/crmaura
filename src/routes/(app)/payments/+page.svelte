@@ -318,6 +318,47 @@
 	const ergoToProcess = $derived(ergoPreview.filter(r => r.payment_id && r.new_status));
 	const ergoNotFound = $derived(ergoPreview.filter(r => r.not_found));
 	const ergoAlreadySettled = $derived(ergoPreview.filter(r => r.already_settled));
+
+	// Checkbox selection
+	let selected = $state(new Set<string>());
+	function toggleSelect(id: string) {
+		const s = new Set(selected);
+		s.has(id) ? s.delete(id) : s.add(id);
+		selected = s;
+	}
+	function toggleDay(ids: string[]) {
+		const s = new Set(selected);
+		const allIn = ids.every(id => s.has(id));
+		ids.forEach(id => allIn ? s.delete(id) : s.add(id));
+		selected = s;
+	}
+
+	const selectedPays = $derived(filtered.filter(p => selected.has(p.id)));
+	const canMarkPaid = $derived(selectedPays.some(p => p.status === 'Oczekująca' || p.status === 'Zaległa'));
+	const canMarkOverdue = $derived(selectedPays.some(p => p.status === 'Oczekująca'));
+	const canRevert = $derived(selectedPays.some(p => p.status === 'Opłacona' || p.status === 'Częściowo opłacona'));
+
+	async function bulkMarkPaid() {
+		const ids = selectedPays.filter(p => p.status === 'Oczekująca' || p.status === 'Zaległa').map(p => p.id);
+		await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today }).in('id', ids);
+		const { data } = await sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci');
+		appState.payments = (data ?? []) as typeof appState.payments;
+		selected = new Set();
+	}
+	async function bulkMarkOverdue() {
+		const ids = selectedPays.filter(p => p.status === 'Oczekująca').map(p => p.id);
+		await sb.from('crm_policy_payments').update({ status: 'Zaległa' }).in('id', ids);
+		const { data } = await sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci');
+		appState.payments = (data ?? []) as typeof appState.payments;
+		selected = new Set();
+	}
+	async function bulkRevert() {
+		const ids = selectedPays.filter(p => p.status === 'Opłacona' || p.status === 'Częściowo opłacona').map(p => p.id);
+		await sb.from('crm_policy_payments').update({ status: 'Oczekująca', data_oplacenia: null, nota_id: null, prowizja_z_noty: null }).in('id', ids);
+		const { data } = await sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci');
+		appState.payments = (data ?? []) as typeof appState.payments;
+		selected = new Set();
+	}
 </script>
 
 <svelte:head><title>Płatności — FRANK67 CRM</title></svelte:head>
@@ -374,47 +415,80 @@
 	</div>
 </div>
 
-<!-- Kalendarz rat -->
+<!-- Floating action bar (gdy coś zaznaczone) -->
+{#if selected.size > 0}
+	<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl">
+		<span class="text-sm font-medium">{selected.size} zaznaczone</span>
+		<div class="w-px h-5 bg-slate-600"></div>
+		{#if canMarkPaid}
+			<button onclick={bulkMarkPaid} class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-500 hover:bg-emerald-400 rounded-xl font-semibold transition-colors">
+				<Check size={13} /> Opłacona
+			</button>
+		{/if}
+		{#if canMarkOverdue}
+			<button onclick={bulkMarkOverdue} class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-500 hover:bg-red-400 rounded-xl font-semibold transition-colors">
+				Zaległa
+			</button>
+		{/if}
+		{#if canRevert}
+			<button onclick={bulkRevert} class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-xl font-semibold transition-colors">
+				↩ Cofnij
+			</button>
+		{/if}
+		<button onclick={() => selected = new Set()} class="text-slate-400 hover:text-white text-xs ml-1">✕</button>
+	</div>
+{/if}
+
+<!-- Tabela rat -->
 {#each byDay() as [day, pays]}
-	<div class="mb-4">
-		<div class="flex items-center gap-3 mb-2">
-			<div class="text-sm font-semibold text-slate-700">{day}</div>
+	{@const dayIds = pays.map(p => p.id)}
+	{@const allChecked = dayIds.every(id => selected.has(id))}
+	<div class="mb-5">
+		<div class="flex items-center gap-3 mb-1.5">
+			<input type="checkbox" checked={allChecked} onchange={() => toggleDay(dayIds)}
+				class="w-3.5 h-3.5 rounded accent-slate-700 cursor-pointer" />
+			<div class="text-sm font-bold text-slate-700">{day}</div>
 			<div class="flex-1 h-px bg-slate-200"></div>
-			<div class="text-xs text-slate-400">{pays.length} rat — {fmtPln(pays.reduce((s,p) => s+Number(p.kwota),0))} PLN</div>
+			<div class="text-xs text-slate-400">{pays.length} rat · {fmtPln(pays.reduce((s,p) => s+Number(p.kwota),0))} PLN</div>
 		</div>
 		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm">
+			<table class="w-full text-left text-sm border-collapse">
+				<thead class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr>
+						<th class="px-4 py-2 w-8"></th>
+						<th class="px-4 py-2">Polisa</th>
+						<th class="px-4 py-2">Klient</th>
+						<th class="px-4 py-2 w-16 text-center">Rata</th>
+						<th class="px-4 py-2 text-right">Kwota</th>
+						<th class="px-4 py-2 text-right">Prowizja</th>
+						<th class="px-4 py-2">Status</th>
+						<th class="px-4 py-2 text-slate-400">Info</th>
+					</tr>
+				</thead>
 				<tbody>
 					{#each pays as pay}
-						<tr class="border-t first:border-t-0 border-slate-100 hover:bg-slate-50 {pay.status === 'Zaległa' || isOverdue(pay) ? 'bg-red-50/40' : ''}">
-							<td class="px-5 py-3 font-medium">{pay.crm_policies?.nr_polisy ?? '—'}</td>
-							<td class="px-5 py-3">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</td>
-							<td class="px-5 py-3 text-slate-500 text-xs">Rata {pay.nr_raty}</td>
-							<td class="px-5 py-3 text-right font-semibold text-slate-900">{fmtPln(pay.kwota)} PLN</td>
-							{#if pay.prowizja_z_noty}
-								<td class="px-5 py-3 text-right text-xs text-blue-600">{fmtPln(pay.prowizja_z_noty)} prow.</td>
-							{:else}
-								<td class="px-5 py-3"></td>
-							{/if}
-							<td class="px-5 py-3">
+						{@const checked = selected.has(pay.id)}
+						<tr onclick={() => toggleSelect(pay.id)}
+							class="border-t border-slate-200 cursor-pointer transition-colors
+								{checked ? 'bg-blue-50' : pay.status === 'Zaległa' || isOverdue(pay) ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}">
+							<td class="px-4 py-2.5 text-center" onclick={(e) => e.stopPropagation()}>
+								<input type="checkbox" {checked} onchange={() => toggleSelect(pay.id)}
+									class="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer" />
+							</td>
+							<td class="px-4 py-2.5 font-mono text-xs font-semibold text-blue-700 border-l border-slate-200">
+								<a href="/policies/{pay.polisa_id}" onclick={(e) => e.stopPropagation()} class="hover:underline">{pay.crm_policies?.nr_polisy ?? '—'}</a>
+							</td>
+							<td class="px-4 py-2.5 border-l border-slate-200">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</td>
+							<td class="px-4 py-2.5 text-center text-slate-500 border-l border-slate-200">{pay.nr_raty}</td>
+							<td class="px-4 py-2.5 text-right font-semibold border-l border-slate-200">{fmtPln(pay.kwota)}</td>
+							<td class="px-4 py-2.5 text-right text-xs border-l border-slate-200">
+								{#if pay.prowizja_z_noty}<span class="text-blue-600 font-medium">{fmtPln(pay.prowizja_z_noty)}</span>{:else}<span class="text-slate-300">—</span>{/if}
+							</td>
+							<td class="px-4 py-2.5 border-l border-slate-200">
 								<Badge variant={statusVariant(pay.status)}>{pay.status}</Badge>
 							</td>
-							<td class="px-5 py-3 text-xs text-slate-400">{pay.data_oplacenia ? `Zapł. ${pay.data_oplacenia}` : ''}{pay.notatka ? ` · ${pay.notatka}` : ''}</td>
-							<td class="px-5 py-3">
-								{#if pay.status === 'Oczekująca' || pay.status === 'Zaległa'}
-									<div class="flex gap-1">
-										<button onclick={() => markPaid(pay)} class="flex items-center gap-1 px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
-											<Check size={12} /> Opłacona
-										</button>
-										{#if pay.status === 'Oczekująca'}
-											<button onclick={() => markOverdue(pay)} class="px-2 py-1 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50">Zaległa</button>
-										{/if}
-									</div>
-								{:else if pay.status === 'Opłacona' || pay.status === 'Częściowo opłacona'}
-									<button onclick={() => revertPayment(pay)} class="px-2 py-1 text-xs border border-slate-200 text-slate-500 rounded-lg hover:bg-slate-50" title="Cofnij rozliczenie">
-										↩ Cofnij
-									</button>
-								{/if}
+							<td class="px-4 py-2.5 text-xs text-slate-400 border-l border-slate-200">
+								{pay.data_oplacenia ? `Zapł. ${pay.data_oplacenia}` : ''}{pay.notatka ? ` · ${pay.notatka}` : ''}
 							</td>
 						</tr>
 					{/each}

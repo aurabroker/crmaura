@@ -231,6 +231,7 @@ export interface ApkForm {
 	created_at: string;
 	updated_at: string;
 	crm_clients?: { nazwa: string; nazwa_skrocona: string | null } | null;
+	apk_tokens?: { status: string; used_at: string | null }[] | null;
 }
 
 export interface ApkToken {

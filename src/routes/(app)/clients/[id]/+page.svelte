@@ -154,10 +154,21 @@
 	function openNewVehicle() { editingVehicle = null; vRej = ''; vMarka = ''; vVin = ''; vRok = ''; vError = ''; showVehicle = true; }
 	function openEditVehicle(v: Vehicle) { editingVehicle = v; vRej = v.nr_rejestracyjny; vMarka = v.marka_model; vVin = v.vin ?? ''; vRok = v.rok_produkcji?.toString() ?? ''; vError = ''; showVehicle = true; }
 
+	function validateVin(v: string): string | null {
+		const vin = v.trim().toUpperCase();
+		if (!vin) return 'VIN jest wymagany.';
+		if (vin.length !== 17) return `VIN musi mieć dokładnie 17 znaków (masz ${vin.length}).`;
+		if (/[IOQ]/.test(vin)) return 'VIN nie może zawierać liter I, O, Q.';
+		if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return 'VIN zawiera niedozwolone znaki.';
+		return null;
+	}
+
 	async function saveVehicle() {
 		if (!vRej.trim() || !vMarka.trim()) { vError = 'Nr rejestracyjny i marka są wymagane.'; return; }
+		const vinErr = validateVin(vVin);
+		if (vinErr) { vError = vinErr; return; }
 		savingV = true; vError = '';
-		const payload = { nr_rejestracyjny: vRej.trim(), marka_model: vMarka.trim(), vin: vVin.trim() || null, rok_produkcji: vRok ? parseInt(vRok) : null };
+		const payload = { nr_rejestracyjny: vRej.trim(), marka_model: vMarka.trim(), vin: vVin.trim().toUpperCase(), rok_produkcji: vRok ? parseInt(vRok) : null };
 		let error;
 		if (editingVehicle) {
 			({ error } = await sb.from('crm_vehicles').update(payload).eq('id', editingVehicle.id));
