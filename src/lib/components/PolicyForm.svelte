@@ -231,7 +231,7 @@
 		['majątkowa','Majątkowa'],['życie','Życie'],['grupowe_medyczne','Grupowe Medyczne'],
 		['grupowe_życie','Grupowe Życie'],['utrata_dochodu','Utrata dochodu'],
 		['komunikacja','Komunikacja'],['flota','Flota'],['finansowa','Finansowa (Gwarancje)'],
-		['OC','OC Zawodowe / Działalności'],['techniczna','Techniczna'],['polisa_obca','Polisa Obca']
+		['OC','OC Zawodowe / Działalności'],['techniczna','Techniczna'],['karno_skarbowa','Polisa Karno-Skarbowa'],['polisa_obca','Polisa Obca']
 	];
 </script>
 
@@ -254,7 +254,7 @@
 			<div>
 				<label class={lbl}>Podtyp Umowy Generalnej *</label>
 				<div class="grid grid-cols-2 gap-1.5">
-					{#each [['flota','Flota'],['gwarancje','Gwarancje'],['cpm','CPM'],['car_ear','CAR/EAR'], ...(isAuraTenant ? [['oc_beauty','OC Beauty']] : [])] as [val, label]}
+					{#each [['flota','Flota'],['gwarancje','Gwarancje'],['cpm','CPM'],['car_ear','CAR/EAR'],['beauty_tax','BeautyTAX'], ...(isAuraTenant ? [['oc_beauty','OC Beauty']] : [])] as [val, label]}
 						<button type="button" onclick={() => fpUgPodtyp = val}
 							class="py-1.5 px-2 rounded-lg text-xs border text-left transition-colors
 								{fpUgPodtyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
