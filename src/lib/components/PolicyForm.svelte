@@ -440,7 +440,22 @@
 		</div>
 	</div>
 
-	<!-- Finansowe -->
+	<!-- UG: opcja rozliczania płatności — PRZED danymi finansowymi -->
+	{#if fpTypUmowy === 'generalna'}
+	<div class="border-t border-slate-100 pt-3">
+		<label class="flex items-center gap-3 cursor-pointer">
+			<input type="checkbox" bind:checked={fpRozliczajPlatnosci}
+				class="w-4 h-4 rounded accent-blue-600" />
+			<div>
+				<span class="text-sm font-semibold text-slate-700">Rozliczaj płatności na poziomie UG</span>
+				<p class="text-xs text-slate-400 mt-0.5">Domyślnie płatności rozliczane są per certyfikat/polisa. Zaznacz tylko dla UG z własnym harmonogramem płatności.</p>
+			</div>
+		</label>
+	</div>
+	{/if}
+
+	<!-- Finansowe — dla UG tylko gdy rozliczaj_platnosci -->
+	{#if fpTypUmowy !== 'generalna' || fpRozliczajPlatnosci}
 	<div class="border-t border-slate-100 pt-4">
 		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">Dane Finansowe</p>
 		<div class="grid grid-cols-3 gap-4">
@@ -465,22 +480,7 @@
 		</div>
 	</div>
 
-	<!-- UG: opcja rozliczania płatności -->
-	{#if fpTypUmowy === 'generalna'}
-	<div class="border-t border-slate-100 pt-3">
-		<label class="flex items-center gap-3 cursor-pointer">
-			<input type="checkbox" bind:checked={fpRozliczajPlatnosci}
-				class="w-4 h-4 rounded accent-blue-600" />
-			<div>
-				<span class="text-sm font-semibold text-slate-700">Rozliczaj płatności na poziomie UG</span>
-				<p class="text-xs text-slate-400 mt-0.5">Domyślnie płatności rozliczane są per certyfikat/polisa. Zaznacz tylko dla UG z własnym harmonogramem płatności.</p>
-			</div>
-		</label>
-	</div>
-	{/if}
-
-	<!-- Wiersz 5: Liczba rat + terminy (każda rata = jeden wiersz) -->
-	{#if fpTypUmowy !== 'generalna' || fpRozliczajPlatnosci}
+	<!-- Liczba rat + terminy -->
 	<div>
 		<div class="flex items-center gap-4 mb-3">
 			<label class={lbl + ' mb-0'}>Liczba rat</label>
