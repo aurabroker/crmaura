@@ -168,6 +168,9 @@
 		{ id: 'claims_stats', label: 'Statystyki szkód' },
 	];
 
+	// KPI card widgets that appear in the top drag-and-drop grid
+	const KPI_WIDGET_IDS = new Set(['renewals', 'claims', 'clients', 'renewal_rate', 'payments', 'policy_count']);
+
 	let configMode = $state(false);
 
 	let kpiItems = $derived(
@@ -183,12 +186,18 @@
 		draggableItems = [...kpiItems];
 	});
 
+	function mergeKpiOrder(reorderedKpi: typeof kpiItems) {
+		// Replace KPI slots in draggableItems with the reordered KPI list
+		const nonKpi = draggableItems.filter((w) => !KPI_WIDGET_IDS.has(w.id));
+		draggableItems = [...reorderedKpi, ...nonKpi];
+	}
+
 	function handleDnd(e: CustomEvent) {
-		draggableItems = e.detail.items;
+		mergeKpiOrder(e.detail.items);
 	}
 
 	async function finalizeDnd(e: CustomEvent) {
-		draggableItems = e.detail.items;
+		mergeKpiOrder(e.detail.items);
 		const order = draggableItems.map((i) => i.id);
 		appState.dashboardWidgets = order;
 		await sb.from('crm_dashboard_prefs').upsert({
@@ -315,14 +324,16 @@
 	</div>
 {/if}
 
-<!-- KPI Grid — drag & drop -->
+<!-- KPI Grid — drag & drop (tylko kpi widgety) -->
+{#if draggableItems.some((w) => KPI_WIDGET_IDS.has(w.id))}
+{@const kpiOnly = draggableItems.filter((w) => KPI_WIDGET_IDS.has(w.id))}
 <div
 	class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8"
-	use:dndzone={{ items: draggableItems, flipDurationMs: 200 }}
+	use:dndzone={{ items: kpiOnly, flipDurationMs: 200 }}
 	onconsider={handleDnd}
 	onfinalize={finalizeDnd}
 >
-	{#each draggableItems as widget (widget.id)}
+	{#each kpiOnly as widget (widget.id)}
 		<div class={configMode ? 'cursor-grab active:cursor-grabbing' : ''}>
 			<KpiCard
 				label={ALL_WIDGETS.find((w) => w.id === widget.id)?.label ?? widget.id}
@@ -333,6 +344,7 @@
 		</div>
 	{/each}
 </div>
+{/if}
 
 <!-- Tabela wznowień -->
 {#if appState.dashboardWidgets.includes('renewals')}
