@@ -558,24 +558,24 @@
 {#if appState.dashboardWidgets.includes('premium_chart')}
 {@const chart = premiumChart()}
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-6">
-	<h2 class="font-semibold text-slate-900 mb-1">Przypis składki — ostatnie 12 miesięcy</h2>
+	<h2 class="font-semibold text-slate-900 mb-1 text-base">Przypis składki — ostatnie 12 miesięcy</h2>
 	<p class="text-xs text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
-	<div class="flex items-end gap-1 h-32">
+	<div class="flex items-end gap-1 h-40">
 		{#each chart as m}
 		<div class="flex-1 flex flex-col justify-end items-center group relative">
+			<div class="text-[9px] font-semibold text-slate-600 mb-0.5 text-center leading-tight">
+				{m.value > 0 ? fmtK(m.value) : ''}
+			</div>
 			<div
 				class="w-full rounded-t bg-blue-500 transition-all group-hover:bg-blue-600"
-				style="height: {Math.max(m.pct, 2) * 1.28}px"
+				style="height: {Math.max(m.pct, 2) * 1.6}px"
 			></div>
-			<div class="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] rounded px-1.5 py-0.5 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10">
-				{fmtPln(m.value)} PLN
-			</div>
 		</div>
 		{/each}
 	</div>
 	<div class="flex gap-1 mt-1">
 		{#each chart as m}
-		<div class="flex-1 text-center text-[9px] text-slate-400 truncate">{m.label}</div>
+		<div class="flex-1 text-center text-[10px] text-slate-500 font-medium truncate">{m.label}</div>
 		{/each}
 	</div>
 </div>
