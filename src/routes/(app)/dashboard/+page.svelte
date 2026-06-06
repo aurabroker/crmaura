@@ -435,8 +435,7 @@
 {/if}
 
 <!-- KPI Grid — drag & drop (tylko kpi widgety) -->
-{@const kpiOnly = draggableItems.filter((w) => KPI_WIDGET_IDS.has(w.id))}
-{#if kpiOnly.length > 0}
+{#if draggableItems.some((w) => KPI_WIDGET_IDS.has(w.id))}
 <div
 	class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8"
 	use:dndzone={{ items: draggableItems, flipDurationMs: 200 }}
@@ -613,8 +612,7 @@
 {/if}
 
 <!-- Dolne widgety — max 50% szerokości, do 3 w rzędzie -->
-{@const bottomWidgets = draggableItems.filter((w) => !KPI_WIDGET_IDS.has(w.id) && !['renewals','payments','expiring_payments','premium_chart','dynamika'].includes(w.id))}
-{#if bottomWidgets.length > 0}
+{#if draggableItems.some((w) => !KPI_WIDGET_IDS.has(w.id) && !['renewals','payments','expiring_payments','premium_chart','dynamika'].includes(w.id))}
 <div class="grid grid-cols-2 gap-6 mb-6">
 
 	<!-- Top klienci -->
