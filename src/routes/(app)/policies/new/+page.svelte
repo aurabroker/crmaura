@@ -26,8 +26,8 @@
 			.single();
 		if (error) { saving = false; formError = error.message; return; }
 
-		// Auto-create payment records from installment dates
-		const raty = policyForm.getDatyRat();
+		// Auto-create payment records (only when not UG without rozliczaj_platnosci)
+		const raty = policyForm.shouldCreatePayments() ? policyForm.getDatyRat() : [];
 		if (raty.length > 0 && inserted?.id) {
 			await sb.from('crm_policy_payments').insert(
 				raty.map(r => ({
@@ -42,7 +42,7 @@
 		}
 
 		const [rP, rA, rPay] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
+			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
 			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients(nazwa))').order('data_platnosci')
 		]);
