@@ -562,12 +562,11 @@
 	<p class="text-xs text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
 	<div class="flex items-end gap-1 h-32">
 		{#each chart as m}
-		<div class="flex-1 flex flex-col items-center gap-1 group relative">
+		<div class="flex-1 flex flex-col justify-end items-center group relative">
 			<div
 				class="w-full rounded-t bg-blue-500 transition-all group-hover:bg-blue-600"
-				style="height: {Math.max(m.pct, 2)}%"
+				style="height: {Math.max(m.pct, 2) * 1.28}px"
 			></div>
-			<!-- tooltip -->
 			<div class="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] rounded px-1.5 py-0.5 whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none z-10">
 				{fmtPln(m.value)} PLN
 			</div>
