@@ -64,7 +64,7 @@
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
 		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
 
-		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC] = await Promise.all([
+		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
@@ -78,7 +78,8 @@
 			sb.from('crm_client_contacts').select('*'),
 			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(status, used_at)').eq('tenant_id', profile.tenant_id).order('created_at', { ascending: false }),
 			sb.from('crm_insurer_branches').select('*').order('nazwa'),
-			sb.from('crm_insurer_contacts').select('*, crm_insurer_branches(nazwa)').order('imie_nazwisko')
+			sb.from('crm_insurer_contacts').select('*, crm_insurer_branches(nazwa)').order('imie_nazwisko'),
+			sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false })
 		]);
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
@@ -95,6 +96,7 @@
 		appState.apkForms = (rAPK.data ?? []) as typeof appState.apkForms;
 		appState.insurerBranches = (rIB.data ?? []) as typeof appState.insurerBranches;
 		appState.insurerContacts = (rIC.data ?? []) as typeof appState.insurerContacts;
+		appState.alerts = (rAL.data ?? []) as typeof appState.alerts;
 		initialized = true;
 	}
 

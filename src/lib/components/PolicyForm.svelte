@@ -61,6 +61,8 @@
 		});
 	});
 
+	let fpRozliczajPlatnosci = $state(policy?.rozliczaj_platnosci ?? false);
+
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
@@ -168,6 +170,7 @@
 		const ugRodzaj = fpUgPodtyp === 'beauty_tax' ? 'karno_skarbowa' : `umowa_generalna_${fpUgPodtyp}`;
 		return {
 			klient_id: fpKlient, tu_id: fpTu, nr_polisy: fpNr,
+			rozliczaj_platnosci: fpTypUmowy === 'generalna' ? fpRozliczajPlatnosci : null,
 			rodzaj: fpTypUmowy === 'generalna' ? ugRodzaj : fpRodzaj,
 			typ_umowy: fpTypUmowy,
 			ug_podtyp: fpTypUmowy === 'generalna' ? fpUgPodtyp || null : null,
@@ -197,12 +200,20 @@
 			.filter(r => r.data);
 	}
 
+	export function shouldCreatePayments(): boolean {
+		if (fpTypUmowy !== 'generalna') return true;
+		return fpRozliczajPlatnosci;
+	}
+
 	export function isValid(): string | null {
 		if (!fpKlient) return 'Wybierz klienta';
 		if (!fpTu) return 'Wybierz Towarzystwo';
 		if (!fpNr.trim()) return 'Podaj numer polisy';
 		if (!fpOd || !fpDo) return 'Podaj daty obowiązywania';
 		if (fpTypUmowy === 'generalna' && !fpUgPodtyp) return 'Wybierz podtyp Umowy Generalnej';
+		if (fpTypUmowy === 'generalna' && fpRozliczajPlatnosci) {
+			if (fpDatyRatArr.filter(Boolean).length === 0) return 'Podaj terminy płatności rat';
+		}
 		return null;
 	}
 
@@ -454,8 +465,22 @@
 		</div>
 	</div>
 
+	<!-- UG: opcja rozliczania płatności -->
+	{#if fpTypUmowy === 'generalna'}
+	<div class="border-t border-slate-100 pt-3">
+		<label class="flex items-center gap-3 cursor-pointer">
+			<input type="checkbox" bind:checked={fpRozliczajPlatnosci}
+				class="w-4 h-4 rounded accent-blue-600" />
+			<div>
+				<span class="text-sm font-semibold text-slate-700">Rozliczaj płatności na poziomie UG</span>
+				<p class="text-xs text-slate-400 mt-0.5">Domyślnie płatności rozliczane są per certyfikat/polisa. Zaznacz tylko dla UG z własnym harmonogramem płatności.</p>
+			</div>
+		</label>
+	</div>
+	{/if}
+
 	<!-- Wiersz 5: Liczba rat + terminy (każda rata = jeden wiersz) -->
-	{#if fpTypUmowy !== 'generalna'}
+	{#if fpTypUmowy !== 'generalna' || fpRozliczajPlatnosci}
 	<div>
 		<div class="flex items-center gap-4 mb-3">
 			<label class={lbl + ' mb-0'}>Liczba rat</label>

@@ -6,7 +6,8 @@
 	import type { Insurer, Profile, InsurerBranch, InsurerContact } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight } from 'lucide-svelte';
+	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText } from 'lucide-svelte';
+	import { fmtPln } from '$lib/utils';
 
 	onMount(() => { if (!isAdmin(appState.profile)) goto('/dashboard'); });
 
@@ -47,13 +48,17 @@
 	let iEmail = $state(''); let iNazwa = $state(''); let iRole = $state('BROKER'); let iStanowisko = $state('');
 	let inviting = $state(false); let inviteError = $state(''); let inviteSuccess = $state(''); let tempPassword = $state('');
 
-	let uRole = $state('BROKER'); let uNazwa = $state(''); let uStanowisko = $state('');
+	let uRole = $state('BROKER'); let uNazwa = $state(''); let uStanowisko = $state(''); let uPesel = $state('');
 	let savingUser = $state(false); let userError = $state('');
+	let iPesel = $state('');
+
+	// Widok polis brokera
+	let viewingBroker = $state<Profile | null>(null);
 
 	const ROLES = ['BROKER', 'ADMINISTRACJA', 'BOARD', 'ADMIN BROKER', 'ADMIN GOD'];
 
 	function openEditUser(b: Profile) {
-		editingUser=b; uRole=b.rola; uNazwa=b.imie_nazwisko??''; uStanowisko=b.stanowisko??'';
+		editingUser=b; uRole=b.rola; uNazwa=b.imie_nazwisko??''; uStanowisko=b.stanowisko??''; uPesel=b.pesel??'';
 		userError=''; showEditUser=true;
 	}
 
@@ -74,7 +79,11 @@
 		const d = await res.json();
 		tempPassword = d.tempPassword ?? '';
 		inviteSuccess = iEmail;
-		iEmail=''; iNazwa=''; iRole='BROKER'; iStanowisko='';
+		// Save PESEL if provided
+		if (iPesel.trim() && d.user_id) {
+			await sb.from('crm_profiles').update({ pesel: iPesel.trim() }).eq('id', d.user_id);
+		}
+		iEmail=''; iNazwa=''; iRole='BROKER'; iStanowisko=''; iPesel='';
 		const { data } = await sb.from('crm_profiles').select('*');
 		appState.brokers = (data??[]) as typeof appState.brokers;
 	}
@@ -89,6 +98,8 @@
 		});
 		savingUser=false;
 		if (!res.ok) { const d = await res.json(); userError = d.message ?? 'Błąd'; return; }
+		// Save PESEL directly
+		await sb.from('crm_profiles').update({ pesel: uPesel.trim() || null }).eq('id', editingUser.id);
 		showEditUser=false;
 		const { data } = await sb.from('crm_profiles').select('*');
 		appState.brokers = (data??[]) as typeof appState.brokers;
@@ -323,42 +334,97 @@
 	</div>
 
 	<!-- Brokerzy -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-			<h2 class="font-semibold text-slate-900">Zespół (Brokerzy)</h2>
-			<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
-				<UserPlus size={13} /> Dodaj użytkownika
-			</button>
-		</div>
-		<table class="w-full text-left text-sm">
-			<thead>
-				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-5 py-3">Imię / Email</th>
-					<th class="px-5 py-3">Rola</th>
-					<th class="px-5 py-3">Stanowisko</th>
-					<th class="px-5 py-3"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each appState.brokers as b}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
-						<td class="px-5 py-3">
-							<div class="font-medium">{b.imie_nazwisko ?? b.email}</div>
-							<div class="text-xs text-slate-400">{b.email}</div>
-						</td>
-						<td class="px-5 py-3"><Badge variant={roleVariant(b.rola)}>{b.rola}</Badge></td>
-						<td class="px-5 py-3 text-sm text-slate-500">{b.stanowisko ?? '—'}</td>
-						<td class="px-5 py-3">
-							{#if b.id !== appState.profile?.id}
-								<button onclick={() => openEditUser(b)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
-							{/if}
-						</td>
+	<div class="space-y-4">
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+				<h2 class="font-semibold text-slate-900">Zespół (Brokerzy)</h2>
+				<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
+					<UserPlus size={13} /> Dodaj użytkownika
+				</button>
+			</div>
+			<table class="w-full text-left text-sm">
+				<thead>
+					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<th class="px-5 py-3">Imię / Email</th>
+						<th class="px-5 py-3">Rola</th>
+						<th class="px-5 py-3">PESEL</th>
+						<th class="px-5 py-3">Stanowisko</th>
+						<th class="px-5 py-3"></th>
 					</tr>
-				{:else}
-					<tr><td colspan="4" class="px-5 py-6 text-center text-slate-400">Brak użytkowników</td></tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each appState.brokers as b}
+						<tr class="border-t border-slate-100 hover:bg-slate-50 {viewingBroker?.id === b.id ? 'bg-blue-50' : ''}">
+							<td class="px-5 py-3">
+								<div class="font-medium">{b.imie_nazwisko ?? b.email}</div>
+								<div class="text-xs text-slate-400">{b.email}</div>
+							</td>
+							<td class="px-5 py-3"><Badge variant={roleVariant(b.rola)}>{b.rola}</Badge></td>
+							<td class="px-5 py-3 text-xs font-mono text-slate-500">{b.pesel ?? '—'}</td>
+							<td class="px-5 py-3 text-sm text-slate-500">{b.stanowisko ?? '—'}</td>
+							<td class="px-5 py-3">
+								<div class="flex items-center gap-1">
+									<button
+										onclick={() => viewingBroker = viewingBroker?.id === b.id ? null : b}
+										class="p-1.5 rounded-lg text-slate-400 hover:text-blue-700 hover:bg-blue-50"
+										title="Polisy brokera"
+									><FileText size={14} /></button>
+									{#if b.id !== appState.profile?.id}
+										<button onclick={() => openEditUser(b)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
+									{/if}
+								</div>
+							</td>
+						</tr>
+					{:else}
+						<tr><td colspan="5" class="px-5 py-6 text-center text-slate-400">Brak użytkowników</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+
+		<!-- Widok polis wybranego brokera -->
+		{#if viewingBroker}
+		{@const brokerPolicyIds = new Set(appState.policyBrokers.filter(pb => pb.broker_id === viewingBroker!.id).map(pb => pb.polisa_id))}
+		{@const brokerPolicies = appState.policies.filter(p => brokerPolicyIds.has(p.id))}
+		<div class="bg-white border border-blue-200 rounded-xl shadow-sm overflow-hidden">
+			<div class="px-5 py-4 border-b border-blue-200 flex items-center justify-between">
+				<h2 class="font-semibold text-blue-800 text-sm">Polisy — {viewingBroker.imie_nazwisko ?? viewingBroker.email} <span class="font-normal text-blue-400">({brokerPolicies.length})</span></h2>
+				<button onclick={() => viewingBroker = null} class="text-xs text-blue-400 hover:text-blue-700">Zamknij ✕</button>
+			</div>
+			{#if brokerPolicies.length === 0}
+				<p class="px-5 py-6 text-center text-slate-400 text-sm">Brak przypisanych polis</p>
+			{:else}
+				<table class="w-full text-left text-xs">
+					<thead>
+						<tr class="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+							<th class="px-4 py-2">Nr Polisy</th>
+							<th class="px-4 py-2">Klient</th>
+							<th class="px-4 py-2">TU</th>
+							<th class="px-4 py-2">Rodzaj</th>
+							<th class="px-4 py-2">Data od</th>
+							<th class="px-4 py-2">Data do</th>
+							<th class="px-4 py-2 text-right">Składka</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each brokerPolicies as p}
+							<tr class="border-t border-slate-100 hover:bg-slate-50">
+								<td class="px-4 py-2 font-medium text-blue-700">
+									<a href="/policies/{p.id}" class="hover:underline">{p.nr_polisy}</a>
+								</td>
+								<td class="px-4 py-2 text-slate-700 truncate max-w-[120px]">{p.crm_clients?.nazwa ?? '—'}</td>
+								<td class="px-4 py-2 text-slate-500">{p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? '—'}</td>
+								<td class="px-4 py-2 text-slate-500">{p.rodzaj ?? '—'}</td>
+								<td class="px-4 py-2 text-slate-500">{p.data_od ?? '—'}</td>
+								<td class="px-4 py-2 text-slate-500">{p.data_do ?? '—'}</td>
+								<td class="px-4 py-2 text-right font-semibold">{p.skladka_przypisana ? fmtPln(p.skladka_przypisana) : '—'}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</div>
+		{/if}
 	</div>
 </div>
 
@@ -418,7 +484,8 @@
 					{#each ROLES as r}<option>{r}</option>{/each}
 				</select>
 			</div>
-			<p class="text-xs text-slate-400">Użytkownik otrzyma email z linkiem do ustawienia hasła.</p>
+			<div><label class={labelCls}>PESEL <span class="text-slate-400 font-normal">(opcjonalnie — dopasowanie w nocie Leadenhall)</span></label><input bind:value={iPesel} class={inputCls} placeholder="11 cyfr" maxlength="11" /></div>
+			<p class="text-xs text-slate-400">Konto zostanie utworzone z tymczasowym hasłem.</p>
 		</div>
 	{/if}
 </Modal>
@@ -442,6 +509,7 @@
 			</select>
 		</div>
 		<div><label class={labelCls}>Stanowisko</label><input bind:value={uStanowisko} class={inputCls} placeholder="np. Starszy Broker" /></div>
+		<div><label class={labelCls}>PESEL <span class="text-slate-400 font-normal">(dopasowanie akwizytora w nocie Leadenhall)</span></label><input bind:value={uPesel} class={inputCls} placeholder="11 cyfr" maxlength="11" /></div>
 		<div class="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
 			Zmiana roli wchodzi w życie przy następnym logowaniu użytkownika.
 		</div>

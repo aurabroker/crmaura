@@ -8,6 +8,7 @@ export interface Profile {
 	rola: Role;
 	stanowisko: string | null;
 	ma_zespol: boolean | null;
+	pesel: string | null;
 }
 
 export interface Tenant {
@@ -115,6 +116,7 @@ export interface Policy {
 	deleted_at: string | null;
 	deletion_reason: string | null;
 	tu_contact_id: string | null;
+	rozliczaj_platnosci: boolean | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;
@@ -273,6 +275,18 @@ export interface ApkToken {
 	created_at: string;
 	expires_at: string;
 	used_at: string | null;
+}
+
+export interface CrmAlert {
+	id: string;
+	tenant_id: string;
+	typ: 'prowizja_rozjazd' | 'ujemna_prowizja' | 'aneks_wymagany';
+	polisa_id: string | null;
+	nr_polisy: string | null;
+	opis: string;
+	resolved: boolean;
+	resolved_at: string | null;
+	created_at?: string;
 }
 
 export type Database = Record<string, unknown>;
