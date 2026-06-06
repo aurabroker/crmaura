@@ -559,23 +559,23 @@
 {@const chart = premiumChart()}
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-6">
 	<h2 class="font-semibold text-slate-900 mb-1 text-base">Przypis składki — ostatnie 12 miesięcy</h2>
-	<p class="text-xs text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
-	<div class="flex items-end gap-1 h-40">
+	<p class="text-sm text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
+	<div class="flex items-end gap-2 h-48">
 		{#each chart as m}
 		<div class="flex-1 flex flex-col justify-end items-center group relative">
-			<div class="text-[9px] font-semibold text-slate-600 mb-0.5 text-center leading-tight">
-				{m.value > 0 ? fmtK(m.value) : ''}
+			<div class="text-xs font-bold text-slate-700 mb-1 text-center leading-tight">
+				{m.value > 0 ? fmtPln(m.value) : ''}
 			</div>
 			<div
 				class="w-full rounded-t bg-blue-500 transition-all group-hover:bg-blue-600"
-				style="height: {Math.max(m.pct, 2) * 1.6}px"
+				style="height: {Math.max(m.pct, 2) * 1.92}px"
 			></div>
 		</div>
 		{/each}
 	</div>
-	<div class="flex gap-1 mt-1">
+	<div class="flex gap-2 mt-2">
 		{#each chart as m}
-		<div class="flex-1 text-center text-[10px] text-slate-500 font-medium truncate">{m.label}</div>
+		<div class="flex-1 text-center text-xs text-slate-500 font-semibold truncate">{m.label}</div>
 		{/each}
 	</div>
 </div>
