@@ -3,13 +3,16 @@
 	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import type { Insurer, Profile, InsurerBranch, InsurerContact } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText } from 'lucide-svelte';
+	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
 
 	onMount(() => { if (!isAdmin(appState.profile)) goto('/dashboard'); });
+
+	const activeTab = $derived($page.url.searchParams.get('tab') ?? 'system');
 
 	async function authHeaders(): Promise<Record<string, string>> {
 		const { data: { session } } = await sb.auth.getSession();
@@ -197,12 +200,27 @@
 
 <svelte:head><title>Administracja — FRANK67 CRM</title></svelte:head>
 
-<h1 class="text-2xl font-semibold text-slate-900 mb-1">Administracja Systemem</h1>
-<p class="text-sm text-slate-500 mb-6">Zarządzanie Towarzystwami, zespołem i rolami</p>
+<h1 class="text-2xl font-semibold text-slate-900 mb-1">Administracja</h1>
 
-<div class="grid grid-cols-2 gap-6 mb-6">
-	<!-- TU -->
-	<div class="space-y-4">
+<!-- Tabs -->
+<div class="flex items-center gap-1 mb-6 border-b border-slate-200">
+	<a href="/admin?tab=system"
+		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
+			{activeTab === 'system' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+		<Settings size={15} /> Ustawienia systemu
+	</a>
+	<a href="/admin?tab=kancelaria"
+		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
+			{activeTab === 'kancelaria' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+		<Users size={15} /> Ustawienia Kancelarii
+	</a>
+</div>
+
+{#if activeTab === 'system'}
+<!-- ===================== USTAWIENIA SYSTEMU ===================== -->
+<div class="space-y-4">
+	<p class="text-sm text-slate-500">Towarzystwa ubezpieczeniowe, oddziały i osoby kontaktowe TU</p>
+	<div class="grid grid-cols-2 gap-6">
 		{#each [['Majątkowy', 'Majątkowe'], ['Życiowy', 'Życiowe']] as [dzial, label]}
 			{@const tuDzial = appState.insurers.filter(t => t.dzial === dzial)}
 			<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
@@ -332,12 +350,14 @@
 			</div>
 		{/each}
 	</div>
-
-	<!-- Brokerzy -->
-	<div class="space-y-4">
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-			<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-				<h2 class="font-semibold text-slate-900">Zespół (Brokerzy)</h2>
+</div>
+{:else if activeTab === 'kancelaria'}
+<!-- ===================== USTAWIENIA KANCELARII ===================== -->
+<div class="space-y-4">
+	<p class="text-sm text-slate-500">Zarządzanie brokerami, rolami i dostępami</p>
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+			<h2 class="font-semibold text-slate-900">Zespół (Brokerzy)</h2>
 				<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
 					<UserPlus size={13} /> Dodaj użytkownika
 				</button>
@@ -425,8 +445,8 @@
 			{/if}
 		</div>
 		{/if}
-	</div>
 </div>
+{/if}
 
 <!-- Modal: TU -->
 <Modal title={editingTU ? `Edytuj TU — ${editingTU.nazwa}` : 'Nowe Towarzystwo (TU)'} open={showTU} onclose={() => { showTU=false; tuError=''; }}>

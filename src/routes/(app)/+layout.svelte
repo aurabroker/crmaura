@@ -12,6 +12,7 @@
 
 	let { children } = $props();
 	let addMenuOpen = $state(false);
+	let adminMenuOpen = $state(false);
 	let initialized = $state(false);
 	let refreshing = $state(false);
 
@@ -33,7 +34,6 @@
 		{ href: '/commission', label: 'Prowizja', icon: Coins, always: true },
 		{ href: '/finance', label: 'Rozliczenia', icon: Calculator, show: isFinance(appState.profile) },
 		{ href: '/knf-report', label: 'Raporty', icon: Scale, show: isAdmin(appState.profile) && isBroker() },
-		{ href: '/settings', label: 'Ustawienia', icon: Settings, always: true },
 		{ href: '/admin', label: 'Administracja', icon: Settings, show: isAdmin(appState.profile) },
 		{ href: '/kosz', label: 'Kosz', icon: Trash2, show: ['ADMIN GOD','ADMIN BROKER'].includes(appState.profile?.rola ?? '') }
 	]);
@@ -114,6 +114,13 @@
 		}
 	});
 
+	$effect(() => {
+		if (adminMenuOpen) {
+			const close = () => (adminMenuOpen = false);
+			window.addEventListener('click', close, { once: true });
+		}
+	});
+
 	const currentPath = $derived($page.url.pathname);
 </script>
 
@@ -133,21 +140,50 @@
 			<nav class="flex items-center gap-1">
 				{#each navItems as item}
 					{#if item.always || item.show}
-						<a
-							href={item.href}
-							class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
-								{currentPath.startsWith(item.href)
-									? 'bg-slate-900 text-white'
-									: 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}"
-						>
-							<item.icon size={15} />
-							{item.label}
-							{#if item.href === '/claims' && activeClaims > 0 && isBroker()}
-								<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-									{activeClaims > 9 ? '9+' : activeClaims}
-								</span>
-							{/if}
-						</a>
+						{#if item.href === '/admin'}
+							<!-- Administracja dropdown -->
+							<div class="relative">
+								<button
+									onclick={(e) => { e.stopPropagation(); adminMenuOpen = !adminMenuOpen; }}
+									class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+										{currentPath.startsWith('/admin')
+											? 'bg-slate-900 text-white'
+											: 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}"
+								>
+									<item.icon size={15} />
+									{item.label}
+									<ChevronDown size={12} />
+								</button>
+								{#if adminMenuOpen}
+									<div class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-52 overflow-hidden z-50">
+										<a href="/admin?tab=system" onclick={() => adminMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+											<Settings size={14} /> Ustawienia systemu
+										</a>
+										<a href="/admin?tab=kancelaria" onclick={() => adminMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
+											<Users size={14} /> Ustawienia Kancelarii
+										</a>
+									</div>
+								{/if}
+							</div>
+						{:else}
+							<a
+								href={item.href}
+								class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+									{currentPath.startsWith(item.href)
+										? 'bg-slate-900 text-white'
+										: 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}"
+							>
+								<item.icon size={15} />
+								{item.label}
+								{#if item.href === '/claims' && activeClaims > 0 && isBroker()}
+									<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+										{activeClaims > 9 ? '9+' : activeClaims}
+									</span>
+								{/if}
+							</a>
+						{/if}
 					{/if}
 				{/each}
 			</nav>

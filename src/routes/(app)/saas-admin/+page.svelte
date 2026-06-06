@@ -40,6 +40,20 @@
 	let resetError = $state('');
 	let resetSuccess = $state('');
 
+	// Selected tenant detail panel
+	let selectedTenant = $state<Tenant | null>(null);
+	let savingFeature = $state<string | null>(null);
+
+	async function setFeature(tenant: Tenant, key: string, value: boolean) {
+		savingFeature = key;
+		const next = { ...(tenant.features ?? {}), [key]: value };
+		await sb.from('crm_tenants').update({ features: next }).eq('id', tenant.id);
+		tenant.features = next;
+		tenants = [...tenants];
+		if (selectedTenant?.id === tenant.id) selectedTenant = { ...tenant, features: next };
+		savingFeature = null;
+	}
+
 	// Resend API key state
 	let editingResend = $state<string | null>(null);
 	let resendInput = $state('');
@@ -198,107 +212,115 @@
 		</div>
 	</div>
 
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<table class="w-full text-sm">
-			<thead class="bg-slate-50 border-b border-slate-200">
-				<tr>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Nazwa firmy</th>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Data rejestracji</th>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Użytkownicy</th>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Admin</th>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Funkcje opcjonalne</th>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Resend API</th>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
-					<th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Akcje</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each tenants as tenant}
-					{@const admin = adminFor(tenant.id)}
-					{@const count = profilesFor(tenant.id).length}
-					<tr class="border-b border-slate-100 hover:bg-slate-50">
-						<td class="px-4 py-3 font-medium text-slate-900">{tenant.nazwa}</td>
-						<td class="px-4 py-3 text-slate-500">{formatDate(tenant.created_at)}</td>
-						<td class="px-4 py-3 text-slate-700">{count}</td>
-						<td class="px-4 py-3 text-slate-600">{admin ? (admin.imie_nazwisko ?? admin.email) : '—'}</td>
-						<td class="px-4 py-3">
-							<div class="flex flex-wrap gap-1.5">
-								{#each OPTIONAL_FEATURES as feat}
-									<button
-										onclick={() => toggleFeature(tenant, feat.key)}
-										class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors
-											{hasFeature(tenant, feat.key)
-												? 'bg-blue-100 text-blue-700 border-blue-300'
-												: 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'}"
-									>
-										{#if hasFeature(tenant, feat.key)}✓{:else}○{/if}
-										{feat.label}
-									</button>
-								{/each}
-							</div>
-						</td>
-						<td class="px-4 py-3">
-							{#if editingResend === tenant.id}
-								<div class="flex items-center gap-1">
-									<input
-										type="text"
-										bind:value={resendInput}
-										placeholder="re_..."
-										class="border border-slate-200 rounded px-2 py-1 text-xs w-36 focus:outline-none focus:ring-1 focus:ring-blue-400"
-									/>
-									<button
-										onclick={() => saveResendKey(tenant)}
-										disabled={savingResend}
-										class="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-									>{savingResend ? '…' : 'Zapisz'}</button>
-									<button
-										onclick={() => { editingResend = null; }}
-										class="px-2 py-1 text-xs border border-slate-200 text-slate-600 rounded hover:bg-slate-100"
-									>✕</button>
+	<div class="flex gap-6">
+		<!-- Tenant list -->
+		<div class="w-80 shrink-0 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden self-start">
+			<div class="px-4 py-3 border-b border-slate-200 bg-slate-50">
+				<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Firmy ({tenants.length})</span>
+			</div>
+			{#each tenants as tenant}
+				{@const count = profilesFor(tenant.id).length}
+				<button
+					onclick={() => selectedTenant = selectedTenant?.id === tenant.id ? null : tenant}
+					class="w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition-colors
+						{selectedTenant?.id === tenant.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''}"
+				>
+					<div class="font-medium text-sm text-slate-900">{tenant.nazwa}</div>
+					<div class="text-xs text-slate-400 mt-0.5">{count} użytk. · {formatDate(tenant.created_at)}</div>
+				</button>
+			{/each}
+			{#if tenants.length === 0}
+				<p class="px-4 py-6 text-center text-slate-400 text-sm">Brak firm</p>
+			{/if}
+		</div>
+
+		<!-- Tenant detail panel -->
+		{#if selectedTenant}
+		{@const st = selectedTenant}
+		{@const stAdmin = adminFor(st.id)}
+		{@const stProfiles = profilesFor(st.id)}
+		<div class="flex-1 space-y-4">
+			<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+				<div class="flex items-start justify-between mb-4">
+					<div>
+						<h2 class="text-lg font-bold text-slate-900">{st.nazwa}</h2>
+						<p class="text-xs text-slate-400 mt-0.5">Zarejestrowana: {formatDate(st.created_at)}</p>
+					</div>
+					<button onclick={() => selectedTenant = null} class="text-slate-400 hover:text-slate-700 text-sm">✕</button>
+				</div>
+
+				<!-- Funkcje opcjonalne -->
+				<div class="mb-5">
+					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Funkcje opcjonalne</p>
+					<div class="space-y-2">
+						{#each OPTIONAL_FEATURES as feat}
+							<label class="flex items-center gap-3 cursor-pointer py-2 px-3 rounded-lg hover:bg-slate-50">
+								<input
+									type="checkbox"
+									checked={hasFeature(st, feat.key)}
+									disabled={savingFeature === feat.key}
+									onchange={(e) => setFeature(st, feat.key, (e.target as HTMLInputElement).checked)}
+									class="w-4 h-4 rounded accent-blue-600"
+								/>
+								<span class="text-sm text-slate-700">{feat.label}</span>
+								{#if savingFeature === feat.key}
+									<span class="text-xs text-slate-400">zapisuję…</span>
+								{/if}
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Resend API key -->
+				<div class="mb-5 border-t border-slate-100 pt-4">
+					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Resend API (email)</p>
+					{#if editingResend === st.id}
+						<div class="flex items-center gap-2">
+							<input type="text" bind:value={resendInput} placeholder="re_..." class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<button onclick={() => saveResendKey(st)} disabled={savingResend} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingResend ? '…' : 'Zapisz'}</button>
+							<button onclick={() => { editingResend = null; }} class="px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+						</div>
+					{:else}
+						<div class="flex items-center gap-3">
+							<span class="text-sm text-slate-600 font-mono">{st.resend_api_key ? `re_****…${st.resend_api_key.slice(-4)}` : '— nie ustawiony —'}</span>
+							<button onclick={() => { editingResend = st.id; resendInput = st.resend_api_key ?? ''; }} class="text-xs text-blue-600 hover:underline">
+								{st.resend_api_key ? 'Zmień' : 'Dodaj'}
+							</button>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Użytkownicy -->
+				<div class="border-t border-slate-100 pt-4">
+					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Użytkownicy ({stProfiles.length})</p>
+					<div class="space-y-1">
+						{#each stProfiles as u}
+							<div class="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-slate-50">
+								<div>
+									<div class="text-sm font-medium text-slate-800">{u.imie_nazwisko ?? u.email}</div>
+									<div class="text-xs text-slate-400">{u.email} · {u.rola}</div>
 								</div>
-							{:else if tenant.resend_api_key}
-								<button
-									onclick={() => { editingResend = tenant.id; resendInput = tenant.resend_api_key ?? ''; }}
-									class="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-blue-600"
-									title="Edytuj klucz Resend"
-								>
-									<Mail size={12} />
-									re_****…{tenant.resend_api_key.slice(-4)}
-								</button>
-							{:else}
-								<button
-									onclick={() => { editingResend = tenant.id; resendInput = ''; }}
-									class="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-blue-600"
-								>
-									<Mail size={12} />
-									Dodaj klucz
-								</button>
-							{/if}
-						</td>
-						<td class="px-4 py-3">
-							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-green-100 text-green-700">Aktywny</span>
-						</td>
-						<td class="px-4 py-3">
-							{#if admin}
-								<button
-									onclick={() => openResetModal(admin)}
-									title="Reset hasła admina firmy"
-									class="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
-								>
-									<KeyRound size={13} />
-									Reset hasła
-								</button>
-							{/if}
-						</td>
-					</tr>
-				{/each}
-				{#if tenants.length === 0}
-					<tr>
-						<td colspan="8" class="px-4 py-8 text-center text-slate-400">Brak firm</td>
-					</tr>
-				{/if}
-			</tbody>
-		</table>
+								{#if u.rola === 'ADMIN BROKER'}
+									<button
+										onclick={() => openResetModal(u)}
+										class="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100"
+									>
+										<KeyRound size={12} /> Reset hasła
+									</button>
+								{/if}
+							</div>
+						{:else}
+							<p class="text-sm text-slate-400">Brak użytkowników</p>
+						{/each}
+					</div>
+				</div>
+			</div>
+		</div>
+		{:else}
+		<div class="flex-1 flex items-center justify-center py-20 text-slate-400 text-sm">
+			Wybierz firmę z listy, aby zobaczyć szczegóły i ustawienia
+		</div>
+		{/if}
 	</div>
 
 	<!-- Sync BEAUTY -->
