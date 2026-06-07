@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { sb } from '$lib/supabase';
-	import { appState, isAdmin } from '$lib/stores/app.svelte';
+	import { appState, isAdmin, teamLabel } from '$lib/stores/app.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
@@ -200,10 +200,13 @@
 
 <svelte:head><title>Administracja — FRANK67 CRM</title></svelte:head>
 
-<h1 class="text-2xl font-semibold text-slate-900 mb-1">Administracja</h1>
+<div class="flex items-center gap-2 mb-1">
+	<h1 class="text-2xl font-semibold text-slate-900">Administracja</h1>
+	<span class="px-2 py-0.5 text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-300 rounded-full">Admin</span>
+</div>
 
 <!-- Tabs -->
-<div class="flex items-center gap-1 mb-6 border-b border-slate-200">
+<div class="flex items-center gap-1 mb-6 border-b border-amber-200">
 	<a href="/admin?tab=system"
 		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
 			{activeTab === 'system' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
@@ -357,7 +360,7 @@
 	<p class="text-sm text-slate-500">Zarządzanie brokerami, rolami i dostępami</p>
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
-			<h2 class="font-semibold text-slate-900">Zespół (Brokerzy)</h2>
+			<h2 class="font-semibold text-slate-900">Zespół ({teamLabel()})</h2>
 				<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
 					<UserPlus size={13} /> Dodaj użytkownika
 				</button>

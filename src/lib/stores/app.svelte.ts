@@ -27,6 +27,14 @@ export function isBroker(): boolean {
 	return appState.tenantTyp === 'broker';
 }
 
+export function roleLabel(): string {
+	return appState.tenantTyp === 'agent' ? 'Agent' : 'Broker';
+}
+
+export function teamLabel(): string {
+	return appState.tenantTyp === 'agent' ? 'Agenci' : 'Brokerzy';
+}
+
 export function isAdmin(profile: Profile | null): boolean {
 	if (!profile) return false;
 	return ['ADMIN GOD', 'ADMIN BROKER', 'BOARD'].includes(profile.rola);

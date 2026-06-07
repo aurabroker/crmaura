@@ -7,7 +7,7 @@
 	import { dndzone } from 'svelte-dnd-action';
 	import { Settings2, TrendingUp, TrendingDown, Search, AlertTriangle, X } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
-	import { isBroker } from '$lib/stores/app.svelte';
+	import { isBroker, roleLabel } from '$lib/stores/app.svelte';
 
 	const today = todayStr();
 	const thisYear = new Date().getFullYear();
@@ -250,24 +250,39 @@
 	const KPI_WIDGET_IDS = new Set(['renewals', 'claims', 'clients', 'renewal_rate', 'payments', 'policy_count']);
 
 	let draggableItems = $state<typeof kpiItems>([]);
+	let bottomDraggableItems = $state<typeof kpiItems>([]);
 
 	$effect(() => {
-		draggableItems = [...kpiItems];
+		draggableItems = kpiItems.filter((w) => KPI_WIDGET_IDS.has(w.id));
+		bottomDraggableItems = kpiItems.filter((w) => !KPI_WIDGET_IDS.has(w.id));
 	});
 
 	function handleDnd(e: CustomEvent) {
 		draggableItems = e.detail.items;
 	}
 
-	async function finalizeDnd(e: CustomEvent) {
-		draggableItems = e.detail.items;
-		const order = draggableItems.map((i) => i.id);
+	function handleBottomDnd(e: CustomEvent) {
+		bottomDraggableItems = e.detail.items;
+	}
+
+	async function saveWidgetOrder() {
+		const order = [...draggableItems.map((i) => i.id), ...bottomDraggableItems.map((i) => i.id)];
 		appState.dashboardWidgets = order;
 		await sb.from('crm_dashboard_prefs').upsert({
 			user_id: appState.profile!.id,
 			widgets: order,
 			updated_at: new Date().toISOString()
 		});
+	}
+
+	async function finalizeDnd(e: CustomEvent) {
+		draggableItems = e.detail.items;
+		await saveWidgetOrder();
+	}
+
+	async function finalizeBottomDnd(e: CustomEvent) {
+		bottomDraggableItems = e.detail.items;
+		await saveWidgetOrder();
 	}
 
 	async function toggleWidget(id: string) {
@@ -320,7 +335,7 @@
 
 <div class="flex items-center justify-between mb-6">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Pulpit Brokera</h1>
+		<h1 class="text-2xl font-semibold text-slate-900">Pulpit {roleLabel()}a</h1>
 		<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
 	</div>
 	<div class="flex items-center gap-3">
@@ -554,197 +569,195 @@
 </div>
 {/if}
 
-<!-- Przypis składki — 12 miesięcy -->
-{#if appState.dashboardWidgets.includes('premium_chart')}
-{@const chart = premiumChart()}
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 mb-6">
-	<h2 class="font-semibold text-slate-900 mb-1 text-base">Przypis składki — ostatnie 12 miesięcy</h2>
-	<p class="text-sm text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
-	<div class="flex items-end gap-2 h-48">
-		{#each chart as m}
-		<div class="flex-1 flex flex-col justify-end items-center group relative">
-			<div class="text-xs font-bold text-slate-700 mb-1 text-center leading-tight">
-				{m.value > 0 ? fmtPln(m.value) : ''}
+<!-- Dolne widgety — drag & drop -->
+{#if bottomDraggableItems.length > 0}
+<div
+	class="grid grid-cols-2 gap-6 mb-6"
+	use:dndzone={{ items: bottomDraggableItems, flipDurationMs: 200 }}
+	onconsider={handleBottomDnd}
+	onfinalize={finalizeBottomDnd}
+>
+
+	{#each bottomDraggableItems as widget (widget.id)}
+	<div class="{widget.id === 'premium_chart' ? 'col-span-2' : ''} {configMode ? 'cursor-grab active:cursor-grabbing' : ''}">
+
+		{#if widget.id === 'top_clients'}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden h-full">
+			<div class="px-5 py-4 border-b border-slate-200">
+				<h2 class="font-semibold text-slate-900 text-sm">Top 5 klientów wg liczby polis</h2>
 			</div>
-			<div
-				class="w-full rounded-t bg-blue-500 transition-all group-hover:bg-blue-600"
-				style="height: {Math.max(m.pct, 2) * 1.92}px"
-			></div>
-		</div>
-		{/each}
-	</div>
-	<div class="flex gap-2 mt-2">
-		{#each chart as m}
-		<div class="flex-1 text-center text-xs text-slate-500 font-semibold truncate">{m.label}</div>
-		{/each}
-	</div>
-</div>
-{/if}
-
-<!-- Dynamika -->
-{#if appState.dashboardWidgets.includes('dynamika')}
-{@const dyn = dynamika()}
-<div class="grid grid-cols-3 gap-4 mb-6">
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-		<p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Wzrost składki R/R</p>
-		{#if dyn.growth !== null}
-			<div class="text-3xl font-bold {dyn.growth >= 0 ? 'text-emerald-600' : 'text-red-600'}">
-				{dyn.growth >= 0 ? '+' : ''}{dyn.growth}%
-			</div>
-			<p class="text-xs text-slate-400 mt-1">{fmtPln(dyn.skladkaPrevYear)} → {fmtPln(dyn.skladkaThisYear)} PLN</p>
-		{:else}
-			<div class="text-2xl font-bold text-slate-400">—</div>
-			<p class="text-xs text-slate-400 mt-1">Brak danych za poprzedni rok</p>
-		{/if}
-	</div>
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-		<p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Nowi klienci (mies.)</p>
-		<div class="text-3xl font-bold text-slate-900">{dyn.newClientsThisMonth}</div>
-		<p class="text-xs text-slate-400 mt-1">{thisMonth.replace('-', '.')}</p>
-	</div>
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-		<p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Nowe polisy (mies.)</p>
-		<div class="text-3xl font-bold text-slate-900">{dyn.newPoliciesThisMonth}</div>
-		<p class="text-xs text-slate-400 mt-1">{thisMonth.replace('-', '.')}</p>
-	</div>
-</div>
-{/if}
-
-<!-- Dolne widgety — max 50% szerokości, do 3 w rzędzie -->
-{#if draggableItems.some((w) => !KPI_WIDGET_IDS.has(w.id) && !['renewals','payments','expiring_payments','premium_chart','dynamika'].includes(w.id))}
-<div class="grid grid-cols-2 gap-6 mb-6">
-
-	<!-- Top klienci -->
-	{#if appState.dashboardWidgets.includes('top_clients')}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<div class="px-5 py-4 border-b border-slate-200">
-			<h2 class="font-semibold text-slate-900 text-sm">Top 5 klientów wg liczby polis</h2>
-		</div>
-		<table class="w-full text-left text-sm">
-			<thead>
-				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-5 py-3">Klient</th>
-					<th class="px-5 py-3 text-right">Polis</th>
-					<th class="px-5 py-3 text-right">Składka</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each topClients() as c, i}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
-						<td class="px-5 py-3 font-medium">
-							<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-xs text-slate-500 mr-2">{i + 1}</span>
-							{c.nazwa}
-						</td>
-						<td class="px-5 py-3 text-right font-semibold text-slate-700">{c.count}</td>
-						<td class="px-5 py-3 text-right text-slate-600 text-xs">{fmtPln(c.skladka)}</td>
+			<table class="w-full text-left text-sm">
+				<thead>
+					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<th class="px-5 py-3">Klient</th>
+						<th class="px-5 py-3 text-right">Polis</th>
+						<th class="px-5 py-3 text-right">Składka</th>
 					</tr>
-				{:else}
-					<tr><td colspan="3" class="px-5 py-6 text-center text-slate-400">Brak danych</td></tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-	{/if}
-
-	<!-- Liczba polis — donut -->
-	{#if appState.dashboardWidgets.includes('policy_count')}
-	{@const pd = policiesByRodzaj()}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-		<h2 class="font-semibold text-slate-900 mb-4 text-sm">Liczba polis wg rodzaju</h2>
-		{#if pd.total === 0}
-			<p class="text-center text-slate-400 text-sm py-4">Brak polis</p>
-		{:else}
-			{@const stops = (() => {
-				let acc = 0;
-				return pd.items.map((item, i) => {
-					const from = acc;
-					acc += item.pct;
-					return `${SEARCH_COLORS[i % SEARCH_COLORS.length]} ${from}% ${acc}%`;
-				}).join(', ');
-			})()}
-		<div class="flex items-center gap-8">
-			<div class="relative shrink-0 w-24 h-24 rounded-full" style="background: conic-gradient({stops})">
-				<div class="absolute inset-3 bg-white rounded-full flex items-center justify-center">
-					<span class="text-xs font-bold text-slate-700">{pd.total}</span>
-				</div>
-			</div>
-			<div class="flex-1 space-y-1.5">
-				{#each pd.items as item, i}
-					<div class="flex items-center gap-2 text-sm">
-						<span class="w-3 h-3 rounded-full shrink-0" style="background:{SEARCH_COLORS[i % SEARCH_COLORS.length]}"></span>
-						<span class="text-slate-600 truncate flex-1">{item.r}</span>
-						<span class="font-semibold text-slate-800">{item.c}</span>
-						<span class="text-slate-400 text-xs w-8 text-right">{item.pct}%</span>
-					</div>
-				{/each}
-			</div>
-		</div>
-		{/if}
-	</div>
-	{/if}
-
-	<!-- Polisy wg TU -->
-	{#if appState.dashboardWidgets.includes('policies_by_insurer')}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-		<h2 class="font-semibold text-slate-900 mb-4 text-sm">Polisy wg TU (top 5)</h2>
-		{#if policiesByInsurer().length === 0}
-			<p class="text-center text-slate-400 text-sm py-4">Brak danych</p>
-		{:else}
-			<div class="space-y-3">
-				{#each policiesByInsurer() as item}
-					<div class="flex items-center gap-3">
-						<span class="text-sm text-slate-600 w-28 truncate shrink-0">{item.nazwa}</span>
-						<div class="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
-							<div class="h-4 bg-blue-500 rounded-full transition-all" style="width: {item.pct}%"></div>
-						</div>
-						<span class="text-sm font-semibold text-slate-700 w-8 text-right shrink-0">{item.count}</span>
-					</div>
-				{/each}
-			</div>
-		{/if}
-	</div>
-	{/if}
-
-	<!-- Składka miesięczna -->
-	{#if appState.dashboardWidgets.includes('monthly_premium')}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-		<h2 class="font-semibold text-slate-900 mb-1 text-sm">Składka przypisana — bieżący miesiąc</h2>
-		<p class="text-xs text-slate-400 mb-4">{thisMonth.replace('-', '.')}</p>
-		<div class="flex items-end gap-4">
-			<div>
-				<div class="text-3xl font-bold text-slate-900">{fmtPln(premiumThisMonth)} <span class="text-sm font-normal text-slate-400">PLN</span></div>
-				<div class="flex items-center gap-1 mt-1 text-sm">
-					{#if premiumTrend === 'up'}
-						<TrendingUp size={16} class="text-emerald-500" />
-						<span class="text-emerald-600">Wzrost vs poprzedni miesiąc</span>
+				</thead>
+				<tbody>
+					{#each topClients() as c, i}
+						<tr class="border-t border-slate-100 hover:bg-slate-50">
+							<td class="px-5 py-3 font-medium">
+								<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-xs text-slate-500 mr-2">{i + 1}</span>
+								{c.nazwa}
+							</td>
+							<td class="px-5 py-3 text-right font-semibold text-slate-700">{c.count}</td>
+							<td class="px-5 py-3 text-right text-slate-600 text-xs">{fmtPln(c.skladka)}</td>
+						</tr>
 					{:else}
-						<TrendingDown size={16} class="text-red-500" />
-						<span class="text-red-600">Spadek vs poprzedni miesiąc</span>
-					{/if}
-				</div>
-			</div>
-			<div class="ml-auto text-right">
-				<div class="text-sm text-slate-400">Poprzedni miesiąc</div>
-				<div class="text-lg font-semibold text-slate-500">{fmtPln(premiumLastMonth)} PLN</div>
-			</div>
+						<tr><td colspan="3" class="px-5 py-6 text-center text-slate-400">Brak danych</td></tr>
+					{/each}
+				</tbody>
+			</table>
 		</div>
-	</div>
-	{/if}
 
-	<!-- Statystyki szkód -->
-	{#if appState.dashboardWidgets.includes('claims_stats') && isBroker()}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
-		<h2 class="font-semibold text-slate-900 mb-4 text-sm">Statystyki szkód</h2>
-		<div class="grid grid-cols-2 gap-3">
-			{#each claimsStats() as stat}
-				<div class="rounded-xl p-3 {stat.color}">
-					<div class="text-2xl font-bold">{stat.count}</div>
-					<div class="text-xs font-medium mt-0.5">{stat.status}</div>
+		{:else if widget.id === 'policy_count'}
+		{@const pd = policiesByRodzaj()}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Liczba polis wg rodzaju</h2>
+			{#if pd.total === 0}
+				<p class="text-center text-slate-400 text-sm py-4">Brak polis</p>
+			{:else}
+				{@const stops = (() => {
+					let acc = 0;
+					return pd.items.map((item, i) => {
+						const from = acc;
+						acc += item.pct;
+						return `${SEARCH_COLORS[i % SEARCH_COLORS.length]} ${from}% ${acc}%`;
+					}).join(', ');
+				})()}
+			<div class="flex items-center gap-8">
+				<div class="relative shrink-0 w-24 h-24 rounded-full" style="background: conic-gradient({stops})">
+					<div class="absolute inset-3 bg-white rounded-full flex items-center justify-center">
+						<span class="text-xs font-bold text-slate-700">{pd.total}</span>
+					</div>
 				</div>
-			{/each}
+				<div class="flex-1 space-y-1.5">
+					{#each pd.items as item, i}
+						<div class="flex items-center gap-2 text-sm">
+							<span class="w-3 h-3 rounded-full shrink-0" style="background:{SEARCH_COLORS[i % SEARCH_COLORS.length]}"></span>
+							<span class="text-slate-600 truncate flex-1">{item.r}</span>
+							<span class="font-semibold text-slate-800">{item.c}</span>
+							<span class="text-slate-400 text-xs w-8 text-right">{item.pct}%</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+			{/if}
 		</div>
+
+		{:else if widget.id === 'policies_by_insurer'}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Polisy wg TU (top 5)</h2>
+			{#if policiesByInsurer().length === 0}
+				<p class="text-center text-slate-400 text-sm py-4">Brak danych</p>
+			{:else}
+				<div class="space-y-3">
+					{#each policiesByInsurer() as item}
+						<div class="flex items-center gap-3">
+							<span class="text-sm text-slate-600 w-28 truncate shrink-0">{item.nazwa}</span>
+							<div class="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
+								<div class="h-4 bg-blue-500 rounded-full transition-all" style="width: {item.pct}%"></div>
+							</div>
+							<span class="text-sm font-semibold text-slate-700 w-8 text-right shrink-0">{item.count}</span>
+						</div>
+					{/each}
+				</div>
+			{/if}
+		</div>
+
+		{:else if widget.id === 'monthly_premium'}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+			<h2 class="font-semibold text-slate-900 mb-1 text-sm">Składka przypisana — bieżący miesiąc</h2>
+			<p class="text-xs text-slate-400 mb-4">{thisMonth.replace('-', '.')}</p>
+			<div class="flex items-end gap-4">
+				<div>
+					<div class="text-3xl font-bold text-slate-900">{fmtPln(premiumThisMonth)} <span class="text-sm font-normal text-slate-400">PLN</span></div>
+					<div class="flex items-center gap-1 mt-1 text-sm">
+						{#if premiumTrend === 'up'}
+							<TrendingUp size={16} class="text-emerald-500" />
+							<span class="text-emerald-600">Wzrost vs poprzedni miesiąc</span>
+						{:else}
+							<TrendingDown size={16} class="text-red-500" />
+							<span class="text-red-600">Spadek vs poprzedni miesiąc</span>
+						{/if}
+					</div>
+				</div>
+				<div class="ml-auto text-right">
+					<div class="text-sm text-slate-400">Poprzedni miesiąc</div>
+					<div class="text-lg font-semibold text-slate-500">{fmtPln(premiumLastMonth)} PLN</div>
+				</div>
+			</div>
+		</div>
+
+		{:else if widget.id === 'claims_stats' && isBroker()}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Statystyki szkód</h2>
+			<div class="grid grid-cols-2 gap-3">
+				{#each claimsStats() as stat}
+					<div class="rounded-xl p-3 {stat.color}">
+						<div class="text-2xl font-bold">{stat.count}</div>
+						<div class="text-xs font-medium mt-0.5">{stat.status}</div>
+					</div>
+				{/each}
+			</div>
+		</div>
+
+		{:else if widget.id === 'premium_chart'}
+		{@const chart = premiumChart()}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full col-span-2">
+			<h2 class="font-semibold text-slate-900 mb-1 text-base">Przypis składki — ostatnie 12 miesięcy</h2>
+			<p class="text-sm text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
+			<div class="flex items-end gap-2 h-48">
+				{#each chart as m}
+				<div class="flex-1 flex flex-col justify-end items-center group relative">
+					<div class="text-xs font-bold text-slate-700 mb-1 text-center leading-tight">
+						{m.value > 0 ? fmtPln(m.value) : ''}
+					</div>
+					<div
+						class="w-full rounded-t bg-blue-500 transition-all group-hover:bg-blue-600"
+						style="height: {Math.max(m.pct, 2) * 1.92}px"
+					></div>
+				</div>
+				{/each}
+			</div>
+			<div class="flex gap-2 mt-2">
+				{#each chart as m}
+				<div class="flex-1 text-center text-xs text-slate-500 font-semibold truncate">{m.label}</div>
+				{/each}
+			</div>
+		</div>
+
+		{:else if widget.id === 'dynamika'}
+		{@const dyn = dynamika()}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+			<h2 class="font-semibold text-slate-900 mb-3 text-sm">Wzrost składki R/R</h2>
+			{#if dyn.growth !== null}
+				<div class="text-3xl font-bold {dyn.growth >= 0 ? 'text-emerald-600' : 'text-red-600'}">
+					{dyn.growth >= 0 ? '+' : ''}{dyn.growth}%
+				</div>
+				<p class="text-xs text-slate-400 mt-1">{fmtPln(dyn.skladkaPrevYear)} → {fmtPln(dyn.skladkaThisYear)} PLN</p>
+			{:else}
+				<div class="text-2xl font-bold text-slate-400">—</div>
+				<p class="text-xs text-slate-400 mt-1">Brak danych za poprzedni rok</p>
+			{/if}
+			<div class="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
+				<div>
+					<p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Nowi klienci (mies.)</p>
+					<div class="text-2xl font-bold text-slate-900">{dyn.newClientsThisMonth}</div>
+					<p class="text-xs text-slate-400">{thisMonth.replace('-', '.')}</p>
+				</div>
+				<div>
+					<p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Nowe polisy (mies.)</p>
+					<div class="text-2xl font-bold text-slate-900">{dyn.newPoliciesThisMonth}</div>
+					<p class="text-xs text-slate-400">{thisMonth.replace('-', '.')}</p>
+				</div>
+			</div>
+		</div>
+		{/if}
+
 	</div>
-	{/if}
+	{/each}
 
 </div>
 {/if}
