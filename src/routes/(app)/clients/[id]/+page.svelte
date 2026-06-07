@@ -224,6 +224,12 @@
 				<p class="text-sm text-slate-500 mt-0.5">
 					{#if client.nip}NIP: {client.nip} · {/if}{#if client.pesel}PESEL: {client.pesel} · {/if}{#if client.rodo_zgoda}<span class="text-emerald-600">RODO ✓</span>{:else}<span class="text-red-500">BRAK RODO</span>{/if}
 				</p>
+				{#if client.email || client.telefon}
+				<p class="text-sm text-slate-500 mt-0.5 flex items-center gap-3">
+					{#if client.telefon}<a href="tel:{client.telefon}" class="hover:text-blue-600">📞 {client.telefon}</a>{/if}
+					{#if client.email}<a href="mailto:{client.email}" class="hover:text-blue-600">✉ {client.email}</a>{/if}
+				</p>
+				{/if}
 				<!-- Opiekun klienta -->
 				<div class="flex items-center gap-2 mt-1">
 					{#if editingOpiekun}

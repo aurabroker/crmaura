@@ -29,6 +29,8 @@ export interface Client {
 	pesel: string | null;
 	regon: string | null;
 	krs: string | null;
+	email: string | null;
+	telefon: string | null;
 	rodo_zgoda: boolean;
 	rodo_data: string | null;
 	rodo_kanal: string | null;

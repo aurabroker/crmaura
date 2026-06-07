@@ -130,6 +130,7 @@
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
 				<th class="px-5 py-3">Nazwa / Adres</th>
 				<th class="px-5 py-3">NIP / PESEL</th>
+				<th class="px-5 py-3">Kontakt</th>
 				<th class="px-5 py-3">RODO</th>
 				<th class="px-5 py-3">Akcje</th>
 			</tr>
@@ -155,6 +156,10 @@
 						{#if c.nip}NIP: {c.nip}<br/>{/if}
 						{#if c.pesel}PESEL: {c.pesel}{/if}
 						{#if c.krs}<br/>KRS: {c.krs}{/if}
+					</td>
+					<td class="px-5 py-3 text-xs text-slate-500">
+						{#if c.telefon}<a href="tel:{c.telefon}" class="hover:text-blue-600 block">📞 {c.telefon}</a>{/if}
+						{#if c.email}<a href="mailto:{c.email}" class="hover:text-blue-600 block">✉ {c.email}</a>{/if}
 					</td>
 					<td class="px-5 py-3">
 						{#if c.rodo_zgoda}
