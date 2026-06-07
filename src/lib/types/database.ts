@@ -291,4 +291,23 @@ export interface CrmAlert {
 	created_at?: string;
 }
 
+export interface CrmTask {
+	id: string;
+	tenant_id: string;
+	created_by: string;
+	assigned_to: string | null;
+	klient_id: string | null;
+	polisa_id: string | null;
+	tytul: string;
+	opis: string | null;
+	termin: string | null;
+	priorytet: 'niski' | 'normalny' | 'wysoki' | 'pilny';
+	status: 'otwarte' | 'w_toku' | 'zakonczone' | 'anulowane';
+	created_at?: string;
+	updated_at?: string;
+	crm_clients?: { nazwa: string } | null;
+	crm_policies?: { nr_polisy: string } | null;
+	assigned_profile?: { imie_nazwisko: string | null; email: string } | null;
+}
+
 export type Database = Record<string, unknown>;
