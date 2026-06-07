@@ -27,7 +27,7 @@
 		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
 		{ href: '/policies', label: 'Polisy', icon: FileText, always: true },
 		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, show: isBroker() },
-		{ href: '/guarantees', label: 'Gwarancje', icon: Shield, show: !!appState.tenantFeatures['gwarancje'] },
+		{ href: '/bonds', label: 'Gwarancje', icon: Shield, show: !!appState.tenantFeatures['gwarancje'] },
 		{ href: '/calendar', label: 'Kalendarz', icon: CalendarCheck, show: !!appState.tenantFeatures['kalendarz'] },
 		{ href: '/apk', label: 'APK', icon: ClipboardList, always: true },
 		{ href: '/renewals', label: 'Odnowienia', icon: RefreshCw, always: true },
