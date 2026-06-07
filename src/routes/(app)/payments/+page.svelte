@@ -244,6 +244,23 @@
 		importSaving = true; importError = '';
 
 		const tuSkrot = importMode === 'ergo' ? 'ERGO' : 'LEADENHALL';
+
+		// Upload source file to storage
+		let fileUrl: string | null = null;
+		if (importFile) {
+			const ext = importFile.name.split('.').pop() ?? 'xlsx';
+			const path = `${appState.profile!.tenant_id}/${tuSkrot}_${importNumerNoty.replace(/\//g, '-')}_${Date.now()}.${ext}`;
+			const { data: upData } = await sb.storage.from('settlement-files').upload(path, importFile, { upsert: true });
+			if (upData) {
+				const { data: urlData } = sb.storage.from('settlement-files').getPublicUrl(path);
+				fileUrl = urlData?.publicUrl ?? null;
+				if (!fileUrl) {
+					const { data: signedData } = await sb.storage.from('settlement-files').createSignedUrl(path, 60 * 60 * 24 * 365);
+					fileUrl = signedData?.signedUrl ?? null;
+				}
+			}
+		}
+
 		const { data: nota, error: notaErr } = await sb.from('crm_noty').insert([{
 			tenant_id: appState.profile!.tenant_id,
 			numer_noty: importNumerNoty,
@@ -251,7 +268,8 @@
 			data_zestawienia: importDataZest || null,
 			razem_skladka: importRazemSkladka,
 			razem_prowizja: importRazemProwizja,
-			pozycji_count: importPreview.filter(r => r.payment_id && r.operator_action === 'settle').length
+			pozycji_count: importPreview.filter(r => r.payment_id && r.operator_action === 'settle').length,
+			file_url: fileUrl
 		}]).select('id').single();
 
 		if (notaErr) { importSaving = false; importError = notaErr.message; return; }

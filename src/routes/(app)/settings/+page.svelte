@@ -6,14 +6,27 @@
 	import type { Vehicle } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
-	import { Search, Pencil, Plus, Car, User, Shield, Trash2 } from 'lucide-svelte';
+	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText } from 'lucide-svelte';
+	import { fmtPln } from '$lib/utils';
 	import { onMount } from 'svelte';
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// --- Tabs ---
-	let activeTab = $state<'vehicles' | 'profile' | 'rodo'>('vehicles');
+	let activeTab = $state<'vehicles' | 'profile' | 'rodo' | 'dokumenty'>('vehicles');
+
+	// --- Dokumenty rozliczeniowe ---
+	type Nota = { id: string; numer_noty: string; tu_skrot: string | null; data_zestawienia: string | null; data_importu: string; razem_skladka: number | null; razem_prowizja: number | null; pozycji_count: number | null; file_url?: string | null };
+	let noty = $state<Nota[]>([]);
+	let notyLoading = $state(false);
+
+	async function loadNoty() {
+		notyLoading = true;
+		const { data } = await sb.from('crm_noty').select('*').order('data_importu', { ascending: false }).limit(100);
+		noty = (data ?? []) as Nota[];
+		notyLoading = false;
+	}
 
 	// --- RODO texts ---
 	type RodoText = { id?: string; key: string; label: string; tresc: string; required: boolean; aktywna: boolean; editing?: boolean };
@@ -250,6 +263,13 @@
 		>
 			<Shield size={16} />
 			Zgody RODO
+		</button>
+		<button
+			onclick={() => { activeTab = 'dokumenty'; loadNoty(); }}
+			class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'dokumenty' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+		>
+			<FileText size={16} />
+			Dokumenty rozliczeniowe
 		</button>
 	</div>
 
@@ -516,6 +536,58 @@
 			Brak zdefiniowanych zgód RODO. Kliknij "Dodaj zgodę" aby rozpocząć.
 		</div>
 		{/if}
+	</div>
+	{/if}
+
+	{#if activeTab === 'dokumenty'}
+	<div class="space-y-4">
+		<div class="flex items-center justify-between">
+			<div>
+				<h2 class="text-lg font-semibold text-slate-900">Dokumenty rozliczeniowe</h2>
+				<p class="text-sm text-slate-500">Zaimportowane noty prowizyjne i zestawienia TU</p>
+			</div>
+			<button onclick={loadNoty} class="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+				{#if notyLoading}Ładowanie...{:else}Odśwież{/if}
+			</button>
+		</div>
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			<table class="w-full text-sm text-left">
+				<thead>
+					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<th class="px-5 py-3">Nr zestawienia</th>
+						<th class="px-5 py-3">TU</th>
+						<th class="px-5 py-3">Data zestawienia</th>
+						<th class="px-5 py-3">Data importu</th>
+						<th class="px-5 py-3 text-right">Składka</th>
+						<th class="px-5 py-3 text-right">Prowizja</th>
+						<th class="px-5 py-3 text-center">Pozycji</th>
+						<th class="px-5 py-3">Plik</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each noty as n}
+					<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<td class="px-5 py-3 font-mono font-semibold text-slate-900">{n.numer_noty}</td>
+						<td class="px-5 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">{n.tu_skrot ?? '—'}</span></td>
+						<td class="px-5 py-3 text-xs">{n.data_zestawienia ?? '—'}</td>
+						<td class="px-5 py-3 text-xs text-slate-500">{n.data_importu.split('T')[0]}</td>
+						<td class="px-5 py-3 text-right">{n.razem_skladka != null ? fmtPln(n.razem_skladka) : '—'}</td>
+						<td class="px-5 py-3 text-right font-semibold text-emerald-700">{n.razem_prowizja != null ? fmtPln(n.razem_prowizja) : '—'}</td>
+						<td class="px-5 py-3 text-center">{n.pozycji_count ?? '—'}</td>
+						<td class="px-5 py-3">
+							{#if n.file_url}
+								<a href={n.file_url} target="_blank" class="flex items-center gap-1 text-blue-600 hover:underline text-xs"><FileText size={13} /> Pobierz</a>
+							{:else}
+								<span class="text-slate-300 text-xs">brak</span>
+							{/if}
+						</td>
+					</tr>
+					{:else}
+					<tr><td colspan="8" class="px-5 py-8 text-center text-slate-400">{notyLoading ? 'Ładowanie...' : 'Brak dokumentów rozliczeniowych'}</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	</div>
 	{/if}
 </div>

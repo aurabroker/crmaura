@@ -2,15 +2,25 @@
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { ShieldCheck } from 'lucide-svelte';
+	import Turnstile from '$lib/components/Turnstile.svelte';
+
+	const useTurnstile = !!import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
 	let loading = $state(false);
+	let turnstileToken = $state('');
 
 	async function login(e: SubmitEvent) {
 		e.preventDefault();
 		error = '';
+		if (useTurnstile && !turnstileToken) { error = 'Potwierdź, że nie jesteś robotem.'; return; }
+		if (useTurnstile) {
+			const r = await fetch('/api/turnstile-verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: turnstileToken }) });
+			const d = await r.json();
+			if (!d.success) { error = 'Weryfikacja CAPTCHA nieudana. Spróbuj ponownie.'; turnstileToken = ''; return; }
+		}
 		loading = true;
 		const { error: err } = await sb.auth.signInWithPassword({ email, password });
 		loading = false;
@@ -60,9 +70,12 @@
 					class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
 				/>
 			</div>
+			{#if useTurnstile}
+				<Turnstile onToken={(t) => turnstileToken = t} onError={() => turnstileToken = ''} />
+			{/if}
 			<button
 				type="submit"
-				disabled={loading}
+				disabled={loading || (useTurnstile && !turnstileToken)}
 				class="w-full bg-slate-900 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60"
 			>
 				{loading ? 'Logowanie...' : 'Zaloguj do systemu'}

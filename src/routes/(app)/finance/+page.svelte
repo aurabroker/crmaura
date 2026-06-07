@@ -29,6 +29,11 @@
 	const totalPrzyp = $derived(rows.reduce((s, p) => s + (p.prowizja_przypisana ?? 0), 0));
 	const totalZaink = $derived(rows.reduce((s, p) => s + (p.prowizja_zainkasowana ?? 0), 0));
 
+	// Detail modal (view settlement info)
+	let showDetail = $state(false);
+	let detailPolicy = $state<typeof appState.policies[0] | null>(null);
+	function openDetail(p: typeof appState.policies[0]) { detailPolicy = p; showDetail = true; }
+
 	// Rozliczenie modal
 	let showSettle = $state(false);
 	let settlePolicy = $state<typeof appState.policies[0] | null>(null);
@@ -57,7 +62,8 @@
 		const { error } = await sb.from('crm_policies').update({
 			rozliczenie_status: status,
 			rozliczenie_kwota_tu: kwotaTU,
-			prowizja_zainkasowana: prowKwota
+			prowizja_zainkasowana: prowKwota,
+			rozliczenie_data: new Date().toISOString().split('T')[0]
 		}).eq('id', settlePolicy.id);
 
 		settling = false;
@@ -139,7 +145,13 @@
 					<td class="px-5 py-3 text-right">{fmtPln(p.prowizja_przypisana)}</td>
 					<td class="px-5 py-3 text-right font-semibold text-emerald-600">{fmtPln(p.prowizja_zainkasowana)}</td>
 					<td class="px-5 py-3">
-						<Badge variant={rozlVariant(rs)}>{rozlStatusLabel[rs] ?? rs}</Badge>
+						{#if rs !== 'nierozliczona'}
+							<button onclick={() => openDetail(p)} class="hover:opacity-80 transition-opacity">
+								<Badge variant={rozlVariant(rs)}>{rozlStatusLabel[rs] ?? rs} ↗</Badge>
+							</button>
+						{:else}
+							<Badge variant={rozlVariant(rs)}>{rozlStatusLabel[rs] ?? rs}</Badge>
+						{/if}
 					</td>
 					<td class="px-5 py-3">
 						<button onclick={() => openSettle(p)} class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors">
@@ -154,6 +166,37 @@
 		</tbody>
 	</table>
 </div>
+
+<Modal title="Szczegóły rozliczenia — {detailPolicy?.nr_polisy ?? ''}" open={showDetail} onclose={() => showDetail = false}>
+	{#snippet footer()}
+		<button onclick={() => showDetail = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+		<button onclick={() => { showDetail = false; openSettle(detailPolicy!); }} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
+			Edytuj rozliczenie
+		</button>
+	{/snippet}
+	{#if detailPolicy}
+	<div class="space-y-3">
+		<div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4 space-y-2 text-sm">
+			<div class="flex justify-between"><span class="text-slate-600">Status:</span> <strong class="text-emerald-700">{rozlStatusLabel[(detailPolicy as any).rozliczenie_status] ?? (detailPolicy as any).rozliczenie_status}</strong></div>
+			<div class="flex justify-between"><span class="text-slate-600">Składka wg TU:</span> <strong>{fmtPln((detailPolicy as any).rozliczenie_kwota_tu ?? 0)}</strong></div>
+			<div class="flex justify-between"><span class="text-slate-600">Prowizja zainkasowana:</span> <strong class="text-emerald-700">{fmtPln(detailPolicy.prowizja_zainkasowana)}</strong></div>
+			{#if (detailPolicy as any).rozliczenie_data}
+				<div class="flex justify-between"><span class="text-slate-600">Data rozliczenia:</span> <strong>{(detailPolicy as any).rozliczenie_data}</strong></div>
+			{/if}
+			{#if detailPolicy.rozliczenie_plik}
+				<div class="flex justify-between items-center"><span class="text-slate-600">Dokument:</span> <a href={detailPolicy.rozliczenie_plik} target="_blank" class="text-blue-600 hover:underline text-xs">📎 Pobierz plik</a></div>
+			{:else}
+				<div class="flex justify-between"><span class="text-slate-600">Dokument:</span> <span class="text-slate-400 text-xs">brak załączonego pliku</span></div>
+			{/if}
+		</div>
+		<div class="bg-slate-50 rounded-lg p-3 text-sm space-y-1">
+			<div>Składka przypisana: <strong>{fmtPln(detailPolicy.skladka_przypisana)}</strong></div>
+			<div>% Prowizji: <strong>{detailPolicy.prowizja_pct}%</strong></div>
+			<div>Prowizja przypisana: <strong>{fmtPln(detailPolicy.prowizja_przypisana)}</strong></div>
+		</div>
+	</div>
+	{/if}
+</Modal>
 
 <Modal title="Rozlicz polisę — {settlePolicy?.nr_polisy ?? ''}" open={showSettle} onclose={() => { showSettle = false; settleError = ''; }}>
 	{#snippet footer()}

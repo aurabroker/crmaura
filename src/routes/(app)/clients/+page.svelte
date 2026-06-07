@@ -20,11 +20,38 @@
 	let fRegon = $state('');
 	let fKrs = $state('');
 	let fPesel = $state('');
+	let fEmail = $state('');
+	let fTelefon = $state('');
 	let fRodo = $state(false);
 	let fRodoData = $state('');
 	let fRodoKanal = $state('E-mail');
 	let saving = $state(false);
 	let formError = $state('');
+
+	// Duplicate detection
+	let showDuplicates = $state(false);
+	type DupGroup = { reason: string; clients: typeof appState.clients };
+	const duplicateGroups = $derived((): DupGroup[] => {
+		const groups: DupGroup[] = [];
+		const nipMap = new Map<string, typeof appState.clients>();
+		const peselMap = new Map<string, typeof appState.clients>();
+		for (const c of appState.clients) {
+			if (c.nip) {
+				const norm = c.nip.replace(/\s/g, '');
+				const arr = nipMap.get(norm) ?? [];
+				arr.push(c);
+				nipMap.set(norm, arr);
+			}
+			if (c.pesel) {
+				const arr = peselMap.get(c.pesel) ?? [];
+				arr.push(c);
+				peselMap.set(c.pesel, arr);
+			}
+		}
+		for (const [nip, cs] of nipMap) if (cs.length > 1) groups.push({ reason: `Duplikat NIP: ${nip}`, clients: cs });
+		for (const [pesel, cs] of peselMap) if (cs.length > 1) groups.push({ reason: `Duplikat PESEL: ${pesel}`, clients: cs });
+		return groups;
+	});
 
 	const filtered = $derived(
 		appState.clients.filter(
@@ -39,6 +66,7 @@
 	function openNew(typ: 'firma' | 'osoba') {
 		editingClient = null; modalTyp = typ;
 		fNazwa = ''; fNazwaSkrocona = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
+		fEmail = ''; fTelefon = '';
 		fRodo = false; fRodoData = ''; fRodoKanal = 'E-mail'; formError = '';
 		showModal = true;
 	}
@@ -47,6 +75,7 @@
 		editingClient = c; modalTyp = c.typ ?? 'firma';
 		fNazwa = c.nazwa; fNazwaSkrocona = c.nazwa_skrocona ?? ''; fUlica = c.ulica ?? '';
 		fNip = c.nip ?? ''; fRegon = c.regon ?? ''; fKrs = c.krs ?? ''; fPesel = c.pesel ?? '';
+		fEmail = c.email ?? ''; fTelefon = c.telefon ?? '';
 		fRodo = c.rodo_zgoda; fRodoData = c.rodo_data ?? '';
 		fRodoKanal = c.rodo_kanal ?? 'E-mail'; formError = '';
 		showModal = true;
@@ -66,6 +95,8 @@
 			pesel: modalTyp === 'osoba' ? (fPesel.trim() || null) : null,
 			regon: modalTyp === 'firma' ? (fRegon.trim() || null) : null,
 			krs: modalTyp === 'firma' ? (fKrs.trim() || null) : null,
+			email: fEmail.trim() || null,
+			telefon: fTelefon.trim() || null,
 			rodo_zgoda: fRodo,
 			rodo_data: fRodoData || null,
 			rodo_kanal: fRodoKanal
@@ -111,6 +142,9 @@
 		<p class="text-sm text-slate-500 mt-1">Zarządzanie portfelem i statusami RODO</p>
 	</div>
 	<div class="flex gap-2">
+		<button onclick={() => showDuplicates = true} class="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-100 transition-colors">
+			Sprawdź duplikaty {#if duplicateGroups().length > 0}<span class="bg-amber-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[11px]">{duplicateGroups().length}</span>{/if}
+		</button>
 		<button onclick={() => openNew('firma')} class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 			<Building2 size={15} /> Dodaj Firmę
 		</button>
@@ -180,7 +214,7 @@
 					</td>
 				</tr>
 			{:else}
-				<tr><td colspan="4" class="px-5 py-6 text-center text-slate-400">Brak klientów</td></tr>
+				<tr><td colspan="5" class="px-5 py-6 text-center text-slate-400">Brak klientów</td></tr>
 			{/each}
 		</tbody>
 	</table>
@@ -220,6 +254,16 @@
 				<input bind:value={fPesel} class={inputCls} />
 			</div>
 		{/if}
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label class={labelCls}>Telefon</label>
+				<input bind:value={fTelefon} type="tel" class={inputCls} placeholder="+48 600 000 000" />
+			</div>
+			<div>
+				<label class={labelCls}>E-mail</label>
+				<input bind:value={fEmail} type="email" class={inputCls} placeholder="kontakt@firma.pl" />
+			</div>
+		</div>
 		<div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
 			<label class="flex items-center gap-2 font-semibold text-sm cursor-pointer mb-3">
 				<input type="checkbox" bind:checked={fRodo} class="rounded" /> Zgoda RODO odebrana
@@ -238,4 +282,32 @@
 			</div>
 		</div>
 	</div>
+</Modal>
+
+<Modal title="Wykryte duplikaty klientów" open={showDuplicates} onclose={() => showDuplicates = false}>
+	{#snippet footer()}
+		<button onclick={() => showDuplicates = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+	{/snippet}
+	{#if duplicateGroups().length === 0}
+		<div class="text-center py-6 text-emerald-600 font-medium">✓ Brak wykrytych duplikatów (NIP / PESEL)</div>
+	{:else}
+		<div class="space-y-4">
+			{#each duplicateGroups() as group}
+			<div class="border border-amber-200 rounded-lg overflow-hidden">
+				<div class="bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 uppercase tracking-wide">{group.reason}</div>
+				<div class="divide-y divide-slate-100">
+					{#each group.clients as c}
+					<div class="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
+						<div>
+							<div class="text-sm font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa}</div>
+							{#if c.nazwa_skrocona}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
+						</div>
+						<a href="/clients/{c.id}" onclick={() => showDuplicates = false} class="text-xs text-blue-600 hover:underline">Otwórz →</a>
+					</div>
+					{/each}
+				</div>
+			</div>
+			{/each}
+		</div>
+	{/if}
 </Modal>

@@ -408,16 +408,20 @@
 	</div>
 {/if}
 
-<!-- Alerty — zawsze widoczne jeśli są nierozwiązane -->
-{#if unresolvedAlerts.length > 0}
-<div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+<!-- Alerty rozliczeniowe — zawsze widoczne -->
+<div class="rounded-xl p-4 mb-6 border-2 {unresolvedAlerts.length > 0 ? 'bg-red-50 border-red-500' : 'bg-emerald-50 border-emerald-300'}">
 	<div class="flex items-center gap-2 mb-3">
-		<AlertTriangle size={16} class="text-red-600 shrink-0" />
-		<h2 class="font-semibold text-red-700 text-sm">Alerty — wymagane działanie ({unresolvedAlerts.length})</h2>
+		<AlertTriangle size={16} class="{unresolvedAlerts.length > 0 ? 'text-red-600' : 'text-emerald-600'} shrink-0" />
+		<h2 class="font-semibold text-sm {unresolvedAlerts.length > 0 ? 'text-red-700' : 'text-emerald-700'}">
+			{unresolvedAlerts.length > 0
+				? `Alerty rozliczeniowe — wymagane działanie (${unresolvedAlerts.length})`
+				: 'Alerty rozliczeniowe — brak nierozwiązanych problemów'}
+		</h2>
 	</div>
+	{#if unresolvedAlerts.length > 0}
 	<div class="space-y-2">
 		{#each unresolvedAlerts as alert}
-		<div class="flex items-start justify-between gap-3 bg-white border border-red-100 rounded-lg px-3 py-2">
+		<div class="flex items-start justify-between gap-3 bg-white border border-red-200 rounded-lg px-3 py-2">
 			<div class="min-w-0">
 				<span class="text-xs font-semibold uppercase tracking-wide
 					{alert.typ === 'ujemna_prowizja' ? 'text-red-600' :
@@ -446,8 +450,8 @@
 		</div>
 		{/each}
 	</div>
+	{/if}
 </div>
-{/if}
 
 <!-- KPI Grid — drag & drop (tylko kpi widgety) -->
 {#if draggableItems.some((w) => KPI_WIDGET_IDS.has(w.id))}

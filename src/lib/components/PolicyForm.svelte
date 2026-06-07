@@ -123,13 +123,20 @@
 		fpKwotypRatArr = Array.from({ length: n }, () => eq);
 	});
 
-	// Auto data_do from data_od
+	// Auto data_do from data_od — string-based to avoid timezone year-shift bugs
 	$effect(() => {
 		if (fpOd && !fpDo) {
-			const d = new Date(fpOd);
-			d.setFullYear(d.getFullYear() + 1);
-			d.setDate(d.getDate() - 1);
-			fpDo = d.toISOString().split('T')[0];
+			const parts = fpOd.split('-');
+			if (parts.length !== 3) return;
+			const y = parseInt(parts[0]), m = parseInt(parts[1]), d = parseInt(parts[2]);
+			if (!y || y < 2000 || !m || !d) return;
+			let ey = y + 1, em = m, ed = d - 1;
+			if (ed === 0) {
+				em--;
+				if (em === 0) { em = 12; ey--; }
+				ed = new Date(ey, em, 0).getDate();
+			}
+			fpDo = `${ey}-${String(em).padStart(2, '0')}-${String(ed).padStart(2, '0')}`;
 		}
 	});
 
@@ -210,6 +217,7 @@
 		if (!fpTu) return 'Wybierz Towarzystwo';
 		if (!fpNr.trim()) return 'Podaj numer polisy';
 		if (!fpOd || !fpDo) return 'Podaj daty obowiązywania';
+		if (fpOd < '2024-01-01') return 'Data od nie może być wcześniejsza niż 2024-01-01';
 		if (fpTypUmowy === 'generalna' && !fpUgPodtyp) return 'Wybierz podtyp Umowy Generalnej';
 		if (fpTypUmowy === 'generalna' && fpRozliczajPlatnosci) {
 			if (fpDatyRatArr.filter(Boolean).length === 0) return 'Podaj terminy płatności rat';
@@ -428,15 +436,15 @@
 	<div class="grid grid-cols-3 gap-4">
 		<div>
 			<label class={lbl}>Data od *</label>
-			<input type="date" bind:value={fpOd} class={inp} />
+			<input type="date" bind:value={fpOd} min="2024-01-01" class={inp} />
 		</div>
 		<div>
 			<label class={lbl}>Data do *</label>
-			<input type="date" bind:value={fpDo} class={inp} />
+			<input type="date" bind:value={fpDo} min="2024-01-01" class={inp} />
 		</div>
 		<div>
 			<label class={lbl}>Data zawarcia</label>
-			<input type="date" bind:value={fpZawarcia} class={inp} />
+			<input type="date" bind:value={fpZawarcia} min="2024-01-01" class={inp} />
 		</div>
 	</div>
 
