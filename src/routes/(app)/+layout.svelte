@@ -7,7 +7,7 @@
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
-		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2
+		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield, CalendarCheck
 	} from 'lucide-svelte';
 
 	let { children } = $props();
@@ -27,6 +27,8 @@
 		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
 		{ href: '/policies', label: 'Polisy', icon: FileText, always: true },
 		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, show: isBroker() },
+		{ href: '/guarantees', label: 'Gwarancje', icon: Shield, show: !!appState.tenantFeatures['gwarancje'] },
+		{ href: '/calendar', label: 'Kalendarz', icon: CalendarCheck, show: !!appState.tenantFeatures['kalendarz'] },
 		{ href: '/apk', label: 'APK', icon: ClipboardList, always: true },
 		{ href: '/renewals', label: 'Odnowienia', icon: RefreshCw, always: true },
 		{ href: '/prospects', label: 'Prospects', icon: Target, always: true },
@@ -56,9 +58,10 @@
 
 		appState.profile = profile as typeof appState.profile;
 
-		const { data: tenant } = await sb.from('crm_tenants').select('typ, nazwa').eq('id', profile.tenant_id).single();
+		const { data: tenant } = await sb.from('crm_tenants').select('typ, nazwa, features').eq('id', profile.tenant_id).single();
 		appState.tenantTyp = (tenant?.typ as typeof appState.tenantTyp) ?? 'broker';
 		appState.tenantNazwa = tenant?.nazwa ?? '';
+		appState.tenantFeatures = (tenant?.features as Record<string, boolean>) ?? {};
 
 		// Dashboard prefs
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
@@ -220,9 +223,11 @@
 						<a href="/vehicles/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
 							<Plus size={15} /> Dodaj Pojazd
 						</a>
+						{#if appState.tenantFeatures['gwarancje']}
 						<a href="/policies/new?typ=generalna&podtyp=gwarancje" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
 							<Plus size={15} /> Dodaj Gwarancję
 						</a>
+						{/if}
 					</div>
 				{/if}
 			</div>

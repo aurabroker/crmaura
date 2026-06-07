@@ -19,6 +19,7 @@ export const appState = $state({
 	dashboardWidgets: ['renewals','claims','clients','renewal_rate','payments'] as string[],
 	tenantTyp: 'broker' as 'broker' | 'agent',
 	tenantNazwa: '' as string,
+	tenantFeatures: {} as Record<string, boolean>,
 	loading: false,
 	apkForms: [] as ApkForm[]
 });
