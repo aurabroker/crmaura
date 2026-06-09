@@ -3,8 +3,9 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil, UserPlus } from 'lucide-svelte';
+	import { Search, Pencil, UserPlus, ExternalLink } from 'lucide-svelte';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 
 	type Prospect = {
 		id: string;
@@ -30,7 +31,6 @@
 	let saving = $state(false);
 	let formError = $state('');
 
-	// Form fields
 	let fNazwa = $state('');
 	let fNip = $state('');
 	let fAdres = $state('');
@@ -43,41 +43,38 @@
 
 	const statuses = ['Wszystkie', 'Nowy', 'W kontakcie', 'Oferta wysłana', 'Wygrany', 'Przegrany'];
 	const statusValues: Record<string, string> = {
-		'Nowy': 'nowy',
-		'W kontakcie': 'w_kontakcie',
-		'Oferta wysłana': 'oferta_wyslana',
-		'Wygrany': 'wygrany',
-		'Przegrany': 'przegrany'
+		'Nowy': 'nowy', 'W kontakcie': 'w_kontakcie',
+		'Oferta wysłana': 'oferta_wyslana', 'Wygrany': 'wygrany', 'Przegrany': 'przegrany'
 	};
 	const statusLabels: Record<string, string> = {
-		'nowy': 'Nowy',
-		'w_kontakcie': 'W kontakcie',
-		'oferta_wyslana': 'Oferta wysłana',
-		'wygrany': 'Wygrany',
-		'przegrany': 'Przegrany'
+		'nowy': 'Nowy', 'w_kontakcie': 'W kontakcie',
+		'oferta_wyslana': 'Oferta wysłana', 'wygrany': 'Wygrany', 'przegrany': 'Przegrany'
 	};
 
 	function statusVariant(s: string): 'info' | 'success' | 'error' | 'warning' {
 		if (s === 'wygrany') return 'success';
 		if (s === 'przegrany') return 'error';
 		if (s === 'oferta_wyslana') return 'warning';
-		if (s === 'w_kontakcie') return 'info';
 		return 'info';
 	}
 
+	function extractZatrudnienie(notatki: string | null): string {
+		if (!notatki) return '';
+		const m = notatki.match(/Zatrudnienie:\s*(\d[\d\s]*)/);
+		return m ? m[1].trim() : '';
+	}
+
 	const filtered = $derived(
-		prospects
-			.filter((p) => {
-				if (statusFilter !== 'Wszystkie') {
-					const val = statusValues[statusFilter];
-					if (p.status !== val) return false;
-				}
-				if (search) {
-					const q = search.toLowerCase();
-					return p.nazwa.toLowerCase().includes(q) || (p.nip ?? '').includes(q);
-				}
-				return true;
-			})
+		prospects.filter((p) => {
+			if (statusFilter !== 'Wszystkie') {
+				if (p.status !== statusValues[statusFilter]) return false;
+			}
+			if (search) {
+				const q = search.toLowerCase();
+				return p.nazwa.toLowerCase().includes(q) || (p.nip ?? '').includes(q) || (p.branza ?? '').toLowerCase().includes(q);
+			}
+			return true;
+		})
 	);
 
 	async function loadProspects() {
@@ -88,9 +85,7 @@
 		prospects = (data ?? []) as Prospect[];
 	}
 
-	onMount(() => {
-		loadProspects();
-	});
+	onMount(() => { loadProspects(); });
 
 	function openNew() {
 		editingProspect = null;
@@ -115,25 +110,16 @@
 		if (!fNazwa.trim()) { formError = 'Pole Nazwa jest wymagane.'; return; }
 		saving = true; formError = '';
 		const payload = {
-			nazwa: fNazwa.trim(),
-			nip: fNip.trim() || null,
-			adres: fAdres.trim() || null,
-			telefon: fTelefon.trim() || null,
-			email: fEmail.trim() || null,
-			branza: fBranza.trim() || null,
-			notatki: fNotatki.trim() || null,
-			broker_id: fBrokerId || null,
-			status: fStatus
+			nazwa: fNazwa.trim(), nip: fNip.trim() || null, adres: fAdres.trim() || null,
+			telefon: fTelefon.trim() || null, email: fEmail.trim() || null,
+			branza: fBranza.trim() || null, notatki: fNotatki.trim() || null,
+			broker_id: fBrokerId || null, status: fStatus
 		};
-
 		let error;
 		if (editingProspect) {
 			({ error } = await sb.from('crm_prospects').update(payload).eq('id', editingProspect.id));
 		} else {
-			({ error } = await sb.from('crm_prospects').insert([{
-				tenant_id: appState.profile!.tenant_id,
-				...payload
-			}]));
+			({ error } = await sb.from('crm_prospects').insert([{ tenant_id: appState.profile!.tenant_id, ...payload }]));
 		}
 		saving = false;
 		if (error) { formError = error.message; return; }
@@ -145,15 +131,10 @@
 		const { error: insertError } = await sb.from('crm_clients').insert([{
 			tenant_id: appState.profile!.tenant_id,
 			opiekun_id: appState.profile!.id,
-			nazwa: p.nazwa,
-			nip: p.nip,
-			ulica: p.adres
+			nazwa: p.nazwa, nip: p.nip, ulica: p.adres
 		}]);
 		if (insertError) { alert('Błąd: ' + insertError.message); return; }
-
 		await sb.from('crm_prospects').update({ status: 'wygrany' }).eq('id', p.id);
-
-		// Refresh both lists
 		await loadProspects();
 		const { data } = await sb.from('crm_clients').select('*');
 		appState.clients = (data ?? []) as typeof appState.clients;
@@ -163,19 +144,18 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Prospects — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Prospects — CRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
 		<h1 class="text-2xl font-semibold text-slate-900">Prospects</h1>
-		<p class="text-sm text-slate-500 mt-1">Potencjalni klienci i leady sprzedażowe</p>
+		<p class="text-sm text-slate-500 mt-1">Potencjalni klienci — {filtered.length} rekordów</p>
 	</div>
 	<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 		+ Nowy Prospect
 	</button>
 </div>
 
-<!-- Status filter buttons -->
 <div class="flex items-center gap-2 mb-4 flex-wrap">
 	{#each statuses as s}
 		<button
@@ -188,52 +168,69 @@
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj po nazwie lub NIP..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
+		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, branży..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
-	<table class="w-full text-left text-sm">
-		<thead>
-			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-				<th class="px-5 py-3">Nazwa</th>
-				<th class="px-5 py-3">NIP</th>
-				<th class="px-5 py-3">Kontakt</th>
-				<th class="px-5 py-3">Broker</th>
-				<th class="px-5 py-3">Status</th>
-				<th class="px-5 py-3">Akcje</th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each filtered as p}
-				<tr class="border-t border-slate-100 hover:bg-slate-50">
-					<td class="px-5 py-3">
-						<div class="font-medium text-slate-900">{p.nazwa}</div>
-						{#if p.branza}<div class="text-xs text-slate-400">{p.branza}</div>{/if}
-					</td>
-					<td class="px-5 py-3 text-xs text-slate-500">{p.nip ?? '—'}</td>
-					<td class="px-5 py-3 text-xs text-slate-500">
-						{#if p.telefon}<div>{p.telefon}</div>{/if}
-						{#if p.email}<div>{p.email}</div>{/if}
-						{#if !p.telefon && !p.email}—{/if}
-					</td>
-					<td class="px-5 py-3 text-xs text-slate-500">{p.crm_profiles?.imie_nazwisko ?? '—'}</td>
-					<td class="px-5 py-3">
-						<Badge variant={statusVariant(p.status)}>{statusLabels[p.status] ?? p.status}</Badge>
-					</td>
-					<td class="px-5 py-3">
-						<div class="flex items-center gap-1">
-							<button onclick={() => openEdit(p)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-								<Pencil size={14} />
-							</button>
-							<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" class="p-1.5 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
-								<UserPlus size={14} />
-							</button>
-						</div>
-					</td>
+	<div class="overflow-x-auto">
+		<table class="w-full text-left text-sm">
+			<thead>
+				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<th class="px-4 py-3 min-w-[220px]">Firma</th>
+					<th class="px-4 py-3 w-32">Zatrudnienie</th>
+					<th class="px-4 py-3 w-44">Kontakt</th>
+					<th class="px-4 py-3 w-28">Status</th>
+					<th class="px-4 py-3 w-24">Akcje</th>
 				</tr>
-			{:else}
-				<tr><td colspan="6" class="px-5 py-6 text-center text-slate-400">Brak prospectów</td></tr>
-			{/each}
-		</tbody>
-	</table>
+			</thead>
+			<tbody>
+				{#each filtered as p}
+					{@const zatrud = extractZatrudnienie(p.notatki)}
+					<tr class="border-t border-slate-100 hover:bg-slate-50 group">
+						<td class="px-4 py-2.5">
+							<button
+								onclick={() => goto(`/prospects/${p.id}`)}
+								class="font-medium text-blue-700 hover:text-blue-900 hover:underline text-left leading-snug"
+							>{p.nazwa}</button>
+							<div class="flex items-center gap-2 mt-0.5 flex-wrap">
+								{#if p.nip}<span class="text-[11px] text-slate-400">NIP: {p.nip}</span>{/if}
+								{#if p.branza}<span class="text-[11px] text-slate-400 truncate max-w-[180px]">{p.branza}</span>{/if}
+							</div>
+						</td>
+						<td class="px-4 py-2.5 text-sm text-slate-700">
+							{#if zatrud}
+								<span class="font-medium">{zatrud}</span>
+								<span class="text-xs text-slate-400 ml-0.5">os.</span>
+							{:else}
+								<span class="text-slate-300">—</span>
+							{/if}
+						</td>
+						<td class="px-4 py-2.5 text-xs text-slate-500 leading-relaxed">
+							{#if p.telefon}<div class="truncate">{p.telefon}</div>{/if}
+							{#if p.email}<div class="truncate text-blue-600">{p.email}</div>{/if}
+							{#if !p.telefon && !p.email}<span class="text-slate-300">—</span>{/if}
+						</td>
+						<td class="px-4 py-2.5">
+							<Badge variant={statusVariant(p.status)}>{statusLabels[p.status] ?? p.status}</Badge>
+						</td>
+						<td class="px-4 py-2.5">
+							<div class="flex items-center gap-1">
+								<button onclick={() => goto(`/prospects/${p.id}`)} title="Otwórz" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+									<ExternalLink size={13} />
+								</button>
+								<button onclick={() => openEdit(p)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+									<Pencil size={13} />
+								</button>
+								<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" class="p-1.5 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
+									<UserPlus size={13} />
+								</button>
+							</div>
+						</td>
+					</tr>
+				{:else}
+					<tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">Brak prospectów</td></tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 </div>
 
 <Modal title={editingProspect ? `Edytuj — ${editingProspect.nazwa}` : 'Nowy Prospect'} open={showModal} onclose={closeModal}>
