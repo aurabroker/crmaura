@@ -299,6 +299,10 @@ export interface CrmTask {
 	klient_id: string | null;
 	polisa_id: string | null;
 	prospect_id: string | null;
+	extra_assignees?: string[];
+	czas_trwania_dni?: number | null;
+	postep_pct?: number;
+	zakonczone_at?: string | null;
 	tytul: string;
 	opis: string | null;
 	termin: string | null;
@@ -310,6 +314,21 @@ export interface CrmTask {
 	crm_policies?: { nr_polisy: string } | null;
 	crm_prospects?: { nazwa: string } | null;
 	assigned_profile?: { imie_nazwisko: string | null; email: string } | null;
+}
+
+export interface CrmTaskHistory {
+  id: string;
+  tenant_id: string;
+  task_id: string;
+  tytul_zadania: string | null;
+  zmiana: string;
+  stary_status: string | null;
+  nowy_status: string | null;
+  autor_id: string | null;
+  klient_id: string | null;
+  prospect_id: string | null;
+  created_at: string;
+  crm_profiles?: { imie_nazwisko: string | null } | null;
 }
 
 export type Database = Record<string, unknown>;

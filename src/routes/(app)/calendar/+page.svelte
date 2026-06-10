@@ -8,7 +8,7 @@
 
 	type FilterStatus = 'all' | 'otwarte' | 'w_toku' | 'zakonczone';
 	type FilterPriority = 'all' | 'pilny' | 'wysoki' | 'normalny' | 'niski';
-	type ViewMode = 'month' | 'week' | 'day' | 'list';
+	type ViewMode = 'month' | 'week' | 'day' | 'list' | 'rejestr';
 
 	let viewMode = $state<ViewMode>('month');
 	let filterStatus = $state<FilterStatus>('all');
@@ -41,7 +41,19 @@
 	let fKlient = $state('');
 	let fPolisa = $state('');
 	let fProspect = $state('');
+	let fExtraAssignees = $state<string[]>([]);
+	let fCzasTrwania = $state('');
+	let fPostep = $state(0);
 	let fStatus = $state<CrmTask['status']>('otwarte');
+
+	let history = $state<import('$lib/types/database').CrmTaskHistory[]>([]);
+	async function loadHistory() {
+		const { data } = await sb.from('crm_task_history')
+			.select('*, crm_profiles:autor_id(imie_nazwisko)')
+			.order('created_at', { ascending: false })
+			.limit(100);
+		history = (data ?? []) as any;
+	}
 
 	const today = new Date().toISOString().slice(0, 10);
 
@@ -157,6 +169,7 @@
 		fTytul = ''; fOpis = ''; fTermin = date ?? ''; fPriorytet = 'normalny';
 		fAssigned = appState.profile?.id ?? '';
 		fKlient = ''; fPolisa = ''; fProspect = ''; fStatus = 'otwarte';
+		fExtraAssignees = []; fCzasTrwania = ''; fPostep = 0;
 		formError = ''; showModal = true;
 	}
 
@@ -167,6 +180,9 @@
 		fKlient = t.klient_id ?? ''; fPolisa = t.polisa_id ?? '';
 		fProspect = t.prospect_id ?? '';
 		fStatus = t.status;
+		fExtraAssignees = t.extra_assignees ?? [];
+		fCzasTrwania = t.czas_trwania_dni ? String(t.czas_trwania_dni) : '';
+		fPostep = t.postep_pct ?? 0;
 		formError = ''; showModal = true;
 	}
 
@@ -175,6 +191,7 @@
 			.select('*, crm_clients(nazwa), crm_policies(nr_polisy), crm_prospects(nazwa), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)')
 			.order('termin', { ascending: true, nullsFirst: false });
 		appState.tasks = (data ?? []) as typeof appState.tasks;
+		await loadHistory();
 	}
 
 	async function saveTask() {
@@ -191,7 +208,11 @@
 			opis: fOpis || null,
 			termin: fTermin || null,
 			priorytet: fPriorytet,
-			status: fStatus
+			status: fStatus,
+			extra_assignees: fExtraAssignees,
+			czas_trwania_dni: fCzasTrwania ? parseInt(fCzasTrwania) : null,
+			postep_pct: fPostep,
+			zakonczone_at: fStatus === 'zakonczone' ? new Date().toISOString() : null,
 		};
 		const { error } = editingTask
 			? await sb.from('crm_tasks').update(payload).eq('id', editingTask.id)
@@ -204,7 +225,24 @@
 
 	async function toggleStatus(t: CrmTask) {
 		const next = t.status === 'zakonczone' ? 'otwarte' : 'zakonczone';
-		await sb.from('crm_tasks').update({ status: next }).eq('id', t.id);
+		const updates: Record<string, unknown> = {
+			status: next,
+			zakonczone_at: next === 'zakonczone' ? new Date().toISOString() : null,
+			postep_pct: next === 'zakonczone' ? 100 : t.postep_pct
+		};
+		await sb.from('crm_tasks').update(updates).eq('id', t.id);
+		// Record history
+		await sb.from('crm_task_history').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			task_id: t.id,
+			tytul_zadania: t.tytul,
+			zmiana: next === 'zakonczone' ? 'zakonczone' : 'wznowione',
+			stary_status: t.status,
+			nowy_status: next,
+			autor_id: appState.profile!.id,
+			klient_id: t.klient_id,
+			prospect_id: t.prospect_id
+		}]);
 		await reloadTasks();
 	}
 
@@ -277,6 +315,10 @@
 					{lbl}
 				</button>
 			{/each}
+			<button onclick={() => viewMode = 'rejestr'}
+				class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors {viewMode === 'rejestr' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}">
+				Rejestr
+			</button>
 		</div>
 		<button onclick={() => openNew()} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors flex items-center gap-2">
 			<Plus size={15} /> Nowe zadanie
@@ -301,7 +343,7 @@
 </div>
 
 <!-- Nav bar (for calendar views) -->
-{#if viewMode !== 'list'}
+{#if viewMode !== 'list' && viewMode !== 'rejestr'}
 <div class="flex items-center gap-3 mb-4">
 	<button onclick={prev} class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><ChevronLeft size={18} /></button>
 	<button onclick={next} class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><ChevronRight size={18} /></button>
@@ -354,6 +396,12 @@
 							>
 								<span class="w-1.5 h-1.5 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
 								<span class="truncate">{t.tytul}</span>
+								{#if t.czas_trwania_dni && t.status !== 'zakonczone'}
+									{@const pct = t.postep_pct ?? 0}
+									<div class="w-full h-0.5 bg-white/50 rounded-full mt-0.5">
+										<div class="h-0.5 rounded-full bg-current" style="width:{pct}%"></div>
+									</div>
+								{/if}
 							</button>
 						{/each}
 						{#if dayTasks.length > 3}
