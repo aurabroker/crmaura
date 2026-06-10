@@ -2,10 +2,12 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, MessageSquare, FileText, Send, StickyNote, Pencil, UserPlus, Trash2 } from 'lucide-svelte';
+	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, MessageSquare, FileText, Send, StickyNote, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle } from 'lucide-svelte';
+	import type { CrmTask } from '$lib/types/database';
 
 	type Prospect = {
 		id: string;
@@ -89,6 +91,7 @@
 			.order('created_at', { ascending: true });
 		activities = (acts ?? []) as Activity[];
 		loading = false;
+		await loadTasks();
 	}
 
 	onMount(load);
@@ -160,6 +163,86 @@
 	function formatDate(dt: string) {
 		return new Date(dt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 	}
+
+	// ---- Tasks ----
+	let tasks = $state<CrmTask[]>([]);
+	let showTaskModal = $state(false);
+	let editingTask = $state<CrmTask | null>(null);
+	let savingTask = $state(false);
+	let fTytul = $state('');
+	let fOpis = $state('');
+	let fTermin = $state('');
+	let fPriorytet = $state<CrmTask['priorytet']>('normalny');
+	let fTaskStatus = $state<CrmTask['status']>('otwarte');
+
+	const today = new Date().toISOString().slice(0, 10);
+
+	async function loadTasks() {
+		const { data } = await sb.from('crm_tasks')
+			.select('*, assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)')
+			.eq('prospect_id', prospectId)
+			.order('termin', { ascending: true, nullsFirst: false });
+		tasks = (data ?? []) as CrmTask[];
+	}
+
+	function openNewTask() {
+		editingTask = null;
+		fTytul = ''; fOpis = ''; fTermin = ''; fPriorytet = 'normalny'; fTaskStatus = 'otwarte';
+		showTaskModal = true;
+	}
+
+	function openEditTask(t: CrmTask) {
+		editingTask = t;
+		fTytul = t.tytul; fOpis = t.opis ?? ''; fTermin = t.termin ?? '';
+		fPriorytet = t.priorytet; fTaskStatus = t.status;
+		showTaskModal = true;
+	}
+
+	async function saveTask() {
+		if (!fTytul.trim() || !prospect) return;
+		savingTask = true;
+		const payload = {
+			tenant_id: prospect.tenant_id,
+			created_by: appState.profile!.id,
+			assigned_to: appState.profile!.id,
+			prospect_id: prospect.id,
+			klient_id: null,
+			polisa_id: null,
+			tytul: fTytul.trim(),
+			opis: fOpis || null,
+			termin: fTermin || null,
+			priorytet: fPriorytet,
+			status: fTaskStatus
+		};
+		if (editingTask) {
+			await sb.from('crm_tasks').update(payload).eq('id', editingTask.id);
+		} else {
+			await sb.from('crm_tasks').insert([payload]);
+		}
+		savingTask = false;
+		showTaskModal = false;
+		await loadTasks();
+	}
+
+	async function toggleTaskStatus(t: CrmTask) {
+		const next = t.status === 'zakonczone' ? 'otwarte' : 'zakonczone';
+		await sb.from('crm_tasks').update({ status: next }).eq('id', t.id);
+		await loadTasks();
+	}
+
+	async function deleteTask(t: CrmTask) {
+		if (!confirm(`Usunąć zadanie: "${t.tytul}"?`)) return;
+		await sb.from('crm_tasks').delete().eq('id', t.id);
+		await loadTasks();
+	}
+
+	function isOverdue(t: CrmTask) {
+		return (t.status === 'otwarte' || t.status === 'w_toku') && !!t.termin && t.termin < today;
+	}
+
+	const priorityDotMap: Record<CrmTask['priorytet'], string> = {
+		pilny: 'bg-red-500', wysoki: 'bg-orange-400', normalny: 'bg-blue-400', niski: 'bg-slate-300'
+	};
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
@@ -280,6 +363,57 @@
 		{/if}
 	</div>
 
+	<!-- Tasks -->
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm mb-5">
+		<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
+				<CheckCircle2 size={15} class="text-blue-500" /> Zadania
+				{#if tasks.filter(t => t.status !== 'zakonczone').length > 0}
+					<span class="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{tasks.filter(t => t.status !== 'zakonczone').length}</span>
+				{/if}
+			</h2>
+			<button onclick={openNewTask} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700">
+				<Plus size={12} /> Nowe zadanie
+			</button>
+		</div>
+		{#if tasks.length === 0}
+			<div class="px-6 py-6 text-center text-slate-400 text-sm">Brak zadań — dodaj pierwsze zadanie dla tej firmy</div>
+		{:else}
+			<ul class="divide-y divide-slate-100">
+				{#each tasks as t}
+					{@const done = t.status === 'zakonczone'}
+					{@const overdue = isOverdue(t)}
+					<li class="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 group {done ? 'opacity-60' : ''}">
+						<button onclick={() => toggleTaskStatus(t)} class="shrink-0 text-slate-400 hover:text-emerald-600 transition-colors">
+							{#if done}
+								<CheckCircle2 size={16} class="text-emerald-500" />
+							{:else if t.status === 'w_toku'}
+								<Clock size={16} class="text-blue-400" />
+							{:else}
+								<Circle size={16} />
+							{/if}
+						</button>
+						<span class="w-2 h-2 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
+						<div class="flex-1 min-w-0">
+							<span class="text-sm font-medium text-slate-900 {done ? 'line-through text-slate-400' : ''}">{t.tytul}</span>
+							{#if t.opis}<p class="text-xs text-slate-400 truncate">{t.opis}</p>{/if}
+						</div>
+						{#if t.termin}
+							<span class="text-xs shrink-0 {overdue ? 'text-red-500 font-semibold' : 'text-slate-400'}">
+								{#if overdue}<AlertCircle size={11} class="inline mr-0.5" />{/if}
+								{t.termin}
+							</span>
+						{/if}
+						<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+							<button onclick={() => openEditTask(t)} class="p-1 rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100"><Pencil size={12} /></button>
+							<button onclick={() => deleteTask(t)} class="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
+						</div>
+					</li>
+				{/each}
+			</ul>
+		{/if}
+	</div>
+
 	<!-- Activity feed -->
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
 		<div class="px-6 pt-5 pb-4 border-b border-slate-100">
@@ -342,3 +476,46 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Task Modal -->
+<Modal title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showTaskModal} onclose={() => showTaskModal = false}>
+	{#snippet footer()}
+		<button onclick={() => showTaskModal = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveTask} disabled={savingTask} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingTask ? 'Zapisywanie...' : (editingTask ? 'Zapisz' : 'Dodaj zadanie')}
+		</button>
+	{/snippet}
+	<div class="space-y-3">
+		<div>
+			<label class={labelCls}>Tytuł *</label>
+			<input bind:value={fTytul} class={inputCls} placeholder="Co trzeba zrobić?" />
+		</div>
+		<div>
+			<label class={labelCls}>Opis</label>
+			<textarea bind:value={fOpis} class="{inputCls} resize-none" rows="2"></textarea>
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label class={labelCls}>Termin</label>
+				<input type="date" bind:value={fTermin} class={inputCls} />
+			</div>
+			<div>
+				<label class={labelCls}>Priorytet</label>
+				<select bind:value={fPriorytet} class={inputCls}>
+					<option value="niski">Niski</option>
+					<option value="normalny">Normalny</option>
+					<option value="wysoki">Wysoki</option>
+					<option value="pilny">Pilny</option>
+				</select>
+			</div>
+		</div>
+		<div>
+			<label class={labelCls}>Status</label>
+			<select bind:value={fTaskStatus} class={inputCls}>
+				<option value="otwarte">Otwarte</option>
+				<option value="w_toku">W toku</option>
+				<option value="zakonczone">Zakończone</option>
+			</select>
+		</div>
+	</div>
+</Modal>

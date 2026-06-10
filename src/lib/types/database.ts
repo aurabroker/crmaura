@@ -298,6 +298,7 @@ export interface CrmTask {
 	assigned_to: string | null;
 	klient_id: string | null;
 	polisa_id: string | null;
+	prospect_id: string | null;
 	tytul: string;
 	opis: string | null;
 	termin: string | null;
@@ -307,6 +308,7 @@ export interface CrmTask {
 	updated_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	crm_policies?: { nr_polisy: string } | null;
+	crm_prospects?: { nazwa: string } | null;
 	assigned_profile?: { imie_nazwisko: string | null; email: string } | null;
 }
 

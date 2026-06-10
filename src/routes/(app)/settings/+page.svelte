@@ -14,7 +14,33 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// --- Tabs ---
-	let activeTab = $state<'vehicles' | 'profile' | 'rodo' | 'dokumenty'>('vehicles');
+	let activeTab = $state<'vehicles' | 'profile' | 'rodo' | 'dokumenty' | 'kalendarz'>('vehicles');
+
+	// --- Calendar settings (localStorage) ---
+	const CAL_KEY = 'crm_cal_settings';
+	type CalSettings = { godzina_od: string; godzina_do: string; dni_pracy: number[] };
+	const defaultCal: CalSettings = { godzina_od: '08:00', godzina_do: '17:00', dni_pracy: [1,2,3,4,5] };
+	function loadCalSettings(): CalSettings {
+		if (typeof localStorage === 'undefined') return defaultCal;
+		try { return { ...defaultCal, ...JSON.parse(localStorage.getItem(CAL_KEY) ?? '{}') }; } catch { return defaultCal; }
+	}
+	let calSettings = $state<CalSettings>(loadCalSettings());
+	let calSaved = $state(false);
+	const DAYS_PL = ['Niedziela','Poniedziałek','Wtorek','Środa','Czwartek','Piątek','Sobota'];
+	const WORK_DAYS = [1,2,3,4,5,6,0]; // Mon–Sun order
+	function toggleDay(d: number) {
+		calSettings = {
+			...calSettings,
+			dni_pracy: calSettings.dni_pracy.includes(d)
+				? calSettings.dni_pracy.filter(x => x !== d)
+				: [...calSettings.dni_pracy, d].sort()
+		};
+	}
+	function saveCalSettings() {
+		localStorage.setItem(CAL_KEY, JSON.stringify(calSettings));
+		calSaved = true;
+		setTimeout(() => calSaved = false, 2000);
+	}
 
 	// --- Dokumenty rozliczeniowe ---
 	type Nota = { id: string; numer_noty: string; tu_skrot: string | null; data_zestawienia: string | null; data_importu: string; razem_skladka: number | null; razem_prowizja: number | null; pozycji_count: number | null; file_url?: string | null };
@@ -270,6 +296,12 @@
 		>
 			<FileText size={16} />
 			Dokumenty rozliczeniowe
+		</button>
+		<button
+			onclick={() => activeTab = 'kalendarz'}
+			class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'kalendarz' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+		>
+			🗓️ Kalendarz
 		</button>
 	</div>
 
@@ -587,6 +619,57 @@
 					{/each}
 				</tbody>
 			</table>
+		</div>
+	</div>
+	{/if}
+
+	{#if activeTab === 'kalendarz'}
+	<div class="space-y-5 max-w-xl">
+		<div>
+			<h2 class="text-lg font-semibold text-slate-900 mb-1">Ustawienia kalendarza</h2>
+			<p class="text-sm text-slate-500">Godziny i dni pracy widoczne w kalendarzu zadań</p>
+		</div>
+
+		<div class="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+			<div>
+				<label class={labelCls}>Godziny pracy</label>
+				<div class="flex items-center gap-3">
+					<div class="flex-1">
+						<label class="text-xs text-slate-500 mb-1 block">Od</label>
+						<input type="time" bind:value={calSettings.godzina_od} class={inputCls} />
+					</div>
+					<span class="text-slate-400 mt-5">—</span>
+					<div class="flex-1">
+						<label class="text-xs text-slate-500 mb-1 block">Do</label>
+						<input type="time" bind:value={calSettings.godzina_do} class={inputCls} />
+					</div>
+				</div>
+			</div>
+
+			<div>
+				<label class={labelCls}>Dni pracy</label>
+				<div class="flex flex-wrap gap-2 mt-1">
+					{#each WORK_DAYS as d}
+						<button
+							onclick={() => toggleDay(d)}
+							class="px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors
+								{calSettings.dni_pracy.includes(d)
+									? 'bg-slate-900 text-white border-slate-900'
+									: 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+						>
+							{DAYS_PL[d].slice(0, 3)}
+						</button>
+					{/each}
+				</div>
+				<p class="text-xs text-slate-400 mt-2">Zaznaczone dni będą wyróżnione jako robocze w widoku kalendarza</p>
+			</div>
+
+			<div class="flex items-center gap-3 pt-1">
+				<button onclick={saveCalSettings} class="px-5 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-700">
+					Zapisz ustawienia
+				</button>
+				{#if calSaved}<span class="text-sm text-emerald-600 font-medium">✓ Zapisano</span>{/if}
+			</div>
 		</div>
 	</div>
 	{/if}
