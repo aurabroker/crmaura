@@ -4,10 +4,10 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus } from '$lib/utils';
-	import type { Claim, Vehicle, ClientContact } from '$lib/types/database';
+	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import type { ApkForm } from '$lib/types/database';
@@ -37,7 +37,7 @@
 	const hasVehicles = $derived(clientVehicles.length > 0);
 	const hasClaims = $derived(clientClaims.length > 0);
 
-	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty' | 'apk'>('polisy');
+	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania'>('polisy');
 
 	// APK
 	const APK_APP_URL = 'https://apk.aurabroker.pl';
@@ -182,6 +182,88 @@
 		appState.vehicles = (data ?? []) as typeof appState.vehicles;
 	}
 
+	// Tasks
+	let clientTasks = $state<CrmTask[]>([]);
+	let showTaskModal = $state(false);
+	let editingTask = $state<CrmTask | null>(null);
+	let savingTask = $state(false);
+	let fTytul = $state('');
+	let fOpis = $state('');
+	let fTermin = $state('');
+	let fPriorytet = $state<CrmTask['priorytet']>('normalny');
+	let fTaskStatus = $state<CrmTask['status']>('otwarte');
+
+	const todayTask = new Date().toISOString().slice(0, 10);
+
+	async function loadTasks() {
+		const { data } = await sb.from('crm_tasks')
+			.select('*, assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)')
+			.eq('klient_id', clientId)
+			.order('termin', { ascending: true, nullsFirst: false });
+		clientTasks = (data ?? []) as CrmTask[];
+	}
+
+	loadTasks();
+
+	function openNewTask() {
+		editingTask = null;
+		fTytul = ''; fOpis = ''; fTermin = ''; fPriorytet = 'normalny'; fTaskStatus = 'otwarte';
+		showTaskModal = true;
+	}
+
+	function openEditTask(t: CrmTask) {
+		editingTask = t;
+		fTytul = t.tytul; fOpis = t.opis ?? ''; fTermin = t.termin ?? '';
+		fPriorytet = t.priorytet; fTaskStatus = t.status;
+		showTaskModal = true;
+	}
+
+	async function saveTask() {
+		if (!fTytul.trim() || !client) return;
+		savingTask = true;
+		const payload = {
+			tenant_id: client.tenant_id,
+			created_by: appState.profile!.id,
+			assigned_to: appState.profile!.id,
+			klient_id: client.id,
+			prospect_id: null,
+			polisa_id: null,
+			tytul: fTytul.trim(),
+			opis: fOpis || null,
+			termin: fTermin || null,
+			priorytet: fPriorytet,
+			status: fTaskStatus
+		};
+		if (editingTask) {
+			await sb.from('crm_tasks').update(payload).eq('id', editingTask.id);
+		} else {
+			await sb.from('crm_tasks').insert([payload]);
+		}
+		savingTask = false;
+		showTaskModal = false;
+		await loadTasks();
+	}
+
+	async function toggleTaskStatus(t: CrmTask) {
+		const next = t.status === 'zakonczone' ? 'otwarte' : 'zakonczone';
+		await sb.from('crm_tasks').update({ status: next }).eq('id', t.id);
+		await loadTasks();
+	}
+
+	async function deleteTask(t: CrmTask) {
+		if (!confirm(`Usunąć zadanie: "${t.tytul}"?`)) return;
+		await sb.from('crm_tasks').delete().eq('id', t.id);
+		await loadTasks();
+	}
+
+	function isOverdue(t: CrmTask) {
+		return (t.status === 'otwarte' || t.status === 'w_toku') && !!t.termin && t.termin < todayTask;
+	}
+
+	const priorityDotMap: Record<CrmTask['priorytet'], string> = {
+		pilny: 'bg-red-500', wysoki: 'bg-orange-400', normalny: 'bg-blue-400', niski: 'bg-slate-300'
+	};
+
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
@@ -314,11 +396,11 @@
 
 	<!-- Tabs -->
 	<div class="flex gap-6 border-b border-slate-200 mb-4">
-		{#each (['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty', 'apk'] as const) as tab}
+		{#each (['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty', 'apk', 'zadania'] as const) as tab}
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
@@ -567,6 +649,62 @@
 				</table>
 			</div>
 		{/if}
+	{:else if activeTab === 'zadania'}
+		<div class="flex justify-end mb-3">
+			<button onclick={openNewTask} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+				<Plus size={14} /> Nowe zadanie
+			</button>
+		</div>
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			{#if clientTasks.length === 0}
+				<div class="px-5 py-10 text-center text-slate-400 text-sm">Brak zadań dla tego klienta</div>
+			{:else}
+				<ul class="divide-y divide-slate-100">
+					{#each clientTasks as t}
+						{@const done = t.status === 'zakonczone'}
+						{@const overdue = isOverdue(t)}
+						<li class="flex items-center gap-3 px-5 py-3 hover:bg-slate-50 group {done ? 'opacity-60' : ''}">
+							<button onclick={() => toggleTaskStatus(t)} class="shrink-0 text-slate-400 hover:text-emerald-600 transition-colors">
+								{#if done}
+									<CheckCircle2 size={16} class="text-emerald-500" />
+								{:else if t.status === 'w_toku'}
+									<Clock size={16} class="text-blue-400" />
+								{:else}
+									<Circle size={16} />
+								{/if}
+							</button>
+							<span class="w-2 h-2 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
+							<div class="flex-1 min-w-0">
+								<span class="text-sm font-medium text-slate-900 {done ? 'line-through text-slate-400' : ''}">{t.tytul}</span>
+								{#if t.opis}<p class="text-xs text-slate-400 truncate">{t.opis}</p>{/if}
+								{#if t.postep_pct !== undefined && t.czas_trwania_dni}
+									{@const pct = t.postep_pct ?? 0}
+									<div class="flex items-center gap-2 mt-1">
+										<div class="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+											<div class="h-full rounded-full bg-blue-500" style="width:{pct}%"></div>
+										</div>
+										<span class="text-[10px] text-slate-400">{pct}%</span>
+									</div>
+								{/if}
+							</div>
+							{#if t.termin}
+								<span class="text-xs shrink-0 {overdue ? 'text-red-500 font-semibold' : 'text-slate-400'}">
+									{#if overdue}<AlertCircle size={11} class="inline mr-0.5" />{/if}
+									{t.termin}
+								</span>
+							{/if}
+							{#if t.assigned_profile}
+								<span class="text-xs text-slate-400 shrink-0">{t.assigned_profile.imie_nazwisko ?? t.assigned_profile.email}</span>
+							{/if}
+							<div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+								<button onclick={() => openEditTask(t)} class="p-1 rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100"><Pencil size={12} /></button>
+								<button onclick={() => deleteTask(t)} class="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"><Trash2 size={12} /></button>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</div>
 	{/if}
 {/if}
 
@@ -702,6 +840,49 @@
 				</div>
 			</div>
 		{/each}
+	</div>
+</Modal>
+
+<!-- Modal: Zadanie -->
+<Modal title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showTaskModal} onclose={() => showTaskModal = false}>
+	{#snippet footer()}
+		<button onclick={() => showTaskModal = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveTask} disabled={savingTask} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingTask ? 'Zapisywanie...' : (editingTask ? 'Zapisz' : 'Dodaj zadanie')}
+		</button>
+	{/snippet}
+	<div class="space-y-3">
+		<div>
+			<label class={labelCls}>Tytuł *</label>
+			<input bind:value={fTytul} class={inputCls} placeholder="Co trzeba zrobić?" />
+		</div>
+		<div>
+			<label class={labelCls}>Opis</label>
+			<textarea bind:value={fOpis} class="{inputCls} resize-none" rows="2"></textarea>
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label class={labelCls}>Termin</label>
+				<input type="date" bind:value={fTermin} class={inputCls} />
+			</div>
+			<div>
+				<label class={labelCls}>Priorytet</label>
+				<select bind:value={fPriorytet} class={inputCls}>
+					<option value="niski">Niski</option>
+					<option value="normalny">Normalny</option>
+					<option value="wysoki">Wysoki</option>
+					<option value="pilny">Pilny</option>
+				</select>
+			</div>
+		</div>
+		<div>
+			<label class={labelCls}>Status</label>
+			<select bind:value={fTaskStatus} class={inputCls}>
+				<option value="otwarte">Otwarte</option>
+				<option value="w_toku">W toku</option>
+				<option value="zakonczone">Zakończone</option>
+			</select>
+		</div>
 	</div>
 </Modal>
 

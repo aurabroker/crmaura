@@ -448,13 +448,21 @@
 							ondragstart={(e) => onDragStart(e, t.id)}
 							ondragend={onDragEnd}
 							onclick={() => openEdit(t)}
-							class="w-full text-left text-[11px] leading-tight px-2 py-1 rounded font-medium truncate flex items-center gap-1.5 transition-colors cursor-grab active:cursor-grabbing
+							class="w-full text-left text-[11px] leading-tight px-2 py-1 rounded font-medium transition-colors cursor-grab active:cursor-grabbing
 								{t.status === 'zakonczone' ? 'bg-slate-100 text-slate-400 line-through' : overdue ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}
 								{dragTaskId === t.id ? 'opacity-40' : ''}"
 							title={t.tytul}
 						>
-							<span class="w-1.5 h-1.5 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
-							<span class="truncate">{t.tytul}</span>
+							<div class="flex items-center gap-1.5 truncate">
+								<span class="w-1.5 h-1.5 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
+								<span class="truncate">{t.tytul}</span>
+							</div>
+							{#if t.czas_trwania_dni && t.status !== 'zakonczone'}
+								{@const pct = t.postep_pct ?? 0}
+								<div class="w-full h-0.5 bg-white/50 rounded-full mt-0.5">
+									<div class="h-0.5 rounded-full bg-current" style="width:{pct}%"></div>
+								</div>
+							{/if}
 						</button>
 					{/each}
 				</div>
@@ -580,6 +588,32 @@
 			</ul>
 		{/if}
 	</div>
+
+{:else if viewMode === 'rejestr'}
+<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+	<div class="px-5 py-4 border-b border-slate-100">
+		<h2 class="text-sm font-semibold text-slate-700">Rejestr ukończonych zadań</h2>
+	</div>
+	{#if history.length === 0}
+		<div class="px-5 py-10 text-center text-slate-400">Brak wpisów w rejestrze</div>
+	{:else}
+		<ul class="divide-y divide-slate-100">
+			{#each history as h}
+				<li class="px-5 py-3 flex items-center gap-3">
+					<span class="w-2 h-2 rounded-full shrink-0 {h.nowy_status === 'zakonczone' ? 'bg-emerald-500' : 'bg-slate-300'}"></span>
+					<div class="flex-1 min-w-0">
+						<span class="text-sm font-medium text-slate-800">{h.tytul_zadania ?? '—'}</span>
+						<span class="ml-2 text-xs text-slate-400">
+							{h.stary_status ?? '?'} → <strong class="{h.nowy_status === 'zakonczone' ? 'text-emerald-600' : 'text-slate-600'}">{h.nowy_status ?? '?'}</strong>
+						</span>
+					</div>
+					<span class="text-xs text-slate-400 shrink-0">{h.crm_profiles?.imie_nazwisko ?? '—'}</span>
+					<span class="text-xs text-slate-400 shrink-0">{new Date(h.created_at).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+				</li>
+			{/each}
+		</ul>
+	{/if}
+</div>
 {/if}
 
 <!-- Modal -->
@@ -626,21 +660,14 @@
 				</select>
 			</div>
 			<div>
-				<label class={labelCls}>Przypisz do</label>
-				<select bind:value={fAssigned} class={inputCls}>
-					<option value="">— nieprzypisane —</option>
-					{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>{/each}
-				</select>
-			</div>
-		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
 				<label class={labelCls}>Klient</label>
 				<select bind:value={fKlient} class={inputCls}>
 					<option value="">— brak —</option>
 					{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
 				</select>
 			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label class={labelCls}>Prospect</label>
 				<select bind:value={fProspect} class={inputCls}>
@@ -648,15 +675,53 @@
 					{#each prospects as p}<option value={p.id}>{p.nazwa}</option>{/each}
 				</select>
 			</div>
+			<div>
+				<label class={labelCls}>Polisa</label>
+				<select bind:value={fPolisa} class={inputCls}>
+					<option value="">— brak —</option>
+					{#each appState.policies.filter(p => !fKlient || p.klient_id === fKlient) as p}
+						<option value={p.id}>{p.nr_polisy}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
+		<div class="grid grid-cols-2 gap-3">
+			<div>
+				<label class={labelCls}>Przypisz do (główny)</label>
+				<select bind:value={fAssigned} class={inputCls}>
+					<option value="">— nieprzypisane —</option>
+					{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>{/each}
+				</select>
+			</div>
+			<div>
+				<label class={labelCls}>Czas trwania (dni)</label>
+				<input type="number" bind:value={fCzasTrwania} min="1" class={inputCls} placeholder="np. 7" />
+			</div>
 		</div>
 		<div>
-			<label class={labelCls}>Polisa</label>
-			<select bind:value={fPolisa} class={inputCls}>
-				<option value="">— brak —</option>
-				{#each appState.policies.filter(p => !fKlient || p.klient_id === fKlient) as p}
-					<option value={p.id}>{p.nr_polisy}</option>
+			<label class={labelCls}>Dodatkowe osoby</label>
+			<div class="flex flex-wrap gap-2 mt-1">
+				{#each appState.brokers.filter(b => b.id !== fAssigned) as b}
+					<label class="flex items-center gap-1.5 cursor-pointer text-sm">
+						<input type="checkbox"
+							checked={fExtraAssignees.includes(b.id)}
+							onchange={() => {
+								if (fExtraAssignees.includes(b.id)) {
+									fExtraAssignees = fExtraAssignees.filter(x => x !== b.id);
+								} else {
+									fExtraAssignees = [...fExtraAssignees, b.id];
+								}
+							}}
+							class="w-4 h-4 accent-blue-600"
+						/>
+						{b.imie_nazwisko ?? b.email}
+					</label>
 				{/each}
-			</select>
+			</div>
+		</div>
+		<div>
+			<label class={labelCls}>Postęp: {fPostep}%</label>
+			<input type="range" bind:value={fPostep} min="0" max="100" step="5" class="w-full accent-blue-600" />
 		</div>
 	</div>
 </Modal>

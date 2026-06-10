@@ -397,6 +397,23 @@
 						<div class="flex-1 min-w-0">
 							<span class="text-sm font-medium text-slate-900 {done ? 'line-through text-slate-400' : ''}">{t.tytul}</span>
 							{#if t.opis}<p class="text-xs text-slate-400 truncate">{t.opis}</p>{/if}
+							{#if t.extra_assignees && t.extra_assignees.length > 0}
+								<div class="flex items-center gap-1 mt-0.5">
+									{#each t.extra_assignees as uid}
+										{@const p = appState.brokers.find(b => b.id === uid)}
+										{#if p}<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{p.imie_nazwisko ?? p.email}</span>{/if}
+									{/each}
+								</div>
+							{/if}
+							{#if t.czas_trwania_dni}
+								{@const pct = t.postep_pct ?? 0}
+								<div class="flex items-center gap-2 mt-1">
+									<div class="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
+										<div class="h-full rounded-full bg-blue-500" style="width:{pct}%"></div>
+									</div>
+									<span class="text-[10px] text-slate-400">{pct}%</span>
+								</div>
+							{/if}
 						</div>
 						{#if t.termin}
 							<span class="text-xs shrink-0 {overdue ? 'text-red-500 font-semibold' : 'text-slate-400'}">
