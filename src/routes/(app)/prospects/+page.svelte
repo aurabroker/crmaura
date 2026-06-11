@@ -3,7 +3,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil, UserPlus, ExternalLink } from 'lucide-svelte';
+	import { Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 
@@ -64,18 +64,42 @@
 		return m ? m[1].trim() : '';
 	}
 
-	const filtered = $derived(
-		prospects.filter((p) => {
-			if (statusFilter !== 'Wszystkie') {
-				if (p.status !== statusValues[statusFilter]) return false;
-			}
+	type SortCol = 'nazwa' | 'branza' | 'zatrudnienie' | 'status' | 'created_at';
+	let sortCol = $state<SortCol>('created_at');
+	let sortAsc = $state(false);
+
+	function toggleSort(col: SortCol) {
+		if (sortCol === col) sortAsc = !sortAsc;
+		else { sortCol = col; sortAsc = true; }
+	}
+
+	const statusOrder: Record<string, number> = { nowy: 0, w_kontakcie: 1, oferta_wyslana: 2, wygrany: 3, przegrany: 4 };
+
+	const filtered = $derived(() => {
+		const list = prospects.filter((p) => {
+			if (statusFilter !== 'Wszystkie' && p.status !== statusValues[statusFilter]) return false;
 			if (search) {
 				const q = search.toLowerCase();
 				return p.nazwa.toLowerCase().includes(q) || (p.nip ?? '').includes(q) || (p.branza ?? '').toLowerCase().includes(q);
 			}
 			return true;
-		})
-	);
+		});
+		list.sort((a, b) => {
+			let av: string | number = '', bv: string | number = '';
+			if (sortCol === 'nazwa') { av = a.nazwa.toLowerCase(); bv = b.nazwa.toLowerCase(); }
+			else if (sortCol === 'branza') { av = (a.branza ?? '').toLowerCase(); bv = (b.branza ?? '').toLowerCase(); }
+			else if (sortCol === 'zatrudnienie') {
+				av = parseInt(extractZatrudnienie(a.notatki) || '0');
+				bv = parseInt(extractZatrudnienie(b.notatki) || '0');
+			}
+			else if (sortCol === 'status') { av = statusOrder[a.status] ?? 99; bv = statusOrder[b.status] ?? 99; }
+			else if (sortCol === 'created_at') { av = a.created_at; bv = b.created_at; }
+			if (av < bv) return sortAsc ? -1 : 1;
+			if (av > bv) return sortAsc ? 1 : -1;
+			return 0;
+		});
+		return list;
+	});
 
 	async function loadProspects() {
 		const { data } = await sb
@@ -173,16 +197,29 @@
 	<div class="overflow-x-auto">
 		<table class="w-full text-left text-sm">
 			<thead>
-				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-4 py-3 min-w-[220px]">Firma</th>
-					<th class="px-4 py-3 w-32">Zatrudnienie</th>
+				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide select-none">
+					{#snippet thSort(col: SortCol, label: string, cls?: string)}
+						<th class="px-4 py-3 {cls ?? ''}">
+							<button onclick={() => toggleSort(col)} class="flex items-center gap-1 hover:text-slate-800 transition-colors group">
+								{label}
+								<span class="flex flex-col leading-none opacity-40 group-hover:opacity-100">
+									<ChevronUp size={9} class="{sortCol === col && sortAsc ? 'text-blue-600 opacity-100' : ''}" />
+									<ChevronDown size={9} class="{sortCol === col && !sortAsc ? 'text-blue-600 opacity-100' : ''}" />
+								</span>
+							</button>
+						</th>
+					{/snippet}
+					{@render thSort('nazwa', 'Firma', 'min-w-[220px]')}
+					{@render thSort('zatrudnienie', 'Zatrudnienie', 'w-32')}
+					{@render thSort('branza', 'Branża', 'w-36')}
 					<th class="px-4 py-3 w-44">Kontakt</th>
-					<th class="px-4 py-3 w-28">Status</th>
+					{@render thSort('status', 'Status', 'w-28')}
+					{@render thSort('created_at', 'Dodano', 'w-24')}
 					<th class="px-4 py-3 w-24">Akcje</th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each filtered as p}
+				{#each filtered() as p}
 					{@const zatrud = extractZatrudnienie(p.notatki)}
 					<tr class="border-t border-slate-100 hover:bg-slate-50 group">
 						<td class="px-4 py-2.5">
@@ -192,7 +229,6 @@
 							>{p.nazwa}</button>
 							<div class="flex items-center gap-2 mt-0.5 flex-wrap">
 								{#if p.nip}<span class="text-[11px] text-slate-400">NIP: {p.nip}</span>{/if}
-								{#if p.branza}<span class="text-[11px] text-slate-400 truncate max-w-[180px]">{p.branza}</span>{/if}
 							</div>
 						</td>
 						<td class="px-4 py-2.5 text-sm text-slate-700">
@@ -203,6 +239,9 @@
 								<span class="text-slate-300">—</span>
 							{/if}
 						</td>
+						<td class="px-4 py-2.5 text-xs text-slate-500 max-w-[140px]">
+							{#if p.branza}<span class="truncate block">{p.branza}</span>{:else}<span class="text-slate-300">—</span>{/if}
+						</td>
 						<td class="px-4 py-2.5 text-xs text-slate-500 leading-relaxed">
 							{#if p.telefon}<div class="truncate">{p.telefon}</div>{/if}
 							{#if p.email}<div class="truncate text-blue-600">{p.email}</div>{/if}
@@ -210,6 +249,9 @@
 						</td>
 						<td class="px-4 py-2.5">
 							<Badge variant={statusVariant(p.status)}>{statusLabels[p.status] ?? p.status}</Badge>
+						</td>
+						<td class="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">
+							{p.created_at ? p.created_at.slice(0, 10) : '—'}
 						</td>
 						<td class="px-4 py-2.5">
 							<div class="flex items-center gap-1">
@@ -226,7 +268,7 @@
 						</td>
 					</tr>
 				{:else}
-					<tr><td colspan="5" class="px-5 py-8 text-center text-slate-400">Brak prospectów</td></tr>
+					<tr><td colspan="7" class="px-5 py-8 text-center text-slate-400">Brak prospectów</td></tr>
 				{/each}
 			</tbody>
 		</table>
