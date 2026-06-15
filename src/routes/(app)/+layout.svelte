@@ -83,7 +83,7 @@
 			sb.from('crm_insurer_branches').select('*').order('nazwa'),
 			sb.from('crm_insurer_contacts').select('*, crm_insurer_branches(nazwa)').order('imie_nazwisko'),
 			sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),
-			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false })
+			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false })
 		]);
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
