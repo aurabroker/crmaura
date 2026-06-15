@@ -6,7 +6,9 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw } from 'lucide-svelte';
+	import { dateDiffDays, todayStr } from '$lib/utils';
+	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
 
 	const policyId = $derived($page.params.id);
@@ -65,6 +67,17 @@
 	};
 
 	const st = $derived(policy ? policyStatus(policy.data_do) : null);
+
+	const today = todayStr();
+	const renewalPolicy = $derived(
+		policy ? appState.policies.find(q => q.renewal_of === policy!.id && !q.deleted_at) : undefined
+	);
+	const daysLeft = $derived(policy?.data_do ? dateDiffDays(today, policy.data_do) : 999);
+	const canRenew = $derived(!!policy && !renewalPolicy && daysLeft >= 0 && daysLeft <= 45);
+	const isPendingRenewal = $derived(!!policy?.renewal_of && policy.data_od > today);
+	const renewalUrl = $derived(policy
+		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}`
+		: '');
 
 	// UG default commission inline edit
 	let ugEditOpen = $state(false);
@@ -158,6 +171,7 @@
 			.eq('id', policyId);
 		deleting = false;
 		if (error) { deleteError = error.message; return; }
+		await logAudit('policy_deleted', 'policy', policyId, policy?.nr_polisy, { reason: deletionReason.trim() });
 		// Remove from local state
 		appState.policies = appState.policies.filter(p => p.id !== policyId);
 		goto('/policies');
@@ -226,10 +240,20 @@
 					<span class="text-slate-300">•</span>
 					<span class="text-sm text-slate-500">{tuLabel}</span>
 					{#if st}<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>{/if}
+					{#if renewalPolicy}
+						<Badge variant="warning">Odnowiona</Badge>
+					{:else if isPendingRenewal}
+						<Badge variant="info">Oczekująca</Badge>
+					{/if}
 				</div>
 			</div>
 		</div>
 		<div class="flex gap-2">
+			{#if canRenew}
+				<a href={renewalUrl} class="flex items-center gap-1.5 text-sm border border-amber-300 bg-amber-50 text-amber-700 rounded-lg px-3 py-2 hover:bg-amber-100 transition-colors">
+					<RefreshCw size={14} /> Odnów polisę
+				</a>
+			{/if}
 			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<Users size={14} /> Podział prowizji {#if polisaBrokers.length > 0}<span class="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-semibold">{polisaBrokers.length}</span>{/if}
 			</button>

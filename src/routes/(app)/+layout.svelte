@@ -10,11 +10,14 @@
 		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield, CalendarCheck
 	} from 'lucide-svelte';
 
+	import { logAudit } from '$lib/utils/audit';
+
 	let { children } = $props();
 	let addMenuOpen = $state(false);
 	let adminMenuOpen = $state(false);
 	let initialized = $state(false);
 	let refreshing = $state(false);
+	let loginLogged = false;
 
 	async function refreshData() {
 		refreshing = true;
@@ -103,6 +106,10 @@
 		appState.alerts = (rAL.data ?? []) as typeof appState.alerts;
 		appState.tasks = (rTasks.data ?? []) as typeof appState.tasks;
 		initialized = true;
+		if (!loginLogged) {
+			loginLogged = true;
+			logAudit('login', 'user', user.id, profile.imie_nazwisko ?? user.email);
+		}
 	}
 
 	onMount(loadData);

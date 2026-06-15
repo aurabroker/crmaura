@@ -3,11 +3,11 @@
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, policyStatus } from '$lib/utils';
+	import { fmtPln, policyStatus, dateDiffDays } from '$lib/utils';
 	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import type { ApkForm } from '$lib/types/database';
@@ -29,6 +29,12 @@
 	const totalPrzyp = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
 	const totalOpl = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
 	const activeClaims = $derived(clientClaims.filter(c => c.status === 'Zgłoszona' || c.status === 'W toku'));
+
+	const renewedPolicyIds = $derived(
+		new Set(appState.policies
+			.filter(p => p.renewal_of !== null && !p.deleted_at)
+			.map(p => p.renewal_of as string))
+	);
 
 	const grupowePolicies = $derived(clientPolicies.filter(p =>
 		p.rodzaj === 'grupowe_medyczne' || p.rodzaj === 'grupowe_życie'
@@ -443,9 +449,20 @@
 				<tbody>
 					{#each activePolicies as p}
 						{@const st = policyStatus(p.data_do)}
+						{@const daysLeft = p.data_do ? dateDiffDays(today, p.data_do) : 999}
+						{@const isRenewed = renewedPolicyIds.has(p.id)}
+						{@const isPendingRenewal = !!p.renewal_of && p.data_od > today}
+						{@const canRenew = !isRenewed && daysLeft >= 0 && daysLeft <= 45}
 						<tr class="border-t border-slate-100 hover:bg-slate-50">
 							<td class="px-5 py-3">
-								<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
+								<div class="flex items-center gap-1.5 flex-wrap">
+									<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
+									{#if isRenewed}
+										<span class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
+									{:else if isPendingRenewal}
+										<span class="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5">Oczekująca</span>
+									{/if}
+								</div>
 							</td>
 							<td class="px-5 py-3">
 								{#if p.crm_insurers?.skrot}
@@ -459,7 +476,15 @@
 							<td class="px-5 py-3 text-xs">{p.data_do}</td>
 							<td class="px-5 py-3 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
 							<td class="px-5 py-3">
-								<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+								<div class="flex flex-col gap-1 items-start">
+									<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+									{#if canRenew}
+										<a href="/policies/new?klient={p.klient_id}&rodzaj={encodeURIComponent(p.rodzaj)}&przedmiot={encodeURIComponent(p.przedmiot ?? '')}&renewal_of={p.id}"
+										   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors">
+											<RefreshCw size={10} /> Odnów polisę
+										</a>
+									{/if}
+								</div>
 							</td>
 						</tr>
 					{:else}
@@ -492,9 +517,15 @@
 						<tbody>
 							{#each archivedPolicies as p}
 								{@const st = policyStatus(p.data_do)}
+								{@const isRenewed = renewedPolicyIds.has(p.id)}
 								<tr class="border-t border-slate-100 hover:bg-slate-50">
 									<td class="px-5 py-3">
-										<a href="/policies/{p.id}" class="font-medium text-slate-500 hover:underline">{p.nr_polisy}</a>
+										<div class="flex items-center gap-1.5">
+											<a href="/policies/{p.id}" class="font-medium text-slate-500 hover:underline">{p.nr_polisy}</a>
+											{#if isRenewed}
+												<span class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
+											{/if}
+										</div>
 									</td>
 									<td class="px-5 py-3 text-slate-400">
 										{#if p.crm_insurers?.skrot}

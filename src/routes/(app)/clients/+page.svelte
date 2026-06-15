@@ -8,6 +8,7 @@
 	import { Search, Pencil, Building2, User } from 'lucide-svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 	import { page } from '$app/stores';
+	import { logAudit } from '$lib/utils/audit';
 
 	let search = $state('');
 	let showModal = $state(false);
@@ -106,6 +107,7 @@
 		}
 		saving = false;
 		if (error) { formError = error.message; return; }
+		await logAudit(editingClient ? 'client_updated' : 'client_created', 'client', editingClient?.id, payload.nazwa as string);
 		closeModal();
 		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
 		appState.clients = (data ?? []) as typeof appState.clients;

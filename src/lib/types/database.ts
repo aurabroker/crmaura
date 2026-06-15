@@ -119,6 +119,7 @@ export interface Policy {
 	deletion_reason: string | null;
 	tu_contact_id: string | null;
 	rozliczaj_platnosci: boolean | null;
+	renewal_of: string | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;

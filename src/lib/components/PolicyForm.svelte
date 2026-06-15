@@ -15,7 +15,7 @@
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpTu = $state(policy?.tu_id ?? '');
 	let fpNr = $state(policy?.nr_polisy ?? '');
-	let fpRodzaj = $state(policy?.rodzaj ?? presetRodzaj || 'majątkowa');
+	let fpRodzaj = $state((policy?.rodzaj ?? presetRodzaj) || 'majątkowa');
 	let fpTypUmowy = $state(policy?.typ_umowy ?? 'jednostkowa');
 	let fpUgPodtyp = $state(policy?.ug_podtyp ?? '');
 	let fpParentId = $state(policy?.parent_id ?? '');
@@ -445,7 +445,7 @@
 						list="veh-list-{fpKlient}" />
 					<datalist id="veh-list-{fpKlient}">
 						{#each clientVehicles as v}
-							<option value="{v.nr_rejestracyjny}{v.vin ? ' / ' + v.vin : ''} — {v.marka_model}">
+							<option value="{v.nr_rejestracyjny}{v.vin ? ' / ' + v.vin : ''} — {v.marka_model}"></option>
 						{/each}
 					</datalist>
 					<p class="text-[11px] text-slate-400 mt-1">Wybierz z listy lub wpisz nr rej. / VIN</p>
