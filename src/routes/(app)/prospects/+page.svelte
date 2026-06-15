@@ -17,6 +17,7 @@
 		email: string | null;
 		branza: string | null;
 		notatki: string | null;
+		zatrudnienie: number | null;
 		broker_id: string | null;
 		status: string;
 		created_at: string;
@@ -38,6 +39,7 @@
 	let fEmail = $state('');
 	let fBranza = $state('');
 	let fNotatki = $state('');
+	let fZatrudnienie = $state<number | ''>('');
 	let fBrokerId = $state('');
 	let fStatus = $state('nowy');
 
@@ -58,10 +60,11 @@
 		return 'info';
 	}
 
-	function extractZatrudnienie(notatki: string | null): string {
-		if (!notatki) return '';
-		const m = notatki.match(/Zatrudnienie:\s*(\d[\d\s]*)/);
-		return m ? m[1].trim() : '';
+	function getZatrudnienie(p: Prospect): number | null {
+		if (p.zatrudnienie != null) return p.zatrudnienie;
+		if (!p.notatki) return null;
+		const m = p.notatki.match(/Zatrudnienie:\s*(\d[\d\s]*)/);
+		return m ? parseInt(m[1].trim()) : null;
 	}
 
 	type SortCol = 'nazwa' | 'branza' | 'zatrudnienie' | 'status' | 'created_at';
@@ -89,8 +92,8 @@
 			if (sortCol === 'nazwa') { av = a.nazwa.toLowerCase(); bv = b.nazwa.toLowerCase(); }
 			else if (sortCol === 'branza') { av = (a.branza ?? '').toLowerCase(); bv = (b.branza ?? '').toLowerCase(); }
 			else if (sortCol === 'zatrudnienie') {
-				av = parseInt(extractZatrudnienie(a.notatki) || '0');
-				bv = parseInt(extractZatrudnienie(b.notatki) || '0');
+				av = getZatrudnienie(a) ?? 0;
+				bv = getZatrudnienie(b) ?? 0;
 			}
 			else if (sortCol === 'status') { av = statusOrder[a.status] ?? 99; bv = statusOrder[b.status] ?? 99; }
 			else if (sortCol === 'created_at') { av = a.created_at; bv = b.created_at; }
@@ -114,7 +117,7 @@
 	function openNew() {
 		editingProspect = null;
 		fNazwa = ''; fNip = ''; fAdres = ''; fTelefon = ''; fEmail = '';
-		fBranza = ''; fNotatki = ''; fStatus = 'nowy'; formError = '';
+		fBranza = ''; fNotatki = ''; fZatrudnienie = ''; fStatus = 'nowy'; formError = '';
 		fBrokerId = appState.profile?.id ?? '';
 		showModal = true;
 	}
@@ -124,6 +127,7 @@
 		fNazwa = p.nazwa; fNip = p.nip ?? ''; fAdres = p.adres ?? '';
 		fTelefon = p.telefon ?? ''; fEmail = p.email ?? '';
 		fBranza = p.branza ?? ''; fNotatki = p.notatki ?? '';
+		fZatrudnienie = p.zatrudnienie ?? '';
 		fBrokerId = p.broker_id ?? ''; fStatus = p.status; formError = '';
 		showModal = true;
 	}
@@ -137,6 +141,7 @@
 			nazwa: fNazwa.trim(), nip: fNip.trim() || null, adres: fAdres.trim() || null,
 			telefon: fTelefon.trim() || null, email: fEmail.trim() || null,
 			branza: fBranza.trim() || null, notatki: fNotatki.trim() || null,
+			zatrudnienie: fZatrudnienie !== '' ? Number(fZatrudnienie) : null,
 			broker_id: fBrokerId || null, status: fStatus
 		};
 		let error;
@@ -220,7 +225,7 @@
 			</thead>
 			<tbody>
 				{#each filtered() as p}
-					{@const zatrud = extractZatrudnienie(p.notatki)}
+					{@const zatrud = getZatrudnienie(p)}
 					<tr class="border-t border-slate-100 hover:bg-slate-50 group">
 						<td class="px-4 py-2.5">
 							<button
@@ -232,7 +237,7 @@
 							</div>
 						</td>
 						<td class="px-4 py-2.5 text-sm text-slate-700">
-							{#if zatrud}
+							{#if zatrud != null}
 								<span class="font-medium">{zatrud}</span>
 								<span class="text-xs text-slate-400 ml-0.5">os.</span>
 							{:else}
@@ -284,45 +289,37 @@
 	{/snippet}
 
 	{#if formError}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-	<div class="space-y-3">
-		<div>
+	<div class="grid grid-cols-2 gap-3">
+		<div class="col-span-2">
 			<label class={labelCls}>Nazwa firmy / Imię i Nazwisko *</label>
 			<input bind:value={fNazwa} class={inputCls} />
 		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
-			<div><label class={labelCls}>Branża</label><input bind:value={fBranza} class={inputCls} /></div>
+		<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
+		<div><label class={labelCls}>Branża</label><input bind:value={fBranza} class={inputCls} /></div>
+		<div class="col-span-2"><label class={labelCls}>Adres</label><input bind:value={fAdres} class={inputCls} /></div>
+		<div><label class={labelCls}>Telefon</label><input bind:value={fTelefon} class={inputCls} /></div>
+		<div><label class={labelCls}>Email</label><input bind:value={fEmail} type="email" class={inputCls} /></div>
+		<div><label class={labelCls}>Zatrudnienie (os.)</label><input type="number" bind:value={fZatrudnienie} class={inputCls} placeholder="liczba osób" min="0" /></div>
+		<div>
+			<label class={labelCls}>Status</label>
+			<select bind:value={fStatus} class={inputCls}>
+				<option value="nowy">Nowy</option>
+				<option value="w_kontakcie">W kontakcie</option>
+				<option value="oferta_wyslana">Oferta wysłana</option>
+				<option value="wygrany">Wygrany</option>
+				<option value="przegrany">Przegrany</option>
+			</select>
 		</div>
 		<div>
-			<label class={labelCls}>Adres</label>
-			<input bind:value={fAdres} class={inputCls} />
+			<label class={labelCls}>Broker</label>
+			<select bind:value={fBrokerId} class={inputCls}>
+				<option value="">— brak —</option>
+				{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko}</option>{/each}
+			</select>
 		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>Telefon</label><input bind:value={fTelefon} class={inputCls} /></div>
-			<div><label class={labelCls}>Email</label><input bind:value={fEmail} type="email" class={inputCls} /></div>
-		</div>
-		<div>
+		<div class="col-span-2">
 			<label class={labelCls}>Notatki</label>
 			<textarea bind:value={fNotatki} rows="3" class={inputCls}></textarea>
-		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class={labelCls}>Broker</label>
-				<select bind:value={fBrokerId} class={inputCls}>
-					<option value="">— brak —</option>
-					{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko}</option>{/each}
-				</select>
-			</div>
-			<div>
-				<label class={labelCls}>Status</label>
-				<select bind:value={fStatus} class={inputCls}>
-					<option value="nowy">Nowy</option>
-					<option value="w_kontakcie">W kontakcie</option>
-					<option value="oferta_wyslana">Oferta wysłana</option>
-					<option value="wygrany">Wygrany</option>
-					<option value="przegrany">Przegrany</option>
-				</select>
-			</div>
 		</div>
 	</div>
 </Modal>

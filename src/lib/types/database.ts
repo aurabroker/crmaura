@@ -219,6 +219,7 @@ export interface Prospect {
 	email: string | null;
 	branza: string | null;
 	notatki: string | null;
+	zatrudnienie: number | null;
 	broker_id: string | null;
 	status: string;
 	created_at?: string;

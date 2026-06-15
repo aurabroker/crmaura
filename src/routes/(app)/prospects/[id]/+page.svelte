@@ -19,6 +19,7 @@
 		email: string | null;
 		branza: string | null;
 		notatki: string | null;
+		zatrudnienie: number | null;
 		broker_id: string | null;
 		status: string;
 		created_at: string;
@@ -52,6 +53,7 @@
 	let fEmail = $state('');
 	let fBranza = $state('');
 	let fNotatki = $state('');
+	let fZatrudnienie = $state<number | ''>('');
 	let fStatus = $state('nowy');
 	let saving = $state(false);
 
@@ -66,9 +68,10 @@
 		return 'info';
 	}
 
-	function extractZatrudnienie(notatki: string | null) {
-		if (!notatki) return null;
-		const m = notatki.match(/Zatrudnienie:\s*(\d[\d\s]*)/);
+	function extractZatrudnienie(prospect: Prospect) {
+		if (prospect.zatrudnienie != null) return String(prospect.zatrudnienie);
+		if (!prospect.notatki) return null;
+		const m = prospect.notatki.match(/Zatrudnienie:\s*(\d[\d\s]*)/);
 		return m ? m[1].trim() : null;
 	}
 	function extractWWW(notatki: string | null) {
@@ -122,6 +125,7 @@
 		fNazwa = prospect.nazwa; fNip = prospect.nip ?? ''; fAdres = prospect.adres ?? '';
 		fTelefon = prospect.telefon ?? ''; fEmail = prospect.email ?? '';
 		fBranza = prospect.branza ?? ''; fNotatki = prospect.notatki ?? '';
+		fZatrudnienie = prospect.zatrudnienie ?? '';
 		fStatus = prospect.status;
 		editingProspect = true;
 	}
@@ -133,6 +137,7 @@
 			nazwa: fNazwa.trim(), nip: fNip.trim() || null, adres: fAdres.trim() || null,
 			telefon: fTelefon.trim() || null, email: fEmail.trim() || null,
 			branza: fBranza.trim() || null, notatki: fNotatki.trim() || null,
+			zatrudnienie: fZatrudnienie !== '' ? Number(fZatrudnienie) : null,
 			status: fStatus
 		}).eq('id', prospect.id);
 		saving = false;
@@ -261,7 +266,7 @@
 {:else if !prospect}
 	<div class="text-center text-slate-400 py-16">Nie znaleziono prospect.</div>
 {:else}
-	{@const zatrud = extractZatrudnienie(prospect.notatki)}
+	{@const zatrud = extractZatrudnienie(prospect)}
 	{@const www = extractWWW(prospect.notatki)}
 
 	<!-- Header -->
@@ -278,6 +283,7 @@
 					<div class="col-span-2"><label class={labelCls}>Adres</label><input bind:value={fAdres} class={inputCls} /></div>
 					<div><label class={labelCls}>Telefon</label><input bind:value={fTelefon} class={inputCls} /></div>
 					<div><label class={labelCls}>Email</label><input bind:value={fEmail} type="email" class={inputCls} /></div>
+					<div><label class={labelCls}>Zatrudnienie (os.)</label><input type="number" bind:value={fZatrudnienie} class={inputCls} placeholder="liczba osób" min="0" /></div>
 					<div>
 						<label class={labelCls}>Status</label>
 						<select bind:value={fStatus} class={inputCls}>
