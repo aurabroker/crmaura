@@ -216,6 +216,8 @@
 		const p = $page.url.searchParams;
 		if (p.get('new') === '1') openNewPolicy();
 		if (p.get('newguarantee') === '1') openNewPolicy('generalna', 'gwarancje');
+		const typ = p.get('typ');
+		if (typ === 'generalna' || typ === 'jednostkowa') filterTyp = typ;
 	});
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
