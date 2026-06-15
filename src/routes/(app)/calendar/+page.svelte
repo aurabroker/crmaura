@@ -84,7 +84,11 @@
 		return r;
 	}
 
-	const weekDays = $derived(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart(), i)));
+	let showFullWeek = $state(false);
+	const weekDays = $derived(() => {
+		const all7 = Array.from({ length: 7 }, (_, i) => addDays(weekStart(), i));
+		return showFullWeek ? all7 : all7.filter(d => d.getDay() >= 1 && d.getDay() <= 5);
+	});
 
 	// ---- Navigation ----
 	function prev() {
@@ -349,6 +353,12 @@
 	<button onclick={next} class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><ChevronRight size={18} /></button>
 	<h2 class="text-base font-semibold text-slate-900 min-w-[200px]">{navTitle()}</h2>
 	<button onclick={goToday} class="px-3 py-1 text-xs font-semibold border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Dziś</button>
+	{#if viewMode === 'week'}
+	<label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer ml-4">
+		<input type="checkbox" bind:checked={showFullWeek} class="w-3.5 h-3.5 accent-blue-600" />
+		Pokaż cały tydzień (pon–nd)
+	</label>
+	{/if}
 </div>
 {/if}
 
@@ -416,22 +426,24 @@
 
 <!-- ===== WEEK VIEW ===== -->
 {:else if viewMode === 'week'}
+{@const wdays = weekDays()}
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="grid grid-cols-7 border-b border-slate-100">
-		{#each weekDays() as d, i}
+	<div class="grid border-b border-slate-100" style="grid-template-columns: repeat({wdays.length}, minmax(0, 1fr))">
+		{#each wdays as d, i}
 			{@const ds = dateStr(d)}
 			{@const isToday = ds === today}
-			<div class="text-center py-3 {isToday ? 'bg-blue-50' : ''} {i >= 5 ? 'bg-orange-50/40' : ''}">
-				<div class="text-[11px] font-semibold text-slate-400 uppercase">{DAYS_SHORT[i]}</div>
+			{@const isWeekend = d.getDay() === 0 || d.getDay() === 6}
+			<div class="text-center py-3 {isToday ? 'bg-blue-50' : ''} {isWeekend ? 'bg-orange-50/40' : ''}">
+				<div class="text-[11px] font-semibold text-slate-400 uppercase">{DAYS_SHORT[d.getDay() === 0 ? 6 : d.getDay() - 1]}</div>
 				<div class="text-lg font-bold mt-0.5 {isToday ? 'text-blue-600' : 'text-slate-700'}">{d.getDate()}</div>
 			</div>
 		{/each}
 	</div>
-	<div class="grid grid-cols-7 min-h-[300px]">
-		{#each weekDays() as d, i}
+	<div class="grid min-h-[300px]" style="grid-template-columns: repeat({wdays.length}, minmax(0, 1fr))">
+		{#each wdays as d, i}
 			{@const ds = dateStr(d)}
 			{@const dayTasks = tasksByDate()[ds] ?? []}
-			{@const isWeekend = i >= 5}
+			{@const isWeekend = d.getDay() === 0 || d.getDay() === 6}
 			<div
 				class="border-r border-slate-100 p-2 min-h-[200px] {isWeekend ? 'bg-orange-50/20' : 'hover:bg-slate-50'} transition-colors"
 				ondragover={onDragOver}

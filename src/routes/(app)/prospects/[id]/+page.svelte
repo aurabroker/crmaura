@@ -3,6 +3,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import TaskModal from '$lib/components/TaskModal.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -173,12 +174,6 @@
 	let tasks = $state<CrmTask[]>([]);
 	let showTaskModal = $state(false);
 	let editingTask = $state<CrmTask | null>(null);
-	let savingTask = $state(false);
-	let fTytul = $state('');
-	let fOpis = $state('');
-	let fTermin = $state('');
-	let fPriorytet = $state<CrmTask['priorytet']>('normalny');
-	let fTaskStatus = $state<CrmTask['status']>('otwarte');
 
 	const today = new Date().toISOString().slice(0, 10);
 
@@ -192,41 +187,12 @@
 
 	function openNewTask() {
 		editingTask = null;
-		fTytul = ''; fOpis = ''; fTermin = ''; fPriorytet = 'normalny'; fTaskStatus = 'otwarte';
 		showTaskModal = true;
 	}
 
 	function openEditTask(t: CrmTask) {
 		editingTask = t;
-		fTytul = t.tytul; fOpis = t.opis ?? ''; fTermin = t.termin ?? '';
-		fPriorytet = t.priorytet; fTaskStatus = t.status;
 		showTaskModal = true;
-	}
-
-	async function saveTask() {
-		if (!fTytul.trim() || !prospect) return;
-		savingTask = true;
-		const payload = {
-			tenant_id: prospect.tenant_id,
-			created_by: appState.profile!.id,
-			assigned_to: appState.profile!.id,
-			prospect_id: prospect.id,
-			klient_id: null,
-			polisa_id: null,
-			tytul: fTytul.trim(),
-			opis: fOpis || null,
-			termin: fTermin || null,
-			priorytet: fPriorytet,
-			status: fTaskStatus
-		};
-		if (editingTask) {
-			await sb.from('crm_tasks').update(payload).eq('id', editingTask.id);
-		} else {
-			await sb.from('crm_tasks').insert([payload]);
-		}
-		savingTask = false;
-		showTaskModal = false;
-		await loadTasks();
 	}
 
 	async function toggleTaskStatus(t: CrmTask) {
@@ -501,44 +467,11 @@
 {/if}
 
 <!-- Task Modal -->
-<Modal title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showTaskModal} onclose={() => showTaskModal = false}>
-	{#snippet footer()}
-		<button onclick={() => showTaskModal = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveTask} disabled={savingTask} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-			{savingTask ? 'Zapisywanie...' : (editingTask ? 'Zapisz' : 'Dodaj zadanie')}
-		</button>
-	{/snippet}
-	<div class="space-y-3">
-		<div>
-			<label class={labelCls}>Tytuł *</label>
-			<input bind:value={fTytul} class={inputCls} placeholder="Co trzeba zrobić?" />
-		</div>
-		<div>
-			<label class={labelCls}>Opis</label>
-			<textarea bind:value={fOpis} class="{inputCls} resize-none" rows="2"></textarea>
-		</div>
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class={labelCls}>Termin</label>
-				<input type="date" bind:value={fTermin} class={inputCls} />
-			</div>
-			<div>
-				<label class={labelCls}>Priorytet</label>
-				<select bind:value={fPriorytet} class={inputCls}>
-					<option value="niski">Niski</option>
-					<option value="normalny">Normalny</option>
-					<option value="wysoki">Wysoki</option>
-					<option value="pilny">Pilny</option>
-				</select>
-			</div>
-		</div>
-		<div>
-			<label class={labelCls}>Status</label>
-			<select bind:value={fTaskStatus} class={inputCls}>
-				<option value="otwarte">Otwarte</option>
-				<option value="w_toku">W toku</option>
-				<option value="zakonczone">Zakończone</option>
-			</select>
-		</div>
-	</div>
-</Modal>
+<TaskModal
+	open={showTaskModal}
+	onclose={() => { showTaskModal = false; }}
+	onsaved={loadTasks}
+	editingTask={editingTask}
+	presetProspectId={prospectId}
+	presetProspectNazwa={prospect?.nazwa ?? ''}
+/>
