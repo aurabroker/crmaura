@@ -16,7 +16,7 @@ export const appState = $state({
 	brokers: [] as Profile[],
 	policyBrokers: [] as PolicyBroker[],
 	clientContacts: [] as ClientContact[],
-	dashboardWidgets: ['renewals','claims','clients','renewal_rate','payments'] as string[],
+	dashboardWidgets: ['renewals','claims','clients','renewal_rate','payments','zadania'] as string[],
 	tenantTyp: 'broker' as 'broker' | 'agent',
 	tenantNazwa: '' as string,
 	tenantFeatures: {} as Record<string, boolean>,

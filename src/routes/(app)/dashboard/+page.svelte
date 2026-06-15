@@ -335,9 +335,25 @@
 <svelte:head><title>Pulpit — FRANK67 CRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
-	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Pulpit {roleLabel()}a</h1>
-		<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
+	<div class="flex items-center gap-4">
+		<div>
+			<h1 class="text-2xl font-semibold text-slate-900">Pulpit {roleLabel()}a</h1>
+			<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
+		</div>
+		<!-- Compact alert badge - exactly 150px wide -->
+		<div class="w-[150px] shrink-0 rounded-xl px-3 py-2 border-2 cursor-pointer transition-colors
+			{unresolvedAlerts.length > 0 ? 'bg-red-50 border-red-400 hover:bg-red-100' : 'bg-emerald-50 border-emerald-300'}"
+			role="button" tabindex="0">
+			<div class="flex items-center gap-1.5">
+				<AlertTriangle size={13} class="{unresolvedAlerts.length > 0 ? 'text-red-600' : 'text-emerald-600'}" />
+				<span class="text-xs font-bold {unresolvedAlerts.length > 0 ? 'text-red-700' : 'text-emerald-700'}">
+					{unresolvedAlerts.length > 0 ? `${unresolvedAlerts.length} alert${unresolvedAlerts.length === 1 ? '' : 'ów'}` : 'OK'}
+				</span>
+			</div>
+			<div class="text-[10px] mt-0.5 {unresolvedAlerts.length > 0 ? 'text-red-600' : 'text-emerald-600'}">
+				{unresolvedAlerts.length > 0 ? 'Wymagane działanie' : 'Brak alertów'}
+			</div>
+		</div>
 	</div>
 	<div class="flex items-center gap-3">
 		<!-- Globalna wyszukiwarka -->
@@ -457,7 +473,7 @@
 <!-- KPI Grid — drag & drop (tylko kpi widgety) -->
 {#if draggableItems.some((w) => KPI_WIDGET_IDS.has(w.id))}
 <div
-	class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8"
+	class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8"
 	use:dndzone={{ items: draggableItems, flipDurationMs: 200 }}
 	onconsider={handleDnd}
 	onfinalize={finalizeDnd}
