@@ -808,6 +808,7 @@
 			</ul>
 		</div>
 		{/if}
+		{/if}
 
 	</div>
 	{/each}
