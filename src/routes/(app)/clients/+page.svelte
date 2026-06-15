@@ -221,41 +221,59 @@
 	{/snippet}
 
 	{#if formError}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-	<div class="space-y-3">
-		<div>
+	<div class="grid grid-cols-2 gap-3">
+		<!-- Row 1: Nazwa (full width) -->
+		<div class="col-span-2">
 			<label class={labelCls}>{modalTyp === 'firma' ? 'Nazwa firmy *' : 'Imię i Nazwisko *'}</label>
 			<input bind:value={fNazwa} class={inputCls} />
 		</div>
-		<div>
-			<label class={labelCls}>Nazwa skrócona (wyświetlana domyślnie)</label>
-			<input bind:value={fNazwaSkrocona} class={inputCls} placeholder={modalTyp === 'firma' ? 'np. Kowalski sp. z o.o.' : ''} />
-		</div>
-		<div>
-			<label class={labelCls}>Ulica i miasto</label>
-			<input bind:value={fUlica} class={inputCls} />
-		</div>
 		{#if modalTyp === 'firma'}
-			<RegonLookup onResult={(d) => { fNazwa = fNazwa || d.nazwa; fNip = d.nip || fNip; fRegon = d.regon || fRegon; fUlica = fUlica || d.adres; }} />
-			<div class="grid grid-cols-2 gap-3">
-				<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
-				<div><label class={labelCls}>REGON</label><input bind:value={fRegon} class={inputCls} /></div>
-				<div class="col-span-2"><label class={labelCls}>KRS</label><input bind:value={fKrs} class={inputCls} /></div>
+			<!-- Row 2: Nazwa skrócona | Ulica i miasto -->
+			<div>
+				<label class={labelCls}>Nazwa skrócona (wyświetlana domyślnie)</label>
+				<input bind:value={fNazwaSkrocona} class={inputCls} placeholder="np. Kowalski sp. z o.o." />
+			</div>
+			<div>
+				<label class={labelCls}>Ulica i miasto</label>
+				<input bind:value={fUlica} class={inputCls} />
+			</div>
+			<!-- RegonLookup: full width -->
+			<div class="col-span-2">
+				<RegonLookup onResult={(d) => { fNazwa = fNazwa || d.nazwa; fNip = d.nip || fNip; fRegon = d.regon || fRegon; fUlica = fUlica || d.adres; }} />
+			</div>
+			<!-- Row 3: NIP | REGON -->
+			<div>
+				<label class={labelCls}>NIP</label>
+				<input bind:value={fNip} class={inputCls} />
+			</div>
+			<div>
+				<label class={labelCls}>REGON</label>
+				<input bind:value={fRegon} class={inputCls} />
+			</div>
+			<!-- KRS: full width -->
+			<div class="col-span-2">
+				<label class={labelCls}>KRS</label>
+				<input bind:value={fKrs} class={inputCls} />
 			</div>
 		{:else}
+			<!-- Row 2: PESEL | Ulica i miasto -->
 			<div>
 				<label class={labelCls}>PESEL</label>
 				<input bind:value={fPesel} class={inputCls} />
 			</div>
+			<div>
+				<label class={labelCls}>Ulica i miasto</label>
+				<input bind:value={fUlica} class={inputCls} />
+			</div>
 		{/if}
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class={labelCls}>Telefon</label>
-				<input bind:value={fTelefon} type="tel" class={inputCls} placeholder="+48 600 000 000" />
-			</div>
-			<div>
-				<label class={labelCls}>E-mail</label>
-				<input bind:value={fEmail} type="email" class={inputCls} placeholder="kontakt@firma.pl" />
-			</div>
+		<!-- Row 4 (firma) / Row 3 (osoba): Telefon | E-mail -->
+		<div>
+			<label class={labelCls}>Telefon</label>
+			<input bind:value={fTelefon} type="tel" class={inputCls} placeholder="+48 600 000 000" />
+		</div>
+		<div>
+			<label class={labelCls}>E-mail</label>
+			<input bind:value={fEmail} type="email" class={inputCls} placeholder="kontakt@firma.pl" />
 		</div>
 	</div>
 </Modal>
