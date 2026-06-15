@@ -270,7 +270,7 @@
 	</div>
 
 	<!-- Dane polisy -->
-	<div class="grid gap-3 mb-5" style="grid-template-columns: repeat({policy.typ_umowy === 'generalna' ? 6 : 4}, minmax(0,1fr))">
+	<div class="grid gap-3 mb-5" style="grid-template-columns: repeat({policy.typ_umowy === 'generalna' ? 6 : 5}, minmax(0,1fr))">
 		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna składka polis' : 'Składka'}</p>
 			<p class="text-base font-semibold text-slate-900">{fmtPln(policy.typ_umowy === 'generalna' ? childSkladka : policy.skladka_przypisana)}</p>
@@ -301,6 +301,24 @@
 						<p class="text-xs text-slate-400 truncate">{policy.przedmiot}</p>
 					{/if}
 				{/if}
+		</div>
+		<!-- Osoba kontaktowa TU — kafelka inline -->
+		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5 flex items-center justify-between">
+				<span>Kontakt TU</span>
+				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; }}
+					class="text-[10px] text-slate-400 hover:text-blue-600 transition-colors">
+					{policy.tu_contact_id ? 'Zmień' : '+ Przypisz'}
+				</button>
+			</p>
+			{#if policy.crm_insurer_contacts}
+				{@const c = policy.crm_insurer_contacts}
+				<p class="text-sm font-semibold text-slate-900 truncate">{c.imie_nazwisko}</p>
+				{#if c.stanowisko}<p class="text-xs text-slate-400 truncate">{c.stanowisko}</p>{/if}
+				{#if c.crm_insurer_branches}<p class="text-xs text-blue-600 truncate">{c.crm_insurer_branches.nazwa}</p>{/if}
+			{:else}
+				<p class="text-sm text-slate-400">—</p>
+			{/if}
 		</div>
 		{#if policy.typ_umowy === 'generalna'}
 		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
@@ -365,31 +383,6 @@
 		</div>
 	</div>
 	{/if}
-
-	<!-- Osoba kontaktowa TU -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
-		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-			<p class="text-sm font-semibold text-slate-700 flex items-center gap-2"><UserRound size={14} /> Osoba kontaktowa TU</p>
-			<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; }} class="text-xs text-slate-500 hover:text-slate-800">
-				{policy.tu_contact_id ? 'Zmień' : '+ Przypisz'}
-			</button>
-		</div>
-		{#if policy.crm_insurer_contacts}
-			{@const c = policy.crm_insurer_contacts}
-			<div class="px-5 py-3 flex items-center justify-between">
-				<div>
-					<p class="font-medium text-sm">{c.imie_nazwisko}</p>
-					{#if c.stanowisko}<p class="text-xs text-slate-500">{c.stanowisko}</p>{/if}
-					{#if c.crm_insurer_branches}<p class="text-xs text-blue-600">{c.crm_insurer_branches.nazwa}</p>{/if}
-				</div>
-				<button onclick={removeContact} class="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors" title="Usuń powiązanie">
-					<Trash2 size={13} />
-				</button>
-			</div>
-		{:else}
-			<div class="px-5 py-4 text-sm text-slate-400">Brak przypisanej osoby kontaktowej TU.</div>
-		{/if}
-	</div>
 
 	<!-- Polisy podrzędne (certyfikaty) UG -->
 	{#if childPolicies.length > 0}
