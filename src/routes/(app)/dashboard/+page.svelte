@@ -762,6 +762,8 @@
 
 		{:else if widget.id === 'zadania'}
 		{#if appState.tenantFeatures['kalendarz']}
+		{@const openTasks = appState.tasks.filter(t => t.status === 'otwarte' || t.status === 'w_toku')}
+		{@const overdueTasks = openTasks.filter(t => t.termin && t.termin < new Date().toISOString().slice(0,10))}
 		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden h-full">
 			<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
 				<h2 class="font-semibold text-slate-900 text-sm flex items-center gap-2">
@@ -769,9 +771,6 @@
 				</h2>
 				<a href="/calendar" class="text-xs text-blue-600 hover:underline">Zobacz wszystkie</a>
 			</div>
-			{#if true}
-			{@const openTasks = appState.tasks.filter(t => t.status === 'otwarte' || t.status === 'w_toku')}
-			{@const overdueTasks = openTasks.filter(t => t.termin && t.termin < new Date().toISOString().slice(0,10))}
 			<div class="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
 				<div class="px-4 py-3 text-center">
 					<div class="text-xl font-bold text-slate-900">{openTasks.length}</div>
@@ -808,7 +807,6 @@
 				{/each}
 			</ul>
 		</div>
-		{/if}
 		{/if}
 
 	</div>
