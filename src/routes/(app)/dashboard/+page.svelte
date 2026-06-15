@@ -769,6 +769,7 @@
 				</h2>
 				<a href="/calendar" class="text-xs text-blue-600 hover:underline">Zobacz wszystkie</a>
 			</div>
+			{#if true}
 			{@const openTasks = appState.tasks.filter(t => t.status === 'otwarte' || t.status === 'w_toku')}
 			{@const overdueTasks = openTasks.filter(t => t.termin && t.termin < new Date().toISOString().slice(0,10))}
 			<div class="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
