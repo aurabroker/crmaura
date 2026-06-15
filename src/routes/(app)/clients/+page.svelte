@@ -23,9 +23,6 @@
 	let fPesel = $state('');
 	let fEmail = $state('');
 	let fTelefon = $state('');
-	let fRodo = $state(false);
-	let fRodoData = $state('');
-	let fRodoKanal = $state('E-mail');
 	let saving = $state(false);
 	let formError = $state('');
 
@@ -67,8 +64,7 @@
 	function openNew(typ: 'firma' | 'osoba') {
 		editingClient = null; modalTyp = typ;
 		fNazwa = ''; fNazwaSkrocona = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
-		fEmail = ''; fTelefon = '';
-		fRodo = false; fRodoData = ''; fRodoKanal = 'E-mail'; formError = '';
+		fEmail = ''; fTelefon = ''; formError = '';
 		showModal = true;
 	}
 
@@ -76,9 +72,7 @@
 		editingClient = c; modalTyp = c.typ ?? 'firma';
 		fNazwa = c.nazwa; fNazwaSkrocona = c.nazwa_skrocona ?? ''; fUlica = c.ulica ?? '';
 		fNip = c.nip ?? ''; fRegon = c.regon ?? ''; fKrs = c.krs ?? ''; fPesel = c.pesel ?? '';
-		fEmail = c.email ?? ''; fTelefon = c.telefon ?? '';
-		fRodo = c.rodo_zgoda; fRodoData = c.rodo_data ?? '';
-		fRodoKanal = c.rodo_kanal ?? 'E-mail'; formError = '';
+		fEmail = c.email ?? ''; fTelefon = c.telefon ?? ''; formError = '';
 		showModal = true;
 	}
 
@@ -97,10 +91,7 @@
 			regon: modalTyp === 'firma' ? (fRegon.trim() || null) : null,
 			krs: modalTyp === 'firma' ? (fKrs.trim() || null) : null,
 			email: fEmail.trim() || null,
-			telefon: fTelefon.trim() || null,
-			rodo_zgoda: fRodo,
-			rodo_data: fRodoData || null,
-			rodo_kanal: fRodoKanal
+			telefon: fTelefon.trim() || null
 		};
 
 		let error;
@@ -264,23 +255,6 @@
 			<div>
 				<label class={labelCls}>E-mail</label>
 				<input bind:value={fEmail} type="email" class={inputCls} placeholder="kontakt@firma.pl" />
-			</div>
-		</div>
-		<div class="bg-slate-50 border border-slate-200 rounded-lg p-3">
-			<label class="flex items-center gap-2 font-semibold text-sm cursor-pointer mb-3">
-				<input type="checkbox" bind:checked={fRodo} class="rounded" /> Zgoda RODO odebrana
-			</label>
-			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<label class={labelCls}>Data zgody</label>
-					<input type="date" bind:value={fRodoData} class={inputCls} />
-				</div>
-				<div>
-					<label class={labelCls}>Kanał</label>
-					<select bind:value={fRodoKanal} class={inputCls}>
-						<option>E-mail</option><option>Telefon</option><option>Osobiście</option>
-					</select>
-				</div>
 			</div>
 		</div>
 	</div>
