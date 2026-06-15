@@ -6,6 +6,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
+	import UgForm from '$lib/components/UgForm.svelte';
 	import { Search, Pencil, FilePlus2, ChevronDown, ChevronRight } from 'lucide-svelte';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
@@ -26,6 +27,10 @@
 	// PolicyForm refs
 	let newPolicyForm = $state<ReturnType<typeof PolicyForm> | null>(null);
 	let editPolicyForm = $state<ReturnType<typeof PolicyForm> | null>(null);
+
+	let showUG = $state(false);
+	let editingUG = $state<Policy | null>(null);
+	let ugForm = $state<ReturnType<typeof UgForm> | null>(null);
 
 	// Annex form
 	let axNr = $state('');
@@ -107,6 +112,34 @@
 		saving = false;
 		if (error) { formError = error.message; return; }
 		showPolicy = false;
+		await reloadPolicies();
+	}
+
+	async function saveNewUG() {
+		if (!ugForm) return;
+		const err = ugForm.isValid();
+		if (err) { formError = err; return; }
+		saving = true; formError = '';
+		const vals = ugForm.getValues();
+		const { data: inserted, error } = await sb.from('crm_policies').insert([{ tenant_id: appState.profile!.tenant_id, ...vals }]).select('id').single();
+		saving = false;
+		if (error) { formError = error.message; return; }
+		if (ugForm.shouldCreatePayments()) {
+			const raty = ugForm.getDatyRat();
+			if (raty.length > 0 && inserted?.id) {
+				await sb.from('crm_policy_payments').insert(
+					raty.map(r => ({
+						tenant_id: appState.profile!.tenant_id,
+						polisa_id: inserted.id,
+						nr_raty: r.nr,
+						data_platnosci: r.data,
+						kwota: r.kwota,
+						status: 'Oczekująca'
+					}))
+				);
+			}
+		}
+		showUG = false;
 		await reloadPolicies();
 	}
 
@@ -236,9 +269,15 @@
 		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
 			Zgłoś Szkodę
 		</button>
-		<button onclick={() => goto('/policies/new')} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
-			+ Nowa Polisa / UG
-		</button>
+		{#if lockedTyp && filterTyp === 'generalna'}
+			<button onclick={() => { showUG = true; formError = ''; }} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+				+ Nowa Umowa Generalna
+			</button>
+		{:else}
+			<button onclick={() => goto('/policies/new')} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+				+ Nowa Polisa
+			</button>
+		{/if}
 	</div>
 </div>
 
@@ -533,6 +572,18 @@
 	</div>
 </Modal>
 {/if}
+
+<!-- Modal: Nowa Umowa Generalna -->
+<Modal title="Nowa Umowa Generalna" open={showUG} onclose={() => { showUG = false; formError = ''; }}>
+	{#snippet footer()}
+		<button onclick={() => { showUG = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveNewUG} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{saving ? 'Zapisywanie...' : 'Zapisz UG'}
+		</button>
+	{/snippet}
+	{#if formError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
+	<UgForm bind:this={ugForm} />
+</Modal>
 
 <!-- Modal: Szkoda -->
 <Modal title="Rejestracja Szkody" open={showClaim} onclose={() => { showClaim = false; formError = ''; }}>

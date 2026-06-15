@@ -6,36 +6,27 @@
 	interface Props {
 		policy?: Policy | null;
 		presetKlient?: string;
-		presetRodzaj?: string;
-		presetPrzedmiot?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpTu = $state(policy?.tu_id ?? '');
 	let fpNr = $state(policy?.nr_polisy ?? '');
-	let fpRodzaj = $state((policy?.rodzaj ?? presetRodzaj) || 'majątkowa');
-	const fpTypUmowy = 'jednostkowa';
-	let fpParentId = $state(policy?.parent_id ?? '');
-	let fpPrzedmiot = $state(policy?.przedmiot ?? presetPrzedmiot);
-
-	// Utrata dochodu: parse existing przedmiot JSON or start empty
-	function parseUD(raw: string) {
-		try { const p = JSON.parse(raw); if (p.__ud) return p; } catch {}
-		return { __ud: true, ctn: '', ctc: '', si: '' };
-	}
-	let fpUD = $state(parseUD(policy?.przedmiot ?? ''));
-	const isUD = $derived(fpRodzaj === 'utrata_dochodu');
-	const isKomunikacja = $derived(fpRodzaj === 'komunikacja');
-	const clientVehicles = $derived(
-		fpKlient ? appState.vehicles.filter(v => v.klient_id === fpKlient) : []
-	);
+	let fpUgPodtyp = $state(policy?.ug_podtyp ?? '');
+	let fpUgDefaultProwizja = $state(policy?.ug_default_prowizja_pct?.toString() ?? '');
+	let fpPrzedmiot = $state(policy?.przedmiot ?? '');
 
 	let fpOd = $state(policy?.data_od ?? '');
 	let fpDo = $state(policy?.data_do ?? '');
 	let fpZawarcia = $state((policy as any)?.data_zawarcia ?? '');
 	let fpRaty = $state(policy?.ilosc_rat ?? '1');
+	let fpRozliczajPlatnosci = $state(policy?.rozliczaj_platnosci ?? false);
+
+	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
+	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
+	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
+	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
 
 	function parseDatyRat(raw: string | null | undefined, count: number): string[] {
 		const parts = (raw ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -46,32 +37,6 @@
 		const equal = count > 0 ? (skladka / count).toFixed(2) : '0.00';
 		return Array.from({ length: count }, (_, i) => parts[i] ?? equal);
 	}
-
-	// Auto-fill default payment dates when data_od or ilosc_rat changes
-	$effect(() => {
-		if (!fpOd) return;
-		const n = parseInt(fpRaty) || 1;
-		const allEmpty = fpDatyRatArr.every(d => !d);
-		if (!allEmpty) return; // don't override manually set dates
-		const start = new Date(fpOd);
-		fpDatyRatArr = Array.from({ length: n }, (_, i) => {
-			if (n === 1) {
-				const d = new Date(start);
-				d.setDate(d.getDate() + 14);
-				return d.toISOString().split('T')[0];
-			} else {
-				const d = new Date(start.getFullYear(), start.getMonth() + i, 25);
-				return d.toISOString().split('T')[0];
-			}
-		});
-	});
-
-	let fpRozliczajPlatnosci = $state(policy?.rozliczaj_platnosci ?? false);
-
-	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
-	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
-	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
-	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
 
 	let fpDatyRatArr = $state<string[]>(parseDatyRat(policy?.daty_rat, parseInt(policy?.ilosc_rat ?? '1')));
 	let fpKwotypRatArr = $state<string[]>(parseKwotyRat(
@@ -86,19 +51,15 @@
 			d.setDate(d.getDate() + 14);
 			return d.toISOString().split('T')[0];
 		}
-		// Rata i+1: 25-ty miesiąca start+i (zawsze w przód od daty_od)
 		const d = new Date(start.getFullYear(), start.getMonth() + i, 25);
-		// Jeśli 25-ty tego miesiąca już minął względem data_od, idź miesiąc dalej
 		if (i === 0 && d <= start) {
 			d.setMonth(d.getMonth() + 1);
 		}
 		return d.toISOString().split('T')[0];
 	}
 
-	// Śledź poprzednią liczbę rat (zwykła zmienna, nie $state)
 	let _prevN = parseInt(policy?.ilosc_rat ?? '1');
 
-	// Daty rat: przy zmianie liczby rat → przelicz wszystkie; przy zmianie data_od → wypełnij puste
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		const start = fpOd ? new Date(fpOd) : null;
@@ -106,12 +67,10 @@
 		_prevN = n;
 
 		if (n !== prevN) {
-			// Liczba rat zmieniona — przelicz wszystkie daty od nowa
 			fpDatyRatArr = Array.from({ length: n }, (_, i) =>
 				start ? calcDate(start, i, n) : ''
 			);
 		} else {
-			// Tylko data_od zmieniona — wypełnij puste sloty
 			const current = untrack(() => [...fpDatyRatArr]);
 			fpDatyRatArr = Array.from({ length: n }, (_, i) =>
 				current[i] || (start ? calcDate(start, i, n) : '')
@@ -119,7 +78,6 @@
 		}
 	});
 
-	// Kwoty rat: zawsze przelicz równo (składka / n) przy zmianie składki lub liczby rat
 	$effect(() => {
 		const n = parseInt(fpRaty) || 1;
 		const sklad = parseFloat(fpSklPrzyp) || 0;
@@ -127,7 +85,6 @@
 		fpKwotypRatArr = Array.from({ length: n }, () => eq);
 	});
 
-	// Auto data_do from data_od — string-based to avoid timezone year-shift bugs
 	$effect(() => {
 		if (fpOd && !fpDo) {
 			const parts = fpOd.split('-');
@@ -144,46 +101,47 @@
 		}
 	});
 
-	// Auto prowizja_przypisana from %
 	$effect(() => {
 		const sklad = parseFloat(fpSklPrzyp) || 0;
 		const pct = parseFloat(fpProwPct) || 0;
 		if (pct > 0 && sklad > 0) fpProwPrzyp = ((sklad * pct) / 100).toFixed(2);
 	});
 
-	function onParentUgChange() {
-		const parent = appState.policies.find(p => p.id === fpParentId);
-		if (parent) {
-			fpTu = parent.tu_id;
-			if (parent.ug_default_prowizja_pct) {
-				fpProwPct = parent.ug_default_prowizja_pct.toString();
-				const sklad = parseFloat(fpSklPrzyp) || 0;
-				if (sklad > 0) fpProwPrzyp = ((sklad * parent.ug_default_prowizja_pct) / 100).toFixed(2);
-			}
+	$effect(() => {
+		if (fpUgPodtyp === 'beauty_tax') {
+			const colonnade = appState.insurers.find(t =>
+				(t.skrot ?? t.nazwa).toLowerCase().includes('colonnade') ||
+				t.nazwa.toLowerCase().includes('colonnade')
+			);
+			if (colonnade) fpTu = colonnade.id;
 		}
-	}
+	});
 
 	export function getValues() {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const prowPct = parseFloat(fpProwPct) || 0;
 		const prowPrzyp = parseFloat(fpProwPrzyp) || (sklPrzyp * prowPct / 100);
+		const rodzaj = fpUgPodtyp === 'beauty_tax' ? 'karno_skarbowa' : `umowa_generalna_${fpUgPodtyp}`;
 		return {
-			klient_id: fpKlient, tu_id: fpTu, nr_polisy: fpNr,
-			rozliczaj_platnosci: null,
-			rodzaj: fpRodzaj,
-			typ_umowy: 'jednostkowa' as const,
-			ug_podtyp: null,
-			ug_default_prowizja_pct: null,
-			parent_id: fpParentId || null,
-			przedmiot: isUD ? JSON.stringify({ __ud: true, ctn: fpUD.ctn, ctc: fpUD.ctc, si: fpUD.si }) : (fpPrzedmiot || null),
-			data_od: fpOd, data_do: fpDo,
+			klient_id: fpKlient,
+			tu_id: fpTu,
+			nr_polisy: fpNr,
+			typ_umowy: 'generalna' as const,
+			rodzaj,
+			ug_podtyp: fpUgPodtyp || null,
+			ug_default_prowizja_pct: parseFloat(fpUgDefaultProwizja) || null,
+			parent_id: null,
+			przedmiot: fpPrzedmiot || null,
+			data_od: fpOd,
+			data_do: fpDo,
 			data_zawarcia: fpZawarcia || null,
 			ilosc_rat: fpRaty,
 			daty_rat: fpDatyRatArr.filter(Boolean).join(', ') || null,
 			kwoty_rat: fpKwotypRatArr.filter(Boolean).join(', ') || null,
 			skladka_przypisana: sklPrzyp,
-			skladka_zainkasowana: policy?.skladka_zainkasowana ?? 0,
 			skladka_zaliczkowa: parseFloat(fpSklZaliczkowa) || 0,
+			skladka_zainkasowana: policy?.skladka_zainkasowana ?? 0,
+			rozliczaj_platnosci: fpRozliczajPlatnosci,
 			prowizja_pct: prowPct,
 			prowizja_przypisana: prowPrzyp,
 			prowizja_zainkasowana: 0
@@ -200,19 +158,22 @@
 	}
 
 	export function shouldCreatePayments(): boolean {
-		return true;
+		return fpRozliczajPlatnosci;
 	}
 
 	export function isValid(): string | null {
 		if (!fpKlient) return 'Wybierz klienta';
 		if (!fpTu) return 'Wybierz Towarzystwo';
-		if (!fpNr.trim()) return 'Podaj numer polisy';
+		if (!fpNr.trim()) return 'Podaj numer umowy generalnej';
 		if (!fpOd || !fpDo) return 'Podaj daty obowiązywania';
 		if (fpOd < '2024-01-01') return 'Data od nie może być wcześniejsza niż 2024-01-01';
+		if (!fpUgPodtyp) return 'Wybierz podtyp Umowy Generalnej';
+		if (fpRozliczajPlatnosci) {
+			if (fpDatyRatArr.filter(Boolean).length === 0) return 'Podaj terminy płatności rat';
+		}
 		return null;
 	}
 
-	const generalPolicies = $derived(appState.policies.filter(p => p.typ_umowy === 'generalna'));
 	const isAuraTenant = $derived(appState.tenantNazwa.toLowerCase().includes('aura'));
 
 	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -229,62 +190,35 @@
 
 	let tuSearch = $state('');
 	let tuOpen = $state(false);
-	const udTU = ['ceu', 'leadenhall'];
-	const availableTU = $derived(
-		isUD
-			? appState.insurers.filter(t => udTU.some(k => (t.skrot ?? t.nazwa).toLowerCase().includes(k)))
-			: appState.insurers
-	);
 	const filteredTU = $derived(
 		tuSearch.trim()
-			? availableTU.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()) || (t.skrot ?? '').toLowerCase().includes(tuSearch.toLowerCase()))
-			: availableTU
+			? appState.insurers.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()) || (t.skrot ?? '').toLowerCase().includes(tuSearch.toLowerCase()))
+			: appState.insurers
 	);
 	const selectedTU = $derived(appState.insurers.find(t => t.id === fpTu));
 	const selectedTUName = $derived(selectedTU ? (selectedTU.skrot ? `${selectedTU.skrot} — ${selectedTU.nazwa}` : selectedTU.nazwa) : '');
 
 	const ratyCount = $derived(parseInt(fpRaty) || 1);
 	const RATY_OPCJE = ['1','2','3','4','6','12','24'];
-	const RODZAJE = [
-		['majątkowa','Majątkowa'],['życie','Życie'],['grupowe_medyczne','Grupowe Medyczne'],
-		['grupowe_życie','Grupowe Życie'],['utrata_dochodu','Utrata dochodu'],
-		['komunikacja','Komunikacja'],['flota','Flota'],['finansowa','Finansowa (Gwarancje)'],
-		['OC','OC Zawodowe / Działalności'],['techniczna','Techniczna'],['karno_skarbowa','Polisa Karno-Skarbowa'],['polisa_obca','Polisa Obca']
-	];
 </script>
 
 <div class="space-y-5">
 
-	<!-- Wiersz 1: UG / Rodzaj -->
-	<div class="grid grid-cols-2 gap-4">
-		{#if generalPolicies.length > 0}
-		<div>
-			<label class={lbl}>Powiąż z Umową Generalną</label>
-			<select bind:value={fpParentId} onchange={onParentUgChange} class={inp}>
-				<option value="">— bez UG —</option>
-				{#each generalPolicies as ug}
-					<option value={ug.id}>{ug.nr_polisy} ({ug.ug_podtyp})</option>
-				{/each}
-			</select>
-			{#if fpParentId}
-				{@const parentUg = generalPolicies.find(p => p.id === fpParentId)}
-				{#if parentUg?.ug_default_prowizja_pct}
-					<p class="text-[11px] text-blue-600 mt-1">Domyślna prowizja UG: {parentUg.ug_default_prowizja_pct}%</p>
-				{/if}
-			{/if}
-		</div>
-		{/if}
-		<div>
-			<label class={lbl}>Rodzaj polisy *</label>
-			<select bind:value={fpRodzaj} class={inp}>
-				{#each RODZAJE as [val, label]}
-					<option value={val}>{label}</option>
-				{/each}
-			</select>
+	<!-- Podtyp UG -->
+	<div>
+		<label class={lbl}>Podtyp Umowy Generalnej *</label>
+		<div class="grid grid-cols-3 gap-1.5">
+			{#each [['flota','Flota'],['gwarancje','Gwarancje'],['cpm','CPM'],['car_ear','CAR/EAR'],['beauty_tax','BeautyTAX'], ...(isAuraTenant ? [['oc_beauty','OC Beauty']] : [])] as [val, label]}
+				<button type="button" onclick={() => fpUgPodtyp = val}
+					class="py-2 px-3 rounded-lg text-sm border text-left transition-colors
+						{fpUgPodtyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+					{label}
+				</button>
+			{/each}
 		</div>
 	</div>
 
-	<!-- Wiersz 2: Klient | TU -->
+	<!-- Klient | TU -->
 	<div class="grid grid-cols-2 gap-4">
 		<!-- Klient -->
 		<div>
@@ -323,12 +257,12 @@
 		<!-- TU -->
 		<div>
 			<label class={lbl}>Towarzystwo Ubezpieczeń *</label>
-			{#if fpParentId}
+			{#if fpUgPodtyp === 'beauty_tax'}
 				<div class="{inp} bg-slate-50 text-slate-500 cursor-not-allowed flex items-center gap-2">
 					<span class="text-xs text-slate-400">🔒</span>
 					{selectedTUName || '—'}
 				</div>
-				<p class="text-[11px] text-slate-400 mt-1">TU przypisane z UG — zmień w panelu UG</p>
+				<p class="text-[11px] text-slate-400 mt-1">Polisa podatkowa — TU: Colonnade (stałe)</p>
 			{:else}
 				<div class="relative"
 					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { tuOpen = false; tuSearch = ''; } }}>
@@ -362,54 +296,19 @@
 		</div>
 	</div>
 
-	<!-- Wiersz 3: Nr polisy | Przedmiot -->
+	<!-- Nr umowy | Domyślna prowizja UG -->
 	<div class="grid grid-cols-2 gap-4">
 		<div>
-			<label class={lbl}>Nr Polisy / UG *</label>
-			<input bind:value={fpNr} class={inp} placeholder="np. 436000436385" />
+			<label class={lbl}>Nr Umowy Generalnej *</label>
+			<input bind:value={fpNr} class={inp} placeholder="np. UG/2025/001" />
 		</div>
 		<div>
-			<label class={lbl}>Przedmiot ubezpieczenia</label>
-			{#if isUD}
-				<div class="space-y-2">
-					<div class="flex items-center gap-2">
-						<span class="text-xs text-slate-500 w-56 shrink-0">Całkowita trwała niezdolność</span>
-						<input type="number" step="0.01" bind:value={fpUD.ctn} class={inp} placeholder="kwota PLN" />
-					</div>
-					<div class="flex items-center gap-2">
-						<span class="text-xs text-slate-500 w-56 shrink-0">Całkowita czasowa niezdolność</span>
-						<input type="number" step="0.01" bind:value={fpUD.ctc} class={inp} placeholder="kwota PLN" />
-					</div>
-					<div class="flex items-center gap-2">
-						<span class="text-xs text-slate-500 w-56 shrink-0">Śmierć i inwalidztwo</span>
-						<input type="number" step="0.01" bind:value={fpUD.si} class={inp} placeholder="kwota PLN" />
-					</div>
-				</div>
-			{:else if isKomunikacja}
-				{#if fpKlient && clientVehicles.length === 0}
-					<div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-						⚠️ Brak pojazdów przypisanych do klienta. Najpierw dodaj pojazd w karcie klienta.
-					</div>
-				{:else if fpKlient}
-					<input bind:value={fpPrzedmiot} class={inp}
-						placeholder="Wpisz nr rej. lub VIN..."
-						list="veh-list-{fpKlient}" />
-					<datalist id="veh-list-{fpKlient}">
-						{#each clientVehicles as v}
-							<option value="{v.nr_rejestracyjny}{v.vin ? ' / ' + v.vin : ''} — {v.marka_model}"></option>
-						{/each}
-					</datalist>
-					<p class="text-[11px] text-slate-400 mt-1">Wybierz z listy lub wpisz nr rej. / VIN</p>
-				{:else}
-					<input bind:value={fpPrzedmiot} class={inp} placeholder="Najpierw wybierz klienta" disabled />
-				{/if}
-			{:else}
-				<input bind:value={fpPrzedmiot} class={inp} placeholder="np. budynek, pojazd, OC..." />
-			{/if}
+			<label class={lbl}>Domyślna prowizja dla polis (%)</label>
+			<input type="number" step="0.01" bind:value={fpUgDefaultProwizja} placeholder="np. 15" class={inp} />
 		</div>
 	</div>
 
-	<!-- Wiersz 4: Data od | Data do | Data zawarcia -->
+	<!-- Daty -->
 	<div class="grid grid-cols-3 gap-4">
 		<div>
 			<label class={lbl}>Data od *</label>
@@ -425,13 +324,36 @@
 		</div>
 	</div>
 
+	<!-- Przedmiot -->
+	<div>
+		<label class={lbl}>Przedmiot / opis</label>
+		<textarea bind:value={fpPrzedmiot} class="{inp} min-h-[80px]" placeholder="Opis przedmiotu umowy generalnej..."></textarea>
+	</div>
+
+	<!-- Rozliczaj płatności -->
+	<div class="border-t border-slate-100 pt-3">
+		<label class="flex items-center gap-3 cursor-pointer">
+			<input type="checkbox" bind:checked={fpRozliczajPlatnosci}
+				class="w-4 h-4 rounded accent-blue-600" />
+			<div>
+				<span class="text-sm font-semibold text-slate-700">Rozliczaj płatności na poziomie UG</span>
+				<p class="text-xs text-slate-400 mt-0.5">Domyślnie płatności rozliczane są per certyfikat/polisa. Zaznacz tylko dla UG z własnym harmonogramem płatności.</p>
+			</div>
+		</label>
+	</div>
+
 	<!-- Finansowe -->
+	{#if fpRozliczajPlatnosci}
 	<div class="border-t border-slate-100 pt-4">
 		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">Dane Finansowe</p>
 		<div class="grid grid-cols-3 gap-4">
 			<div>
-				<label class={lbl}>Składka przypisana (PLN) *</label>
+				<label class={lbl}>Składka przypisana (PLN)</label>
 				<input type="number" step="0.01" bind:value={fpSklPrzyp} class={inp} />
+			</div>
+			<div>
+				<label class={lbl}>Składka zaliczkowa</label>
+				<input type="number" step="0.01" bind:value={fpSklZaliczkowa} class={inp} />
 			</div>
 			<div>
 				<label class={lbl}>% Prowizji</label>
@@ -447,7 +369,7 @@
 	<!-- Liczba rat + terminy -->
 	<div>
 		<div class="flex items-center gap-4 mb-3">
-			<label class={lbl + ' mb-0'}>Liczba rat</label>
+			<label class="{lbl} mb-0">Liczba rat</label>
 			<select bind:value={fpRaty} class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40">
 				{#each RATY_OPCJE as opt}
 					<option value={opt}>{opt === '1' ? 'Jednorazowo' : `${opt} rat`}</option>
@@ -471,5 +393,6 @@
 			{/each}
 		</div>
 	</div>
+	{/if}
 
 </div>
