@@ -7,10 +7,51 @@
 	import type { Insurer, Profile, InsurerBranch, InsurerContact } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users } from 'lucide-svelte';
+	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users, ScrollText } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
 
-	onMount(() => { if (!isAdmin(appState.profile)) goto('/dashboard'); });
+	onMount(async () => {
+		if (!isAdmin(appState.profile)) goto('/dashboard');
+	});
+
+	// --- Logi aktywności ---
+	let auditLogs = $state<any[]>([]);
+	let auditLoading = $state(false);
+	let auditSearch = $state('');
+
+	$effect(() => {
+		if (activeTab === 'logi') loadAuditLogs();
+	});
+
+	async function loadAuditLogs() {
+		auditLoading = true;
+		const { data } = await sb.from('crm_audit_log')
+			.select('*')
+			.order('created_at', { ascending: false })
+			.limit(500);
+		auditLogs = data ?? [];
+		auditLoading = false;
+	}
+
+	const filteredLogs = $derived(
+		auditSearch.trim()
+			? auditLogs.filter(l =>
+				(l.user_name ?? '').toLowerCase().includes(auditSearch.toLowerCase()) ||
+				(l.action ?? '').toLowerCase().includes(auditSearch.toLowerCase()) ||
+				(l.entity_label ?? '').toLowerCase().includes(auditSearch.toLowerCase()) ||
+				(l.entity_type ?? '').toLowerCase().includes(auditSearch.toLowerCase())
+			)
+			: auditLogs
+	);
+
+	function fmtDate(ts: string) {
+		return new Date(ts).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' });
+	}
+
+	const actionLabel: Record<string, string> = {
+		login: 'Logowanie', client_created: 'Nowy klient', client_updated: 'Edycja klienta',
+		policy_created: 'Nowa polisa', policy_renewed: 'Odnowienie polisy', policy_deleted: 'Usunięcie polisy',
+	};
 
 	const activeTab = $derived($page.url.searchParams.get('tab') ?? 'system');
 
@@ -216,6 +257,11 @@
 		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
 			{activeTab === 'kancelaria' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
 		<Users size={15} /> Ustawienia Kancelarii
+	</a>
+	<a href="/admin?tab=logi"
+		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
+			{activeTab === 'logi' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+		<ScrollText size={15} /> Logi aktywności
 	</a>
 </div>
 
@@ -448,6 +494,65 @@
 			{/if}
 		</div>
 		{/if}
+</div>
+
+{:else if activeTab === 'logi'}
+<!-- ===================== LOGI AKTYWNOŚCI ===================== -->
+<div class="space-y-4">
+	<div class="flex items-center justify-between gap-3 flex-wrap">
+		<p class="text-sm text-slate-500">Ostatnie 500 zdarzeń w systemie</p>
+		<div class="flex items-center gap-3">
+			<input bind:value={auditSearch} placeholder="Szukaj po użytkowniku, akcji, encji..." class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-slate-300" />
+			<button onclick={loadAuditLogs} class="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">↻ Odśwież</button>
+		</div>
+	</div>
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		{#if auditLoading}
+			<div class="px-6 py-10 text-center text-slate-400 text-sm">Ładowanie logów…</div>
+		{:else if filteredLogs.length === 0}
+			<div class="px-6 py-10 text-center text-slate-400 text-sm">Brak wpisów spełniających kryteria.</div>
+		{:else}
+			<div class="overflow-x-auto">
+				<table class="w-full text-sm">
+					<thead class="bg-slate-50 border-b border-slate-200">
+						<tr>
+							<th class="px-4 py-2.5 text-left font-medium text-slate-500 whitespace-nowrap">Czas</th>
+							<th class="px-4 py-2.5 text-left font-medium text-slate-500">Użytkownik</th>
+							<th class="px-4 py-2.5 text-left font-medium text-slate-500">Akcja</th>
+							<th class="px-4 py-2.5 text-left font-medium text-slate-500">Encja</th>
+							<th class="px-4 py-2.5 text-left font-medium text-slate-500">Szczegóły</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each filteredLogs as log}
+							<tr class="border-t border-slate-100 hover:bg-slate-50">
+								<td class="px-4 py-2 text-slate-400 whitespace-nowrap text-xs">{fmtDate(log.created_at)}</td>
+								<td class="px-4 py-2 text-slate-700">
+									<div class="font-medium">{log.crm_users?.imie_nazwisko ?? '—'}</div>
+									<div class="text-xs text-slate-400">{log.crm_users?.email ?? ''}</div>
+								</td>
+								<td class="px-4 py-2">
+									<span class="inline-block px-2 py-0.5 rounded-full text-xs font-semibold {
+										log.action === 'CREATE' ? 'bg-emerald-100 text-emerald-700' :
+										log.action === 'UPDATE' ? 'bg-blue-100 text-blue-700' :
+										log.action === 'DELETE' ? 'bg-red-100 text-red-700' :
+										'bg-slate-100 text-slate-600'
+									}">{actionLabel[log.action] ?? log.action}</span>
+								</td>
+								<td class="px-4 py-2 text-slate-600">
+									<div class="font-medium">{log.entity_label ?? log.entity_id ?? '—'}</div>
+									<div class="text-xs text-slate-400">{log.entity_type ?? ''}</div>
+								</td>
+								<td class="px-4 py-2 text-slate-500 text-xs max-w-xs truncate" title={log.details ? JSON.stringify(log.details) : ''}>
+									{log.details ? JSON.stringify(log.details) : ''}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+		{/if}
+	</div>
 </div>
 {/if}
 
