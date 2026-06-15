@@ -109,6 +109,32 @@
 	// Selected tenant detail panel
 	let selectedTenant = $state<Tenant | null>(null);
 	let savingFeature = $state<string | null>(null);
+	let localFeatures = $state<Record<string, boolean>>({});
+	let savingFeatures = $state(false);
+	let featureError = $state('');
+	let featureSaved = $state(false);
+
+	$effect(() => {
+		if (selectedTenant) {
+			localFeatures = { ...(selectedTenant.features ?? {}) };
+			featureError = '';
+			featureSaved = false;
+		}
+	});
+
+	async function saveFeatures() {
+		if (!selectedTenant) return;
+		savingFeatures = true; featureError = '';
+		const { error } = await sb.from('crm_tenants')
+			.update({ features: localFeatures })
+			.eq('id', selectedTenant.id);
+		savingFeatures = false;
+		if (error) { featureError = error.message; return; }
+		selectedTenant = { ...selectedTenant, features: { ...localFeatures } };
+		tenants = tenants.map(t => t.id === selectedTenant!.id ? { ...t, features: { ...localFeatures } } : t);
+		featureSaved = true;
+		setTimeout(() => featureSaved = false, 2000);
+	}
 
 	async function setFeature(tenant: Tenant, key: string, value: boolean) {
 		savingFeature = key;
@@ -326,17 +352,28 @@
 							<label class="flex items-center gap-3 cursor-pointer py-2 px-3 rounded-lg hover:bg-slate-50">
 								<input
 									type="checkbox"
-									checked={hasFeature(st, feat.key)}
-									disabled={savingFeature === feat.key}
-									onchange={(e) => setFeature(st, feat.key, (e.target as HTMLInputElement).checked)}
+									checked={!!(localFeatures[feat.key])}
+									onchange={(e) => { localFeatures = { ...localFeatures, [feat.key]: (e.target as HTMLInputElement).checked }; featureSaved = false; }}
 									class="w-4 h-4 rounded accent-blue-600"
 								/>
 								<span class="text-sm text-slate-700">{feat.label}</span>
-								{#if savingFeature === feat.key}
-									<span class="text-xs text-slate-400">zapisuję…</span>
-								{/if}
 							</label>
 						{/each}
+					</div>
+					<div class="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100">
+						<button
+							onclick={saveFeatures}
+							disabled={savingFeatures}
+							class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors"
+						>
+							{savingFeatures ? 'Zapisuję...' : 'Zapisz funkcje'}
+						</button>
+						{#if featureSaved}
+							<span class="text-sm text-emerald-600 font-medium">✓ Zapisano</span>
+						{/if}
+						{#if featureError}
+							<span class="text-sm text-red-600">{featureError}</span>
+						{/if}
 					</div>
 				</div>
 

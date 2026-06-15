@@ -15,6 +15,7 @@
 	let { children } = $props();
 	let addMenuOpen = $state(false);
 	let adminMenuOpen = $state(false);
+	let insuranceMenuOpen = $state(false);
 	let initialized = $state(false);
 	let refreshing = $state(false);
 	let loginLogged = false;
@@ -28,12 +29,8 @@
 	const navItems = $derived([
 		{ href: '/dashboard', label: 'Pulpit', icon: LayoutDashboard, always: true },
 		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
-		{ href: '/policies', label: 'Polisy', icon: FileText, always: true },
-		{ href: '/claims', label: 'Szkody', icon: AlertTriangle, show: isBroker() },
-		{ href: '/bonds', label: 'Gwarancje', icon: Shield, show: !!appState.tenantFeatures['gwarancje'] },
+		{ href: '/ubezpieczenia', label: 'Ubezpieczenia', icon: FileText, always: true },
 		{ href: '/calendar', label: 'Kalendarz', icon: CalendarCheck, show: !!appState.tenantFeatures['kalendarz'] },
-		{ href: '/apk', label: 'APK', icon: ClipboardList, always: true },
-		{ href: '/renewals', label: 'Odnowienia', icon: RefreshCw, always: true },
 		{ href: '/prospects', label: 'Prospects', icon: Target, always: true },
 		{ href: '/payments', label: 'Płatności', icon: Calculator, always: true },
 		{ href: '/commission', label: 'Prowizja', icon: Coins, always: true },
@@ -45,6 +42,12 @@
 
 	const activeClaims = $derived(
 		appState.claims.filter((c) => c.status === 'W toku' || c.status === 'Zgłoszona').length
+	);
+
+	const currentPath = $derived($page.url.pathname);
+
+	const insuranceActive = $derived(
+		['/policies', '/claims', '/bonds', '/apk', '/renewals'].some(p => currentPath.startsWith(p))
 	);
 
 	async function loadData() {
@@ -133,7 +136,12 @@
 		}
 	});
 
-	const currentPath = $derived($page.url.pathname);
+	$effect(() => {
+		if (insuranceMenuOpen) {
+			const close = () => (insuranceMenuOpen = false);
+			window.addEventListener('click', close, { once: true });
+		}
+	});
 </script>
 
 {#if !initialized}
@@ -152,7 +160,59 @@
 			<nav class="flex items-center gap-1">
 				{#each navItems as item}
 					{#if item.always || item.show}
-						{#if item.href === '/admin'}
+						{#if item.href === '/ubezpieczenia'}
+							<div class="relative">
+								<button
+									onclick={(e) => { e.stopPropagation(); insuranceMenuOpen = !insuranceMenuOpen; }}
+									class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
+										{insuranceActive ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}"
+								>
+									<FileText size={15} />
+									Ubezpieczenia
+									<ChevronDown size={12} />
+									{#if activeClaims > 0 && isBroker()}
+										<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+											{activeClaims > 9 ? '9+' : activeClaims}
+										</span>
+									{/if}
+								</button>
+								{#if insuranceMenuOpen}
+									<div class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-52 overflow-hidden z-50">
+										<a href="/policies" onclick={() => insuranceMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/policies') ? 'font-semibold text-blue-700' : ''}">
+											<FileText size={14} /> Polisy
+										</a>
+										{#if appState.tenantFeatures['gwarancje']}
+										<a href="/bonds" onclick={() => insuranceMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/bonds') ? 'font-semibold text-blue-700' : ''}">
+											<Shield size={14} /> Gwarancje
+										</a>
+										{/if}
+										<a href="/policies?typ=generalna" onclick={() => insuranceMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+											<ClipboardList size={14} /> Umowy Generalne
+										</a>
+										<a href="/renewals" onclick={() => insuranceMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/renewals') ? 'font-semibold text-blue-700' : ''}">
+											<RefreshCw size={14} /> Odnowienia
+										</a>
+										<a href="/apk" onclick={() => insuranceMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/apk') ? 'font-semibold text-blue-700' : ''}">
+											<ClipboardList size={14} /> APK
+										</a>
+										{#if isBroker()}
+										<a href="/claims" onclick={() => insuranceMenuOpen = false}
+											class="relative flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 {currentPath.startsWith('/claims') ? 'font-semibold text-blue-700' : ''}">
+											<AlertTriangle size={14} /> Szkody
+											{#if activeClaims > 0}
+												<span class="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5">{activeClaims}</span>
+											{/if}
+										</a>
+										{/if}
+									</div>
+								{/if}
+							</div>
+						{:else if item.href === '/admin'}
 							<!-- Administracja dropdown — admin only (amber border) -->
 							<div class="relative">
 								<button
@@ -194,11 +254,6 @@
 							>
 								<item.icon size={15} />
 								{item.label}
-								{#if item.href === '/claims' && activeClaims > 0 && isBroker()}
-									<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-										{activeClaims > 9 ? '9+' : activeClaims}
-									</span>
-								{/if}
 							</a>
 						{/if}
 					{/if}
