@@ -8,7 +8,7 @@
 		presetKlient?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '' }: Props = $props();
+	let { policy = null, presetKlient = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpTu = $state(policy?.tu_id ?? '');

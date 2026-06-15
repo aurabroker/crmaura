@@ -66,8 +66,6 @@
 		});
 	});
 
-	let fpRozliczajPlatnosci = $state(policy?.rozliczaj_platnosci ?? false);
-
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');

@@ -86,7 +86,7 @@
 			<ArrowLeft size={18} />
 		</button>
 		<div>
-			<h1 class="text-2xl font-semibold text-slate-900">{isRenewal ? 'Odnowienie Polisy' : 'Nowa Polisa / Umowa Generalna'}</h1>
+			<h1 class="text-2xl font-semibold text-slate-900">{isRenewal ? 'Odnowienie Polisy' : 'Nowa Polisa'}</h1>
 			<p class="text-sm text-slate-500 mt-0.5">{isRenewal ? 'Wypełnij dane nowego okresu ubezpieczenia' : 'Wypełnij dane i zapisz'}</p>
 		</div>
 	</div>
