@@ -6,6 +6,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
+	import UgForm from '$lib/components/UgForm.svelte';
 	import { Search, Pencil, FilePlus2, ChevronDown, ChevronRight } from 'lucide-svelte';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
@@ -16,6 +17,8 @@
 	let lockedTyp = $state(false);
 
 	// Modals
+	let showUG = $state(false);
+	let ugForm = $state<ReturnType<typeof UgForm> | null>(null);
 	let showPolicy = $state(false);
 	let showEdit = $state(false);
 	let showAnnex = $state(false);
@@ -107,6 +110,19 @@
 		saving = false;
 		if (error) { formError = error.message; return; }
 		showPolicy = false;
+		await reloadPolicies();
+	}
+
+	async function saveNewUG() {
+		if (!ugForm) return;
+		const err = ugForm.isValid();
+		if (err) { formError = err; return; }
+		saving = true; formError = '';
+		const vals = ugForm.getValues();
+		const { error } = await sb.from('crm_policies').insert([{ tenant_id: appState.profile!.tenant_id, ...vals }]);
+		saving = false;
+		if (error) { formError = error.message; return; }
+		showUG = false;
 		await reloadPolicies();
 	}
 
@@ -236,9 +252,15 @@
 		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
 			Zgłoś Szkodę
 		</button>
-		<button onclick={() => goto('/policies/new')} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
-			+ Nowa Polisa / UG
-		</button>
+		{#if lockedTyp && filterTyp === 'generalna'}
+			<button onclick={() => { showUG = true; formError = ''; }} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+				+ Nowa Umowa Generalna
+			</button>
+		{:else}
+			<button onclick={() => goto('/policies/new')} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+				+ Nowa Polisa
+			</button>
+		{/if}
 	</div>
 </div>
 
@@ -573,4 +595,15 @@
 			<input bind:value={fclOpis} placeholder="Krótki opis..." class={inputCls} />
 		</div>
 	</div>
+</Modal>
+
+<Modal title="Nowa Umowa Generalna" open={showUG} onclose={() => { showUG = false; formError = ''; }}>
+	{#snippet footer()}
+		<button onclick={() => { showUG = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveNewUG} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{saving ? 'Zapisywanie...' : 'Zapisz Umowę Generalną'}
+		</button>
+	{/snippet}
+	{#if formError}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
+	<UgForm bind:this={ugForm} />
 </Modal>
