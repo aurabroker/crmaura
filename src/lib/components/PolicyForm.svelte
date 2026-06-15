@@ -6,18 +6,20 @@
 	interface Props {
 		policy?: Policy | null;
 		presetKlient?: string;
+		presetRodzaj?: string;
+		presetPrzedmiot?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpTu = $state(policy?.tu_id ?? '');
 	let fpNr = $state(policy?.nr_polisy ?? '');
-	let fpRodzaj = $state(policy?.rodzaj ?? 'majątkowa');
+	let fpRodzaj = $state(policy?.rodzaj ?? presetRodzaj || 'majątkowa');
 	let fpTypUmowy = $state(policy?.typ_umowy ?? 'jednostkowa');
 	let fpUgPodtyp = $state(policy?.ug_podtyp ?? '');
 	let fpParentId = $state(policy?.parent_id ?? '');
-	let fpPrzedmiot = $state(policy?.przedmiot ?? '');
+	let fpPrzedmiot = $state(policy?.przedmiot ?? presetPrzedmiot);
 
 	// Utrata dochodu: parse existing przedmiot JSON or start empty
 	function parseUD(raw: string) {
@@ -26,6 +28,10 @@
 	}
 	let fpUD = $state(parseUD(policy?.przedmiot ?? ''));
 	const isUD = $derived(fpRodzaj === 'utrata_dochodu');
+	const isKomunikacja = $derived(fpRodzaj === 'komunikacja');
+	const clientVehicles = $derived(
+		fpKlient ? appState.vehicles.filter(v => v.klient_id === fpKlient) : []
+	);
 
 	let fpOd = $state(policy?.data_od ?? '');
 	let fpDo = $state(policy?.data_do ?? '');
@@ -428,6 +434,24 @@
 						<input type="number" step="0.01" bind:value={fpUD.si} class={inp} placeholder="kwota PLN" />
 					</div>
 				</div>
+			{:else if isKomunikacja}
+				{#if fpKlient && clientVehicles.length === 0}
+					<div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+						⚠️ Brak pojazdów przypisanych do klienta. Najpierw dodaj pojazd w karcie klienta.
+					</div>
+				{:else if fpKlient}
+					<input bind:value={fpPrzedmiot} class={inp}
+						placeholder="Wpisz nr rej. lub VIN..."
+						list="veh-list-{fpKlient}" />
+					<datalist id="veh-list-{fpKlient}">
+						{#each clientVehicles as v}
+							<option value="{v.nr_rejestracyjny}{v.vin ? ' / ' + v.vin : ''} — {v.marka_model}">
+						{/each}
+					</datalist>
+					<p class="text-[11px] text-slate-400 mt-1">Wybierz z listy lub wpisz nr rej. / VIN</p>
+				{:else}
+					<input bind:value={fpPrzedmiot} class={inp} placeholder="Najpierw wybierz klienta" disabled />
+				{/if}
 			{:else}
 				<input bind:value={fpPrzedmiot} class={inp} placeholder="np. budynek, pojazd, OC..." />
 			{/if}

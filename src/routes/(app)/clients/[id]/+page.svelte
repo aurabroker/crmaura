@@ -544,7 +544,13 @@
 							<td class="px-5 py-3 text-slate-500">{v.vin ?? '—'}</td>
 							<td class="px-5 py-3">{v.rok_produkcji ?? '—'}</td>
 							<td class="px-5 py-3">
-								<button onclick={() => openEditVehicle(v)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
+								<div class="flex items-center gap-2">
+									<button onclick={() => openEditVehicle(v)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
+									<a href="/policies/new?klient={clientId}&rodzaj=komunikacja&przedmiot={encodeURIComponent(v.nr_rejestracyjny + (v.vin ? ' / ' + v.vin : ''))}"
+										class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+										<FileText size={11} /> Dodaj polisę
+									</a>
+								</div>
 							</td>
 						</tr>
 					{:else}
