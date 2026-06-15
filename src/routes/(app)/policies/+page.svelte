@@ -226,7 +226,11 @@
 		presetTyp = typ;
 		presetUgPodtyp = ugPodtyp;
 		formError = '';
-		showPolicy = true;
+		if (typ === 'generalna') {
+			showUG = true;
+		} else {
+			showPolicy = true;
+		}
 	}
 
 	onMount(() => {
@@ -252,7 +256,7 @@
 		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
 			Zgłoś Szkodę
 		</button>
-		{#if lockedTyp && filterTyp === 'generalna'}
+		{#if filterTyp === 'generalna'}
 			<button onclick={() => { showUG = true; formError = ''; }} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 				+ Nowa Umowa Generalna
 			</button>
@@ -464,7 +468,7 @@
 </div>
 
 <!-- Modal: Nowa Polisa -->
-<Modal title="Nowa Polisa / Umowa Generalna" open={showPolicy} onclose={() => { showPolicy = false; formError = ''; }}>
+<Modal title="Nowa Polisa" open={showPolicy} onclose={() => { showPolicy = false; formError = ''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showPolicy = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveNewPolicy} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
