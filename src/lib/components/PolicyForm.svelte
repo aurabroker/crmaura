@@ -299,6 +299,7 @@
 				<input type="number" step="0.01" bind:value={fpUgDefaultProwizja} placeholder="np. 15" class={inp} />
 			</div>
 		{:else}
+			{#if generalPolicies.length > 0}
 			<div>
 				<label class={lbl}>Powiąż z Umową Generalną</label>
 				<select bind:value={fpParentId} onchange={onParentUgChange} class={inp}>
@@ -314,6 +315,7 @@
 					{/if}
 				{/if}
 			</div>
+			{/if}
 			<div>
 				<label class={lbl}>Rodzaj polisy *</label>
 				<select bind:value={fpRodzaj} class={inp}>

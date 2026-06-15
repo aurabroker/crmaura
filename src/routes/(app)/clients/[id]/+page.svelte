@@ -424,6 +424,9 @@
 	</div>
 
 	{#if activeTab === 'polisy'}
+		{@const today = new Date().toISOString().slice(0,10)}
+		{@const activePolicies = clientPolicies.filter(p => p.data_do === null || p.data_do >= today)}
+		{@const archivedPolicies = clientPolicies.filter(p => p.data_do !== null && p.data_do < today && p.deleted_at === null)}
 		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
@@ -438,7 +441,7 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each clientPolicies as p}
+					{#each activePolicies as p}
 						{@const st = policyStatus(p.data_do)}
 						<tr class="border-t border-slate-100 hover:bg-slate-50">
 							<td class="px-5 py-3">
@@ -465,6 +468,56 @@
 				</tbody>
 			</table>
 		</div>
+
+		{#if archivedPolicies.length > 0}
+		<div class="mt-4">
+			<details class="group">
+				<summary class="cursor-pointer text-sm font-semibold text-slate-500 flex items-center gap-2 py-2">
+					<span class="group-open:rotate-90 transition-transform">▶</span>
+					Archiwum polis ({archivedPolicies.length})
+				</summary>
+				<div class="mt-2 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden opacity-70">
+					<table class="w-full text-left text-sm">
+						<thead>
+							<tr class="bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+								<th class="px-5 py-3">Nr Polisy</th>
+								<th class="px-5 py-3">TU</th>
+								<th class="px-5 py-3">Rodzaj</th>
+								<th class="px-5 py-3">OD</th>
+								<th class="px-5 py-3">DO</th>
+								<th class="px-5 py-3 text-right">Składka</th>
+								<th class="px-5 py-3">Status</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each archivedPolicies as p}
+								{@const st = policyStatus(p.data_do)}
+								<tr class="border-t border-slate-100 hover:bg-slate-50">
+									<td class="px-5 py-3">
+										<a href="/policies/{p.id}" class="font-medium text-slate-500 hover:underline">{p.nr_polisy}</a>
+									</td>
+									<td class="px-5 py-3 text-slate-400">
+										{#if p.crm_insurers?.skrot}
+											<span class="font-mono font-semibold text-slate-400 text-xs" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
+										{:else}
+											{p.crm_insurers?.nazwa ?? '—'}
+										{/if}
+									</td>
+									<td class="px-5 py-3"><Badge variant="neutral">{p.rodzaj}</Badge></td>
+									<td class="px-5 py-3 text-xs text-slate-400">{p.data_od}</td>
+									<td class="px-5 py-3 text-xs text-slate-400">{p.data_do}</td>
+									<td class="px-5 py-3 text-right font-medium text-slate-400">{fmtPln(p.skladka_przypisana)}</td>
+									<td class="px-5 py-3">
+										<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</details>
+		</div>
+		{/if}
 
 	{:else if activeTab === 'pojazdy'}
 		<div class="flex justify-end mb-3">
