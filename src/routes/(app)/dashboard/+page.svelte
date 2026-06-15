@@ -8,6 +8,15 @@
 	import { Settings2, TrendingUp, TrendingDown, Search, AlertTriangle, X } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { isBroker, roleLabel } from '$lib/stores/app.svelte';
+	import TaskModal from '$lib/components/TaskModal.svelte';
+
+	let taskModalOpen = $state(false);
+	let editingTask = $state<(typeof appState.tasks)[0] | null>(null);
+
+	function openTask(t: (typeof appState.tasks)[0]) {
+		editingTask = t;
+		taskModalOpen = true;
+	}
 
 	const today = todayStr();
 	const thisYear = new Date().getFullYear();
@@ -801,7 +810,7 @@
 				{#each openTasks.slice(0, 5) as t}
 					{@const pct = t.postep_pct ?? 0}
 					{@const overdue = t.termin && t.termin < new Date().toISOString().slice(0,10)}
-					<li class="px-4 py-2.5">
+					<li class="px-4 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors" onclick={() => openTask(t)}>
 						<div class="flex items-center gap-2 mb-1">
 							<span class="text-sm font-medium text-slate-800 flex-1 truncate">{t.tytul}</span>
 							{#if t.termin}
@@ -831,3 +840,14 @@
 
 </div>
 {/if}
+
+<TaskModal
+	open={taskModalOpen}
+	editingTask={editingTask}
+	onclose={() => { taskModalOpen = false; editingTask = null; }}
+	onsaved={async () => {
+		taskModalOpen = false; editingTask = null;
+		const { data } = await sb.from('crm_tasks').select('*,crm_clients(nazwa),crm_prospects(nazwa),crm_policies(nr_polisy),assigned_profile:crm_profiles!assigned_to(imie_nazwisko,email)').order('termin', { ascending: true, nullsFirst: false });
+		appState.tasks = (data ?? []) as typeof appState.tasks;
+	}}
+/>
