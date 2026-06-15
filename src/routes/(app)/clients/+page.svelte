@@ -6,6 +6,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Search, Pencil, Building2, User } from 'lucide-svelte';
+	import RegonLookup from '$lib/components/RegonLookup.svelte';
 	import { page } from '$app/stores';
 
 	let search = $state('');
@@ -243,6 +244,7 @@
 			<input bind:value={fUlica} class={inputCls} />
 		</div>
 		{#if modalTyp === 'firma'}
+			<RegonLookup onResult={(d) => { fNazwa = fNazwa || d.nazwa; fNip = d.nip || fNip; fRegon = d.regon || fRegon; fUlica = fUlica || d.adres; }} />
 			<div class="grid grid-cols-2 gap-3">
 				<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
 				<div><label class={labelCls}>REGON</label><input bind:value={fRegon} class={inputCls} /></div>

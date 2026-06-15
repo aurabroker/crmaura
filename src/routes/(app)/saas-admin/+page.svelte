@@ -3,7 +3,8 @@
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { KeyRound, RefreshCw, Mail } from 'lucide-svelte';
+	import { KeyRound, RefreshCw, Plus } from 'lucide-svelte';
+	import RegonLookup from '$lib/components/RegonLookup.svelte';
 
 	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_api_key?: string | null };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
@@ -39,6 +40,71 @@
 	let resetLoading = $state(false);
 	let resetError = $state('');
 	let resetSuccess = $state('');
+
+	// New tenant modal state
+	let newTenantModal = $state(false);
+	let ntNazwa = $state('');
+	let ntTyp = $state<'broker' | 'agent'>('broker');
+	let ntEmail = $state('');
+	let ntImie = $state('');
+	let ntPassword = $state('');
+	let ntLoading = $state(false);
+	let ntError = $state('');
+	let ntSuccess = $state('');
+
+	function openNewTenant() {
+		ntNazwa = ''; ntTyp = 'broker'; ntEmail = ''; ntImie = ''; ntPassword = '';
+		ntError = ''; ntSuccess = '';
+		newTenantModal = true;
+	}
+
+	async function createTenant() {
+		ntError = '';
+		if (!ntNazwa.trim() || !ntEmail.trim() || !ntImie.trim() || !ntPassword) {
+			ntError = 'Wszystkie pola są wymagane.';
+			return;
+		}
+		if (ntPassword.length < 8) {
+			ntError = 'Hasło musi mieć co najmniej 8 znaków.';
+			return;
+		}
+		ntLoading = true;
+		try {
+			const res = await fetch('/api/register', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					nazwa_firmy: ntNazwa.trim(),
+					typ: ntTyp,
+					email: ntEmail.trim(),
+					imie_nazwisko: ntImie.trim(),
+					password: ntPassword
+				})
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				ntError = err.message ?? 'Błąd serwera';
+			} else {
+				ntSuccess = 'Firma i konto admina zostały utworzone.';
+				// Reload tenants list
+				const { data: { session } } = await sb.auth.getSession();
+				const r = await fetch('/api/saas-admin/tenants', {
+					headers: { 'Authorization': `Bearer ${session?.access_token}` }
+				});
+				if (r.ok) {
+					const d = await r.json();
+					const { data: tenantData } = await sb.from('crm_tenants').select('id, features, resend_api_key');
+					const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean>; resend_api_key?: string | null }) => [t.id, { features: t.features ?? {}, resend_api_key: t.resend_api_key ?? null }]));
+					tenants = d.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id)?.features ?? {}, resend_api_key: featuresMap.get(t.id)?.resend_api_key ?? null }));
+					allProfiles = d.profiles;
+				}
+			}
+		} catch {
+			ntError = 'Błąd połączenia';
+		} finally {
+			ntLoading = false;
+		}
+	}
 
 	// Selected tenant detail panel
 	let selectedTenant = $state<Tenant | null>(null);
@@ -215,8 +281,11 @@
 	<div class="flex gap-6">
 		<!-- Tenant list -->
 		<div class="w-80 shrink-0 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden self-start">
-			<div class="px-4 py-3 border-b border-slate-200 bg-slate-50">
+			<div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
 				<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Firmy ({tenants.length})</span>
+				<button onclick={openNewTenant} class="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors">
+					<Plus size={13} /> Dodaj
+				</button>
 			</div>
 			{#each tenants as tenant}
 				{@const count = profilesFor(tenant.id).length}
@@ -359,6 +428,76 @@
 					{/each}
 				</tbody>
 			</table>
+		{/if}
+	</div>
+</div>
+{/if}
+
+<!-- Modal nowej firmy -->
+{#if newTenantModal}
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+	<div class="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+		<div class="flex items-start justify-between mb-4">
+			<div>
+				<h2 class="text-lg font-semibold text-slate-900">Nowa firma / tenant</h2>
+				<p class="text-xs text-slate-400 mt-0.5">Zostanie utworzone konto ADMIN BROKER</p>
+			</div>
+			<button onclick={() => newTenantModal = false} class="text-slate-400 hover:text-slate-700">✕</button>
+		</div>
+
+		{#if !ntSuccess}
+		<div class="space-y-3">
+			<RegonLookup onResult={(d) => { ntNazwa = ntNazwa || d.nazwa; }} />
+			<div>
+				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Nazwa firmy *</label>
+				<input bind:value={ntNazwa} placeholder="np. Broker ABC sp. z o.o." class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			</div>
+			<div>
+				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Typ</label>
+				<select bind:value={ntTyp} class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+					<option value="broker">Broker</option>
+					<option value="agent">Agent</option>
+				</select>
+			</div>
+			<hr class="border-slate-100" />
+			<p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Konto ADMIN BROKER</p>
+			<div>
+				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Imię i nazwisko *</label>
+				<input bind:value={ntImie} placeholder="Jan Kowalski" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			</div>
+			<div>
+				<label class="block text-xs font-semibold text-slate-600 mb-1.5">E-mail *</label>
+				<input bind:value={ntEmail} type="email" placeholder="admin@firma.pl" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			</div>
+			<div>
+				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Hasło * (min. 8 znaków)</label>
+				<input bind:value={ntPassword} type="password" placeholder="Min. 8 znaków" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			</div>
+
+			{#if ntError}
+				<p class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{ntError}</p>
+			{/if}
+		</div>
+		<div class="flex gap-3 mt-5">
+			<button
+				onclick={createTenant}
+				disabled={ntLoading}
+				class="flex-1 bg-blue-600 text-white text-sm font-semibold py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+			>
+				{ntLoading ? 'Tworzę...' : 'Utwórz firmę'}
+			</button>
+			<button onclick={() => newTenantModal = false} class="flex-1 border border-slate-200 text-slate-600 text-sm font-semibold py-2 rounded-lg hover:bg-slate-50">
+				Anuluj
+			</button>
+		</div>
+		{:else}
+		<div class="text-center py-4">
+			<p class="text-emerald-700 font-semibold mb-1">✓ {ntSuccess}</p>
+			<p class="text-xs text-slate-400 mb-5">Firma pojawi się na liście po lewej.</p>
+			<button onclick={() => newTenantModal = false} class="px-5 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-700">
+				Zamknij
+			</button>
+		</div>
 		{/if}
 	</div>
 </div>
