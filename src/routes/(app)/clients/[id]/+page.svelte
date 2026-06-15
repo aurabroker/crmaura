@@ -7,7 +7,7 @@
 	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import type { ApkForm } from '$lib/types/database';
@@ -40,7 +40,7 @@
 	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania'>('polisy');
 
 	// APK
-	const APK_APP_URL = 'https://apk.aurabroker.pl';
+	const APK_APP_URL = 'https://crmaura.pages.dev';
 	let showNewApk = $state(false);
 	let savingApk = $state(false);
 	let apkErr = $state('');
@@ -49,6 +49,8 @@
 	let apkToken = $state('');
 	let apkCopied = $state(false);
 	const apkLink = $derived(apkToken ? `${APK_APP_URL}?token=${apkToken}` : '');
+	let apkLinkPopover = $state<string | null>(null);
+	let deletingApk = $state<string | null>(null);
 
 	function genRef() { return 'APK-' + Math.random().toString(36).slice(2,10).toUpperCase(); }
 	function genToken() { return Math.random().toString(36).slice(2,8).toUpperCase() + Math.random().toString(36).slice(2,8).toUpperCase(); }
@@ -76,7 +78,7 @@
 			status: 'pending', expires_at: expires.toISOString()
 		}]);
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: 'created', actor: apkAdvisor || 'system' }]);
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false });
+		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 		savingApk = false; apkToken = token;
 	}
@@ -89,6 +91,22 @@
 	function closeApkModal() {
 		showNewApk = false; apkToken = ''; apkErr = '';
 		apkAdvisor = appState.profile?.imie_nazwisko ?? ''; apkMode = 'client';
+	}
+
+	function apkTokenLink(f: typeof clientApk[0]): string {
+		const token = f.apk_tokens?.[0]?.token;
+		return token ? `${APK_APP_URL}?token=${token}` : `${APK_APP_URL}?form_id=${f.id}`;
+	}
+
+	async function deleteApk(id: string) {
+		if (!confirm('Na pewno usunąć ten formularz APK? Operacja jest nieodwracalna.')) return;
+		deletingApk = id;
+		await sb.from('apk_tokens').delete().eq('form_id', id);
+		await sb.from('apk_audit').delete().eq('form_id', id);
+		await sb.from('apk_forms').delete().eq('id', id);
+		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').order('created_at', { ascending: false });
+		appState.apkForms = (data ?? []) as typeof appState.apkForms;
+		deletingApk = null;
 	}
 
 	// Contact persons
@@ -626,11 +644,17 @@
 								</td>
 								<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
 								<td class="px-5 py-3">
-									<div class="flex items-center gap-2">
+									<div class="flex items-center gap-2 flex-wrap">
 										<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
 											class="text-xs text-blue-600 hover:underline flex items-center gap-1">
 											<ClipboardList size={12} /> Otwórz
 										</a>
+										<button
+											onclick={() => apkLinkPopover = apkLinkPopover === f.id ? null : f.id}
+											title="Pokaż link dla klienta"
+											class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+											<Link size={12} /> Link
+										</button>
 										<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
 											class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
 											<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
@@ -641,7 +665,23 @@
 												<Download size={12} />
 											</a>
 										{/if}
+										{#if appState.profile?.rola === 'ADMIN GOD'}
+											<button onclick={() => deleteApk(f.id)} disabled={deletingApk === f.id}
+												class="flex items-center gap-1 px-2 py-1 text-xs border border-red-200 rounded-lg text-red-600 hover:bg-red-50 disabled:opacity-50">
+												<Trash2 size={12} /> {deletingApk === f.id ? '...' : 'Usuń'}
+											</button>
+										{/if}
 									</div>
+									{#if apkLinkPopover === f.id}
+										{@const link = apkTokenLink(f)}
+										<div class="mt-2 flex gap-1.5 items-center">
+											<input readonly value={link} class="text-xs font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1 flex-1 min-w-0" />
+											<button onclick={async () => { await navigator.clipboard.writeText(link); }}
+												class="shrink-0 px-2 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 text-slate-600">
+												<Copy size={11} />
+											</button>
+										</div>
+									{/if}
 								</td>
 							</tr>
 						{/each}
