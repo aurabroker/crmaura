@@ -13,6 +13,7 @@
 
 	let search = $state('');
 	let filterTyp = $state<'all' | 'jednostkowa' | 'generalna'>('all');
+	let lockedTyp = $state(false);
 
 	// Modals
 	let showPolicy = $state(false);
@@ -217,19 +218,19 @@
 		if (p.get('new') === '1') openNewPolicy();
 		if (p.get('newguarantee') === '1') openNewPolicy('generalna', 'gwarancje');
 		const typ = p.get('typ');
-		if (typ === 'generalna' || typ === 'jednostkowa') filterTyp = typ;
+		if (typ === 'generalna' || typ === 'jednostkowa') { filterTyp = typ; lockedTyp = true; }
 	});
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Polisy — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>{lockedTyp && filterTyp === 'generalna' ? 'Umowy Generalne' : 'Polisy'} — FRANK67 CRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Polisy w obsłudze</h1>
-		<p class="text-sm text-slate-500 mt-1">Rejestr ubezpieczeń całego portfela</p>
+		<h1 class="text-2xl font-semibold text-slate-900">{lockedTyp && filterTyp === 'generalna' ? 'Umowy Generalne' : 'Polisy w obsłudze'}</h1>
+		<p class="text-sm text-slate-500 mt-1">{lockedTyp && filterTyp === 'generalna' ? 'Rejestr umów generalnych' : 'Rejestr ubezpieczeń całego portfela'}</p>
 	</div>
 	<div class="flex gap-2">
 		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
@@ -247,15 +248,17 @@
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nr polisy lub kliencie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
-	{#each [['all','Wszystkie'],['jednostkowa','Polisy'],['generalna','Umowy Generalne']] as [val, label]}
-		<button
-			onclick={() => filterTyp = val as typeof filterTyp}
-			class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
-				{filterTyp === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
-		>
-			{label}
-		</button>
-	{/each}
+	{#if !lockedTyp}
+		{#each [['all','Wszystkie'],['jednostkowa','Polisy'],['generalna','Umowy Generalne']] as [val, label]}
+			<button
+				onclick={() => filterTyp = val as typeof filterTyp}
+				class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
+					{filterTyp === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+			>
+				{label}
+			</button>
+		{/each}
+	{/if}
 	<button onclick={() => flatView = !flatView}
 		class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
 			{flatView ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
