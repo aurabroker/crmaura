@@ -74,7 +74,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Funkcja dostępna tylko dla Aura Expert' }, 403);
   }
 
-  const apiKey = Deno.env.get('AEX_GETRESPONSE_API_KEY');
+  const apiKey = (Deno.env.get('AEX_GETRESPONSE_API_KEY') ?? '').trim();
   if (!apiKey) return json({ error: 'Brak skonfigurowanego klucza GetResponse' }, 500);
 
   // temporary diagnostics sink (service role bypasses RLS)
@@ -99,6 +99,7 @@ Deno.serve(async (req) => {
   if (!email) return json({ matched: false, reason: 'no_email' });
 
   const grHeaders = { 'X-Auth-Token': `api-key ${apiKey}`, 'Content-Type': 'application/json' };
+  await logDebug('keylen', apiKey.length, '');
 
   try {
     // 1) Find the contact by e-mail.
