@@ -74,7 +74,11 @@ Deno.serve(async (req) => {
     return json({ error: 'Funkcja dostępna tylko dla Aura Expert' }, 403);
   }
 
-  const apiKey = (Deno.env.get('AEX_GETRESPONSE_API_KEY') ?? '').trim();
+  const apiKey = (
+    Deno.env.get('AEX2_GETRESPONSE_API_KEY') ??
+    Deno.env.get('AEX_GETRESPONSE_API_KEY') ??
+    ''
+  ).trim();
   if (!apiKey) return json({ error: 'Brak skonfigurowanego klucza GetResponse' }, 500);
 
   // temporary diagnostics sink (service role bypasses RLS)
