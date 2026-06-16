@@ -91,12 +91,12 @@ Deno.serve(async (req) => {
 
   try {
     // 1) Find the contact by e-mail.
-    const contactRes = await fetch(
-      `${GR_BASE}/contacts?query[email]=${encodeURIComponent(email)}&fields=contactId,email,name&perPage=1`,
-      { headers: grHeaders }
-    );
+    const contactUrl = `${GR_BASE}/contacts?query[email]=${encodeURIComponent(email)}&fields=contactId,email,name&perPage=1`;
+    console.log('GR contacts lookup', contactUrl);
+    const contactRes = await fetch(contactUrl, { headers: grHeaders });
     if (!contactRes.ok) {
       const detail = await contactRes.text();
+      console.error('GR contacts lookup failed', contactRes.status, detail);
       return json({ error: `GetResponse: ${contactRes.status}`, detail }, 502);
     }
     const contacts = (await contactRes.json()) as GrContact[];
@@ -112,13 +112,13 @@ Deno.serve(async (req) => {
 
     const activities: GrActivity[] = [];
     for (let page = 1; page <= 10; page++) {
-      const actRes = await fetch(
+      const actUrl =
         `${GR_BASE}/contacts/${contact.contactId}/activities` +
-          `?query[createdOn][from]=${fromStr}&sort[createdOn]=desc&perPage=1000&page=${page}`,
-        { headers: grHeaders }
-      );
+        `?query[createdOn][from]=${fromStr}&sort[createdOn]=desc&perPage=1000&page=${page}`;
+      const actRes = await fetch(actUrl, { headers: grHeaders });
       if (!actRes.ok) {
         const detail = await actRes.text();
+        console.error('GR activities failed', actRes.status, actUrl, detail);
         return json({ error: `GetResponse activities: ${actRes.status}`, detail }, 502);
       }
       const batch = (await actRes.json()) as GrActivity[];
@@ -170,6 +170,7 @@ Deno.serve(async (req) => {
       messages,
     });
   } catch (err: unknown) {
+    console.error('GR function error', err);
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
