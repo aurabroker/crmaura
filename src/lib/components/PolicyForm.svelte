@@ -224,7 +224,7 @@
 	const udTU = ['ceu', 'leadenhall'];
 	const availableTU = $derived(
 		isUD
-			? appState.insurers.filter(t => udTU.some(k => (t.skrot ?? t.nazwa).toLowerCase().includes(k)))
+			? appState.insurers.filter(t => udTU.some(k => t.nazwa.toLowerCase().includes(k) || (t.skrot ?? '').toLowerCase().includes(k)))
 			: appState.insurers
 	);
 	const filteredTU = $derived(
