@@ -2,13 +2,13 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
-	import { appState } from '$lib/stores/app.svelte';
+	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor } from '$lib/utils';
 	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, ShieldCheck } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import type { ApkForm } from '$lib/types/database';
@@ -412,6 +412,31 @@
 		savingOpiekun = false;
 		editingOpiekun = false;
 	}
+
+	// --- Panel Klienta: dostęp ---
+	let showAccessModal = $state(false);
+	let accessLoading = $state(false);
+	let accessError = $state('');
+	let accessResult = $state<{ email: string; tempPassword: string } | null>(null);
+
+	async function callAccessApi(action: 'create' | 'reset') {
+		accessLoading = true; accessError = ''; accessResult = null;
+		const { data: { session } } = await sb.auth.getSession();
+		const res = await fetch('/api/admin/create-client-access', {
+			method: 'POST',
+			headers: { 'Authorization': `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({ klient_id: clientId, action })
+		});
+		const payload = await res.json();
+		accessLoading = false;
+		if (!res.ok) { accessError = payload?.message ?? 'Wystąpił błąd.'; return; }
+		accessResult = payload;
+		showAccessModal = true;
+		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+		appState.clients = (data ?? []) as typeof appState.clients;
+	}
+
+	const portalLoginUrl = $derived(`${$page.url.origin}/portal/login`);
 </script>
 
 <svelte:head><title>{client?.nazwa ?? 'Klient'} — FRANK67 CRM</title></svelte:head>
@@ -471,6 +496,37 @@
 			</button>
 		</div>
 	</div>
+
+	<!-- Panel Klienta: dostęp -->
+	{#if isAdmin(appState.profile)}
+		<div class="flex items-center justify-between bg-white border border-slate-200 rounded-xl px-5 py-3 shadow-sm mb-5">
+			<div class="flex items-center gap-2 text-sm">
+				<ShieldCheck size={16} class="text-slate-400" />
+				<span class="text-slate-500">Panel Klienta:</span>
+				{#if client.auth_user_id}
+					<Badge variant="success">Dostęp aktywny</Badge>
+				{:else if !client.email}
+					<span class="text-slate-400">brak e-maila — uzupełnij dane klienta</span>
+				{:else}
+					<span class="text-slate-400">brak dostępu</span>
+				{/if}
+			</div>
+			<div class="flex items-center gap-2">
+				{#if client.auth_user_id}
+					<button onclick={() => callAccessApi('reset')} disabled={accessLoading}
+						class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-60">
+						{accessLoading ? '...' : 'Zresetuj hasło'}
+					</button>
+				{:else}
+					<button onclick={() => callAccessApi('create')} disabled={accessLoading || !client.email}
+						class="flex items-center gap-1.5 text-sm bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700 disabled:opacity-60">
+						{accessLoading ? '...' : 'Utwórz dostęp'}
+					</button>
+				{/if}
+			</div>
+		</div>
+		{#if accessError}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{accessError}</div>{/if}
+	{/if}
 
 	<!-- Dashboard KPI cards (tylko jeśli są dane) -->
 	<div class="flex flex-wrap gap-3 mb-5">
@@ -1247,6 +1303,32 @@
 							{label}
 						</button>
 					{/each}
+				</div>
+			</div>
+		</div>
+	{/if}
+</Modal>
+
+<!-- Modal: Dostęp do Panelu Klienta -->
+<Modal title="Dostęp do Panelu Klienta" open={showAccessModal} onclose={() => { showAccessModal = false; accessResult = null; }}>
+	{#snippet footer()}
+		<button onclick={() => { showAccessModal = false; accessResult = null; }} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Gotowe</button>
+	{/snippet}
+	{#if accessResult}
+		<div class="space-y-3">
+			<p class="text-sm text-slate-600">Przekaż klientowi poniższe dane logowania — hasło jest widoczne tylko teraz.</p>
+			<div class="space-y-2">
+				<div>
+					<label class={labelCls}>Adres logowania</label>
+					<input readonly value={portalLoginUrl} class="{inputCls} bg-slate-50 font-mono text-xs" />
+				</div>
+				<div>
+					<label class={labelCls}>E-mail</label>
+					<input readonly value={accessResult.email} class="{inputCls} bg-slate-50 font-mono text-xs" />
+				</div>
+				<div>
+					<label class={labelCls}>Hasło tymczasowe</label>
+					<input readonly value={accessResult.tempPassword} class="{inputCls} bg-slate-50 font-mono text-xs" />
 				</div>
 			</div>
 		</div>

@@ -34,6 +34,7 @@ export interface Client {
 	rodo_zgoda: boolean;
 	rodo_data: string | null;
 	rodo_kanal: string | null;
+	auth_user_id: string | null;
 	created_at?: string;
 }
 
