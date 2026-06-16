@@ -81,17 +81,6 @@ Deno.serve(async (req) => {
   ).trim();
   if (!apiKey) return json({ error: 'Brak skonfigurowanego klucza GetResponse' }, 500);
 
-  // temporary diagnostics sink (service role bypasses RLS)
-  const admin = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
-  const logDebug = async (stage: string, status: number, detail: unknown) => {
-    try {
-      await admin.from('gr_debug_log').insert({ stage, status, detail: String(detail).slice(0, 2000) });
-    } catch (_) { /* ignore */ }
-  };
-
   // --- Input ---
   let email = '';
   try {
@@ -103,17 +92,14 @@ Deno.serve(async (req) => {
   if (!email) return json({ matched: false, reason: 'no_email' });
 
   const grHeaders = { 'X-Auth-Token': `api-key ${apiKey}`, 'Content-Type': 'application/json' };
-  await logDebug('keylen', apiKey.length, '');
 
   try {
     // 1) Find the contact by e-mail.
     const contactUrl = `${GR_BASE}/contacts?query[email]=${encodeURIComponent(email)}&fields=contactId,email,name&perPage=1`;
-    console.log('GR contacts lookup', contactUrl);
     const contactRes = await fetch(contactUrl, { headers: grHeaders });
     if (!contactRes.ok) {
       const detail = await contactRes.text();
       console.error('GR contacts lookup failed', contactRes.status, detail);
-      await logDebug('contacts', contactRes.status, detail);
       return json({ error: `GetResponse: ${contactRes.status}`, detail }, 502);
     }
     const contacts = (await contactRes.json()) as GrContact[];
@@ -136,7 +122,6 @@ Deno.serve(async (req) => {
       if (!actRes.ok) {
         const detail = await actRes.text();
         console.error('GR activities failed', actRes.status, actUrl, detail);
-        await logDebug('activities', actRes.status, detail);
         return json({ error: `GetResponse activities: ${actRes.status}`, detail }, 502);
       }
       const batch = (await actRes.json()) as GrActivity[];
@@ -189,7 +174,6 @@ Deno.serve(async (req) => {
     });
   } catch (err: unknown) {
     console.error('GR function error', err);
-    await logDebug('exception', 0, err instanceof Error ? err.message : String(err));
     return json({ error: err instanceof Error ? err.message : String(err) }, 500);
   }
 });
