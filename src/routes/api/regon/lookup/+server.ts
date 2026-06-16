@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth';
-import { GUS_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 
 const BIR_URL = 'https://wyszukiwarkaregon.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc';
@@ -43,7 +43,8 @@ function isValidRegon(raw: string): boolean {
 export const GET: RequestHandler = async ({ request, url }) => {
 	await requireAuth(request);
 
-	if (!GUS_API_KEY) {
+	const gusApiKey = env.GUS_API_KEY;
+	if (!gusApiKey) {
 		return json({ available: false, reason: 'no_key' });
 	}
 
@@ -66,7 +67,7 @@ export const GET: RequestHandler = async ({ request, url }) => {
 	try {
 		const loginXml = await soap(
 			'http://CIS/BIR/PUBL/2014/07/IUslugaBIRzewnPubl/Zaloguj',
-			`<ns:Zaloguj><ns:pKluczUzytkownika>${GUS_API_KEY}</ns:pKluczUzytkownika></ns:Zaloguj>`
+			`<ns:Zaloguj><ns:pKluczUzytkownika>${gusApiKey}</ns:pKluczUzytkownika></ns:Zaloguj>`
 		);
 		const sid = extract(loginXml, 'ZalogujResult');
 		if (!sid) return json({ found: false });
