@@ -7,7 +7,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText } from 'lucide-svelte';
-	import { fmtPln } from '$lib/utils';
+	import { fmtPln, validateVin, assignedPolicyFor } from '$lib/utils';
 	import { onMount } from 'svelte';
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -223,6 +223,8 @@
 		if (!vNrRej.trim()) { vehicleError = 'Nr rejestracyjny jest wymagany.'; return; }
 		if (!vMarkaModel.trim()) { vehicleError = 'Marka/Model jest wymagane.'; return; }
 		if (!vKlientId) { vehicleError = 'Wybierz klienta.'; return; }
+		const vinErr = validateVin(vVin);
+		if (vinErr) { vehicleError = vinErr; return; }
 
 		vehicleSaving = true;
 		vehicleError = '';
@@ -340,17 +342,26 @@
 								<th class="pb-2 font-medium">VIN</th>
 								<th class="pb-2 font-medium">Rok</th>
 								<th class="pb-2 font-medium">Klient</th>
+								<th class="pb-2 font-medium">Status</th>
 								<th class="pb-2 font-medium w-10"></th>
 							</tr>
 						</thead>
 						<tbody>
 							{#each filteredVehicles as v (v.id)}
+								{@const assigned = assignedPolicyFor(v.id, appState.policies)}
 								<tr class="border-b border-slate-100 hover:bg-slate-50">
 									<td class="py-2.5 font-medium text-slate-900">{v.nr_rejestracyjny}</td>
 									<td class="py-2.5 text-slate-700">{v.marka_model}</td>
 									<td class="py-2.5 text-slate-500 font-mono text-xs">{v.vin ?? '—'}</td>
 									<td class="py-2.5 text-slate-500">{v.rok_produkcji ?? '—'}</td>
 									<td class="py-2.5 text-slate-700">{clientName(v.klient_id)}</td>
+									<td class="py-2.5">
+										{#if assigned}
+											<span class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5">Przypisany: {assigned.nr_polisy}</span>
+										{:else}
+											<span class="text-xs text-slate-400">Wolny</span>
+										{/if}
+									</td>
 									<td class="py-2.5">
 										<button onclick={() => openEditVehicle(v)} class="p-1 text-slate-400 hover:text-slate-700 rounded" title="Edytuj">
 											<Pencil size={15} />

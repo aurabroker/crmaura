@@ -2,15 +2,17 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { untrack } from 'svelte';
 	import type { Policy } from '$lib/types/database';
+	import { assignedPolicyFor } from '$lib/utils';
 
 	interface Props {
 		policy?: Policy | null;
 		presetKlient?: string;
 		presetRodzaj?: string;
 		presetPrzedmiot?: string;
+		presetPojazdId?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpTu = $state(policy?.tu_id ?? '');
@@ -19,6 +21,7 @@
 	const fpTypUmowy = 'jednostkowa';
 	let fpParentId = $state(policy?.parent_id ?? '');
 	let fpPrzedmiot = $state(policy?.przedmiot ?? presetPrzedmiot);
+	let fpPojazdId = $state(policy?.pojazd_id ?? presetPojazdId ?? '');
 
 	// Utrata dochodu: parse existing przedmiot JSON or start empty
 	function parseUD(raw: string) {
@@ -31,6 +34,16 @@
 	const clientVehicles = $derived(
 		fpKlient ? appState.vehicles.filter(v => v.klient_id === fpKlient) : []
 	);
+	// Vehicles of this client not already assigned to a different active policy.
+	const availableVehicles = $derived(
+		clientVehicles.filter(v => !assignedPolicyFor(v.id, appState.policies, policy?.id))
+	);
+
+	$effect(() => {
+		if (!isKomunikacja || !fpPojazdId) return;
+		const v = appState.vehicles.find(x => x.id === fpPojazdId);
+		if (v) fpPrzedmiot = `${v.nr_rejestracyjny}${v.vin ? ' / ' + v.vin : ''} — ${v.marka_model}`;
+	});
 
 	let fpOd = $state(policy?.data_od ?? '');
 	let fpDo = $state(policy?.data_do ?? '');
@@ -154,6 +167,7 @@
 			ug_default_prowizja_pct: null,
 			parent_id: fpParentId || null,
 			przedmiot: isUD ? JSON.stringify({ __ud: true, ctn: fpUD.ctn, ctc: fpUD.ctc, si: fpUD.si }) : (fpPrzedmiot || null),
+			pojazd_id: isKomunikacja ? (fpPojazdId || null) : null,
 			data_od: fpOd, data_do: fpDo,
 			data_zawarcia: fpZawarcia || null,
 			ilosc_rat: fpRaty,
@@ -187,6 +201,7 @@
 		if (!fpNr.trim()) return 'Podaj numer polisy';
 		if (!fpOd || !fpDo) return 'Podaj daty obowiązywania';
 		if (fpOd < '2024-01-01') return 'Data od nie może być wcześniejsza niż 2024-01-01';
+		if (isKomunikacja && availableVehicles.length > 0 && !fpPojazdId) return 'Wybierz pojazd dla polisy komunikacyjnej';
 		return null;
 	}
 
@@ -368,17 +383,19 @@
 						⚠️ Brak pojazdów przypisanych do klienta. Najpierw dodaj pojazd w karcie klienta.
 					</div>
 				{:else if fpKlient}
-					<input bind:value={fpPrzedmiot} class={inp}
-						placeholder="Wpisz nr rej. lub VIN..."
-						list="veh-list-{fpKlient}" />
-					<datalist id="veh-list-{fpKlient}">
-						{#each clientVehicles as v}
-							<option value="{v.nr_rejestracyjny}{v.vin ? ' / ' + v.vin : ''} — {v.marka_model}"></option>
+					<select bind:value={fpPojazdId} class={inp}>
+						<option value="">— wybierz pojazd —</option>
+						{#each availableVehicles as v}
+							<option value={v.id}>{v.nr_rejestracyjny}{v.vin ? ' / ' + v.vin : ''} — {v.marka_model}</option>
 						{/each}
-					</datalist>
-					<p class="text-[11px] text-slate-400 mt-1">Wybierz z listy lub wpisz nr rej. / VIN</p>
+					</select>
+					{#if availableVehicles.length === 0}
+						<p class="text-[11px] text-amber-700 mt-1">Wszystkie pojazdy klienta są już przypisane do innych polis.</p>
+					{:else}
+						<p class="text-[11px] text-slate-400 mt-1">Pojazdy już przypisane do innych polis nie są widoczne na liście.</p>
+					{/if}
 				{:else}
-					<input bind:value={fpPrzedmiot} class={inp} placeholder="Najpierw wybierz klienta" disabled />
+					<select class={inp} disabled><option>Najpierw wybierz klienta</option></select>
 				{/if}
 			{:else}
 				<input bind:value={fpPrzedmiot} class={inp} placeholder="np. budynek, pojazd, OC..." />

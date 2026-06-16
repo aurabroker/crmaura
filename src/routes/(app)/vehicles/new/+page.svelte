@@ -4,6 +4,7 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { ArrowLeft } from 'lucide-svelte';
+	import { validateVin } from '$lib/utils';
 
 	const presetKlient = $derived($page.url.searchParams.get('klient') ?? '');
 
@@ -31,6 +32,8 @@
 
 	async function save() {
 		if (!vKlient || !vRej.trim()) { error = 'Wybierz klienta i podaj nr rejestracyjny.'; return; }
+		const vinErr = validateVin(vVin);
+		if (vinErr) { error = vinErr; return; }
 		saving = true; error = '';
 		const markaModel = [vMarka.trim(), vModel.trim()].filter(Boolean).join(' ') || 'Nieznany';
 		const { error: err } = await sb.from('crm_vehicles').insert([{
@@ -39,7 +42,7 @@
 			nr_rejestracyjny: vRej.trim().toUpperCase(),
 			marka_model: markaModel,
 			rok_produkcji: vRok ? parseInt(vRok) : null,
-			vin: vVin.trim() || null,
+			vin: vVin.trim() ? vVin.trim().toUpperCase() : null,
 			rodzaj_pojazdu: vRodzaj,
 			moc: vMoc ? parseInt(vMoc) : null,
 			pojemnosc_silnika: vPojemnosc ? parseInt(vPojemnosc) : null,

@@ -47,3 +47,22 @@ export const policyStatus = (
 	if (days <= 30) return { label: 'Wygasa', color: 'text-amber-500', badge: 'badge-warning' };
 	return { label: 'Aktywna', color: 'text-emerald-600', badge: 'badge-success' };
 };
+
+// Shared VIN (Vehicle Identification Number) validation per ISO 3779 — 17 chars, no I/O/Q.
+export function validateVin(raw: string, required = false): string | null {
+	const vin = raw.trim().toUpperCase();
+	if (!vin) return required ? 'VIN jest wymagany.' : null;
+	if (vin.length !== 17) return `VIN musi mieć dokładnie 17 znaków (masz ${vin.length}).`;
+	if (/[IOQ]/.test(vin)) return 'VIN nie może zawierać liter I, O, Q.';
+	if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return 'VIN zawiera niedozwolone znaki.';
+	return null;
+}
+
+// Finds the active (non-deleted) policy a vehicle is currently assigned to, if any.
+export function assignedPolicyFor<T extends { id: string; pojazd_id: string | null; deleted_at: string | null }>(
+	vehicleId: string,
+	policies: T[],
+	excludePolicyId?: string
+): T | null {
+	return policies.find(p => p.pojazd_id === vehicleId && !p.deleted_at && p.id !== excludePolicyId) ?? null;
+}

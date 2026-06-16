@@ -76,7 +76,7 @@
 	const canRenew = $derived(!!policy && !renewalPolicy && daysLeft >= 0 && daysLeft <= 45);
 	const isPendingRenewal = $derived(!!policy?.renewal_of && policy.data_od > today);
 	const renewalUrl = $derived(policy
-		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}`
+		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}${policy.pojazd_id ? `&pojazd_id=${policy.pojazd_id}` : ''}`
 		: '');
 
 	// UG default commission inline edit

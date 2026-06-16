@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, policyStatus, dateDiffDays } from '$lib/utils';
+	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor } from '$lib/utils';
 	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -323,18 +323,9 @@
 	function openNewVehicle() { editingVehicle = null; vRej = ''; vMarka = ''; vVin = ''; vRok = ''; vError = ''; showVehicle = true; }
 	function openEditVehicle(v: Vehicle) { editingVehicle = v; vRej = v.nr_rejestracyjny; vMarka = v.marka_model; vVin = v.vin ?? ''; vRok = v.rok_produkcji?.toString() ?? ''; vError = ''; showVehicle = true; }
 
-	function validateVin(v: string): string | null {
-		const vin = v.trim().toUpperCase();
-		if (!vin) return 'VIN jest wymagany.';
-		if (vin.length !== 17) return `VIN musi mieć dokładnie 17 znaków (masz ${vin.length}).`;
-		if (/[IOQ]/.test(vin)) return 'VIN nie może zawierać liter I, O, Q.';
-		if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) return 'VIN zawiera niedozwolone znaki.';
-		return null;
-	}
-
 	async function saveVehicle() {
 		if (!vRej.trim() || !vMarka.trim()) { vError = 'Nr rejestracyjny i marka są wymagane.'; return; }
-		const vinErr = validateVin(vVin);
+		const vinErr = validateVin(vVin, true);
 		if (vinErr) { vError = vinErr; return; }
 		savingV = true; vError = '';
 		const payload = { nr_rejestracyjny: vRej.trim(), marka_model: vMarka.trim(), vin: vVin.trim().toUpperCase(), rok_produkcji: vRok ? parseInt(vRok) : null };
@@ -597,7 +588,7 @@
 								<div class="flex flex-col gap-1 items-start">
 									<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
 									{#if canRenew}
-										<a href="/policies/new?klient={p.klient_id}&rodzaj={encodeURIComponent(p.rodzaj)}&przedmiot={encodeURIComponent(p.przedmiot ?? '')}&renewal_of={p.id}"
+										<a href="/policies/new?klient={p.klient_id}&rodzaj={encodeURIComponent(p.rodzaj)}&przedmiot={encodeURIComponent(p.przedmiot ?? '')}&renewal_of={p.id}{p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}"
 										   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors">
 											<RefreshCw size={10} /> Odnów polisę
 										</a>
@@ -682,28 +673,41 @@
 						<th class="px-5 py-3">Marka / Model</th>
 						<th class="px-5 py-3">VIN</th>
 						<th class="px-5 py-3">Rok</th>
+						<th class="px-5 py-3">Status</th>
 						<th class="px-5 py-3"></th>
 					</tr>
 				</thead>
 				<tbody>
 					{#each clientVehicles as v}
+						{@const assigned = assignedPolicyFor(v.id, appState.policies)}
 						<tr class="border-t border-slate-100 hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium">{v.nr_rejestracyjny}</td>
 							<td class="px-5 py-3">{v.marka_model}</td>
 							<td class="px-5 py-3 text-slate-500">{v.vin ?? '—'}</td>
 							<td class="px-5 py-3">{v.rok_produkcji ?? '—'}</td>
 							<td class="px-5 py-3">
+								{#if assigned}
+									<a href="/policies/{assigned.id}" class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5 hover:bg-emerald-100">
+										Przypisany: {assigned.nr_polisy}
+									</a>
+								{:else}
+									<span class="text-xs text-slate-400">Wolny</span>
+								{/if}
+							</td>
+							<td class="px-5 py-3">
 								<div class="flex items-center gap-2">
 									<button onclick={() => openEditVehicle(v)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
-									<a href="/policies/new?klient={clientId}&rodzaj=komunikacja&przedmiot={encodeURIComponent(v.nr_rejestracyjny + (v.vin ? ' / ' + v.vin : ''))}"
-										class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-										<FileText size={11} /> Dodaj polisę
-									</a>
+									{#if !assigned}
+										<a href="/policies/new?klient={clientId}&rodzaj=komunikacja&przedmiot={encodeURIComponent(v.nr_rejestracyjny + (v.vin ? ' / ' + v.vin : ''))}&pojazd_id={v.id}"
+											class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+											<FileText size={11} /> Dodaj polisę
+										</a>
+									{/if}
 								</div>
 							</td>
 						</tr>
 					{:else}
-						<tr><td colspan="5" class="px-5 py-6 text-center text-slate-400">Brak pojazdów</td></tr>
+						<tr><td colspan="6" class="px-5 py-6 text-center text-slate-400">Brak pojazdów</td></tr>
 					{/each}
 				</tbody>
 			</table>
@@ -1133,12 +1137,20 @@
 	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
 	<div class="space-y-2">
 		{#each clientVehicles as v}
+			{@const assigned = assignedPolicyFor(v.id, appState.policies)}
 			<div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
 				<div>
 					<p class="font-medium">{v.nr_rejestracyjny}</p>
 					<p class="text-xs text-slate-500">{v.marka_model}{v.rok_produkcji ? ` · ${v.rok_produkcji}` : ''}</p>
 				</div>
-				{#if v.vin}<p class="text-xs text-slate-400 font-mono">{v.vin}</p>{/if}
+				<div class="text-right">
+					{#if v.vin}<p class="text-xs text-slate-400 font-mono">{v.vin}</p>{/if}
+					{#if assigned}
+						<p class="text-[11px] text-emerald-700">Przypisany: {assigned.nr_polisy}</p>
+					{:else}
+						<p class="text-[11px] text-slate-400">Wolny</p>
+					{/if}
+				</div>
 			</div>
 		{/each}
 	</div>

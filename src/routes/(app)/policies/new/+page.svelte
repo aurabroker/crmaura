@@ -12,6 +12,7 @@
 	const klientParam = $page.url.searchParams.get('klient') ?? '';
 	const rodzajParam = $page.url.searchParams.get('rodzaj') ?? '';
 	const przedmiotParam = $page.url.searchParams.get('przedmiot') ?? '';
+	const pojazdIdParam = $page.url.searchParams.get('pojazd_id') ?? '';
 	const renewalOfParam = $page.url.searchParams.get('renewal_of') ?? '';
 
 	const isRenewal = !!renewalOfParam;
@@ -101,6 +102,7 @@
 			presetKlient={klientParam}
 			presetRodzaj={rodzajParam}
 			presetPrzedmiot={przedmiotParam}
+			presetPojazdId={pojazdIdParam}
 		/>
 	</div>
 
