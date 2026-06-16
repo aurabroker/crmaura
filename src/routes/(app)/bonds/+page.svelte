@@ -11,10 +11,8 @@
 
 	let search = $state('');
 	let expandedUG = $state(new Set<string>());
-	let showNewUG = $state(false);
 	let showEdit = $state(false);
 	let editingPolicy = $state<Policy | null>(null);
-	let newForm = $state<ReturnType<typeof PolicyForm> | null>(null);
 	let editForm = $state<ReturnType<typeof PolicyForm> | null>(null);
 	let saving = $state(false);
 	let formError = $state('');
@@ -53,19 +51,6 @@
 		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
 	}
 
-	async function saveNewUG() {
-		if (!newForm) return;
-		const err = newForm.isValid();
-		if (err) { formError = err; return; }
-		saving = true; formError = '';
-		const vals = newForm.getValues();
-		const { error } = await sb.from('crm_policies').insert([{ tenant_id: appState.profile!.tenant_id, ...vals }]);
-		saving = false;
-		if (error) { formError = error.message; return; }
-		showNewUG = false;
-		await reloadPolicies();
-	}
-
 	async function saveEdit() {
 		if (!editForm || !editingPolicy) return;
 		const err = editForm.isValid();
@@ -93,7 +78,7 @@
 		<p class="text-sm text-slate-500 mt-1">Umowy generalne gwarancji z pozycjami</p>
 	</div>
 	<button
-		onclick={() => { formError = ''; showNewUG = true; }}
+		onclick={() => goto('/bonds/new')}
 		class="bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors flex items-center gap-2"
 	>
 		<Plus size={15} /> Nowa UG Gwarancji
@@ -232,18 +217,6 @@
 		</tbody>
 	</table>
 </div>
-
-<!-- Modal: Nowa UG Gwarancji -->
-<Modal title="Nowa Umowa Generalna Gwarancji" open={showNewUG} onclose={() => { showNewUG = false; formError = ''; }}>
-	{#snippet footer()}
-		<button onclick={() => { showNewUG = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveNewUG} disabled={saving} class="px-4 py-2 text-sm bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : 'Zapisz'}
-		</button>
-	{/snippet}
-	{#if formError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-	<PolicyForm bind:this={newForm} policy={{ typ_umowy: 'generalna', ug_podtyp: 'gwarancje' } as any} />
-</Modal>
 
 <!-- Modal: Edytuj -->
 {#if editingPolicy}

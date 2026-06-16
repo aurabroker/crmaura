@@ -1,7 +1,7 @@
 import type { ApkForm } from '$lib/types/database';
 import { sb } from '$lib/supabase';
 
-function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any) {
+function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any, tenantNazwa: string | null) {
 	const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 	const now = new Date();
 	const generated = now.toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' });
@@ -13,7 +13,7 @@ function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any) {
 	doc.setFontSize(9);
 	doc.setFont('helvetica', 'normal');
 	doc.setTextColor(120);
-	doc.text('Formularz zgodny z art. 8 Ustawy o dystrybucji ubezpieczeń (KNF)', 14, 27);
+	if (tenantNazwa) doc.text(`Doradca: ${tenantNazwa}`, 14, 27);
 	doc.text(`Wygenerowano: ${generated}`, 196, 27, { align: 'right' });
 	doc.setTextColor(0);
 
@@ -76,24 +76,32 @@ function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any) {
 		doc.setPage(i);
 		doc.setFontSize(8);
 		doc.setTextColor(160);
-		doc.text(`FRANK67 CRM — APK ${form.ref_number}`, 14, 290);
+		doc.text(tenantNazwa ? `Doradca: ${tenantNazwa} — APK ${form.ref_number}` : `APK ${form.ref_number}`, 14, 290);
 		doc.text(`Strona ${i} z ${pageCount}`, 196, 290, { align: 'right' });
 	}
 
 	return doc;
 }
 
+async function getTenantNazwa(tenantId: string | null): Promise<string | null> {
+	if (!tenantId) return null;
+	const { data } = await sb.from('crm_tenants').select('nazwa').eq('id', tenantId).single();
+	return data?.nazwa ?? null;
+}
+
 export async function downloadApkPdf(form: ApkForm) {
 	const { jsPDF } = await import('jspdf');
 	const { default: autoTable } = await import('jspdf-autotable');
-	const doc = buildPdfDoc(form, jsPDF, autoTable);
+	const tenantNazwa = await getTenantNazwa(form.tenant_id);
+	const doc = buildPdfDoc(form, jsPDF, autoTable, tenantNazwa);
 	doc.save(`APK_${form.ref_number}_${form.form_date}.pdf`);
 }
 
 export async function saveApkPdf(form: ApkForm): Promise<string | null> {
 	const { jsPDF } = await import('jspdf');
 	const { default: autoTable } = await import('jspdf-autotable');
-	const doc = buildPdfDoc(form, jsPDF, autoTable);
+	const tenantNazwa = await getTenantNazwa(form.tenant_id);
+	const doc = buildPdfDoc(form, jsPDF, autoTable, tenantNazwa);
 
 	const blob = doc.output('blob');
 	const fileName = `${form.tenant_id}/${form.ref_number}_${form.form_date}.pdf`;

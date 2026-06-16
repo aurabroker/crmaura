@@ -39,6 +39,10 @@
 	let rodoData = $state('');
 	let rodoKanal = $state<'email' | 'papier' | 'telefon' | 'osobiscie'>('papier');
 
+	// Client declined APK
+	let clientDeclined = $state(false);
+	let clientDeclinedReason = $state('');
+
 	const filteredClients = $derived(
 		fKlientSearch.trim()
 			? appState.clients.filter(c => (c.nazwa + ' ' + (c.nazwa_skrocona ?? '')).toLowerCase().includes(fKlientSearch.toLowerCase()))
@@ -62,6 +66,7 @@
 
 	async function createApk() {
 		if (!fKlient) { err = 'Wybierz klienta'; return; }
+		if (clientDeclined && !clientDeclinedReason.trim()) { err = 'Podaj powód odmowy klienta.'; return; }
 		saving = true; err = '';
 		const client = appState.clients.find(c => c.id === fKlient)!;
 		const ref = genRef();
@@ -76,25 +81,30 @@
 			advisor_name: fAdvisor || null,
 			form_date: today,
 			mode: fMode,
-			status: 'draft',
+			status: clientDeclined ? 'submitted' : 'draft',
+			submitted_at: clientDeclined ? new Date().toISOString() : null,
+			client_declined: clientDeclined,
+			client_declined_reason: clientDeclined ? clientDeclinedReason.trim() : null,
 			form_data: {}
 		}]).select('id').single();
 
 		if (e1) { saving = false; err = e1.message; return; }
 
-		const expires = new Date(); expires.setDate(expires.getDate() + 30);
-		const { error: e2 } = await sb.from('apk_tokens').insert([{
-			tenant_id: appState.profile!.tenant_id,
-			token,
-			form_id: form!.id,
-			advisor_name: fAdvisor || null,
-			status: 'pending',
-			expires_at: expires.toISOString()
-		}]);
-		if (e2) { saving = false; err = e2.message; return; }
+		if (!clientDeclined) {
+			const expires = new Date(); expires.setDate(expires.getDate() + 30);
+			const { error: e2 } = await sb.from('apk_tokens').insert([{
+				tenant_id: appState.profile!.tenant_id,
+				token,
+				form_id: form!.id,
+				advisor_name: fAdvisor || null,
+				status: 'pending',
+				expires_at: expires.toISOString()
+			}]);
+			if (e2) { saving = false; err = e2.message; return; }
+		}
 
 		// log audit
-		await sb.from('apk_audit').insert([{ form_id: form!.id, event: 'created', actor: fAdvisor || 'system' }]);
+		await sb.from('apk_audit').insert([{ form_id: form!.id, event: clientDeclined ? 'client_declined' : 'created', actor: fAdvisor || 'system' }]);
 
 		// refresh
 		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false });
@@ -112,8 +122,8 @@
 		}
 
 		saving = false;
-		createdToken = token;
 		createdFormId = form!.id;
+		if (!clientDeclined) createdToken = token;
 	}
 
 	async function copyLink() {
@@ -134,6 +144,8 @@
 		rodoZgoda = false;
 		rodoData = '';
 		rodoKanal = 'papier';
+		clientDeclined = false;
+		clientDeclinedReason = '';
 	}
 
 	let search = $state('');
@@ -148,8 +160,8 @@
 			})
 	);
 
-	const statusVariant = (s: string) => s === 'submitted' ? 'success' : 'neutral';
-	const statusLabel = (s: string) => s === 'submitted' ? 'Złożony' : 'Szkic';
+	const statusVariant = (f: ApkForm) => f.client_declined ? 'warning' : f.status === 'submitted' ? 'success' : 'neutral';
+	const statusLabel = (f: ApkForm) => f.client_declined ? 'Klient zrezygnował' : f.status === 'submitted' ? 'Złożony' : 'Szkic';
 
 	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const lbl = 'block text-sm font-medium text-slate-700 mb-1';
@@ -227,7 +239,7 @@
 						<td class="px-5 py-3 font-medium">{f.crm_clients?.nazwa_skrocona ?? f.crm_clients?.nazwa ?? f.client_name}</td>
 						<td class="px-5 py-3 text-slate-500">{f.advisor_name ?? '—'}</td>
 						<td class="px-5 py-3 text-slate-500">{f.form_date}</td>
-						<td class="px-5 py-3"><Badge variant={statusVariant(f.status)}>{statusLabel(f.status)}</Badge></td>
+						<td class="px-5 py-3"><Badge variant={statusVariant(f)}>{statusLabel(f)}</Badge></td>
 						<td class="px-5 py-3">
 							{#if f.apk_tokens?.[0]?.used_at}
 								<span title="Klient otworzył link: {f.apk_tokens[0].used_at!.slice(0,16).replace('T',' ')}"
@@ -271,17 +283,25 @@
 <!-- Modal: Nowy APK -->
 <Modal title="Nowy formularz APK" open={showNew} onclose={closeNew}>
 	{#snippet footer()}
-		{#if createdToken}
+		{#if createdFormId}
 			<button onclick={closeNew} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Gotowe</button>
 		{:else}
 			<button onclick={closeNew} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 			<button onclick={createApk} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-				{saving ? 'Tworzenie...' : 'Utwórz i wygeneruj link'}
+				{saving ? 'Tworzenie...' : (clientDeclined ? 'Zapisz odmowę' : 'Utwórz i wygeneruj link')}
 			</button>
 		{/if}
 	{/snippet}
 
-	{#if createdToken}
+	{#if createdFormId && !createdToken}
+		<!-- Sukces — klient zrezygnował -->
+		<div class="space-y-4">
+			<div class="flex items-center gap-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+				<Check size={20} class="text-amber-600 shrink-0" />
+				<span class="text-sm text-amber-700 font-medium">Zarejestrowano odmowę klienta wykonania APK.</span>
+			</div>
+		</div>
+	{:else if createdToken}
 		<!-- Sukces — pokaż link -->
 		<div class="space-y-4">
 			<div class="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
@@ -350,6 +370,20 @@
 						</button>
 					{/each}
 				</div>
+			</div>
+
+			<!-- Klient zrezygnował -->
+			<div class="border border-amber-200 rounded-xl p-4 bg-amber-50">
+				<label class="flex items-center gap-2 text-sm cursor-pointer">
+					<input type="checkbox" bind:checked={clientDeclined} class="w-4 h-4 accent-amber-600" />
+					<span class="font-medium text-amber-800">Klient świadomie zrezygnował z wykonania Analizy Potrzeb Klienta</span>
+				</label>
+				{#if clientDeclined}
+				<div class="mt-3">
+					<label class="block text-xs font-medium text-amber-700 mb-1">Powód odmowy *</label>
+					<input bind:value={clientDeclinedReason} class={inp} placeholder="np. klient odmówił podania danych" />
+				</div>
+				{/if}
 			</div>
 
 			<!-- RODO -->

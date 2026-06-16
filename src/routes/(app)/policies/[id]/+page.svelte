@@ -219,6 +219,73 @@
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+
+	// Płatności: live sum + edit/add
+	const sumaPlatnosci = $derived(payments.reduce((s, p) => s + (p.kwota ?? 0), 0));
+
+	let showEditPayment = $state(false);
+	let editingPayment = $state<typeof payments[number] | null>(null);
+	let epData = $state(''); let epKwota = $state(''); let epStatus = $state<'Oczekująca'|'Opłacona'|'Zaległa'|'Częściowo opłacona'>('Oczekująca');
+	let savingEp = $state(false); let epError = $state('');
+
+	function openEditPayment(pay: typeof payments[number]) {
+		editingPayment = pay;
+		epData = pay.data_platnosci;
+		epKwota = String(pay.kwota);
+		epStatus = pay.status;
+		epError = '';
+		showEditPayment = true;
+	}
+
+	async function reloadPayments() {
+		const { data } = await sb.from('crm_policy_payments')
+			.select('*, crm_policies(nr_polisy, crm_clients(nazwa))')
+			.order('data_platnosci');
+		appState.payments = (data ?? []) as typeof appState.payments;
+	}
+
+	async function saveEditPayment() {
+		if (!editingPayment) return;
+		if (!epData || epKwota === '') { epError = 'Podaj datę i kwotę.'; return; }
+		savingEp = true; epError = '';
+		const { error } = await sb.from('crm_policy_payments')
+			.update({ data_platnosci: epData, kwota: parseFloat(epKwota), status: epStatus })
+			.eq('id', editingPayment.id);
+		savingEp = false;
+		if (error) { epError = error.message; return; }
+		showEditPayment = false; editingPayment = null;
+		await reloadPayments();
+	}
+
+	let showAddPayment = $state(false);
+	let apData = $state(''); let apKwota = $state(''); let apPowod = $state('');
+	let savingAp = $state(false); let apError = $state('');
+
+	function openAddPayment() {
+		apData = ''; apKwota = ''; apPowod = ''; apError = '';
+		showAddPayment = true;
+	}
+
+	async function saveAddPayment() {
+		if (!policy) return;
+		if (!apData || apKwota === '') { apError = 'Podaj datę i kwotę.'; return; }
+		if (!apPowod.trim()) { apError = 'Podaj powód nowej płatności.'; return; }
+		savingAp = true; apError = '';
+		const nextNr = payments.length > 0 ? Math.max(...payments.map(p => p.nr_raty)) + 1 : 1;
+		const { error } = await sb.from('crm_policy_payments').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			polisa_id: policy.id,
+			nr_raty: nextNr,
+			data_platnosci: apData,
+			kwota: parseFloat(apKwota),
+			status: 'Oczekująca',
+			powod: apPowod.trim()
+		}]);
+		savingAp = false;
+		if (error) { apError = error.message; return; }
+		showAddPayment = false;
+		await reloadPayments();
+	}
 </script>
 
 <svelte:head><title>{policy?.nr_polisy ?? 'Polisa'} — FRANK67 CRM</title></svelte:head>
@@ -465,25 +532,41 @@
 	{/if}
 
 	<!-- Płatności -->
-	{#if payments.length > 0}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50">
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden w-1/2 min-w-[480px]">
+		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
 			<p class="text-sm font-semibold text-slate-700">Płatności ({payments.length})</p>
+			<div class="flex items-center gap-3">
+				<span class="text-xs text-slate-500">Suma: <strong class="text-slate-900">{fmtPln(sumaPlatnosci)}</strong></span>
+				<button onclick={openAddPayment} class="flex items-center gap-1 text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 hover:bg-slate-50">
+					<FilePlus2 size={12} /> Dodaj płatność
+				</button>
+			</div>
 		</div>
-		<div class="p-4 grid grid-cols-2 gap-2">
-			{#each payments as pay}
-				<div class="flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 bg-slate-50 text-sm">
-					<span class="text-slate-500 font-medium w-14 shrink-0">Rata {pay.nr_raty}</span>
-					<span class="text-slate-700 flex-1 text-center">{pay.data_platnosci}</span>
-					<span class="font-semibold text-slate-900 w-24 text-right shrink-0">{fmtPln(pay.kwota)}</span>
-					<span class="ml-2 shrink-0">
-						<Badge variant={pay.status === 'Opłacona' ? 'success' : pay.status === 'Zaległa' ? 'error' : 'neutral'}>{pay.status}</Badge>
-					</span>
-				</div>
-			{/each}
-		</div>
+		{#if payments.length > 0}
+		<table class="w-full text-sm text-left">
+			<tbody>
+				{#each payments as pay}
+					<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<td class="px-5 py-2.5 text-slate-500 font-medium w-16">Rata {pay.nr_raty}</td>
+						<td class="px-5 py-2.5">
+							<div class="flex items-center justify-between gap-3">
+								<span class="text-slate-700">{pay.data_platnosci}</span>
+								<span class="font-semibold text-slate-900 {pay.kwota < 0 ? 'text-red-600' : ''}">{fmtPln(pay.kwota)}</span>
+								<Badge variant={pay.status === 'Opłacona' ? 'success' : pay.status === 'Zaległa' ? 'error' : 'neutral'}>{pay.status}</Badge>
+								<button onclick={() => openEditPayment(pay)} title="Edytuj" class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0">
+									<Pencil size={13} />
+								</button>
+							</div>
+							{#if pay.powod}<p class="text-xs text-slate-400 mt-0.5">{pay.powod}</p>{/if}
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+		{:else}
+			<p class="px-5 py-6 text-sm text-slate-400">Brak płatności.</p>
+		{/if}
 	</div>
-	{/if}
 {/if}
 
 {#if policy}
@@ -650,6 +733,57 @@
 			{#if branchContacts.length === 0}
 				<p class="text-xs text-slate-400 mt-1">Brak osób przypisanych do wybranego oddziału.</p>
 			{/if}
+		</div>
+	</div>
+</Modal>
+{/if}
+
+<!-- Modal: Edytuj płatność -->
+{#if editingPayment}
+<Modal title="Edytuj płatność — Rata {editingPayment.nr_raty}" open={showEditPayment} onclose={() => { showEditPayment = false; editingPayment = null; }}>
+	{#snippet footer()}
+		<button onclick={() => { showEditPayment = false; editingPayment = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveEditPayment} disabled={savingEp} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingEp ? 'Zapisywanie...' : 'Zapisz zmiany'}
+		</button>
+	{/snippet}
+	{#if epError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{epError}</div>{/if}
+	<div class="space-y-3">
+		<div class="grid grid-cols-2 gap-3">
+			<div><label class={labelCls}>Data płatności *</label><input type="date" bind:value={epData} class={inputCls} /></div>
+			<div><label class={labelCls}>Kwota * (może być ujemna)</label><input type="number" step="0.01" bind:value={epKwota} class={inputCls} /></div>
+		</div>
+		<div>
+			<label class={labelCls}>Status</label>
+			<select bind:value={epStatus} class={inputCls}>
+				<option value="Oczekująca">Oczekująca</option>
+				<option value="Opłacona">Opłacona</option>
+				<option value="Zaległa">Zaległa</option>
+				<option value="Częściowo opłacona">Częściowo opłacona</option>
+			</select>
+		</div>
+	</div>
+</Modal>
+{/if}
+
+<!-- Modal: Dodaj płatność -->
+{#if policy}
+<Modal title="Dodaj płatność — {policy.nr_polisy}" open={showAddPayment} onclose={() => showAddPayment = false}>
+	{#snippet footer()}
+		<button onclick={() => showAddPayment = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveAddPayment} disabled={savingAp} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingAp ? 'Zapisywanie...' : 'Dodaj płatność'}
+		</button>
+	{/snippet}
+	{#if apError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{apError}</div>{/if}
+	<div class="space-y-3">
+		<div class="grid grid-cols-2 gap-3">
+			<div><label class={labelCls}>Data płatności *</label><input type="date" bind:value={apData} class={inputCls} /></div>
+			<div><label class={labelCls}>Kwota * (może być ujemna)</label><input type="number" step="0.01" bind:value={apKwota} class={inputCls} /></div>
+		</div>
+		<div>
+			<label class={labelCls}>Powód nowej płatności *</label>
+			<input bind:value={apPowod} placeholder="np. aneks, rozliczenie składki..." class={inputCls} />
 		</div>
 	</div>
 </Modal>

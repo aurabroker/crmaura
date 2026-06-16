@@ -193,6 +193,7 @@ export interface PolicyPayment {
 	notatka: string | null;
 	nota_id: string | null;
 	prowizja_z_noty: number | null;
+	powod: string | null;
 	created_at?: string;
 	crm_policies?: { nr_polisy: string; crm_clients?: { nazwa: string } | null } | null;
 }
@@ -263,6 +264,8 @@ export interface ApkForm {
 	form_data: Record<string, unknown>;
 	submitted_at: string | null;
 	pdf_url: string | null;
+	client_declined: boolean;
+	client_declined_reason: string | null;
 	created_at: string;
 	updated_at: string;
 	crm_clients?: { nazwa: string; nazwa_skrocona: string | null } | null;

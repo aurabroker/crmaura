@@ -10,6 +10,7 @@
 	let tokenId = $state('');
 	let clientName = $state('');
 	let advisorName = $state('');
+	let tenantNazwa = $state('');
 	let saving = $state(false);
 	let saveError = $state('');
 
@@ -53,7 +54,7 @@
 
 		const { data: form } = await sb
 			.from('apk_forms')
-			.select('id, client_name, advisor_name, form_data, status')
+			.select('id, client_name, advisor_name, form_data, status, tenant_id')
 			.eq('id', tok.form_id)
 			.single();
 
@@ -63,6 +64,11 @@
 		formId = form.id;
 		clientName = form.client_name;
 		advisorName = advisorName || form.advisor_name || '';
+
+		if (form.tenant_id) {
+			const { data: tenant } = await sb.from('crm_tenants').select('nazwa').eq('id', form.tenant_id).single();
+			tenantNazwa = tenant?.nazwa ?? '';
+		}
 
 		// Restore draft if exists
 		const fd = (form.form_data ?? {}) as Record<string, unknown>;
@@ -120,6 +126,7 @@
 			</div>
 			<h1 class="text-2xl font-bold text-slate-900">Analiza Potrzeb Klienta</h1>
 			<p class="text-slate-500 text-sm mt-1">Formularz zgodny z wymogami IDD</p>
+			{#if tenantNazwa}<p class="text-slate-400 text-xs mt-1">Doradca: {tenantNazwa}</p>{/if}
 		</div>
 
 		{#if status === 'loading'}
@@ -282,6 +289,8 @@
 			</div>
 		{/if}
 
-		<p class="text-center text-xs text-slate-400 mt-6">FRANK67 CRM · Analiza Potrzeb Klienta · {new Date().getFullYear()}</p>
+		<p class="text-center text-xs text-slate-400 mt-6">
+			{#if tenantNazwa}Doradca: {tenantNazwa} · {/if}Analiza Potrzeb Klienta · {new Date().getFullYear()}
+		</p>
 	</div>
 </div>

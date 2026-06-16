@@ -12,7 +12,6 @@
 
 	let search = $state('');
 	let showModal = $state(false);
-	let editingClient = $state<Client | null>(null);
 	let modalTyp = $state<'firma' | 'osoba'>('firma');
 
 	let fNazwa = $state('');
@@ -52,6 +51,61 @@
 		return groups;
 	});
 
+	// Merge / delete duplicates
+	const KLIENT_ID_TABLES = ['crm_client_contacts', 'crm_policies', 'crm_claims', 'crm_vehicles', 'apk_forms', 'crm_tasks', 'crm_task_history'];
+	let mergeTarget = $state<Record<string, string>>({});
+	let mergeError = $state<Record<string, string>>({});
+	let merging = $state<string | null>(null);
+
+	function policyCount(clientId: string) {
+		return appState.policies.filter(p => p.klient_id === clientId && !p.deleted_at).length;
+	}
+	function apkCount(clientId: string) {
+		return appState.apkForms.filter(f => f.klient_id === clientId && f.status === 'submitted').length;
+	}
+	function mustKeep(clientId: string) {
+		return policyCount(clientId) > 0 || apkCount(clientId) > 0;
+	}
+
+	async function mergeGroup(group: DupGroup) {
+		const targetId = mergeTarget[group.reason];
+		if (!targetId) { mergeError[group.reason] = 'Wybierz rekord, który ma zostać zachowany.'; return; }
+		const others = group.clients.filter(c => c.id !== targetId);
+		const blocked = others.find(c => mustKeep(c.id));
+		if (blocked) {
+			mergeError[group.reason] = `Rekord "${blocked.nazwa_skrocona ?? blocked.nazwa}" ma przypisaną polisę lub złożone APK i musi zostać zachowany w bazie — wybierz go jako rekord docelowy.`;
+			return;
+		}
+		merging = group.reason;
+		mergeError[group.reason] = '';
+		const otherIds = others.map(c => c.id);
+
+		for (const table of KLIENT_ID_TABLES) {
+			await sb.from(table).update({ klient_id: targetId }).in('klient_id', otherIds);
+		}
+		await sb.from('crm_clients').delete().in('id', otherIds);
+		await logAudit('clients_merged', 'client', targetId, group.reason, { merged_ids: otherIds });
+
+		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
+			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
+			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
+			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
+			sb.from('crm_vehicles').select('*'),
+			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false }),
+			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false }),
+			sb.from('crm_client_contacts').select('*')
+		]);
+		appState.clients = (rC.data ?? []) as typeof appState.clients;
+		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		appState.claims = (rCl.data ?? []) as typeof appState.claims;
+		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
+		appState.apkForms = (rA.data ?? []) as typeof appState.apkForms;
+		appState.tasks = (rT.data ?? []) as typeof appState.tasks;
+		appState.clientContacts = (rCc.data ?? []) as typeof appState.clientContacts;
+
+		merging = null;
+	}
+
 	const filtered = $derived(
 		appState.clients.filter(
 			(c) =>
@@ -63,21 +117,13 @@
 	);
 
 	function openNew(typ: 'firma' | 'osoba') {
-		editingClient = null; modalTyp = typ;
+		modalTyp = typ;
 		fNazwa = ''; fNazwaSkrocona = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
 		fEmail = ''; fTelefon = ''; formError = '';
 		showModal = true;
 	}
 
-	function openEdit(c: Client) {
-		editingClient = c; modalTyp = c.typ ?? 'firma';
-		fNazwa = c.nazwa; fNazwaSkrocona = c.nazwa_skrocona ?? ''; fUlica = c.ulica ?? '';
-		fNip = c.nip ?? ''; fRegon = c.regon ?? ''; fKrs = c.krs ?? ''; fPesel = c.pesel ?? '';
-		fEmail = c.email ?? ''; fTelefon = c.telefon ?? ''; formError = '';
-		showModal = true;
-	}
-
-	function closeModal() { showModal = false; editingClient = null; formError = ''; }
+	function closeModal() { showModal = false; formError = ''; }
 
 	async function save() {
 		if (!fNazwa.trim()) { formError = 'Pole Nazwa jest wymagane.'; return; }
@@ -95,19 +141,14 @@
 			telefon: fTelefon.trim() || null
 		};
 
-		let error;
-		if (editingClient) {
-			({ error } = await sb.from('crm_clients').update(payload).eq('id', editingClient.id));
-		} else {
-			({ error } = await sb.from('crm_clients').insert([{
-				tenant_id: appState.profile!.tenant_id,
-				opiekun_id: appState.profile!.id,
-				...payload
-			}]));
-		}
+		const { error } = await sb.from('crm_clients').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			opiekun_id: appState.profile!.id,
+			...payload
+		}]);
 		saving = false;
 		if (error) { formError = error.message; return; }
-		await logAudit(editingClient ? 'client_updated' : 'client_created', 'client', editingClient?.id, payload.nazwa as string);
+		await logAudit('client_created', 'client', undefined, payload.nazwa as string);
 		closeModal();
 		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
 		appState.clients = (data ?? []) as typeof appState.clients;
@@ -121,11 +162,7 @@
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
-	const modalTitle = $derived(
-		editingClient
-			? `Edytuj — ${editingClient.nazwa}`
-			: modalTyp === 'firma' ? 'Nowa Firma' : 'Nowa Osoba'
-	);
+	const modalTitle = $derived(modalTyp === 'firma' ? 'Nowa Firma' : 'Nowa Osoba');
 </script>
 
 <svelte:head><title>Klienci — FRANK67 CRM</title></svelte:head>
@@ -201,7 +238,7 @@
 							<button onclick={() => goto(`/clients/${c.id}`)} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 transition-colors">
 								Profil 360°
 							</button>
-							<button onclick={() => openEdit(c)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+							<button onclick={() => goto(`/clients/${c.id}/edit`)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
 								<Pencil size={14} />
 							</button>
 						</div>
@@ -218,7 +255,7 @@
 	{#snippet footer()}
 		<button onclick={closeModal} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : editingClient ? 'Zapisz zmiany' : (modalTyp === 'firma' ? 'Zapisz Firmę' : 'Zapisz Osobę')}
+			{saving ? 'Zapisywanie...' : (modalTyp === 'firma' ? 'Zapisz Firmę' : 'Zapisz Osobę')}
 		</button>
 	{/snippet}
 
@@ -293,14 +330,39 @@
 				<div class="bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 uppercase tracking-wide">{group.reason}</div>
 				<div class="divide-y divide-slate-100">
 					{#each group.clients as c}
+					{@const pCount = policyCount(c.id)}
+					{@const aCount = apkCount(c.id)}
 					<div class="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
-						<div>
-							<div class="text-sm font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa}</div>
-							{#if c.nazwa_skrocona}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
-						</div>
+						<label class="flex items-center gap-2 cursor-pointer">
+							<input type="radio" name="merge-{group.reason}" value={c.id}
+								checked={mergeTarget[group.reason] === c.id}
+								onchange={() => { mergeTarget[group.reason] = c.id; mergeError[group.reason] = ''; }}
+								class="accent-blue-600" />
+							<div>
+								<div class="text-sm font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa}</div>
+								{#if c.nazwa_skrocona}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
+								{#if pCount > 0 || aCount > 0}
+									<div class="text-[11px] text-emerald-600 mt-0.5">
+										{#if pCount > 0}{pCount} polis{pCount === 1 ? 'a' : ''}{/if}
+										{#if pCount > 0 && aCount > 0} · {/if}
+										{#if aCount > 0}{aCount} APK złożone{/if}
+									</div>
+								{/if}
+							</div>
+						</label>
 						<a href="/clients/{c.id}" onclick={() => showDuplicates = false} class="text-xs text-blue-600 hover:underline">Otwórz →</a>
 					</div>
 					{/each}
+				</div>
+				<div class="px-4 py-3 bg-slate-50 border-t border-slate-100">
+					{#if mergeError[group.reason]}
+						<div class="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{mergeError[group.reason]}</div>
+					{/if}
+					<button onclick={() => mergeGroup(group)} disabled={merging === group.reason}
+						class="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+						{merging === group.reason ? 'Scalanie...' : 'Scal i usuń pozostałe'}
+					</button>
+					<span class="text-[11px] text-slate-400 ml-2">Wybierz rekord do zachowania, pozostałe zostaną scalone i usunięte.</span>
 				</div>
 			</div>
 			{/each}

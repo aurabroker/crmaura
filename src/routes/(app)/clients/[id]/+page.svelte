@@ -465,12 +465,20 @@
 				</div>
 			</div>
 		</div>
-		<button
-			onclick={() => goto(`/policies/new?klient=${clientId}`)}
-			class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors"
-		>
-			<Plus size={14} /> Dodaj Polisę
-		</button>
+		<div class="flex items-center gap-2">
+			<button
+				onclick={() => goto(`/clients/${clientId}/edit`)}
+				class="flex items-center gap-1.5 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
+			>
+				<Pencil size={14} /> Edytuj
+			</button>
+			<button
+				onclick={() => goto(`/policies/new?klient=${clientId}`)}
+				class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors"
+			>
+				<Plus size={14} /> Dodaj Polisę
+			</button>
+		</div>
 	</div>
 
 	<!-- Dashboard KPI cards (tylko jeśli są dane) -->

@@ -236,7 +236,7 @@
 	{@const www = extractWWW(prospect.notatki)}
 
 	<!-- Header -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-5">
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-5 w-1/2 min-w-[480px]">
 		{#if editingProspect}
 			<div class="space-y-3">
 				<div class="grid grid-cols-2 gap-3">
@@ -335,8 +335,10 @@
 		{/if}
 	</div>
 
+	<!-- Tasks + Activity (side by side) -->
+	<div class="grid grid-cols-2 gap-5">
 	<!-- Tasks -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm mb-5">
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
 		<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
 			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
 				<CheckCircle2 size={15} class="text-blue-500" /> Zadania
@@ -463,6 +465,7 @@
 				</button>
 			</div>
 		</div>
+	</div>
 	</div>
 {/if}
 
