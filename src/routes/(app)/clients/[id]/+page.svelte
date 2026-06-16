@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { sb } from '$lib/supabase';
+	import { sb, SB_URL } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays } from '$lib/utils';
 	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import type { ApkForm } from '$lib/types/database';
@@ -44,7 +44,151 @@
 	const hasVehicles = $derived(clientVehicles.length > 0);
 	const hasClaims = $derived(clientClaims.length > 0);
 
-	let activeTab = $state<'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania'>('polisy');
+	const isAuraTenant = $derived(appState.tenantNazwa.toLowerCase().includes('aura'));
+
+	type TabKey = 'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'mailing';
+	let activeTab = $state<TabKey>('polisy');
+	const tabs = $derived(
+		['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
+	);
+
+	// ── Mailing GetResponse (tylko Aura Expert) ───────────────────────────────
+	type GrMessage = { id: string; subject: string; sentOn: string | null; openedOn: string | null; opened: boolean; openCount: number };
+	type GrResult =
+		| { matched: true; contact: { contactId: string; email: string | null; name: string | null }; messages: GrMessage[] }
+		| { matched: false; reason: 'no_email' | 'not_found'; email?: string };
+
+	let grLoading = $state(false);
+	let grError = $state('');
+	let grResult = $state<GrResult | null>(null);
+	let grLink = $state<{ gr_email: string | null; ignored: boolean } | null>(null);
+	let grEditEmail = $state(false);
+	let grEmailInput = $state('');
+	let grSaving = $state(false);
+	// in-memory cache per client (email -> { at, result }) — krótki cache na żywo
+	const grCache = new Map<string, { at: number; result: GrResult }>();
+	const GR_CACHE_MS = 5 * 60 * 1000;
+	let grLoadedFor = '';
+
+	function fmtDateTime(s: string | null): string {
+		if (!s) return '—';
+		const d = new Date(s);
+		if (isNaN(d.getTime())) return s;
+		return d.toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+	}
+
+	// adres używany do dopasowania w GetResponse: override > email klienta
+	const grMatchEmail = $derived((grLink?.gr_email ?? client?.email ?? '').trim());
+
+	async function loadGrLink() {
+		if (!clientId) return;
+		const { data } = await sb
+			.from('crm_getresponse_links')
+			.select('gr_email, ignored')
+			.eq('klient_id', clientId)
+			.maybeSingle();
+		grLink = data ?? { gr_email: null, ignored: false };
+	}
+
+	async function loadMailing(force = false) {
+		if (!isAuraTenant || !clientId) return;
+		if (!grLink) await loadGrLink();
+		if (grLink?.ignored && !force) { grResult = null; return; }
+
+		const email = grMatchEmail.toLowerCase();
+		if (!email) { grResult = { matched: false, reason: 'no_email' }; return; }
+
+		const cached = grCache.get(email);
+		if (!force && cached && Date.now() - cached.at < GR_CACHE_MS) {
+			grResult = cached.result;
+			return;
+		}
+
+		grLoading = true;
+		grError = '';
+		try {
+			const { data: { session } } = await sb.auth.getSession();
+			const res = await fetch(`${SB_URL}/functions/v1/getresponse-client-activities`, {
+				method: 'POST',
+				headers: { 'Authorization': `Bearer ${session?.access_token}`, 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email })
+			});
+			const payload = await res.json();
+			if (!res.ok) { grError = payload?.error ?? 'Błąd pobierania danych z GetResponse'; grResult = null; return; }
+			grResult = payload as GrResult;
+			grCache.set(email, { at: Date.now(), result: grResult });
+		} catch (e) {
+			grError = e instanceof Error ? e.message : String(e);
+			grResult = null;
+		} finally {
+			grLoading = false;
+		}
+	}
+
+	async function saveGrEmail() {
+		if (!clientId) return;
+		grSaving = true;
+		try {
+			const value = grEmailInput.trim() || null;
+			await sb.from('crm_getresponse_links').upsert({
+				tenant_id: appState.profile?.tenant_id,
+				klient_id: clientId,
+				gr_email: value,
+				ignored: false,
+				updated_at: new Date().toISOString()
+			}, { onConflict: 'klient_id' });
+			grLink = { gr_email: value, ignored: false };
+			grEditEmail = false;
+			grCache.clear();
+			await loadMailing(true);
+		} finally {
+			grSaving = false;
+		}
+	}
+
+	async function ignoreMismatch() {
+		if (!clientId) return;
+		grSaving = true;
+		try {
+			await sb.from('crm_getresponse_links').upsert({
+				tenant_id: appState.profile?.tenant_id,
+				klient_id: clientId,
+				gr_email: grLink?.gr_email ?? null,
+				ignored: true,
+				updated_at: new Date().toISOString()
+			}, { onConflict: 'klient_id' });
+			grLink = { gr_email: grLink?.gr_email ?? null, ignored: true };
+			grResult = null;
+		} finally {
+			grSaving = false;
+		}
+	}
+
+	async function undoIgnore() {
+		if (!clientId) return;
+		grSaving = true;
+		try {
+			await sb.from('crm_getresponse_links').upsert({
+				tenant_id: appState.profile?.tenant_id,
+				klient_id: clientId,
+				gr_email: grLink?.gr_email ?? null,
+				ignored: false,
+				updated_at: new Date().toISOString()
+			}, { onConflict: 'klient_id' });
+			grLink = { gr_email: grLink?.gr_email ?? null, ignored: false };
+			await loadMailing(true);
+		} finally {
+			grSaving = false;
+		}
+	}
+
+	// lazy-load przy wejściu w zakładkę (oszczędza limity API)
+	$effect(() => {
+		if (activeTab === 'mailing' && isAuraTenant && clientId && grLoadedFor !== clientId) {
+			grLoadedFor = clientId;
+			loadMailing();
+		}
+	});
 
 	// APK
 	const APK_APP_URL = 'https://crmaura.pages.dev';
@@ -386,11 +530,11 @@
 
 	<!-- Tabs -->
 	<div class="flex gap-6 border-b border-slate-200 mb-4">
-		{#each (['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty', 'apk', 'zadania'] as const) as tab}
+		{#each tabs as tab}
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
@@ -800,6 +944,93 @@
 					{/each}
 				</ul>
 			{/if}
+		</div>
+
+	{:else if activeTab === 'mailing'}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			<div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+				<div class="flex items-center gap-2">
+					<Mail size={16} class="text-slate-400" />
+					<span class="text-sm font-semibold text-slate-700">Mailing GetResponse</span>
+					<span class="text-xs text-slate-400">— informacyjnie, tylko podgląd</span>
+				</div>
+				<button onclick={() => loadMailing(true)} disabled={grLoading}
+					class="flex items-center gap-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+					<RefreshCw size={12} class={grLoading ? 'animate-spin' : ''} /> Odśwież
+				</button>
+			</div>
+
+			<div class="p-5">
+				{#if grLoading}
+					<p class="text-sm text-slate-400 text-center py-6">Pobieranie z GetResponse…</p>
+				{:else if grError}
+					<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{grError}</div>
+				{:else if grLink?.ignored}
+					<div class="flex items-center justify-between text-sm bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+						<span class="text-slate-500">Mailing dla tego klienta jest pominięty (ignorowany).</span>
+						<button onclick={undoIgnore} disabled={grSaving} class="text-blue-600 hover:underline">Przywróć</button>
+					</div>
+				{:else if grResult?.matched}
+					<div class="flex items-center gap-2 text-xs text-slate-400 mb-3">
+						Kontakt GetResponse: <span class="font-medium text-slate-600">{grResult.contact.email}</span>
+						{#if grResult.contact.name}<span>· {grResult.contact.name}</span>{/if}
+					</div>
+					{#if grResult.messages.length === 0}
+						<p class="text-sm text-slate-400 text-center py-6">Brak wysłanych wiadomości w ostatnim okresie.</p>
+					{:else}
+						<table class="w-full text-left text-sm">
+							<thead>
+								<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+									<th class="px-4 py-2">Temat</th>
+									<th class="px-4 py-2">Wysłano</th>
+									<th class="px-4 py-2">Otwarcie</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each grResult.messages as m}
+									<tr class="border-t border-slate-100">
+										<td class="px-4 py-2.5 font-medium text-slate-800">{m.subject}</td>
+										<td class="px-4 py-2.5 text-slate-500"><span class="inline-flex items-center gap-1"><Send size={12} class="text-slate-300" />{fmtDateTime(m.sentOn)}</span></td>
+										<td class="px-4 py-2.5">
+											{#if m.opened}
+												<span class="inline-flex items-center gap-1 text-emerald-600"><MailCheck size={13} /> {fmtDateTime(m.openedOn)}{#if m.openCount > 1}<span class="text-xs text-slate-400 ml-1">({m.openCount}×)</span>{/if}</span>
+											{:else}
+												<span class="text-slate-400">nie otwarto</span>
+											{/if}
+										</td>
+									</tr>
+								{/each}
+							</tbody>
+						</table>
+					{/if}
+				{:else if grResult && !grResult.matched}
+					<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm">
+						<div class="flex items-start gap-2 text-amber-800">
+							<AlertTriangle size={15} class="mt-0.5 shrink-0" />
+							<div>
+								<p class="font-medium">Dane w CRM różne od GetResponse</p>
+								{#if grResult.reason === 'no_email'}
+									<p class="text-amber-700 mt-0.5">Ten klient nie ma adresu e-mail w CRM, więc nie można dopasować kontaktu w GetResponse.</p>
+								{:else}
+									<p class="text-amber-700 mt-0.5">Nie znaleziono kontaktu w GetResponse dla adresu <span class="font-mono">{grResult.email ?? grMatchEmail}</span> (rekord klienta: {client.nazwa}).</p>
+								{/if}
+							</div>
+						</div>
+						{#if grEditEmail}
+							<div class="flex items-center gap-2 mt-3">
+								<input type="email" bind:value={grEmailInput} placeholder="adres e-mail w GetResponse" class="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+								<button onclick={saveGrEmail} disabled={grSaving} class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">Zapisz</button>
+								<button onclick={() => grEditEmail = false} class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
+							</div>
+						{:else}
+							<div class="flex items-center gap-3 mt-3">
+								<button onclick={() => { grEmailInput = grLink?.gr_email ?? client.email ?? ''; grEditEmail = true; }} class="text-sm font-medium text-blue-600 hover:underline">Uzupełnij adres</button>
+								<button onclick={ignoreMismatch} disabled={grSaving} class="text-sm text-slate-500 hover:underline">Ignoruj</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
 		</div>
 	{/if}
 {/if}
