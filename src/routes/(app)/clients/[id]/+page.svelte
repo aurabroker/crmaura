@@ -352,6 +352,12 @@
 
 	async function linkVehicleToPolicy(vehicleId: string) {
 		if (!linkPolicyId) return;
+		if (linkPolicyId === '__new__') {
+			const veh = clientVehicles.find(v => v.id === vehicleId);
+			const przedmiot = veh ? veh.nr_rejestracyjny + (veh.vin ? ' / ' + veh.vin : '') : '';
+			goto(`/policies/new?klient=${clientId}&rodzaj=komunikacja&przedmiot=${encodeURIComponent(przedmiot)}&pojazd_id=${vehicleId}`);
+			return;
+		}
 		linkingSaving = true;
 		await sb.from('crm_policies').update({ pojazd_id: vehicleId }).eq('id', linkPolicyId);
 		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null);
@@ -724,30 +730,25 @@
 								<div class="flex items-center gap-2 flex-wrap">
 									<button onclick={() => openEditVehicle(v)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
 									{#if !assigned}
-										<a href="/policies/new?klient={clientId}&rodzaj=komunikacja&przedmiot={encodeURIComponent(v.nr_rejestracyjny + (v.vin ? ' / ' + v.vin : ''))}&pojazd_id={v.id}"
-											class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-											<FileText size={11} /> Dodaj polisę
-										</a>
-										{#if unlinkedPolicies.length > 0}
-											{#if linkingVehicleId === v.id}
-												<div class="flex items-center gap-1.5">
-													<select bind:value={linkPolicyId} class="border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
-														<option value="">— wybierz polisę —</option>
-														{#each unlinkedPolicies as p}
-															<option value={p.id}>{p.nr_polisy} ({p.rodzaj})</option>
-														{/each}
-													</select>
-													<button onclick={() => linkVehicleToPolicy(v.id)} disabled={!linkPolicyId || linkingSaving} class="px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50">
-														{linkingSaving ? '...' : 'Przypisz'}
-													</button>
-													<button onclick={() => { linkingVehicleId = null; linkPolicyId = ''; }} class="px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">✕</button>
-												</div>
-											{:else}
-												<button onclick={() => { linkingVehicleId = v.id; linkPolicyId = ''; }}
-													class="text-xs text-emerald-600 hover:underline flex items-center gap-1">
-													<Link size={11} /> Powiąż z polisą
+										{#if linkingVehicleId === v.id}
+											<div class="flex items-center gap-1.5">
+												<select bind:value={linkPolicyId} class="border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+													<option value="">— wybierz polisę —</option>
+													{#each unlinkedPolicies as p}
+														<option value={p.id}>{p.nr_polisy} ({p.rodzaj})</option>
+													{/each}
+													<option value="__new__">➕ Utwórz nową polisę</option>
+												</select>
+												<button onclick={() => linkVehicleToPolicy(v.id)} disabled={!linkPolicyId || linkingSaving} class="px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50">
+													{linkingSaving ? '...' : 'OK'}
 												</button>
-											{/if}
+												<button onclick={() => { linkingVehicleId = null; linkPolicyId = ''; }} class="px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">✕</button>
+											</div>
+										{:else}
+											<button onclick={() => { linkingVehicleId = v.id; linkPolicyId = ''; }}
+												class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+												<Link size={11} /> Powiąż z polisą
+											</button>
 										{/if}
 									{/if}
 								</div>
