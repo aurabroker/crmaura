@@ -31,6 +31,7 @@ export interface Client {
 	krs: string | null;
 	email: string | null;
 	telefon: string | null;
+	auth_user_id?: string | null;
 	rodo_zgoda: boolean;
 	rodo_data: string | null;
 	rodo_kanal: string | null;

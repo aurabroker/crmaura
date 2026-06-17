@@ -19,6 +19,66 @@
 		try { await saveApkPdf(f); } finally { pdfSaving = null; }
 	}
 
+	// --- Panel Klienta: dostęp (logowanie e-mail + hasło) ---
+	let showPortal = $state(false);
+	let portalEmail = $state('');
+	let portalPass = $state('');
+	let portalSaving = $state(false);
+	let portalError = $state('');
+	let portalDone = $state('');
+
+	async function authHeaders(): Promise<Record<string, string>> {
+		const { data: { session } } = await sb.auth.getSession();
+		return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` };
+	}
+	function genPass(): string {
+		const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+		const b = new Uint8Array(12); crypto.getRandomValues(b);
+		return Array.from(b, (x) => chars[x % chars.length]).join('');
+	}
+	function openPortal() {
+		portalError = ''; portalDone = '';
+		portalEmail = client?.email ?? '';
+		portalPass = genPass();
+		showPortal = true;
+	}
+	async function savePortalAccess() {
+		portalError = ''; portalDone = '';
+		if (!portalEmail.trim() || portalPass.length < 8) { portalError = 'Podaj e-mail i hasło (min. 8 znaków).'; return; }
+		portalSaving = true;
+		try {
+			const res = await fetch('/api/portal/access', {
+				method: 'POST', headers: await authHeaders(),
+				body: JSON.stringify({ klient_id: clientId, email: portalEmail.trim(), password: portalPass })
+			});
+			const d = await res.json();
+			if (!res.ok) { portalError = d.message ?? 'Nie udało się zapisać dostępu.'; return; }
+			if (client) client.auth_user_id = client.auth_user_id ?? 'set';
+			if (client) client.email = portalEmail.trim();
+			portalDone = d.mode === 'updated' ? 'Hasło zaktualizowane.' : 'Konto klienta utworzone.';
+		} catch {
+			portalError = 'Błąd połączenia.';
+		} finally {
+			portalSaving = false;
+		}
+	}
+	async function revokePortalAccess() {
+		if (!confirm('Odebrać klientowi dostęp do panelu? Konto logowania zostanie usunięte.')) return;
+		portalSaving = true; portalError = '';
+		try {
+			const res = await fetch('/api/portal/access', {
+				method: 'DELETE', headers: await authHeaders(),
+				body: JSON.stringify({ klient_id: clientId })
+			});
+			const d = await res.json();
+			if (!res.ok) { portalError = d.message ?? 'Nie udało się odebrać dostępu.'; return; }
+			if (client) client.auth_user_id = null;
+			portalDone = 'Dostęp odebrany.';
+		} finally {
+			portalSaving = false;
+		}
+	}
+
 	const clientId = $derived($page.params.id);
 	const client = $derived(appState.clients.find(c => c.id === clientId));
 	// Polisy, których klient jest właścicielem (ubezpieczającym) — podstawa rozliczeń finansowych.
@@ -29,6 +89,7 @@
 	const clientClaims = $derived(appState.claims.filter(c => c.klient_id === clientId));
 	const clientContacts = $derived(appState.clientContacts.filter(cc => cc.klient_id === clientId));
 	const clientApk = $derived(appState.apkForms.filter(f => f.klient_id === clientId));
+	const hasPortal = $derived(!!client?.auth_user_id);
 
 	const totalPrzyp = $derived(ownPolicies.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
 	const totalOpl = $derived(ownPolicies.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
@@ -482,6 +543,14 @@
 			</div>
 		</div>
 		<div class="flex items-center gap-2">
+			<button
+				onclick={openPortal}
+				class="flex items-center gap-1.5 bg-white border px-4 py-2 rounded-lg text-sm font-semibold transition-colors
+					{hasPortal ? 'text-emerald-700 border-emerald-300 hover:bg-emerald-50' : 'text-slate-700 border-slate-300 hover:bg-slate-50'}"
+				title="Dostęp do Panelu Klienta"
+			>
+				<Link size={14} /> {hasPortal ? 'Panel klienta ✓' : 'Panel klienta'}
+			</button>
 			<button
 				onclick={() => goto(`/clients/${clientId}/edit`)}
 				class="flex items-center gap-1.5 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
@@ -1299,4 +1368,43 @@
 			</div>
 		</div>
 	{/if}
+</Modal>
+
+<!-- Panel Klienta: dostęp -->
+<Modal open={showPortal} title="Dostęp do Panelu Klienta" onclose={() => (showPortal = false)}>
+	<div class="space-y-4">
+		<p class="text-sm text-slate-500">
+			Klient zaloguje się na <span class="font-mono text-slate-700">/portal</span> e-mailem i hasłem i zobaczy swoje polisy, płatności, szkody i pojazdy.
+		</p>
+		{#if portalError}<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{portalError}</div>{/if}
+		{#if portalDone}<div class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{portalDone}</div>{/if}
+		<div>
+			<label class={labelCls}>E-mail logowania</label>
+			<input bind:value={portalEmail} type="email" class={inputCls} placeholder="klient@example.com" />
+		</div>
+		<div>
+			<label class={labelCls}>{hasPortal ? 'Nowe hasło' : 'Hasło'}</label>
+			<div class="flex gap-2">
+				<input bind:value={portalPass} class="{inputCls} font-mono" placeholder="min. 8 znaków" />
+				<button type="button" onclick={() => (portalPass = genPass())}
+					class="flex items-center gap-1 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 shrink-0 text-slate-600">
+					<RefreshCw size={14} /> Losuj
+				</button>
+			</div>
+			<p class="text-xs text-slate-400 mt-1">Przekaż klientowi e-mail i hasło bezpiecznym kanałem.</p>
+		</div>
+	</div>
+	{#snippet footer()}
+		{#if hasPortal}
+			<button onclick={revokePortalAccess} disabled={portalSaving}
+				class="mr-auto flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 font-semibold disabled:opacity-50">
+				<Trash2 size={14} /> Odbierz dostęp
+			</button>
+		{/if}
+		<button onclick={() => (showPortal = false)} class="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Zamknij</button>
+		<button onclick={savePortalAccess} disabled={portalSaving}
+			class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60">
+			{portalSaving ? 'Zapisywanie…' : hasPortal ? 'Zmień hasło' : 'Utwórz dostęp'}
+		</button>
+	{/snippet}
 </Modal>
