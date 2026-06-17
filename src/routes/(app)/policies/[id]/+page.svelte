@@ -109,7 +109,7 @@
 			ugEditUpdatedCount = 0;
 		}
 
-		const { data } = await sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)');
+		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)');
 		appState.policies = (data ?? []) as typeof appState.policies;
 		ugEditOpen = false; ugEditSaving = false;
 	}
@@ -150,7 +150,7 @@
 		axNr = ''; axTyp = 'korekta'; axData = ''; axOpis = ''; axDeltaSkladka = '0';
 		axNewDataDo = ''; axNewSkladka = ''; axNewProwizjaPct = '';
 		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
+			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;

@@ -69,7 +69,7 @@
 		settling = false;
 		if (error) { settleError = error.message; return; }
 		showSettle = false;
-		const { data } = await sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa)');
+		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa)');
 		appState.policies = (data ?? []) as typeof appState.policies;
 	}
 

@@ -11,6 +11,7 @@
 	import { logAudit } from '$lib/utils/audit';
 
 	let search = $state('');
+	let compactView = $state(false);
 	let showModal = $state(false);
 	let modalTyp = $state<'firma' | 'osoba'>('firma');
 
@@ -189,7 +190,34 @@
 	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nazwie lub NIP..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
+		<div class="flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0">
+			<button onclick={() => compactView = false}
+				class="px-3 py-1.5 text-xs font-medium transition-colors {!compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
+				Pełny
+			</button>
+			<button onclick={() => compactView = true}
+				class="px-3 py-1.5 text-xs font-medium border-l border-slate-200 transition-colors {compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
+				Kompaktowy
+			</button>
+		</div>
 	</div>
+	{#if compactView}
+		<div class="divide-y divide-slate-100">
+			{#each filtered as c}
+				<button onclick={() => goto(`/clients/${c.id}`)}
+					class="w-full flex items-center gap-2 px-5 py-1 text-left hover:bg-slate-50 transition-colors">
+					{#if c.typ === 'osoba'}
+						<User size={12} class="text-slate-400 shrink-0" />
+					{:else}
+						<Building2 size={12} class="text-slate-400 shrink-0" />
+					{/if}
+					<span class="text-sm text-slate-900 truncate">{c.nazwa_skrocona ?? c.nazwa}</span>
+				</button>
+			{:else}
+				<div class="px-5 py-6 text-center text-slate-400">Brak klientów</div>
+			{/each}
+		</div>
+	{:else}
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -249,6 +277,7 @@
 			{/each}
 		</tbody>
 	</table>
+	{/if}
 </div>
 
 <Modal title={modalTitle} open={showModal} onclose={closeModal}>
