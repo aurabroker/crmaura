@@ -6,7 +6,7 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
@@ -324,6 +324,12 @@
 			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<Users size={14} /> Podział prowizji {#if polisaBrokers.length > 0}<span class="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-semibold">{polisaBrokers.length}</span>{/if}
 			</button>
+			{#if policy.typ_umowy === 'generalna'}
+				<a href="/policies/new?parent_id={policyId}&klient={policy.klient_id}"
+					class="flex items-center gap-1.5 text-sm border border-blue-300 bg-blue-50 text-blue-700 rounded-lg px-3 py-2 hover:bg-blue-100 transition-colors">
+					<PlusCircle size={14} /> Dodaj polisę do UG
+				</a>
+			{/if}
 			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<FilePlus2 size={14} /> Aneks
 			</button>

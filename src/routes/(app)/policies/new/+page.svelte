@@ -15,11 +15,14 @@
 	const przedmiotParam = $page.url.searchParams.get('przedmiot') ?? '';
 	const pojazdIdParam = $page.url.searchParams.get('pojazd_id') ?? '';
 	const renewalOfParam = $page.url.searchParams.get('renewal_of') ?? '';
+	const parentIdParam = $page.url.searchParams.get('parent_id') ?? '';
 
 	const isRenewal = !!renewalOfParam;
+	// Jeśli tworzymy polisę podrzędną UG, zawsze jednostkowa i bez możliwości zmiany
+	const isChildOfUg = !!parentIdParam;
 
-	// Typ umowy: jednostkowa (zwykła polisa) lub generalna (UG). Odnowienia zawsze jednostkowe.
-	let typ = $state<'jednostkowa' | 'generalna'>(isRenewal ? 'jednostkowa' : (typParam ?? 'jednostkowa'));
+	// Typ umowy: jednostkowa (zwykła polisa) lub generalna (UG). Odnowienia i certyfikaty UG zawsze jednostkowe.
+	let typ = $state<'jednostkowa' | 'generalna'>((isRenewal || isChildOfUg) ? 'jednostkowa' : (typParam ?? 'jednostkowa'));
 
 	let policyForm = $state<ReturnType<typeof PolicyForm> | null>(null);
 	let ugForm = $state<ReturnType<typeof UgForm> | null>(null);
@@ -95,12 +98,12 @@
 			<ArrowLeft size={18} />
 		</button>
 		<div>
-			<h1 class="text-2xl font-semibold text-slate-900">{isRenewal ? 'Odnowienie Polisy' : typ === 'generalna' ? 'Nowa Umowa Generalna' : 'Nowa Polisa'}</h1>
+			<h1 class="text-2xl font-semibold text-slate-900">{isRenewal ? 'Odnowienie Polisy' : isChildOfUg ? 'Nowa Polisa do UG' : typ === 'generalna' ? 'Nowa Umowa Generalna' : 'Nowa Polisa'}</h1>
 			<p class="text-sm text-slate-500 mt-0.5">{isRenewal ? 'Wypełnij dane nowego okresu ubezpieczenia' : 'Wypełnij dane i zapisz'}</p>
 		</div>
 	</div>
 
-	{#if !isRenewal}
+	{#if !isRenewal && !isChildOfUg}
 		<!-- Wybór typu umowy: polisa jednostkowa / umowa generalna -->
 		<div class="flex gap-3 mb-4">
 			<button type="button" onclick={() => { typ = 'jednostkowa'; formError = ''; }}
@@ -134,6 +137,7 @@
 				presetRodzaj={rodzajParam}
 				presetPrzedmiot={przedmiotParam}
 				presetPojazdId={pojazdIdParam}
+				presetParentId={parentIdParam}
 			/>
 		{/if}
 	</div>

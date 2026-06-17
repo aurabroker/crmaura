@@ -10,9 +10,10 @@
 		presetRodzaj?: string;
 		presetPrzedmiot?: string;
 		presetPojazdId?: string;
+		presetParentId?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpUbezpieczony = $state(policy?.ubezpieczony_id ?? '');
@@ -21,7 +22,7 @@
 	let fpNr = $state(policy?.nr_polisy ?? '');
 	let fpRodzaj = $state((policy?.rodzaj ?? presetRodzaj) || 'majątkowa');
 	const fpTypUmowy = 'jednostkowa';
-	let fpParentId = $state(policy?.parent_id ?? '');
+	let fpParentId = $state(policy?.parent_id ?? presetParentId);
 	let fpPrzedmiot = $state(policy?.przedmiot ?? presetPrzedmiot);
 	let fpPojazdId = $state(policy?.pojazd_id ?? presetPojazdId ?? '');
 	let fpLeasingId = $state(policy?.leasing_id ?? '');
