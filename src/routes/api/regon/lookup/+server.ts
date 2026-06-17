@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth';
-import { GUS_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
+const GUS_API_KEY = env.GUS_API_KEY ?? '';
 import type { RequestHandler } from './$types';
 
 const BIR_URL = 'https://wyszukiwarkaregon.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc';
