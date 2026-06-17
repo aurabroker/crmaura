@@ -122,12 +122,30 @@ export interface Policy {
 	renewal_of: string | null;
 	pojazd_id: string | null;
 	ubezpieczony_id: string | null;
+	ug_limit: number | null;
+	gwarancja_typ: string | null;
+	gwarancja_beneficjent_nazwa: string | null;
+	gwarancja_beneficjent_nip: string | null;
+	gwarancja_kontrakt: string | null;
+	gwarancja_stawka_pct: number | null;
+	leasing_id: string | null;
+	nr_umowy_leasingowej: string | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	ubezpieczony?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;
 	crm_insurer_contacts?: { imie_nazwisko: string; stanowisko: string | null; crm_insurer_branches?: { nazwa: string } | null } | null;
 	crm_vehicles?: { nr_rejestracyjny: string; marka_model: string; vin: string | null } | null;
+	crm_leasings?: { nazwa: string } | null;
+}
+
+export interface Leasing {
+	id: string;
+	tenant_id: string;
+	nazwa: string;
+	nip: string | null;
+	adres: string | null;
+	created_at?: string;
 }
 
 export interface PolicyAnnex {

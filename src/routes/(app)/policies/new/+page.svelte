@@ -4,7 +4,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
-	import { ArrowLeft } from 'lucide-svelte';
+	import UgForm from '$lib/components/UgForm.svelte';
+	import { ArrowLeft, FileText, Network } from 'lucide-svelte';
 	import { logAudit } from '$lib/utils/audit';
 
 	const typParam = $page.url.searchParams.get('typ') as 'jednostkowa' | 'generalna' | null;
@@ -14,19 +15,27 @@
 	const przedmiotParam = $page.url.searchParams.get('przedmiot') ?? '';
 	const pojazdIdParam = $page.url.searchParams.get('pojazd_id') ?? '';
 	const renewalOfParam = $page.url.searchParams.get('renewal_of') ?? '';
+	const parentIdParam = $page.url.searchParams.get('parent_id') ?? '';
 
 	const isRenewal = !!renewalOfParam;
+	// Jeśli tworzymy polisę podrzędną UG, zawsze jednostkowa i bez możliwości zmiany
+	const isChildOfUg = !!parentIdParam;
+
+	// Typ umowy: jednostkowa (zwykła polisa) lub generalna (UG). Odnowienia i certyfikaty UG zawsze jednostkowe.
+	let typ = $state<'jednostkowa' | 'generalna'>((isRenewal || isChildOfUg) ? 'jednostkowa' : (typParam ?? 'jednostkowa'));
 
 	let policyForm = $state<ReturnType<typeof PolicyForm> | null>(null);
+	let ugForm = $state<ReturnType<typeof UgForm> | null>(null);
 	let saving = $state(false);
 	let formError = $state('');
 
 	async function save() {
-		if (!policyForm) return;
-		const err = policyForm.isValid();
+		const activeForm = typ === 'generalna' ? ugForm : policyForm;
+		if (!activeForm) return;
+		const err = activeForm.isValid();
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
-		const vals = policyForm.getValues();
+		const vals = activeForm.getValues();
 		const payload: Record<string, unknown> = {
 			tenant_id: appState.profile!.tenant_id,
 			...vals
@@ -39,8 +48,8 @@
 			.single();
 		if (error) { saving = false; formError = error.message; return; }
 
-		// Auto-create payment records (only when not UG without rozliczaj_platnosci)
-		const raty = policyForm.shouldCreatePayments() ? policyForm.getDatyRat() : [];
+		// Auto-create payment records
+		const raty = activeForm.shouldCreatePayments() ? activeForm.getDatyRat() : [];
 		if (raty.length > 0 && inserted?.id) {
 			await sb.from('crm_policy_payments').insert(
 				raty.map(r => ({
@@ -73,13 +82,15 @@
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		if (isRenewal && inserted?.id) {
 			goto(`/policies/${inserted.id}`);
+		} else if (typ === 'generalna') {
+			goto('/policies?typ=generalna');
 		} else {
 			goto('/policies');
 		}
 	}
 </script>
 
-<svelte:head><title>{isRenewal ? 'Odnowienie Polisy' : 'Nowa Polisa'} — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>{isRenewal ? 'Odnowienie Polisy' : 'Nowa Polisa / UG'} — FRANK67 CRM</title></svelte:head>
 
 <div class="max-w-5xl">
 	<div class="flex items-center gap-3 mb-6">
@@ -87,23 +98,48 @@
 			<ArrowLeft size={18} />
 		</button>
 		<div>
-			<h1 class="text-2xl font-semibold text-slate-900">{isRenewal ? 'Odnowienie Polisy' : 'Nowa Polisa'}</h1>
+			<h1 class="text-2xl font-semibold text-slate-900">{isRenewal ? 'Odnowienie Polisy' : isChildOfUg ? 'Nowa Polisa do UG' : typ === 'generalna' ? 'Nowa Umowa Generalna' : 'Nowa Polisa'}</h1>
 			<p class="text-sm text-slate-500 mt-0.5">{isRenewal ? 'Wypełnij dane nowego okresu ubezpieczenia' : 'Wypełnij dane i zapisz'}</p>
 		</div>
 	</div>
+
+	{#if !isRenewal && !isChildOfUg}
+		<!-- Wybór typu umowy: polisa jednostkowa / umowa generalna -->
+		<div class="flex gap-3 mb-4">
+			<button type="button" onclick={() => { typ = 'jednostkowa'; formError = ''; }}
+				class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors
+					{typ === 'jednostkowa' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+				<FileText size={16} /> Polisa jednostkowa
+			</button>
+			<button type="button" onclick={() => { typ = 'generalna'; formError = ''; }}
+				class="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors
+					{typ === 'generalna' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+				<Network size={16} /> Umowa Generalna
+			</button>
+		</div>
+	{/if}
 
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
 		{#if formError}
 			<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>
 		{/if}
-		<PolicyForm
-			bind:this={policyForm}
-			policy={{ typ_umowy: typParam ?? 'jednostkowa', ug_podtyp: podtypParam } as any}
-			presetKlient={klientParam}
-			presetRodzaj={rodzajParam}
-			presetPrzedmiot={przedmiotParam}
-			presetPojazdId={pojazdIdParam}
-		/>
+		{#if typ === 'generalna'}
+			<UgForm
+				bind:this={ugForm}
+				policy={{ ug_podtyp: podtypParam } as any}
+				presetKlient={klientParam}
+			/>
+		{:else}
+			<PolicyForm
+				bind:this={policyForm}
+				policy={{ typ_umowy: 'jednostkowa', ug_podtyp: podtypParam } as any}
+				presetKlient={klientParam}
+				presetRodzaj={rodzajParam}
+				presetPrzedmiot={przedmiotParam}
+				presetPojazdId={pojazdIdParam}
+				presetParentId={parentIdParam}
+			/>
+		{/if}
 	</div>
 
 	<div class="flex justify-end gap-3 mt-4">
@@ -111,7 +147,7 @@
 			Anuluj
 		</button>
 		<button onclick={save} disabled={saving} class="px-6 py-2.5 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : isRenewal ? 'Odnawiam polisę' : 'Zapisz Polisę'}
+			{saving ? 'Zapisywanie...' : isRenewal ? 'Odnawiam polisę' : typ === 'generalna' ? 'Zapisz Umowę Generalną' : 'Zapisz Polisę'}
 		</button>
 	</div>
 </div>

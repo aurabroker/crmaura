@@ -4,10 +4,10 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import type { Insurer, Profile, InsurerBranch, InsurerContact } from '$lib/types/database';
+	import type { Insurer, Profile, InsurerBranch, InsurerContact, Leasing } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users, ScrollText } from 'lucide-svelte';
+	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users, ScrollText, Landmark } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
 
 	onMount(async () => {
@@ -235,6 +235,32 @@
 		appState.insurerContacts = (data ?? []) as typeof appState.insurerContacts;
 	}
 
+	// --- Leasingi ---
+	let showLeasing = $state(false);
+	let editingLeasing = $state<Leasing | null>(null);
+	let lNazwa = $state(''); let lNip = $state(''); let lAdres = $state('');
+	let savingLeasing = $state(false); let leasingError = $state('');
+
+	function openNewLeasing() { editingLeasing=null; lNazwa=''; lNip=''; lAdres=''; leasingError=''; showLeasing=true; }
+	function openEditLeasing(l: Leasing) { editingLeasing=l; lNazwa=l.nazwa; lNip=l.nip??''; lAdres=l.adres??''; leasingError=''; showLeasing=true; }
+
+	async function saveLeasing() {
+		if (!lNazwa.trim()) { leasingError='Podaj nazwę firmy leasingowej'; return; }
+		savingLeasing=true; leasingError='';
+		const payload = { nazwa: lNazwa.trim(), nip: lNip.trim()||null, adres: lAdres.trim()||null };
+		let error;
+		if (editingLeasing) {
+			({ error } = await sb.from('crm_leasings').update(payload).eq('id', editingLeasing.id));
+		} else {
+			({ error } = await sb.from('crm_leasings').insert([{ tenant_id: appState.profile!.tenant_id, ...payload }]));
+		}
+		savingLeasing=false;
+		if (error) { leasingError=error.message; return; }
+		showLeasing=false;
+		const { data } = await sb.from('crm_leasings').select('*').order('nazwa');
+		appState.leasings = (data??[]) as typeof appState.leasings;
+	}
+
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
@@ -257,6 +283,11 @@
 		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
 			{activeTab === 'kancelaria' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
 		<Users size={15} /> Ustawienia Kancelarii
+	</a>
+	<a href="/admin?tab=leasingi"
+		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
+			{activeTab === 'leasingi' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}">
+		<Landmark size={15} /> Leasingi
 	</a>
 	<a href="/admin?tab=logi"
 		class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors
@@ -496,6 +527,42 @@
 		{/if}
 </div>
 
+{:else if activeTab === 'leasingi'}
+<!-- ===================== LEASINGI ===================== -->
+<div class="space-y-4">
+	<p class="text-sm text-slate-500">Firmy leasingowe powiązane z polisami komunikacyjnymi i flotowymi</p>
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+			<h2 class="font-semibold text-slate-900">Firmy leasingowe <span class="text-xs font-normal text-slate-400">({appState.leasings.length})</span></h2>
+			<button onclick={openNewLeasing} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50">+ Dodaj</button>
+		</div>
+		<table class="w-full text-left text-sm">
+			<thead>
+				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<th class="px-5 py-3">Nazwa</th>
+					<th class="px-5 py-3">NIP</th>
+					<th class="px-5 py-3">Adres</th>
+					<th class="px-5 py-3"></th>
+				</tr>
+			</thead>
+			<tbody>
+				{#each appState.leasings as l}
+					<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<td class="px-5 py-3 font-medium">{l.nazwa}</td>
+						<td class="px-5 py-3 text-xs font-mono text-slate-500">{l.nip ?? '—'}</td>
+						<td class="px-5 py-3 text-xs text-slate-500">{l.adres ?? '—'}</td>
+						<td class="px-5 py-3">
+							<button onclick={() => openEditLeasing(l)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
+						</td>
+					</tr>
+				{:else}
+					<tr><td colspan="4" class="px-5 py-6 text-center text-slate-400">Brak firm leasingowych</td></tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
+</div>
+
 {:else if activeTab === 'logi'}
 <!-- ===================== LOGI AKTYWNOŚCI ===================== -->
 <div class="space-y-4">
@@ -661,6 +728,22 @@
 			<div><label class={labelCls}>Telefon</label><input bind:value={bTelefon} class={inputCls} /></div>
 			<div><label class={labelCls}>E-mail</label><input type="email" bind:value={bEmail} class={inputCls} /></div>
 		</div>
+	</div>
+</Modal>
+
+<!-- Modal: Firma leasingowa -->
+<Modal title={editingLeasing ? `Edytuj — ${editingLeasing.nazwa}` : 'Nowa firma leasingowa'} open={showLeasing} onclose={() => { showLeasing=false; leasingError=''; }}>
+	{#snippet footer()}
+		<button onclick={() => { showLeasing=false; leasingError=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveLeasing} disabled={savingLeasing} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			{savingLeasing ? 'Zapisywanie...' : editingLeasing ? 'Zapisz zmiany' : 'Dodaj'}
+		</button>
+	{/snippet}
+	{#if leasingError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{leasingError}</div>{/if}
+	<div class="space-y-3">
+		<div><label class={labelCls}>Nazwa firmy leasingowej *</label><input bind:value={lNazwa} class={inputCls} placeholder="np. PKO Leasing S.A." /></div>
+		<div><label class={labelCls}>NIP</label><input bind:value={lNip} class={inputCls} placeholder="np. 5210088166" /></div>
+		<div><label class={labelCls}>Adres</label><input bind:value={lAdres} class={inputCls} placeholder="ul. Przykładowa 1, 00-001 Warszawa" /></div>
 	</div>
 </Modal>
 

@@ -6,7 +6,7 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
@@ -202,7 +202,7 @@
 		savingContact = false;
 		if (error) { contactError = error.message; return; }
 		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
+			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
 			.is('deleted_at', null);
 		appState.policies = (data ?? []) as typeof appState.policies;
 		showContact = false;
@@ -212,7 +212,7 @@
 	async function removeContact() {
 		await sb.from('crm_policies').update({ tu_contact_id: null }).eq('id', policyId);
 		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
+			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
 			.is('deleted_at', null);
 		appState.policies = (data ?? []) as typeof appState.policies;
 	}
@@ -239,7 +239,7 @@
 
 	async function reloadPayments() {
 		const { data } = await sb.from('crm_policy_payments')
-			.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))')
+			.select('*, crm_policies(nr_polisy, crm_clients(nazwa))')
 			.order('data_platnosci');
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
@@ -304,10 +304,6 @@
 				<h1 class="text-2xl font-semibold text-slate-900">{policy.nr_polisy}</h1>
 				<div class="flex items-center gap-2 mt-0.5">
 					<a href="/clients/{policy.klient_id}" class="text-sm text-blue-600 hover:underline">{policy.crm_clients?.nazwa ?? '—'}</a>
-					{#if policy.ubezpieczony_id}
-						<span class="text-slate-300">•</span>
-						<span class="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">Ubezpieczony: {policy.ubezpieczony?.nazwa ?? '—'}</span>
-					{/if}
 					<span class="text-slate-300">•</span>
 					<span class="text-sm text-slate-500">{tuLabel}</span>
 					{#if st}<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>{/if}
@@ -328,6 +324,12 @@
 			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<Users size={14} /> Podział prowizji {#if polisaBrokers.length > 0}<span class="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-semibold">{polisaBrokers.length}</span>{/if}
 			</button>
+			{#if policy.typ_umowy === 'generalna'}
+				<a href="/policies/new?parent_id={policyId}&klient={policy.klient_id}"
+					class="flex items-center gap-1.5 text-sm border border-blue-300 bg-blue-50 text-blue-700 rounded-lg px-3 py-2 hover:bg-blue-100 transition-colors">
+					<PlusCircle size={14} /> Dodaj polisę do UG
+				</a>
+			{/if}
 			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<FilePlus2 size={14} /> Aneks
 			</button>
@@ -404,6 +406,18 @@
 		</div>
 		{/if}
 	</div>
+
+	<!-- Pojazd powiązany (komunikacja / flota) -->
+	{#if (policy.rodzaj === 'komunikacja' || policy.rodzaj === 'flota') && policy.pojazd_id}
+		{@const linkedVehicle = appState.vehicles.find(v => v.id === policy.pojazd_id)}
+		{#if linkedVehicle}
+		<div class="inline-flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 mb-5">
+			<Car size={14} class="text-slate-400" />
+			<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Pojazd:</span>
+			<span class="text-sm font-semibold text-slate-900">{linkedVehicle.nr_rejestracyjny}{linkedVehicle.vin ? ' / ' + linkedVehicle.vin : ''} — {linkedVehicle.marka_model}</span>
+		</div>
+		{/if}
+	{/if}
 
 	<!-- UG: domyślna prowizja (compact inline) -->
 	{#if policy.typ_umowy === 'generalna'}

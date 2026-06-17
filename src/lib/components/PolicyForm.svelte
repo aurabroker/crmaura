@@ -10,9 +10,10 @@
 		presetRodzaj?: string;
 		presetPrzedmiot?: string;
 		presetPojazdId?: string;
+		presetParentId?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpUbezpieczony = $state(policy?.ubezpieczony_id ?? '');
@@ -21,9 +22,12 @@
 	let fpNr = $state(policy?.nr_polisy ?? '');
 	let fpRodzaj = $state((policy?.rodzaj ?? presetRodzaj) || 'majątkowa');
 	const fpTypUmowy = 'jednostkowa';
-	let fpParentId = $state(policy?.parent_id ?? '');
+	let fpParentId = $state(policy?.parent_id ?? presetParentId);
 	let fpPrzedmiot = $state(policy?.przedmiot ?? presetPrzedmiot);
 	let fpPojazdId = $state(policy?.pojazd_id ?? presetPojazdId ?? '');
+	let fpLeasingId = $state(policy?.leasing_id ?? '');
+	let fpNrUmowyLeasingowej = $state(policy?.nr_umowy_leasingowej ?? '');
+	let fpHasLeasing = $state(!!(policy?.leasing_id));
 
 	// Utrata dochodu: parse existing przedmiot JSON or start empty
 	function parseUD(raw: string) {
@@ -33,12 +37,16 @@
 	let fpUD = $state(parseUD(policy?.przedmiot ?? ''));
 	const isUD = $derived(fpRodzaj === 'utrata_dochodu');
 	const isKomunikacja = $derived(fpRodzaj === 'komunikacja');
+	const isFlota = $derived(fpRodzaj === 'flota');
 	const clientVehicles = $derived(
 		fpKlient ? appState.vehicles.filter(v => v.klient_id === fpKlient) : []
 	);
 	// Vehicles of this client not already assigned to a different active policy.
+	// Always include the vehicle currently linked to this policy (fpPojazdId) so editing never loses it.
 	const availableVehicles = $derived(
-		clientVehicles.filter(v => !assignedPolicyFor(v.id, appState.policies, policy?.id))
+		clientVehicles.filter(v =>
+			v.id === fpPojazdId || !assignedPolicyFor(v.id, appState.policies, policy?.id)
+		)
 	);
 
 	$effect(() => {
@@ -170,7 +178,9 @@
 			parent_id: fpParentId || null,
 			ubezpieczony_id: (showUbezpieczony && fpUbezpieczony) ? fpUbezpieczony : null,
 			przedmiot: isUD ? JSON.stringify({ __ud: true, ctn: fpUD.ctn, ctc: fpUD.ctc, si: fpUD.si }) : (fpPrzedmiot || null),
-			pojazd_id: isKomunikacja ? (fpPojazdId || null) : null,
+			pojazd_id: (isKomunikacja || isFlota) ? (fpPojazdId || policy?.pojazd_id || null) : null,
+			leasing_id: (isKomunikacja || isFlota) && fpHasLeasing ? (fpLeasingId || null) : null,
+			nr_umowy_leasingowej: (isKomunikacja || isFlota) && fpHasLeasing ? (fpNrUmowyLeasingowej || null) : null,
 			data_od: fpOd, data_do: fpDo,
 			data_zawarcia: fpZawarcia || null,
 			ilosc_rat: fpRaty,
@@ -378,7 +388,7 @@
 				</button>
 			</div>
 			<div>
-				<label class={lbl}>Ubezpieczony *</label>
+				<label class={lbl}>Ubezpieczony</label>
 				<div class="relative"
 					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { ubezpieczonyOpen = false; ubezpieczonySearch = ''; } }}>
 					<input type="text"
@@ -444,7 +454,7 @@
 						<input type="number" step="0.01" bind:value={fpUD.si} class={inp} placeholder="kwota PLN" />
 					</div>
 				</div>
-			{:else if isKomunikacja}
+			{:else if isKomunikacja || isFlota}
 				{#if fpKlient && clientVehicles.length === 0}
 					<div class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
 						⚠️ Brak pojazdów przypisanych do klienta. Najpierw dodaj pojazd w karcie klienta.
@@ -469,6 +479,36 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Leasing (dla komunikacja / flota) -->
+	{#if isKomunikacja || isFlota}
+	<div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+		<label class="flex items-center gap-3 cursor-pointer mb-3">
+			<input type="checkbox" bind:checked={fpHasLeasing} class="w-4 h-4 rounded accent-blue-600" />
+			<span class="text-sm font-semibold text-slate-700">Finansowanie leasingowe</span>
+		</label>
+		{#if fpHasLeasing}
+		<div class="grid grid-cols-2 gap-4">
+			<div>
+				<label class={lbl}>Firma leasingowa</label>
+				<select bind:value={fpLeasingId} class={inp}>
+					<option value="">— wybierz —</option>
+					{#each appState.leasings as l}
+						<option value={l.id}>{l.nazwa}</option>
+					{/each}
+				</select>
+				{#if appState.leasings.length === 0}
+					<p class="text-[11px] text-amber-600 mt-1">Brak firm leasingowych — dodaj w Administracji.</p>
+				{/if}
+			</div>
+			<div>
+				<label class={lbl}>Nr umowy leasingowej</label>
+				<input bind:value={fpNrUmowyLeasingowej} class={inp} placeholder="np. LS/2025/001" />
+			</div>
+		</div>
+		{/if}
+	</div>
+	{/if}
 
 	<!-- Wiersz 4: Data od | Data do | Data zawarcia -->
 	<div class="grid grid-cols-3 gap-4">

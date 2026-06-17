@@ -6,6 +6,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
+	import GwarancjaForm from '$lib/components/GwarancjaForm.svelte';
 	import { Search, Pencil, FilePlus2, ChevronDown, ChevronRight, Plus, Shield } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 
@@ -16,6 +17,13 @@
 	let editForm = $state<ReturnType<typeof PolicyForm> | null>(null);
 	let saving = $state(false);
 	let formError = $state('');
+
+	// --- Add guarantee modal ---
+	let showAddGwarancja = $state(false);
+	let addGwarancjaParent = $state<Policy | null>(null);
+	let gwarancjaForm = $state<ReturnType<typeof GwarancjaForm> | null>(null);
+	let savingGwarancja = $state(false);
+	let gwarancjaError = $state('');
 
 	const ugPolicies = $derived(
 		appState.policies
@@ -42,9 +50,36 @@
 		expandedUG = s;
 	}
 
+	function usedLimit(ugId: string): number {
+		return childrenOf(ugId).reduce((sum, ch) => sum + Number(ch.skladka_przypisana ?? 0), 0);
+	}
+
+	function freeLimit(ug: Policy): number {
+		return (ug.ug_limit ?? 0) - usedLimit(ug.id);
+	}
+
+	function daysElapsed(dataOd: string): number {
+		return Math.max(0, Math.round((Date.now() - new Date(dataOd).getTime()) / 86400000));
+	}
+
+	function daysTotal(dataOd: string, dataDo: string): number {
+		return Math.max(1, Math.round((new Date(dataDo).getTime() - new Date(dataOd).getTime()) / 86400000));
+	}
+
+	function pctElapsed(dataOd: string, dataDo: string): number {
+		const total = daysTotal(dataOd, dataDo);
+		const elapsed = daysElapsed(dataOd);
+		return Math.min(100, Math.round((elapsed / total) * 100));
+	}
+
+	function limitPct(ug: Policy, child: Policy): number {
+		if (!ug.ug_limit || ug.ug_limit <= 0) return 0;
+		return Math.min(100, Math.round((Number(child.skladka_przypisana ?? 0) / ug.ug_limit) * 100));
+	}
+
 	async function reloadPolicies() {
 		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
+			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
@@ -64,8 +99,39 @@
 		await reloadPolicies();
 	}
 
+	function openAddGwarancja(ug: Policy) {
+		addGwarancjaParent = ug;
+		gwarancjaError = '';
+		showAddGwarancja = true;
+	}
+
+	async function saveGwarancja() {
+		if (!gwarancjaForm || !addGwarancjaParent) return;
+		const err = gwarancjaForm.isValid();
+		if (err) { gwarancjaError = err; return; }
+		savingGwarancja = true; gwarancjaError = '';
+		const vals = gwarancjaForm.getValues();
+		const { error } = await sb.from('crm_policies').insert([{
+			tenant_id: appState.profile!.tenant_id,
+			...vals
+		}]);
+		savingGwarancja = false;
+		if (error) { gwarancjaError = error.message; return; }
+		showAddGwarancja = false;
+		addGwarancjaParent = null;
+		await reloadPolicies();
+	}
+
 	const totalSkladka = $derived(ugPolicies.reduce((sum, p) => sum + (p.skladka_przypisana ?? 0), 0));
+	const totalLimit = $derived(ugPolicies.reduce((sum, p) => sum + (p.ug_limit ?? 0), 0));
 	const activeCount = $derived(ugPolicies.filter(p => policyStatus(p.data_do).label === 'Aktywna').length);
+
+	const TYPY_LABELS: Record<string, string> = {
+		wadialna: 'Wadialna',
+		nalezytego_wykonania: 'Należytego wykonania',
+		usuniecia_wad: 'Usunięcia wad',
+		zwrotu_zaliczki: 'Zwrotu zaliczki'
+	};
 </script>
 
 <svelte:head><title>Gwarancje — FRANK67 CRM</title></svelte:head>
@@ -86,7 +152,7 @@
 </div>
 
 <!-- KPI strip -->
-<div class="grid grid-cols-3 gap-4 mb-6">
+<div class="grid grid-cols-4 gap-4 mb-6">
 	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
 		<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">UG Gwarancji</div>
 		<div class="text-2xl font-bold text-slate-900">{ugPolicies.length}</div>
@@ -96,8 +162,12 @@
 		<div class="text-2xl font-bold text-emerald-600">{activeCount}</div>
 	</div>
 	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Łączny limit</div>
+		<div class="text-2xl font-bold text-violet-700">{fmtPln(totalLimit)}</div>
+	</div>
+	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
 		<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Łączna składka</div>
-		<div class="text-2xl font-bold text-violet-700">{fmtPln(totalSkladka)}</div>
+		<div class="text-2xl font-bold text-slate-700">{fmtPln(totalSkladka)}</div>
 	</div>
 </div>
 
@@ -107,116 +177,153 @@
 	<input bind:value={search} placeholder="Szukaj po nr polisy lub kliencie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 </div>
 
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<table class="w-full text-left text-sm">
-		<thead>
-			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-				<th class="px-5 py-3">Nr Polisy / UG</th>
-				<th class="px-5 py-3">Klient</th>
-				<th class="px-5 py-3">TU</th>
-				<th class="px-5 py-3">OD</th>
-				<th class="px-5 py-3">DO</th>
-				<th class="px-5 py-3 text-right">Składka</th>
-				<th class="px-5 py-3">Prowizja %</th>
-				<th class="px-5 py-3">Status</th>
-				<th class="px-5 py-3">Akcje</th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each ugPolicies as p}
-				{@const st = policyStatus(p.data_do)}
-				{@const children = childrenOf(p.id)}
-				{@const axs = annexesOf(p.id)}
-				{@const expanded = expandedUG.has(p.id)}
+<div class="space-y-4">
+{#each ugPolicies as p}
+	{@const st = policyStatus(p.data_do)}
+	{@const children = childrenOf(p.id)}
+	{@const axs = annexesOf(p.id)}
+	{@const expanded = expandedUG.has(p.id)}
+	{@const used = usedLimit(p.id)}
+	{@const free = freeLimit(p)}
+	{@const limitDefined = (p.ug_limit ?? 0) > 0}
+	{@const usedPct = limitDefined ? Math.min(100, Math.round((used / (p.ug_limit ?? 1)) * 100)) : 0}
 
-				<tr class="border-t border-slate-100 hover:bg-violet-50/30 bg-violet-50/10">
-					<td class="px-5 py-3">
-						<div class="flex items-center gap-2">
-							{#if children.length > 0}
-								<button onclick={() => toggleUG(p.id)} class="text-slate-400 hover:text-violet-600">
-									{#if expanded}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
-								</button>
-							{:else}
-								<span class="w-[14px]"></span>
-							{/if}
-							<div>
-								<a href="/policies/{p.id}" class="font-semibold text-violet-700 hover:underline">{p.nr_polisy}</a>
-								{#if children.length > 0}
-									<div class="text-[10px] text-violet-400">{children.length} pozycj{children.length === 1 ? 'a' : children.length < 5 ? 'e' : 'i'}</div>
-								{/if}
-								{#if axs.length > 0}
-									<div class="text-[10px] text-amber-500">{axs.length} aneks{axs.length > 1 ? 'ów' : ''}</div>
-								{/if}
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<!-- UG Header -->
+		<div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-violet-50/30">
+			<div class="flex items-center gap-3">
+				{#if children.length > 0}
+					<button onclick={() => toggleUG(p.id)} class="text-slate-400 hover:text-violet-600">
+						{#if expanded}<ChevronDown size={16} />{:else}<ChevronRight size={16} />{/if}
+					</button>
+				{:else}
+					<span class="w-4"></span>
+				{/if}
+				<div>
+					<a href="/policies/{p.id}" class="font-bold text-violet-700 hover:underline text-base">{p.nr_polisy}</a>
+					<div class="flex items-center gap-3 mt-0.5">
+						<span class="text-sm text-slate-600">{p.crm_clients?.nazwa ?? '—'}</span>
+						<span class="text-xs text-slate-400">|</span>
+						{#if p.crm_insurers?.skrot}
+							<span class="font-mono text-xs font-semibold text-blue-700">{p.crm_insurers.skrot}</span>
+						{:else}
+							<span class="text-xs text-slate-400">{p.crm_insurers?.nazwa ?? '—'}</span>
+						{/if}
+						<span class="text-xs text-slate-400">{p.data_od} — {p.data_do}</span>
+						{#if axs.length > 0}
+							<span class="text-[10px] text-amber-600">{axs.length} aneks{axs.length > 1 ? 'ów' : ''}</span>
+						{/if}
+					</div>
+				</div>
+			</div>
+			<div class="flex items-center gap-4">
+				<!-- Limit display -->
+				{#if limitDefined}
+					<div class="text-right">
+						<div class="text-xs text-slate-500 mb-0.5">Wolny limit</div>
+						<div class="text-sm font-bold {free >= 0 ? 'text-emerald-600' : 'text-red-600'}">{fmtPln(free)} PLN</div>
+						<div class="w-32 bg-slate-200 rounded-full h-1.5 mt-1">
+							<div class="h-1.5 rounded-full {usedPct > 90 ? 'bg-red-500' : usedPct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}" style="width:{usedPct}%"></div>
+						</div>
+						<div class="text-[10px] text-slate-400 mt-0.5">{usedPct}% wykorzystany ({fmtPln(used)} / {fmtPln(p.ug_limit ?? 0)} PLN)</div>
+					</div>
+				{/if}
+				<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+				<div class="flex items-center gap-1">
+					<button onclick={() => { editingPolicy = p; formError = ''; showEdit = true; }} title="Edytuj UG" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+						<Pencil size={14} />
+					</button>
+					<button onclick={() => openAddGwarancja(p)} title="Dodaj gwarancję" class="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50">
+						<FilePlus2 size={14} />
+					</button>
+				</div>
+			</div>
+		</div>
+
+		<!-- Children -->
+		{#if expanded && children.length > 0}
+			<div class="divide-y divide-slate-100">
+				{#each children as ch}
+					{@const chSt = policyStatus(ch.data_do)}
+					{@const elapsed = daysElapsed(ch.data_od)}
+					{@const total = daysTotal(ch.data_od, ch.data_do)}
+					{@const timePct = pctElapsed(ch.data_od, ch.data_do)}
+					{@const lPct = limitPct(p, ch)}
+					<div class="px-5 py-3 bg-slate-50/50 hover:bg-slate-50">
+						<div class="flex items-start justify-between gap-4">
+							<div class="flex items-start gap-3">
+								<span class="text-slate-300 mt-0.5">↳</span>
+								<div>
+									<div class="flex items-center gap-2">
+										<a href="/policies/{ch.id}" class="font-medium text-blue-700 hover:underline text-sm">{ch.nr_polisy}</a>
+										{#if ch.gwarancja_typ}
+											<span class="text-[10px] px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 font-semibold">{TYPY_LABELS[ch.gwarancja_typ] ?? ch.gwarancja_typ}</span>
+										{/if}
+										{#if ch.gwarancja_stawka_pct}
+											<span class="text-[10px] text-slate-500">stawka: {ch.gwarancja_stawka_pct}%</span>
+										{/if}
+									</div>
+									{#if ch.gwarancja_kontrakt}
+										<div class="text-xs text-slate-500 mt-0.5">Kontrakt: {ch.gwarancja_kontrakt}</div>
+									{/if}
+									{#if ch.gwarancja_beneficjent_nazwa}
+										<div class="text-xs text-slate-500">Beneficjent: {ch.gwarancja_beneficjent_nazwa}{ch.gwarancja_beneficjent_nip ? ` (NIP: ${ch.gwarancja_beneficjent_nip})` : ''}</div>
+									{/if}
+									<div class="text-xs text-slate-400 mt-0.5">{ch.data_od} — {ch.data_do}</div>
+								</div>
+							</div>
+							<div class="flex items-center gap-6 shrink-0">
+								<!-- Suma gwarancyjna -->
+								<div class="text-right">
+									<div class="text-xs text-slate-400">Suma gwarancyjna</div>
+									<div class="text-sm font-semibold text-slate-800">{fmtPln(ch.skladka_przypisana)} PLN</div>
+									{#if limitDefined}
+										<div class="text-[10px] text-violet-600">{lPct}% limitu UG</div>
+									{/if}
+								</div>
+								<!-- Licznik czasu -->
+								<div class="text-right min-w-[80px]">
+									<div class="text-xs text-slate-400 mb-1">Upłynęło</div>
+									<div class="w-20 bg-slate-200 rounded-full h-1.5">
+										<div class="h-1.5 rounded-full {timePct > 90 ? 'bg-red-500' : timePct > 70 ? 'bg-amber-500' : 'bg-blue-500'}" style="width:{timePct}%"></div>
+									</div>
+									<div class="text-[10px] text-slate-500 mt-0.5">{timePct}% ({elapsed}/{total} dni)</div>
+								</div>
+								<div class="flex items-center gap-2">
+									<Badge variant={chSt.badge === 'badge-error' ? 'error' : chSt.badge === 'badge-warning' ? 'warning' : 'success'}>{chSt.label}</Badge>
+									<button onclick={() => { editingPolicy = ch; formError = ''; showEdit = true; }} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+										<Pencil size={14} />
+									</button>
+								</div>
 							</div>
 						</div>
-					</td>
-					<td class="px-5 py-3">
-						<a href="/clients/{p.klient_id}" class="hover:text-violet-700 hover:underline">{p.crm_clients?.nazwa ?? '—'}</a>
-					</td>
-					<td class="px-5 py-3">
-						{#if p.crm_insurers?.skrot}
-							<span class="font-mono font-semibold text-blue-700" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
-						{:else}
-							{p.crm_insurers?.nazwa ?? '—'}
-						{/if}
-					</td>
-					<td class="px-5 py-3 text-xs">{p.data_od}</td>
-					<td class="px-5 py-3 text-xs">{p.data_do}</td>
-					<td class="px-5 py-3 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
-					<td class="px-5 py-3 text-xs">{p.prowizja_pct ?? p.ug_default_prowizja_pct ?? '—'}%</td>
-					<td class="px-5 py-3">
-						<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
-					</td>
-					<td class="px-5 py-3">
-						<div class="flex items-center gap-1">
-							<button onclick={() => { editingPolicy = p; formError = ''; showEdit = true; }} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-								<Pencil size={14} />
-							</button>
-							<button onclick={() => goto(`/policies/new?typ=jednostkowa&parent=${p.id}`)} title="Dodaj pozycję" class="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-violet-50 transition-colors">
-								<FilePlus2 size={14} />
-							</button>
-						</div>
-					</td>
-				</tr>
+					</div>
+				{/each}
+			</div>
+		{/if}
 
-				{#if expanded}
-					{#each children as ch}
-						{@const chSt = policyStatus(ch.data_do)}
-						<tr class="border-t border-slate-100 bg-slate-50/60">
-							<td class="pl-14 pr-5 py-2.5 text-sm">
-								↳ <a href="/policies/{ch.id}" class="font-medium text-blue-700 hover:underline">{ch.nr_polisy}</a>
-							</td>
-							<td class="px-5 py-2.5 text-sm">
-								<a href="/clients/{ch.klient_id}" class="hover:text-blue-700 hover:underline">{ch.crm_clients?.nazwa ?? '—'}</a>
-							</td>
-							<td class="px-5 py-2.5 text-sm">
-								{#if ch.crm_insurers?.skrot}
-									<span class="font-mono font-semibold text-blue-700">{ch.crm_insurers.skrot}</span>
-								{:else}
-									{ch.crm_insurers?.nazwa ?? '—'}
-								{/if}
-							</td>
-							<td class="px-5 py-2.5 text-xs">{ch.data_od}</td>
-							<td class="px-5 py-2.5 text-xs">{ch.data_do}</td>
-							<td class="px-5 py-2.5 text-right">{fmtPln(ch.skladka_przypisana)}</td>
-							<td class="px-5 py-2.5 text-xs">{ch.prowizja_pct ?? '—'}%</td>
-							<td class="px-5 py-2.5">
-								<Badge variant={chSt.badge === 'badge-error' ? 'error' : chSt.badge === 'badge-warning' ? 'warning' : 'success'}>{chSt.label}</Badge>
-							</td>
-							<td class="px-5 py-2.5">
-								<button onclick={() => { editingPolicy = ch; formError = ''; showEdit = true; }} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
-									<Pencil size={14} />
-								</button>
-							</td>
-						</tr>
-					{/each}
-				{/if}
-			{:else}
-				<tr><td colspan="9" class="px-5 py-12 text-center text-slate-400">Brak umów generalnych gwarancji</td></tr>
-			{/each}
-		</tbody>
-	</table>
+		{#if children.length === 0}
+			<div class="px-5 py-3 text-sm text-slate-400 italic">Brak wystawionych gwarancji — kliknij <FilePlus2 size={12} class="inline" /> aby dodać.</div>
+		{/if}
+	</div>
+{:else}
+	<div class="bg-white border border-slate-200 rounded-xl px-5 py-12 text-center text-slate-400">Brak umów generalnych gwarancji</div>
+{/each}
 </div>
+
+<!-- Modal: Dodaj gwarancję -->
+{#if addGwarancjaParent}
+<Modal title="Nowa gwarancja — {addGwarancjaParent.nr_polisy}" open={showAddGwarancja} onclose={() => { showAddGwarancja = false; addGwarancjaParent = null; }}>
+	{#snippet footer()}
+		<button onclick={() => { showAddGwarancja = false; addGwarancjaParent = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={saveGwarancja} disabled={savingGwarancja} class="px-4 py-2 text-sm bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-60">
+			{savingGwarancja ? 'Zapisywanie...' : 'Wystaw gwarancję'}
+		</button>
+	{/snippet}
+	{#if gwarancjaError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{gwarancjaError}</div>{/if}
+	<GwarancjaForm bind:this={gwarancjaForm} parentUg={addGwarancjaParent} />
+</Modal>
+{/if}
 
 <!-- Modal: Edytuj -->
 {#if editingPolicy}
