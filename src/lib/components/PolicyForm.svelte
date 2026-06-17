@@ -41,8 +41,11 @@
 		fpKlient ? appState.vehicles.filter(v => v.klient_id === fpKlient) : []
 	);
 	// Vehicles of this client not already assigned to a different active policy.
+	// Always include the vehicle currently linked to this policy (fpPojazdId) so editing never loses it.
 	const availableVehicles = $derived(
-		clientVehicles.filter(v => !assignedPolicyFor(v.id, appState.policies, policy?.id))
+		clientVehicles.filter(v =>
+			v.id === fpPojazdId || !assignedPolicyFor(v.id, appState.policies, policy?.id)
+		)
 	);
 
 	$effect(() => {
