@@ -4,27 +4,35 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
+	import UgForm from '$lib/components/UgForm.svelte';
 	import { ArrowLeft } from 'lucide-svelte';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
+	const isUg = $derived(policy?.typ_umowy === 'generalna');
 
 	let policyForm = $state<ReturnType<typeof PolicyForm> | null>(null);
+	let ugForm = $state<ReturnType<typeof UgForm> | null>(null);
 	let saving = $state(false);
 	let formError = $state('');
 
+	function activeForm() {
+		return isUg ? ugForm : policyForm;
+	}
+
 	async function save() {
-		if (!policyForm || !policy) return;
-		const err = policyForm.isValid();
+		const form = activeForm();
+		if (!form || !policy) return;
+		const err = form.isValid();
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
-		const vals = policyForm.getValues();
+		const vals = form.getValues();
 
 		const { error } = await sb.from('crm_policies').update(vals).eq('id', policy.id);
 		if (error) { saving = false; formError = error.message; return; }
 
 		// Regenerate only unpaid installments; preserve Opłacona/Częściowo opłacona
-		const raty = policyForm.getDatyRat();
+		const raty = form.getDatyRat();
 		if (raty.length > 0) {
 			const today = new Date().toISOString().split('T')[0];
 			// Find which nr_raty are already settled (do not touch them)
@@ -79,7 +87,7 @@
 			<ArrowLeft size={18} />
 		</button>
 		<div>
-			<h1 class="text-2xl font-semibold text-slate-900">Edytuj Polisę</h1>
+			<h1 class="text-2xl font-semibold text-slate-900">{isUg ? 'Edytuj Umowę Generalną' : 'Edytuj Polisę'}</h1>
 			{#if policy}
 				<p class="text-sm text-slate-500 mt-0.5">{policy.nr_polisy} — {policy.crm_clients?.nazwa}</p>
 			{/if}
@@ -93,7 +101,11 @@
 			{#if formError}
 				<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>
 			{/if}
-			<PolicyForm bind:this={policyForm} {policy} />
+			{#if isUg}
+				<UgForm bind:this={ugForm} {policy} />
+			{:else}
+				<PolicyForm bind:this={policyForm} {policy} />
+			{/if}
 		</div>
 
 		<div class="flex justify-end gap-3 mt-4">

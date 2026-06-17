@@ -21,6 +21,15 @@
 	const childSkladka = $derived(childPolicies.reduce((s, p) => s + (p.skladka_przypisana ?? 0), 0));
 	const childProwizja = $derived(childPolicies.reduce((s, p) => s + (p.prowizja_przypisana ?? 0), 0));
 
+	const ugPodtypLabel: Record<string, string> = {
+		flota: 'Flota',
+		gwarancje: 'Gwarancje',
+		cpm: 'CPM',
+		car_ear: 'CAR/EAR',
+		beauty_tax: 'BeautyTAX',
+		oc_beauty: 'OC Beauty'
+	};
+
 	// Policy brokers management
 	let showBrokers = $state(false);
 	let pbBrokerId = $state('');
@@ -419,9 +428,25 @@
 		{/if}
 	{/if}
 
-	<!-- UG: domyślna prowizja (compact inline) -->
+	<!-- UG: parametry (podtyp, limit, domyślna prowizja) -->
 	{#if policy.typ_umowy === 'generalna'}
-	<div class="inline-flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 mb-5">
+	<div class="flex flex-wrap items-center gap-3 mb-5">
+		<!-- Podtyp UG -->
+		<div class="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
+			<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide whitespace-nowrap">Podtyp UG:</p>
+			<span class="text-base font-bold text-blue-900">{ugPodtypLabel[policy.ug_podtyp ?? ''] ?? policy.ug_podtyp ?? '—'}</span>
+		</div>
+
+		<!-- Limit gwarancyjny (tylko Gwarancje) -->
+		{#if policy.ug_podtyp === 'gwarancje'}
+		<div class="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
+			<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide whitespace-nowrap">Limit gwarancyjny:</p>
+			<span class="text-base font-bold text-blue-900">{policy.ug_limit != null ? fmtPln(policy.ug_limit) : '—'}</span>
+		</div>
+		{/if}
+
+		<!-- Domyślna prowizja (compact inline) -->
+		<div class="inline-flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
 		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide whitespace-nowrap">Domyślna prowizja UG:</p>
 		{#if ugEditOpen}
 			<input type="number" step="0.01" bind:value={ugEditVal}
@@ -440,6 +465,7 @@
 				<Pencil size={11} /> Zmień
 			</button>
 		{/if}
+		</div>
 	</div>
 	{/if}
 
