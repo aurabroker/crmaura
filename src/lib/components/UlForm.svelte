@@ -32,7 +32,7 @@
 			bond_ul_data_od: fpOd || null,
 			bond_ul_data_do: fpDo || null,
 			bond_limit: fpLimit ? parseFloat(fpLimit) : null,
-			bond_stawka_bazowa: fpStawka ? parseFloat(fpStawka) : null,
+			bond_stawka_bazowa: parseFloat(fpStawka),
 			bond_skladka_min: fpSkladkaMin ? parseFloat(fpSkladkaMin) : null,
 			bond_stawka_negocjowana: fpNegocjowana
 		};
@@ -41,6 +41,7 @@
 	export function isValid(): string | null {
 		if (!fpTenant) return 'Wybierz podmiot (klienta) UL';
 		if (!fpNazwa.trim()) return 'Wybierz Towarzystwo Ubezpieczeń';
+		if (!fpStawka || parseFloat(fpStawka) < 0) return 'Podaj stawkę bazową (%) — bez niej składka się nie policzy';
 		if (fpLimit && parseFloat(fpLimit) < 0) return 'Limit nie może być ujemny';
 		return null;
 	}
@@ -105,7 +106,7 @@
 				<input type="number" step="0.01" bind:value={fpLimit} class={inp} placeholder="np. 10 000 000" />
 			</div>
 			<div>
-				<label class={lbl}>Stawka bazowa (%)</label>
+				<label class={lbl}>Stawka bazowa (%) *</label>
 				<input type="number" step="0.0001" bind:value={fpStawka} class={inp} placeholder="np. 1.2" />
 			</div>
 			<div>
