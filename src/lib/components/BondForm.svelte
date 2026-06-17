@@ -61,8 +61,8 @@
 			bond_suma: parseFloat(fpSuma) || 0,
 			bond_bez_limitu: fpBezLimitu,
 			bond_stawka_override: fpOverride,
-			bond_stawka: fpOverride && fpStawka ? parseFloat(fpStawka) : null,
-			bond_skladka: skladka
+			bond_stawka: fpOverride && fpStawka ? parseFloat(fpStawka) : null
+			// bond_skladka liczy trigger w bazie (fn_bond_calc_skladka) — nie wysyłamy z frontu
 		};
 	}
 
