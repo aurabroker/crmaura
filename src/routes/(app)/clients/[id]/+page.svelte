@@ -21,14 +21,17 @@
 
 	const clientId = $derived($page.params.id);
 	const client = $derived(appState.clients.find(c => c.id === clientId));
-	const clientPolicies = $derived(appState.policies.filter(p => p.klient_id === clientId));
+	// Polisy, których klient jest właścicielem (ubezpieczającym) — podstawa rozliczeń finansowych.
+	const ownPolicies = $derived(appState.policies.filter(p => p.klient_id === clientId));
+	// Wszystkie polisy powiązane z klientem: jako ubezpieczający LUB jako ubezpieczony (Dodaj ubezpieczonego).
+	const clientPolicies = $derived(appState.policies.filter(p => p.klient_id === clientId || p.ubezpieczony_id === clientId));
 	const clientVehicles = $derived(appState.vehicles.filter(v => v.klient_id === clientId));
 	const clientClaims = $derived(appState.claims.filter(c => c.klient_id === clientId));
 	const clientContacts = $derived(appState.clientContacts.filter(cc => cc.klient_id === clientId));
 	const clientApk = $derived(appState.apkForms.filter(f => f.klient_id === clientId));
 
-	const totalPrzyp = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
-	const totalOpl = $derived(clientPolicies.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
+	const totalPrzyp = $derived(ownPolicies.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
+	const totalOpl = $derived(ownPolicies.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
 	const activeClaims = $derived(clientClaims.filter(c => c.status === 'Zgłoszona' || c.status === 'W toku'));
 
 	const renewedPolicyIds = $derived(
@@ -566,6 +569,9 @@
 							<td class="px-5 py-3">
 								<div class="flex items-center gap-1.5 flex-wrap">
 									<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
+									{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
+										<span class="text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
+									{/if}
 									{#if isRenewed}
 										<span class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
 									{:else if isPendingRenewal}
@@ -631,6 +637,9 @@
 									<td class="px-5 py-3">
 										<div class="flex items-center gap-1.5">
 											<a href="/policies/{p.id}" class="font-medium text-slate-500 hover:underline">{p.nr_polisy}</a>
+											{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
+												<span class="text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
+											{/if}
 											{#if isRenewed}
 												<span class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
 											{/if}
