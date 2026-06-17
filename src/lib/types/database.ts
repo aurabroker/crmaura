@@ -358,4 +358,94 @@ export interface CrmTaskHistory {
   crm_profiles?: { imie_nazwisko: string | null } | null;
 }
 
+// ─────────────────────────────────────────────────────────────
+// Gwarancje ubezpieczeniowe (moduł bond_*) — osobny schemat
+// ─────────────────────────────────────────────────────────────
+
+// Podmiot (firma) korzystający z gwarancji — powiązany z CRM przez crm_client_id / crm_tenant_id
+export interface BondTenant {
+	bond_id: string;
+	bond_nazwa: string;
+	bond_slug: string;
+	bond_aktywny: boolean | null;
+	bond_nip: string | null;
+	bond_regon: string | null;
+	bond_krs: string | null;
+	crm_tenant_id: string | null;
+	crm_client_id: string | null;
+	bond_created_at?: string | null;
+}
+
+// Umowa Limitowa (UL) z danym TU dla danego podmiotu
+export interface BondInsurer {
+	bond_id: string;
+	bond_tenant_id: string;
+	bond_nazwa: string;            // nazwa TU
+	bond_nip: string | null;
+	bond_ul_nr: string | null;
+	bond_ul_data_od: string | null;
+	bond_ul_data_do: string | null;
+	bond_limit: number | null;
+	bond_stawka_bazowa: number | null;
+	bond_skladka_min: number | null;
+	bond_stawka_negocjowana: boolean | null;
+	bond_created_at?: string | null;
+}
+
+// Pojedyncza gwarancja
+export interface Bond {
+	bond_id: string;
+	bond_tenant_id: string;
+	bond_insurer_id: string | null;
+	bond_nr: string;
+	bond_rodzaj: string;           // WADIUM | NWK | UWU | ZAL
+	bond_kontrakt: string;
+	bond_inwestor: string | null;
+	bond_beneficjent: string | null;
+	bond_data_od: string;
+	bond_data_do: string;
+	bond_suma: number;
+	bond_stawka: number | null;
+	bond_skladka: number | null;
+	bond_bez_limitu: boolean | null;
+	bond_stawka_override: boolean | null;
+	bond_created_at?: string | null;
+	// joiny
+	bond_insurers?: { bond_nazwa: string; bond_ul_nr: string | null } | null;
+	bond_tenants?: { bond_nazwa: string } | null;
+}
+
+// Słownik TU (globalny)
+export interface BondTuDict {
+	id: string;
+	name: string;
+	short_name: string | null;
+	nip: string | null;
+	krs: string | null;
+	is_active: boolean | null;
+}
+
+// Widok wykorzystania limitu UL
+export interface BondLimitView {
+	bond_insurer_id: string | null;
+	bond_tenant_id: string | null;
+	bond_insurer_nazwa: string | null;
+	bond_limit: number | null;
+	bond_zaangazowane: number | null;
+	bond_wolny_limit: number | null;
+}
+
+// Wpis dziennika audytu
+export interface BondAuditLog {
+	id: number;
+	occurred_at: string;
+	actor_id: string | null;
+	actor_role: string | null;
+	operation: 'INSERT' | 'UPDATE' | 'DELETE';
+	table_name: string;
+	record_id: string | null;
+	old_data: Record<string, unknown> | null;
+	new_data: Record<string, unknown> | null;
+}
+
 export type Database = Record<string, unknown>;

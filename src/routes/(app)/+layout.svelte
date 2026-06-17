@@ -290,7 +290,7 @@
 							<Plus size={15} /> Dodaj Pojazd
 						</a>
 						{#if appState.tenantFeatures['gwarancje']}
-						<a href="/policies/new?typ=generalna&podtyp=gwarancje" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
+						<a href="/bonds" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
 							<Plus size={15} /> Dodaj Gwarancję
 						</a>
 						{/if}
