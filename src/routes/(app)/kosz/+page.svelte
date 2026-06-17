@@ -33,7 +33,7 @@
 		loading = true;
 		const { data } = await sb
 			.from('crm_policies')
-			.select('id, nr_polisy, rodzaj, data_od, data_do, skladka_przypisana, deleted_at, deletion_reason, crm_clients(nazwa), crm_insurers(nazwa, skrot)')
+			.select('id, nr_polisy, rodzaj, data_od, data_do, skladka_przypisana, deleted_at, deletion_reason, crm_clients!klient_id(nazwa), crm_insurers(nazwa, skrot)')
 			.not('deleted_at', 'is', null)
 			.order('deleted_at', { ascending: false });
 		deletedPolicies = (data ?? []) as DeletedPolicy[];
@@ -58,7 +58,7 @@
 		showRestore = false;
 		// Reload policies in app state
 		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
+			.select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
 			.is('deleted_at', null);
 		appState.policies = (data ?? []) as typeof appState.policies;
 		await loadDeleted();

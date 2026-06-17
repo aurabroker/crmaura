@@ -15,6 +15,8 @@
 	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
+	let fpUbezpieczony = $state(policy?.ubezpieczony_id ?? '');
+	let showUbezpieczony = $state(!!policy?.ubezpieczony_id);
 	let fpTu = $state(policy?.tu_id ?? '');
 	let fpNr = $state(policy?.nr_polisy ?? '');
 	let fpRodzaj = $state((policy?.rodzaj ?? presetRodzaj) || 'majątkowa');
@@ -166,6 +168,7 @@
 			ug_podtyp: null,
 			ug_default_prowizja_pct: null,
 			parent_id: fpParentId || null,
+			ubezpieczony_id: (showUbezpieczony && fpUbezpieczony) ? fpUbezpieczony : null,
 			przedmiot: isUD ? JSON.stringify({ __ud: true, ctn: fpUD.ctn, ctc: fpUD.ctc, si: fpUD.si }) : (fpPrzedmiot || null),
 			pojazd_id: isKomunikacja ? (fpPojazdId || null) : null,
 			data_od: fpOd, data_do: fpDo,
@@ -218,6 +221,15 @@
 			: appState.clients
 	);
 	const selectedClientName = $derived(appState.clients.find(c => c.id === fpKlient)?.nazwa ?? '');
+
+	let ubezpieczonySearch = $state('');
+	let ubezpieczonyOpen = $state(false);
+	const filteredUbezpieczeni = $derived(
+		ubezpieczonySearch.trim()
+			? appState.clients.filter(c => c.nazwa.toLowerCase().includes(ubezpieczonySearch.toLowerCase()) || (c.nazwa_skrocona ?? '').toLowerCase().includes(ubezpieczonySearch.toLowerCase()))
+			: appState.clients
+	);
+	const selectedUbezpieczonyName = $derived(appState.clients.find(c => c.id === fpUbezpieczony)?.nazwa ?? '');
 
 	let tuSearch = $state('');
 	let tuOpen = $state(false);
@@ -353,6 +365,61 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Ubezpieczony (drugi podmiot) -->
+	{#if showUbezpieczony}
+		<div class="border border-blue-200 bg-blue-50 rounded-xl p-4">
+			<div class="flex items-center justify-between mb-3">
+				<p class="text-xs font-semibold text-blue-700 uppercase tracking-wide">Ubezpieczony (drugi podmiot)</p>
+				<button type="button"
+					onclick={() => { showUbezpieczony = false; fpUbezpieczony = ''; ubezpieczonySearch = ''; }}
+					class="text-xs text-slate-400 hover:text-red-500 transition-colors">
+					✕ Usuń
+				</button>
+			</div>
+			<div>
+				<label class={lbl}>Ubezpieczony *</label>
+				<div class="relative"
+					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { ubezpieczonyOpen = false; ubezpieczonySearch = ''; } }}>
+					<input type="text"
+						value={ubezpieczonyOpen ? ubezpieczonySearch : (selectedUbezpieczonyName || '')}
+						placeholder={selectedUbezpieczonyName || '— wpisz nazwę klienta —'}
+						oninput={(e) => { ubezpieczonySearch = (e.target as HTMLInputElement).value; }}
+						onfocus={() => { ubezpieczonyOpen = true; ubezpieczonySearch = ''; }}
+						class={inp}
+					/>
+					{#if ubezpieczonyOpen}
+						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+							{#if filteredUbezpieczeni.length === 0}
+								<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
+							{:else}
+								{#each filteredUbezpieczeni as c}
+									<button tabindex="0" type="button"
+										class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
+										onclick={() => { fpUbezpieczony = c.id; ubezpieczonyOpen = false; ubezpieczonySearch = ''; }}>
+										<span class="font-medium">{c.nazwa_skrocona ?? c.nazwa}</span>
+										{#if c.nazwa_skrocona}<span class="text-xs text-slate-400 ml-2">{c.nazwa}</span>{/if}
+									</button>
+								{/each}
+							{/if}
+						</div>
+					{/if}
+				</div>
+				{#if fpUbezpieczony && !ubezpieczonyOpen}
+					<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedUbezpieczonyName}</p>
+				{/if}
+			</div>
+		</div>
+	{:else}
+		<div>
+			<button type="button"
+				onclick={() => { showUbezpieczony = true; }}
+				class="inline-flex items-center gap-2 px-4 py-2 text-sm border border-dashed border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition-colors">
+				<span class="text-base leading-none">+</span> Dodaj ubezpieczonego
+			</button>
+			<p class="text-[11px] text-slate-400 mt-1">Opcjonalny drugi podmiot ubezpieczony na polisie</p>
+		</div>
+	{/if}
 
 	<!-- Wiersz 3: Nr polisy | Przedmiot -->
 	<div class="grid grid-cols-2 gap-4">

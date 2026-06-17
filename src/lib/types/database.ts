@@ -121,8 +121,10 @@ export interface Policy {
 	rozliczaj_platnosci: boolean | null;
 	renewal_of: string | null;
 	pojazd_id: string | null;
+	ubezpieczony_id: string | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
+	ubezpieczony?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;
 	crm_insurer_contacts?: { imie_nazwisko: string; stanowisko: string | null; crm_insurer_branches?: { nazwa: string } | null } | null;
 	crm_vehicles?: { nr_rejestracyjny: string; marka_model: string; vin: string | null } | null;

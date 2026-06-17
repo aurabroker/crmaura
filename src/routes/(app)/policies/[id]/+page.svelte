@@ -109,7 +109,7 @@
 			ugEditUpdatedCount = 0;
 		}
 
-		const { data } = await sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)');
+		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)');
 		appState.policies = (data ?? []) as typeof appState.policies;
 		ugEditOpen = false; ugEditSaving = false;
 	}
@@ -150,7 +150,7 @@
 		axNr = ''; axTyp = 'korekta'; axData = ''; axOpis = ''; axDeltaSkladka = '0';
 		axNewDataDo = ''; axNewSkladka = ''; axNewProwizjaPct = '';
 		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot)'),
+			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)'),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
@@ -202,7 +202,7 @@
 		savingContact = false;
 		if (error) { contactError = error.message; return; }
 		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
+			.select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
 			.is('deleted_at', null);
 		appState.policies = (data ?? []) as typeof appState.policies;
 		showContact = false;
@@ -212,7 +212,7 @@
 	async function removeContact() {
 		await sb.from('crm_policies').update({ tu_contact_id: null }).eq('id', policyId);
 		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
+			.select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
 			.is('deleted_at', null);
 		appState.policies = (data ?? []) as typeof appState.policies;
 	}
@@ -239,7 +239,7 @@
 
 	async function reloadPayments() {
 		const { data } = await sb.from('crm_policy_payments')
-			.select('*, crm_policies(nr_polisy, crm_clients(nazwa))')
+			.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))')
 			.order('data_platnosci');
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
@@ -304,6 +304,10 @@
 				<h1 class="text-2xl font-semibold text-slate-900">{policy.nr_polisy}</h1>
 				<div class="flex items-center gap-2 mt-0.5">
 					<a href="/clients/{policy.klient_id}" class="text-sm text-blue-600 hover:underline">{policy.crm_clients?.nazwa ?? '—'}</a>
+					{#if policy.ubezpieczony_id}
+						<span class="text-slate-300">•</span>
+						<span class="text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">Ubezpieczony: {policy.ubezpieczony?.nazwa ?? '—'}</span>
+					{/if}
 					<span class="text-slate-300">•</span>
 					<span class="text-sm text-slate-500">{tuLabel}</span>
 					{#if st}<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>{/if}

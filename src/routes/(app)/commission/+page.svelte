@@ -57,7 +57,7 @@
 	async function loadPolicies() {
 		const { data } = await sb
 			.from('crm_policies')
-			.select('id, nr_polisy, skladka_przypisana, prowizja_przypisana, prowizja_zainkasowana, crm_clients(nazwa)')
+			.select('id, nr_polisy, skladka_przypisana, prowizja_przypisana, prowizja_zainkasowana, crm_clients!klient_id(nazwa)')
 			.order('nr_polisy');
 		policies = data ?? [];
 	}
