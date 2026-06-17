@@ -73,7 +73,7 @@
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
 		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
 
-		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL, rTasks] = await Promise.all([
+		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL, rTasks, rLeasings] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
 			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
@@ -89,7 +89,8 @@
 			sb.from('crm_insurer_branches').select('*').order('nazwa'),
 			sb.from('crm_insurer_contacts').select('*, crm_insurer_branches(nazwa)').order('imie_nazwisko'),
 			sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),
-			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false })
+			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false }),
+			sb.from('crm_leasings').select('*').order('nazwa')
 		]);
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
@@ -108,6 +109,7 @@
 		appState.insurerContacts = (rIC.data ?? []) as typeof appState.insurerContacts;
 		appState.alerts = (rAL.data ?? []) as typeof appState.alerts;
 		appState.tasks = (rTasks.data ?? []) as typeof appState.tasks;
+		appState.leasings = (rLeasings.data ?? []) as typeof appState.leasings;
 		initialized = true;
 		if (!loginLogged) {
 			loginLogged = true;

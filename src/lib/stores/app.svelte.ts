@@ -1,4 +1,4 @@
-import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, InsurerBranch, InsurerContact, PolicyBroker, ApkForm, CrmAlert, CrmTask } from '$lib/types/database';
+import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, InsurerBranch, InsurerContact, PolicyBroker, ApkForm, CrmAlert, CrmTask, Leasing } from '$lib/types/database';
 
 export const appState = $state({
 	profile: null as Profile | null,
@@ -22,7 +22,8 @@ export const appState = $state({
 	tenantFeatures: {} as Record<string, boolean>,
 	tasks: [] as CrmTask[],
 	loading: false,
-	apkForms: [] as ApkForm[]
+	apkForms: [] as ApkForm[],
+	leasings: [] as Leasing[]
 });
 
 export function isBroker(): boolean {

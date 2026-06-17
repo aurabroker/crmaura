@@ -14,6 +14,7 @@
 	let fpTu = $state(policy?.tu_id ?? '');
 	let fpNr = $state(policy?.nr_polisy ?? '');
 	let fpUgPodtyp = $state(policy?.ug_podtyp ?? '');
+	let fpUgLimit = $state(policy?.ug_limit?.toString() ?? '');
 	let fpUgDefaultProwizja = $state(policy?.ug_default_prowizja_pct?.toString() ?? '');
 	let fpPrzedmiot = $state(policy?.przedmiot ?? '');
 	let fpOd = $state(policy?.data_od ?? '');
@@ -121,6 +122,7 @@
 			typ_umowy: 'generalna',
 			rodzaj: fpUgPodtyp === 'beauty_tax' ? 'karno_skarbowa' : `umowa_generalna_${fpUgPodtyp}`,
 			ug_podtyp: fpUgPodtyp || null,
+			ug_limit: fpUgPodtyp === 'gwarancje' ? (parseFloat(fpUgLimit) || null) : null,
 			ug_default_prowizja_pct: parseFloat(fpUgDefaultProwizja) || null,
 			parent_id: null,
 			przedmiot: fpPrzedmiot || null,
@@ -205,6 +207,15 @@
 			{/each}
 		</div>
 	</div>
+
+	<!-- Limit gwarancyjny (tylko dla gwarancje) -->
+	{#if fpUgPodtyp === 'gwarancje'}
+	<div>
+		<label class={lbl}>Limit gwarancyjny (PLN) *</label>
+		<input type="number" step="0.01" bind:value={fpUgLimit} class={inp} placeholder="np. 5 000 000" />
+		<p class="text-[11px] text-slate-400 mt-1">Maksymalna łączna suma aktywnych gwarancji w ramach tej UG.</p>
+	</div>
+	{/if}
 
 	<!-- Klient | TU -->
 	<div class="grid grid-cols-2 gap-4">
