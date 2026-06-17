@@ -6,7 +6,7 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
@@ -400,6 +400,18 @@
 		</div>
 		{/if}
 	</div>
+
+	<!-- Pojazd powiązany (komunikacja / flota) -->
+	{#if (policy.rodzaj === 'komunikacja' || policy.rodzaj === 'flota') && policy.pojazd_id}
+		{@const linkedVehicle = appState.vehicles.find(v => v.id === policy.pojazd_id)}
+		{#if linkedVehicle}
+		<div class="inline-flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 mb-5">
+			<Car size={14} class="text-slate-400" />
+			<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Pojazd:</span>
+			<span class="text-sm font-semibold text-slate-900">{linkedVehicle.nr_rejestracyjny}{linkedVehicle.vin ? ' / ' + linkedVehicle.vin : ''} — {linkedVehicle.marka_model}</span>
+		</div>
+		{/if}
+	{/if}
 
 	<!-- UG: domyślna prowizja (compact inline) -->
 	{#if policy.typ_umowy === 'generalna'}

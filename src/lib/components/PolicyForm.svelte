@@ -177,7 +177,7 @@
 			parent_id: fpParentId || null,
 			ubezpieczony_id: (showUbezpieczony && fpUbezpieczony) ? fpUbezpieczony : null,
 			przedmiot: isUD ? JSON.stringify({ __ud: true, ctn: fpUD.ctn, ctc: fpUD.ctc, si: fpUD.si }) : (fpPrzedmiot || null),
-			pojazd_id: (isKomunikacja || isFlota) ? (fpPojazdId || null) : null,
+			pojazd_id: (isKomunikacja || isFlota) ? (fpPojazdId || policy?.pojazd_id || null) : null,
 			leasing_id: (isKomunikacja || isFlota) && fpHasLeasing ? (fpLeasingId || null) : null,
 			nr_umowy_leasingowej: (isKomunikacja || isFlota) && fpHasLeasing ? (fpNrUmowyLeasingowej || null) : null,
 			data_od: fpOd, data_do: fpDo,
