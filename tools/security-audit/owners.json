@@ -1,0 +1,32 @@
+{
+  "_comment": "Mapowanie prefiksu/nazwy tabeli lub funkcji -> repo/aplikacja właściciel. Używane w raporcie do wskazania, która sesja/zespół ma naprawić dany problem na współdzielonej bazie.",
+  "prefixes": {
+    "crm_": "crmaura",
+    "apk_": "APK",
+    "ud_": "udapp",
+    "udochodu_": "ud",
+    "mienie_": "ud",
+    "kancelaria_": "kancelaria",
+    "bp_": "beautypolisa",
+    "div_": "divorce",
+    "bond_": "bonds-panel",
+    "ads_": "ads",
+    "hub_": "hub",
+    "salon": "katalogbeauty",
+    "katalog": "catalog",
+    "life_": "life",
+    "pakiet": "medaura",
+    "pakiety": "medaura",
+    "badania": "medaura",
+    "specjalizacje": "medaura",
+    "placowki_": "medaura",
+    "relacje_": "medaura",
+    "aura_": "crmaura"
+  },
+  "exact": {
+    "dostawcy": "medaura",
+    "oferty": "medaura",
+    "get_my_tenant_id": "crmaura"
+  },
+  "default": "?"
+}

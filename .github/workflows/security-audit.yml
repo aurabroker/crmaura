@@ -1,0 +1,35 @@
+name: Security Audit (Supabase)
+
+# Audyt bezpieczeństwa współdzielonej bazy Supabase:
+#  - codziennie o 04:00 UTC,
+#  - na każdym PR do main (fail przy nowym CRITICAL),
+#  - ręcznie (workflow_dispatch).
+#
+# Wymagany sekret repo/organizacji: SUPABASE_DB_URL
+#   (Supabase → Project Settings → Database → Connection string [URI]).
+#   To sekret serwerowy — NIE używać prefiksu VITE_.
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install tool deps
+        working-directory: tools/security-audit
+        run: npm install --no-audit --no-fund
+      - name: Run security audit
+        working-directory: tools/security-audit
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        # Na PR psuj build tylko przy nowym CRITICAL; nocny cron loguje wszystko.
+        run: node run.mjs --fail-on=critical

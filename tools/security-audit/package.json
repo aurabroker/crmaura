@@ -1,0 +1,15 @@
+{
+  "name": "aura-security-audit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Read-only audyt bezpieczeństwa Supabase/Postgres (RLS, polityki anon, funkcje definer, buckety).",
+  "bin": { "aura-audit": "run.mjs" },
+  "scripts": {
+    "audit": "node run.mjs",
+    "audit:json": "node run.mjs --json"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}
