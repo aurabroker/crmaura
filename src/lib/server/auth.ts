@@ -41,3 +41,22 @@ export async function requireSaasAdmin(request: Request) {
 	if (ctx.profile.rola !== 'ADMIN GOD') throw error(403, 'Brak uprawnień SAAS Admin');
 	return ctx;
 }
+
+// Role nadawane w obrębie tenanta przez administratora firmy (bez super-admina SaaS).
+export const TENANT_ASSIGNABLE_ROLES = ['BROKER', 'ADMINISTRACJA', 'BOARD', 'ADMIN BROKER'] as const;
+// Pełny zbiór dozwolonych ról. 'ADMIN GOD' = super-admin całego SaaS.
+export const ALL_ROLES = [...TENANT_ASSIGNABLE_ROLES, 'ADMIN GOD'] as const;
+
+/**
+ * Waliduje rolę przed jej nadaniem. Zapobiega eskalacji uprawnień:
+ * administrator tenanta (ADMIN BROKER / BOARD) NIE może wykreować roli 'ADMIN GOD' —
+ * tylko istniejący 'ADMIN GOD' może nadać tę rolę.
+ */
+export function assertAssignableRole(requestedRole: string, actorRole: string) {
+	if (!ALL_ROLES.includes(requestedRole as (typeof ALL_ROLES)[number])) {
+		throw error(400, 'Nieprawidłowa rola');
+	}
+	if (requestedRole === 'ADMIN GOD' && actorRole !== 'ADMIN GOD') {
+		throw error(403, 'Brak uprawnień do nadania roli ADMIN GOD');
+	}
+}

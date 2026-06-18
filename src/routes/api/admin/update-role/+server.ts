@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { requireAdmin } from '$lib/server/auth';
+import { requireAdmin, assertAssignableRole } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -13,6 +13,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	};
 
 	if (!user_id || !role) throw error(400, 'Podaj user_id i rolę');
+	// Blokada eskalacji uprawnień — m.in. nadania roli ADMIN GOD przez admina tenanta.
+	assertAssignableRole(role, profile.rola);
 
 	const { data: target } = await admin.from('crm_profiles')
 		.select('tenant_id')

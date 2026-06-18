@@ -325,10 +325,18 @@ Projekt deployowany automatycznie przy push na branch `main` przez integrację G
 **Wymagane zmienne środowiskowe (Cloudflare Pages → Settings → Environment variables):**
 
 ```
-VITE_SUPABASE_URL              = https://<project>.supabase.co
-VITE_SUPABASE_ANON_KEY         = eyJ...
-VITE_SUPABASE_SERVICE_ROLE_KEY = eyJ...  <- wymagany dla /api/admin/*
+VITE_SUPABASE_URL          = https://<project>.supabase.co
+VITE_SUPABASE_ANON_KEY     = eyJ...
+SUPABASE_SERVICE_ROLE_KEY  = eyJ...  <- wymagany dla /api/admin/*
+TURNSTILE_SECRET_KEY       = ...     <- weryfikacja antybotowa (serwer)
+GUS_API_KEY                = ...     <- wyszukiwarka REGON/NIP
 ```
+
+> ⚠️ **BEZPIECZEŃSTWO:** klucz `service_role` (oraz `TURNSTILE_SECRET_KEY`, `GUS_API_KEY`)
+> **NIGDY** nie może mieć przedrostka `VITE_`. Przedrostek `VITE_` powoduje, że Vite
+> wstrzykuje zmienną do bundla przeglądarki — `service_role` omija całe RLS, więc taki
+> wyciek = pełny dostęp do bazy dla każdego odwiedzającego. Zmienne serwerowe są czytane
+> przez `$env/dynamic/private` i muszą pozostać bez `VITE_`.
 
 ### Adapter
 
@@ -343,11 +351,17 @@ import adapter from '@sveltejs/adapter-cloudflare';
 
 | Zmienna | Wymagana | Opis |
 |---------|----------|------|
-| `VITE_SUPABASE_URL` | TAK | URL projektu Supabase |
+| `VITE_SUPABASE_URL` | TAK | URL projektu Supabase (publiczny) |
 | `VITE_SUPABASE_ANON_KEY` | TAK | Klucz publiczny (anon) Supabase |
-| `VITE_SUPABASE_SERVICE_ROLE_KEY` | TAK* | Klucz service_role — wymagany dla endpointów admin |
+| `SUPABASE_SERVICE_ROLE_KEY` | TAK* | Klucz service_role — **tylko serwer, bez `VITE_`** |
+| `TURNSTILE_SECRET_KEY` | zalecana | Sekret Cloudflare Turnstile — **tylko serwer, bez `VITE_`** |
+| `VITE_TURNSTILE_SITE_KEY` | zalecana | Klucz publiczny (site) Turnstile |
+| `GUS_API_KEY` | opcjonalna | Klucz GUS BIR — **tylko serwer, bez `VITE_`** |
 
-*Bez `SERVICE_ROLE_KEY` panel admin działa, ale tworzenie kont i zmiana ról nie będzie działać.
+*Bez `SUPABASE_SERVICE_ROLE_KEY` panel admin działa, ale tworzenie kont i zmiana ról nie będzie działać.
+
+> ⚠️ Zmienne z przedrostkiem `VITE_` trafiają do przeglądarki. Sekrety (service_role,
+> Turnstile secret, GUS) **muszą** być bez `VITE_`, inaczej wyciekną do klienta.
 
 ---
 
@@ -373,7 +387,10 @@ Utwórz plik `.env.local` w katalogu głównym projektu:
 ```env
 VITE_SUPABASE_URL=https://twoj-projekt.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
-VITE_SUPABASE_SERVICE_ROLE_KEY=eyJ...
+# Sekrety serwerowe — BEZ przedrostka VITE_ (inaczej wyciekną do przeglądarki):
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+TURNSTILE_SECRET_KEY=...
+GUS_API_KEY=...
 ```
 
 ### Uruchomienie

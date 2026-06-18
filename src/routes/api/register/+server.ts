@@ -1,10 +1,26 @@
 import { json, error } from '@sveltejs/kit';
 import { getAdminClient } from '$lib/server/auth';
+import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
+
+// Weryfikacja Cloudflare Turnstile. Gdy sekret nie jest skonfigurowany — pomijamy
+// (środowiska bez Turnstile działają jak dotąd). Gdy jest — wymagamy ważnego tokenu.
+async function verifyTurnstile(token: string | undefined): Promise<boolean> {
+	const secret = env.TURNSTILE_SECRET_KEY;
+	if (!secret) return true;
+	if (!token) return false;
+	const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ secret, response: token })
+	});
+	const data = await res.json().catch(() => ({ success: false }));
+	return data.success === true;
+}
 
 export const POST: RequestHandler = async ({ request }) => {
 	const body = await request.json();
-	const { nazwa_firmy, typ, email, imie_nazwisko, password } = body;
+	const { nazwa_firmy, typ, email, imie_nazwisko, password, turnstileToken } = body;
 	const tenantTyp = typ === 'agent' ? 'agent' : 'broker';
 
 	if (!nazwa_firmy || !email || !imie_nazwisko || !password) {
@@ -12,6 +28,9 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 	if (password.length < 8) {
 		throw error(400, { message: 'Hasło musi mieć co najmniej 8 znaków.' });
+	}
+	if (!(await verifyTurnstile(turnstileToken))) {
+		throw error(400, { message: 'Weryfikacja antybotowa nie powiodła się. Odśwież stronę i spróbuj ponownie.' });
 	}
 
 	const admin = getAdminClient();

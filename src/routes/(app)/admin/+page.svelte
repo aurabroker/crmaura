@@ -99,7 +99,13 @@
 	// Widok polis brokera
 	let viewingBroker = $state<Profile | null>(null);
 
-	const ROLES = ['BROKER', 'ADMINISTRACJA', 'BOARD', 'ADMIN BROKER', 'ADMIN GOD'];
+	// 'ADMIN GOD' (super-admin SaaS) widoczny do nadania tylko dla istniejącego ADMIN GOD.
+	// Serwer i tak egzekwuje to w assertAssignableRole() — tu chodzi o spójność UI.
+	const ROLES = $derived(
+		appState.profile?.rola === 'ADMIN GOD'
+			? ['BROKER', 'ADMINISTRACJA', 'BOARD', 'ADMIN BROKER', 'ADMIN GOD']
+			: ['BROKER', 'ADMINISTRACJA', 'BOARD', 'ADMIN BROKER']
+	);
 
 	function openEditUser(b: Profile) {
 		editingUser=b; uRole=b.rola; uNazwa=b.imie_nazwisko??''; uStanowisko=b.stanowisko??''; uPesel=b.pesel??'';

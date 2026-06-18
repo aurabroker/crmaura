@@ -1,6 +1,10 @@
 <script lang="ts">
+	import Turnstile from '$lib/components/Turnstile.svelte';
+
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+
+	const turnstileEnabled = !!import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 	let nazwa_firmy = $state('');
 	let typ = $state<'broker' | 'agent'>('broker');
@@ -8,6 +12,7 @@
 	let imie_nazwisko = $state('');
 	let password = $state('');
 	let confirmPassword = $state('');
+	let turnstileToken = $state('');
 
 	let loading = $state(false);
 	let success = $state(false);
@@ -29,13 +34,17 @@
 			errorMsg = 'Hasła nie są zgodne.';
 			return;
 		}
+		if (turnstileEnabled && !turnstileToken) {
+			errorMsg = 'Poczekaj na weryfikację antybotową.';
+			return;
+		}
 
 		loading = true;
 		try {
 			const res = await fetch('/api/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ nazwa_firmy, typ, email, imie_nazwisko, password })
+				body: JSON.stringify({ nazwa_firmy, typ, email, imie_nazwisko, password, turnstileToken })
 			});
 			const data = await res.json();
 			if (!res.ok) {
@@ -112,13 +121,15 @@
 						<input id="confirmPassword" class={inputCls} type="password" bind:value={confirmPassword} required />
 					</div>
 
+					<Turnstile onToken={(t) => (turnstileToken = t)} onError={() => (turnstileToken = '')} />
+
 					{#if errorMsg}
 						<p class="text-sm text-red-600">{errorMsg}</p>
 					{/if}
 
 					<button
 						type="submit"
-						disabled={loading}
+						disabled={loading || (turnstileEnabled && !turnstileToken)}
 						class="w-full px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50"
 					>
 						{loading ? 'Tworzenie konta...' : 'Utwórz konto'}

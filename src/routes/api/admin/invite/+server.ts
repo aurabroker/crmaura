@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { requireAdmin } from '$lib/server/auth';
+import { requireAdmin, assertAssignableRole } from '$lib/server/auth';
 import type { RequestHandler } from './$types';
 
 function generatePassword(): string {
@@ -19,6 +19,8 @@ export const POST: RequestHandler = async ({ request }) => {
 	};
 
 	if (!email || !role) throw error(400, 'Podaj email i rolę');
+	// Blokada eskalacji uprawnień — m.in. zaproszenia z rolą ADMIN GOD przez admina tenanta.
+	assertAssignableRole(role, profile.rola);
 
 	const tempPassword = generatePassword();
 
