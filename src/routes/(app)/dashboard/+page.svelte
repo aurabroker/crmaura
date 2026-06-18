@@ -3,6 +3,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, dateDiffDays, todayStr } from '$lib/utils';
 	import KpiCard from '$lib/components/KpiCard.svelte';
+	import SectionHeader from '$lib/components/SectionHeader.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { dndzone } from 'svelte-dnd-action';
 	import { Settings2, TrendingUp, TrendingDown, Search, AlertTriangle, X } from 'lucide-svelte';
@@ -343,26 +344,10 @@
 
 <svelte:head><title>Pulpit — FRANK67 CRM</title></svelte:head>
 
-<div class="flex items-center justify-between mb-6">
-	<div class="flex items-center gap-4">
-		<div>
-			<h1 class="text-2xl font-semibold text-slate-900">Pulpit {roleLabel()}a</h1>
-			<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
-		</div>
-		<!-- Compact alert badge - exactly 150px wide -->
-		<div class="w-[150px] shrink-0 rounded-xl px-3 py-2 border-2 cursor-pointer transition-colors
-			{unresolvedAlerts.length > 0 ? 'bg-red-50 border-red-400 hover:bg-red-100' : 'bg-emerald-50 border-emerald-300'}"
-			role="button" tabindex="0">
-			<div class="flex items-center gap-1.5">
-				<AlertTriangle size={13} class="{unresolvedAlerts.length > 0 ? 'text-red-600' : 'text-emerald-600'}" />
-				<span class="text-xs font-bold {unresolvedAlerts.length > 0 ? 'text-red-700' : 'text-emerald-700'}">
-					{unresolvedAlerts.length > 0 ? `${unresolvedAlerts.length} alert${unresolvedAlerts.length === 1 ? '' : 'ów'}` : 'OK'}
-				</span>
-			</div>
-			<div class="text-[10px] mt-0.5 {unresolvedAlerts.length > 0 ? 'text-red-600' : 'text-emerald-600'}">
-				{unresolvedAlerts.length > 0 ? 'Wymagane działanie' : 'Brak alertów'}
-			</div>
-		</div>
+<div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+	<div>
+		<h1 class="text-2xl font-semibold text-slate-900">Pulpit {roleLabel()}a</h1>
+		<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
 	</div>
 	<div class="flex items-center gap-3">
 		<!-- Globalna wyszukiwarka -->
@@ -434,17 +419,15 @@
 	</div>
 {/if}
 
-<!-- Alerty rozliczeniowe — zawsze widoczne -->
-<div class="rounded-xl p-4 mb-6 border-2 {unresolvedAlerts.length > 0 ? 'bg-red-50 border-red-500' : 'bg-emerald-50 border-emerald-300'}">
+<!-- Alerty rozliczeniowe — pełny baner przy problemach, slim gdy OK -->
+{#if unresolvedAlerts.length > 0}
+<div class="rounded-xl p-4 mb-6 border-2 bg-red-50 border-red-500">
 	<div class="flex items-center gap-2 mb-3">
-		<AlertTriangle size={16} class="{unresolvedAlerts.length > 0 ? 'text-red-600' : 'text-emerald-600'} shrink-0" />
-		<h2 class="font-semibold text-sm {unresolvedAlerts.length > 0 ? 'text-red-700' : 'text-emerald-700'}">
-			{unresolvedAlerts.length > 0
-				? `Alerty rozliczeniowe — wymagane działanie (${unresolvedAlerts.length})`
-				: 'Alerty rozliczeniowe — brak nierozwiązanych problemów'}
+		<AlertTriangle size={16} class="text-red-600 shrink-0" />
+		<h2 class="font-semibold text-sm text-red-700">
+			Alerty rozliczeniowe — wymagane działanie ({unresolvedAlerts.length})
 		</h2>
 	</div>
-	{#if unresolvedAlerts.length > 0}
 	<div class="space-y-2">
 		{#each unresolvedAlerts as alert}
 		<div class="flex items-start justify-between gap-3 bg-white border border-red-200 rounded-lg px-3 py-2">
@@ -476,13 +459,20 @@
 		</div>
 		{/each}
 	</div>
-	{/if}
 </div>
+{:else}
+	<div class="flex items-center gap-2 mb-6 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+		<AlertTriangle size={14} class="text-emerald-600 shrink-0" />
+		<span class="text-xs font-medium text-emerald-700">Alerty rozliczeniowe — brak nierozwiązanych problemów</span>
+	</div>
+{/if}
 
 <!-- KPI Grid — drag & drop (tylko kpi widgety) -->
 {#if draggableItems.some((w) => KPI_WIDGET_IDS.has(w.id))}
+<section class="mb-8">
+<SectionHeader title="Kluczowe wskaźniki" />
 <div
-	class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8"
+	class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4"
 	use:dndzone={{ items: draggableItems, flipDurationMs: 200 }}
 	onconsider={handleDnd}
 	onfinalize={finalizeDnd}
@@ -500,11 +490,14 @@
 		{/if}
 	{/each}
 </div>
+</section>
 {/if}
 
 <!-- Wznowienia + Zaległe płatności — ta sama linia -->
 {#if appState.dashboardWidgets.includes('renewals') || appState.dashboardWidgets.includes('payments') || appState.dashboardWidgets.includes('expiring_payments')}
-<div class="grid grid-cols-2 gap-6 mb-6">
+<section class="mb-6">
+<SectionHeader title="Bieżące operacje" />
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
 	<!-- Tabela wznowień -->
 	{#if appState.dashboardWidgets.includes('renewals')}
@@ -597,19 +590,22 @@
 	{/if}
 
 </div>
+</section>
 {/if}
 
 <!-- Dolne widgety — drag & drop -->
 {#if bottomDraggableItems.length > 0}
+<section class="mb-6">
+<SectionHeader title="Analityka i zestawienia" />
 <div
-	class="grid grid-cols-2 gap-6 mb-6"
+	class="grid grid-cols-1 lg:grid-cols-2 gap-6"
 	use:dndzone={{ items: bottomDraggableItems, flipDurationMs: 200 }}
 	onconsider={handleBottomDnd}
 	onfinalize={finalizeBottomDnd}
 >
 
 	{#each bottomDraggableItems as widget (widget.id)}
-	<div class="{widget.id === 'premium_chart' ? 'col-span-2' : ''} {configMode ? 'cursor-grab active:cursor-grabbing' : ''}">
+	<div class="{widget.id === 'premium_chart' ? 'lg:col-span-2' : ''} {configMode ? 'cursor-grab active:cursor-grabbing' : ''}">
 
 		{#if widget.id === 'top_clients'}
 		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden h-full">
@@ -735,7 +731,7 @@
 
 		{:else if widget.id === 'premium_chart'}
 		{@const chart = premiumChart()}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full col-span-2">
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-1 text-base">Przypis składki — ostatnie 12 miesięcy</h2>
 			<p class="text-sm text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
 			<div class="flex items-end gap-2 h-48">
@@ -839,6 +835,7 @@
 	{/each}
 
 </div>
+</section>
 {/if}
 
 <TaskModal
