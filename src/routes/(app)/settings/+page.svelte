@@ -2,19 +2,33 @@
 
 <script lang="ts">
 	import { sb } from '$lib/supabase';
-	import { appState } from '$lib/stores/app.svelte';
+	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import type { Vehicle } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
-	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText } from 'lucide-svelte';
+	import AdminSettings from '$lib/components/AdminSettings.svelte';
+	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark } from 'lucide-svelte';
 	import { fmtPln, validateVin, assignedPolicyFor } from '$lib/utils';
 	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
+
+	const admin = $derived(isAdmin(appState.profile));
+	const ADMIN_TABS = ['system', 'kancelaria', 'leasingi', 'logi'];
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// --- Tabs ---
-	let activeTab = $state<'vehicles' | 'profile' | 'rodo' | 'dokumenty' | 'kalendarz'>('vehicles');
+	type SettingsTab = 'vehicles' | 'profile' | 'rodo' | 'dokumenty' | 'kalendarz' | 'system' | 'kancelaria' | 'leasingi' | 'logi';
+	let activeTab = $state<SettingsTab>('vehicles');
+
+	// Deep-link z /admin?tab=... (zachowuje stare linki po scaleniu)
+	onMount(() => {
+		const t = $page.url.searchParams.get('tab') as SettingsTab | null;
+		if (t && (ADMIN_TABS.includes(t) || ['vehicles','profile','rodo','dokumenty','kalendarz'].includes(t))) {
+			if (!ADMIN_TABS.includes(t) || isAdmin(appState.profile)) activeTab = t;
+		}
+	});
 
 	// --- Calendar settings (localStorage) ---
 	const CAL_KEY = 'crm_cal_settings';
@@ -305,7 +319,39 @@
 		>
 			🗓️ Kalendarz
 		</button>
+
+		{#if admin}
+			<span class="self-center mx-1 h-5 w-px bg-slate-200"></span>
+			<button
+				onclick={() => activeTab = 'system'}
+				class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'system' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+			>
+				<Settings size={16} /> Ustawienia systemu
+			</button>
+			<button
+				onclick={() => activeTab = 'kancelaria'}
+				class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'kancelaria' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+			>
+				<Users size={16} /> Kancelaria
+			</button>
+			<button
+				onclick={() => activeTab = 'leasingi'}
+				class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'leasingi' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+			>
+				<Landmark size={16} /> Leasingi
+			</button>
+			<button
+				onclick={() => activeTab = 'logi'}
+				class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'logi' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+			>
+				<ScrollText size={16} /> Logi aktywności
+			</button>
+		{/if}
 	</div>
+
+	{#if admin && ADMIN_TABS.includes(activeTab)}
+		<AdminSettings {activeTab} />
+	{/if}
 
 	<!-- Pojazdy Tab -->
 	{#if activeTab === 'vehicles'}
