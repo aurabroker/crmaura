@@ -247,6 +247,10 @@ export interface Prospect {
 	zatrudnienie: number | null;
 	broker_id: string | null;
 	status: string;
+	ubez_zycie?: 'maja' | 'nie_maja' | null;
+	ubez_zycie_opis?: string | null;
+	ubez_medyczne?: 'maja' | 'nie_maja' | null;
+	ubez_medyczne_opis?: string | null;
 	created_at?: string;
 	crm_profiles?: { imie_nazwisko: string | null } | null;
 }
@@ -328,6 +332,7 @@ export interface CrmTask {
 	polisa_id: string | null;
 	prospect_id: string | null;
 	extra_assignees?: string[];
+	typy?: string[];
 	czas_trwania_dni?: number | null;
 	postep_pct?: number;
 	zakonczone_at?: string | null;

@@ -2,12 +2,10 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import TaskModal from '$lib/components/TaskModal.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, MessageSquare, FileText, Send, StickyNote, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle } from 'lucide-svelte';
+	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, Shield, X } from 'lucide-svelte';
 	import type { CrmTask } from '$lib/types/database';
 
 	type Prospect = {
@@ -23,6 +21,10 @@
 		zatrudnienie: number | null;
 		broker_id: string | null;
 		status: string;
+		ubez_zycie: 'maja' | 'nie_maja' | null;
+		ubez_zycie_opis: string | null;
+		ubez_medyczne: 'maja' | 'nie_maja' | null;
+		ubez_medyczne_opis: string | null;
 		created_at: string;
 		crm_profiles?: { imie_nazwisko: string } | null;
 	};
@@ -88,6 +90,12 @@
 			.eq('id', prospectId)
 			.single();
 		prospect = p as Prospect | null;
+		if (prospect) {
+			fUbezZycie = prospect.ubez_zycie ?? '';
+			fUbezZycieOpis = prospect.ubez_zycie_opis ?? '';
+			fUbezMedyczne = prospect.ubez_medyczne ?? '';
+			fUbezMedyczneOpis = prospect.ubez_medyczne_opis ?? '';
+		}
 
 		const { data: acts } = await sb.from('crm_prospect_activities')
 			.select('*, crm_profiles(imie_nazwisko)')
@@ -112,7 +120,15 @@
 		}]);
 		newText = '';
 		sending = false;
+		await promoteToWKontakcie();
 		await load();
+	}
+
+	// Po dodaniu komentarza/zadania prospekt "nowy" trafia do "W kontakcie".
+	async function promoteToWKontakcie() {
+		if (!prospect || prospect.status !== 'nowy') return;
+		await sb.from('crm_prospects').update({ status: 'w_kontakcie' }).eq('id', prospect.id);
+		prospect = { ...prospect, status: 'w_kontakcie' };
 	}
 
 	async function deleteActivity(id: string) {
@@ -170,10 +186,32 @@
 		return new Date(dt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 	}
 
-	// ---- Tasks ----
+	// ---- Tasks (formularz inline — bez modala) ----
 	let tasks = $state<CrmTask[]>([]);
-	let showTaskModal = $state(false);
+	let showTaskForm = $state(false);
 	let editingTask = $state<CrmTask | null>(null);
+
+	// pola formularza zadania
+	let tfTytul = $state('');
+	let tfOpis = $state('');
+	let tfTermin = $state('');
+	let tfPriorytet = $state<CrmTask['priorytet']>('normalny');
+	let tfStatus = $state<CrmTask['status']>('otwarte');
+	let tfAssignees = $state<string[]>([]); // max 3 osoby
+	let tfCzasTrwania = $state('');
+	let tfPostep = $state(0);
+	let tfTypy = $state<string[]>([]);
+	let tfSaving = $state(false);
+	let tfError = $state('');
+
+	const MAX_ASSIGNEES = 3;
+	const taskTypeOptions = [
+		{ val: 'spotkanie', label: 'Spotkanie' },
+		{ val: 'email', label: 'E-mail' },
+		{ val: 'telefon', label: 'Telefon' },
+		{ val: 'oferta', label: 'Oferta' }
+	];
+	const taskTypeLabels: Record<string, string> = Object.fromEntries(taskTypeOptions.map(o => [o.val, o.label]));
 
 	const today = new Date().toISOString().slice(0, 10);
 
@@ -185,14 +223,88 @@
 		tasks = (data ?? []) as CrmTask[];
 	}
 
+	function resetTaskForm() {
+		tfTytul = ''; tfOpis = ''; tfTermin = ''; tfPriorytet = 'normalny'; tfStatus = 'otwarte';
+		tfAssignees = appState.profile?.id ? [appState.profile.id] : [];
+		tfCzasTrwania = ''; tfPostep = 0; tfTypy = []; tfError = '';
+	}
+
 	function openNewTask() {
 		editingTask = null;
-		showTaskModal = true;
+		resetTaskForm();
+		showTaskForm = true;
 	}
 
 	function openEditTask(t: CrmTask) {
 		editingTask = t;
-		showTaskModal = true;
+		tfTytul = t.tytul;
+		tfOpis = t.opis ?? '';
+		tfTermin = t.termin ?? '';
+		tfPriorytet = t.priorytet;
+		tfStatus = t.status;
+		tfAssignees = [t.assigned_to, ...(t.extra_assignees ?? [])].filter(Boolean).slice(0, MAX_ASSIGNEES) as string[];
+		tfCzasTrwania = t.czas_trwania_dni ? String(t.czas_trwania_dni) : '';
+		tfPostep = t.postep_pct ?? 0;
+		tfTypy = t.typy ?? [];
+		tfError = '';
+		showTaskForm = true;
+	}
+
+	function cancelTaskForm() {
+		showTaskForm = false;
+		editingTask = null;
+	}
+
+	function toggleAssignee(id: string) {
+		if (tfAssignees.includes(id)) tfAssignees = tfAssignees.filter(x => x !== id);
+		else if (tfAssignees.length < MAX_ASSIGNEES) tfAssignees = [...tfAssignees, id];
+	}
+
+	function toggleTaskType(val: string) {
+		if (tfTypy.includes(val)) tfTypy = tfTypy.filter(x => x !== val);
+		else tfTypy = [...tfTypy, val];
+	}
+
+	async function refreshGlobalTasks() {
+		const { data } = await sb.from('crm_tasks')
+			.select('*, crm_clients(nazwa), crm_policies(nr_polisy), crm_prospects(nazwa), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)')
+			.order('termin', { ascending: true, nullsFirst: false });
+		appState.tasks = (data ?? []) as typeof appState.tasks;
+	}
+
+	async function saveTaskInline() {
+		if (!prospect) return;
+		if (!tfTytul.trim()) { tfError = 'Podaj tytuł zadania.'; return; }
+		tfSaving = true; tfError = '';
+		const [main, ...extra] = tfAssignees;
+		const payload = {
+			tenant_id: prospect.tenant_id,
+			created_by: appState.profile!.id,
+			assigned_to: main || null,
+			prospect_id: prospect.id,
+			klient_id: null,
+			polisa_id: null,
+			tytul: tfTytul.trim(),
+			opis: tfOpis.trim() || null,
+			termin: tfTermin || null,
+			priorytet: tfPriorytet,
+			status: tfStatus,
+			extra_assignees: extra.length > 0 ? extra : null,
+			typy: tfTypy.length > 0 ? tfTypy : null,
+			czas_trwania_dni: tfCzasTrwania ? parseInt(tfCzasTrwania) : null,
+			postep_pct: tfPostep
+		};
+		if (editingTask) {
+			await sb.from('crm_tasks').update(payload).eq('id', editingTask.id);
+		} else {
+			await sb.from('crm_tasks').insert([payload]);
+		}
+		tfSaving = false;
+		showTaskForm = false;
+		editingTask = null;
+		await promoteToWKontakcie();
+		await loadTasks();
+		await refreshGlobalTasks();
 	}
 
 	async function toggleTaskStatus(t: CrmTask) {
@@ -217,6 +329,30 @@
 
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+
+	// ---- Ubezpieczenia posiadane (Życie / Medyczne) ----
+	let fUbezZycie = $state<'maja' | 'nie_maja' | ''>('');
+	let fUbezZycieOpis = $state('');
+	let fUbezMedyczne = $state<'maja' | 'nie_maja' | ''>('');
+	let fUbezMedyczneOpis = $state('');
+	let ubezSaving = $state(false);
+	let ubezSaved = $state(false);
+
+	async function saveUbez() {
+		if (!prospect) return;
+		ubezSaving = true; ubezSaved = false;
+		const payload = {
+			ubez_zycie: fUbezZycie || null,
+			ubez_zycie_opis: fUbezZycieOpis.trim() || null,
+			ubez_medyczne: fUbezMedyczne || null,
+			ubez_medyczne_opis: fUbezMedyczneOpis.trim() || null
+		};
+		await sb.from('crm_prospects').update(payload).eq('id', prospect.id);
+		prospect = { ...prospect, ...payload };
+		ubezSaving = false;
+		ubezSaved = true;
+		setTimeout(() => { ubezSaved = false; }, 2000);
+	}
 </script>
 
 <svelte:head><title>{prospect?.nazwa ?? 'Prospect'} — CRM</title></svelte:head>
@@ -346,10 +482,98 @@
 					<span class="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{tasks.filter(t => t.status !== 'zakonczone').length}</span>
 				{/if}
 			</h2>
-			<button onclick={openNewTask} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700">
-				<Plus size={12} /> Nowe zadanie
-			</button>
+			{#if showTaskForm}
+				<button onclick={cancelTaskForm} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50">
+					<X size={12} /> Zamknij
+				</button>
+			{:else}
+				<button onclick={openNewTask} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700">
+					<Plus size={12} /> Nowe zadanie
+				</button>
+			{/if}
 		</div>
+
+		<!-- Formularz zadania (inline — pojawia się w panelu, bez modala) -->
+		{#if showTaskForm}
+			<div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 space-y-3">
+				{#if tfError}<div class="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">{tfError}</div>{/if}
+				<input bind:value={tfTytul} placeholder="Tytuł zadania *" class={inputCls} />
+				<textarea bind:value={tfOpis} rows="2" placeholder="Opis (opcjonalnie)" class="{inputCls} resize-none"></textarea>
+
+				<div class="grid grid-cols-2 gap-2">
+					<div>
+						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Termin</label>
+						<input type="date" bind:value={tfTermin} class={inputCls} />
+					</div>
+					<div>
+						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Priorytet</label>
+						<select bind:value={tfPriorytet} class={inputCls}>
+							<option value="niski">Niski</option>
+							<option value="normalny">Normalny</option>
+							<option value="wysoki">Wysoki</option>
+							<option value="pilny">Pilny</option>
+						</select>
+					</div>
+					<div>
+						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</label>
+						<select bind:value={tfStatus} class={inputCls}>
+							<option value="otwarte">Otwarte</option>
+							<option value="w_toku">W toku</option>
+							<option value="zakonczone">Zakończone</option>
+							<option value="anulowane">Anulowane</option>
+						</select>
+					</div>
+					<div>
+						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Czas trwania (dni)</label>
+						<input type="number" min="1" bind:value={tfCzasTrwania} placeholder="np. 7" class={inputCls} />
+					</div>
+				</div>
+
+				<!-- Typ zadania -->
+				<div>
+					<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Typ</label>
+					<div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
+						{#each taskTypeOptions as opt}
+							<label class="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700">
+								<input type="checkbox" checked={tfTypy.includes(opt.val)} onchange={() => toggleTaskType(opt.val)} class="w-4 h-4 accent-blue-600" />
+								{opt.label}
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Przypisz do (max 3) -->
+				<div>
+					<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						Przypisz do <span class="normal-case font-normal text-slate-400">(max 3 — wybrano {tfAssignees.length})</span>
+					</label>
+					<div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
+						{#each appState.brokers as b}
+							{@const checked = tfAssignees.includes(b.id)}
+							{@const disabled = !checked && tfAssignees.length >= MAX_ASSIGNEES}
+							<label class="flex items-center gap-1.5 text-sm {disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer text-slate-700'}">
+								<input type="checkbox" {checked} {disabled} onchange={() => toggleAssignee(b.id)} class="w-4 h-4 accent-blue-600" />
+								{b.imie_nazwisko ?? b.email}
+							</label>
+						{/each}
+					</div>
+				</div>
+
+				<!-- Postęp -->
+				<div>
+					<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Postęp: {tfPostep}%</label>
+					<input type="range" min="0" max="100" step="5" bind:value={tfPostep} class="w-full accent-blue-600" />
+				</div>
+
+				<div class="flex items-center gap-2 pt-1">
+					<button onclick={saveTaskInline} disabled={tfSaving} class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">
+						{tfSaving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
+					</button>
+					<button onclick={cancelTaskForm} class="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+				</div>
+			</div>
+		{/if}
+
 		{#if tasks.length === 0}
 			<div class="px-6 py-6 text-center text-slate-400 text-sm">Brak zadań — dodaj pierwsze zadanie dla tej firmy</div>
 		{:else}
@@ -371,9 +595,19 @@
 						<div class="flex-1 min-w-0">
 							<span class="text-sm font-medium text-slate-900 {done ? 'line-through text-slate-400' : ''}">{t.tytul}</span>
 							{#if t.opis}<p class="text-xs text-slate-400 truncate">{t.opis}</p>{/if}
-							{#if t.extra_assignees && t.extra_assignees.length > 0}
-								<div class="flex items-center gap-1 mt-0.5">
-									{#each t.extra_assignees as uid}
+							{#if t.typy && t.typy.length > 0}
+								<div class="flex flex-wrap items-center gap-1 mt-0.5">
+									{#each t.typy as ty}
+										<span class="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100 px-1.5 py-0.5 rounded">{taskTypeLabels[ty] ?? ty}</span>
+									{/each}
+								</div>
+							{/if}
+							{#if t.assigned_profile || (t.extra_assignees && t.extra_assignees.length > 0)}
+								<div class="flex flex-wrap items-center gap-1 mt-0.5">
+									{#if t.assigned_profile}
+										<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{t.assigned_profile.imie_nazwisko ?? t.assigned_profile.email}</span>
+									{/if}
+									{#each (t.extra_assignees ?? []) as uid}
 										{@const p = appState.brokers.find(b => b.id === uid)}
 										{#if p}<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{p.imie_nazwisko ?? p.email}</span>{/if}
 									{/each}
@@ -403,6 +637,53 @@
 				{/each}
 			</ul>
 		{/if}
+	</div>
+
+	<!-- Prawa kolumna: Ubezpieczenia (4. tabela) + Aktywność -->
+	<div class="flex flex-col gap-5">
+
+	<!-- Ubezpieczenia posiadane -->
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
+		<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
+				<Shield size={15} class="text-indigo-500" /> Ubezpieczenia
+			</h2>
+			<button onclick={saveUbez} disabled={ubezSaving} class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">
+				{ubezSaving ? 'Zapisywanie...' : ubezSaved ? 'Zapisano ✓' : 'Zapisz'}
+			</button>
+		</div>
+		<div class="p-5 space-y-4">
+			<!-- Życie -->
+			<div>
+				<div class="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
+					<span class="text-sm font-medium text-slate-700">Życie</span>
+					<div class="flex gap-4">
+						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
+							<input type="radio" name="ubez_zycie" value="maja" bind:group={fUbezZycie} class="accent-blue-600" /> Mają
+						</label>
+						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
+							<input type="radio" name="ubez_zycie" value="nie_maja" bind:group={fUbezZycie} class="accent-blue-600" /> Nie mają
+						</label>
+					</div>
+				</div>
+				<textarea bind:value={fUbezZycieOpis} rows="2" placeholder="Szczegóły (TU, zakres, składka...)" class="{inputCls} resize-none"></textarea>
+			</div>
+			<!-- Medyczne -->
+			<div>
+				<div class="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
+					<span class="text-sm font-medium text-slate-700">Medyczne</span>
+					<div class="flex gap-4">
+						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
+							<input type="radio" name="ubez_medyczne" value="maja" bind:group={fUbezMedyczne} class="accent-blue-600" /> Mają
+						</label>
+						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
+							<input type="radio" name="ubez_medyczne" value="nie_maja" bind:group={fUbezMedyczne} class="accent-blue-600" /> Nie mają
+						</label>
+					</div>
+				</div>
+				<textarea bind:value={fUbezMedyczneOpis} rows="2" placeholder="Szczegóły (TU, zakres, składka...)" class="{inputCls} resize-none"></textarea>
+			</div>
+		</div>
 	</div>
 
 	<!-- Activity feed -->
@@ -467,14 +748,5 @@
 		</div>
 	</div>
 	</div>
+	</div>
 {/if}
-
-<!-- Task Modal -->
-<TaskModal
-	open={showTaskModal}
-	onclose={() => { showTaskModal = false; }}
-	onsaved={loadTasks}
-	editingTask={editingTask}
-	presetProspectId={prospectId}
-	presetProspectNazwa={prospect?.nazwa ?? ''}
-/>
