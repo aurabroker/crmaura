@@ -36,7 +36,6 @@
 		{ href: '/commission', label: 'Prowizja', icon: Coins, always: true },
 		{ href: '/finance', label: 'Rozliczenia', icon: Calculator, show: isFinance(appState.profile), adminOnly: true },
 		{ href: '/knf-report', label: 'Raporty', icon: Scale, show: isAdmin(appState.profile) && isBroker(), adminOnly: true },
-		{ href: '/admin', label: 'Administracja', icon: Settings, show: isAdmin(appState.profile), adminOnly: true },
 		{ href: '/kosz', label: 'Kosz', icon: Trash2, show: ['ADMIN GOD','ADMIN BROKER'].includes(appState.profile?.rola ?? ''), adminOnly: true }
 	]);
 
@@ -211,33 +210,6 @@
 											{/if}
 										</a>
 										{/if}
-									</div>
-								{/if}
-							</div>
-						{:else if item.href === '/admin'}
-							<!-- Administracja dropdown — admin only (amber border) -->
-							<div class="relative">
-								<button
-									onclick={(e) => { e.stopPropagation(); adminMenuOpen = !adminMenuOpen; }}
-									class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors border
-										{currentPath.startsWith('/admin')
-											? 'bg-amber-600 text-white border-amber-600'
-											: 'text-amber-700 border-amber-300 hover:bg-amber-50 hover:border-amber-400'}"
-								>
-									<item.icon size={15} />
-									{item.label}
-									<ChevronDown size={12} />
-								</button>
-								{#if adminMenuOpen}
-									<div class="absolute left-0 top-full mt-1 bg-white border border-amber-200 rounded-xl shadow-xl w-52 overflow-hidden z-50">
-										<a href="/admin?tab=system" onclick={() => adminMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-amber-50 border-b border-amber-100">
-											<Settings size={14} /> Ustawienia systemu
-										</a>
-										<a href="/admin?tab=kancelaria" onclick={() => adminMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-amber-50">
-											<Users size={14} /> Ustawienia Kancelarii
-										</a>
 									</div>
 								{/if}
 							</div>
