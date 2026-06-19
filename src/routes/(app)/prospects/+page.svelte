@@ -26,7 +26,8 @@
 
 	let prospects = $state<Prospect[]>([]);
 	let search = $state('');
-	let statusFilter = $state('Wszystkie');
+	let statusFilter = $state('Nowy');
+	let letterFilter = $state('');
 	let showModal = $state(false);
 	let editingProspect = $state<Prospect | null>(null);
 	let saving = $state(false);
@@ -43,7 +44,7 @@
 	let fBrokerId = $state('');
 	let fStatus = $state('nowy');
 
-	const statuses = ['Wszystkie', 'Nowy', 'W kontakcie', 'Oferta wysłana', 'Wygrany', 'Przegrany'];
+	const statuses = ['Nowy', 'W kontakcie', 'Oferta wysłana', 'Wygrany', 'Przegrany', 'Wszystkie'];
 	const statusValues: Record<string, string> = {
 		'Nowy': 'nowy', 'W kontakcie': 'w_kontakcie',
 		'Oferta wysłana': 'oferta_wyslana', 'Wygrany': 'wygrany', 'Przegrany': 'przegrany'
@@ -78,9 +79,31 @@
 
 	const statusOrder: Record<string, number> = { nowy: 0, w_kontakcie: 1, oferta_wyslana: 2, wygrany: 3, przegrany: 4 };
 
+	// ---- Alfabet (filtr po pierwszej literze nazwy) ----
+	// Nazwy zaczynające się od cyfry trafiają pod literę "A".
+	function firstLetterOf(name: string): string {
+		const c = (name ?? '').trim().charAt(0).toUpperCase();
+		if (!c) return '#';
+		if (c >= '0' && c <= '9') return 'A';
+		return c;
+	}
+	const baseAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+	const lettersWithData = $derived.by(() => {
+		const s = new Set<string>();
+		for (const p of prospects) s.add(firstLetterOf(p.nazwa));
+		return s;
+	});
+	const alphabet = $derived.by(() => {
+		const set = new Set<string>(baseAlphabet);
+		for (const p of prospects) set.add(firstLetterOf(p.nazwa));
+		set.delete('#');
+		return Array.from(set).sort((a, b) => a.localeCompare(b, 'pl'));
+	});
+
 	const filtered = $derived(() => {
 		const list = prospects.filter((p) => {
 			if (statusFilter !== 'Wszystkie' && p.status !== statusValues[statusFilter]) return false;
+			if (letterFilter && firstLetterOf(p.nazwa) !== letterFilter) return false;
 			if (search) {
 				const q = search.toLowerCase();
 				return p.nazwa.toLowerCase().includes(q) || (p.nip ?? '').includes(q) || (p.branza ?? '').toLowerCase().includes(q);
@@ -178,19 +201,35 @@
 <div class="flex items-center justify-between mb-6">
 	<div>
 		<h1 class="text-2xl font-semibold text-slate-900">Prospects</h1>
-		<p class="text-sm text-slate-500 mt-1">Potencjalni klienci — {filtered.length} rekordów</p>
+		<p class="text-sm text-slate-500 mt-1">Potencjalni klienci — {filtered().length} rekordów</p>
 	</div>
 	<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 		+ Nowy Prospect
 	</button>
 </div>
 
-<div class="flex items-center gap-2 mb-4 flex-wrap">
+<div class="flex items-center gap-2 mb-3 flex-wrap">
 	{#each statuses as s}
 		<button
 			onclick={() => statusFilter = s}
 			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {statusFilter === s ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}"
 		>{s}</button>
+	{/each}
+</div>
+
+<!-- Alfabet — filtr po pierwszej literze nazwy (cyfry pod "A") -->
+<div class="flex items-center gap-1 mb-4 flex-wrap">
+	<button
+		onclick={() => letterFilter = ''}
+		class="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors {letterFilter === '' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'}"
+	>Wszystkie</button>
+	{#each alphabet as L}
+		{@const has = lettersWithData.has(L)}
+		<button
+			onclick={() => { if (has) letterFilter = letterFilter === L ? '' : L; }}
+			disabled={!has}
+			class="w-7 h-7 rounded-md text-xs font-semibold transition-colors {letterFilter === L ? 'bg-blue-600 text-white' : has ? 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50' : 'text-slate-300 cursor-default'}"
+		>{L}</button>
 	{/each}
 </div>
 
