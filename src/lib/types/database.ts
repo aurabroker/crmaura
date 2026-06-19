@@ -251,6 +251,14 @@ export interface Prospect {
 	ubez_zycie_opis?: string | null;
 	ubez_medyczne?: 'maja' | 'nie_maja' | null;
 	ubez_medyczne_opis?: string | null;
+	ubez_flota?: 'maja' | 'nie_maja' | null;
+	ubez_flota_opis?: string | null;
+	ubez_majatek?: 'maja' | 'nie_maja' | null;
+	ubez_majatek_opis?: string | null;
+	ubez_gwarancje?: 'maja' | 'nie_maja' | null;
+	ubez_gwarancje_opis?: string | null;
+	ubez_inne?: 'maja' | 'nie_maja' | null;
+	ubez_inne_opis?: string | null;
 	created_at?: string;
 	crm_profiles?: { imie_nazwisko: string | null } | null;
 }
