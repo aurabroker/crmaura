@@ -24,6 +24,7 @@
 	let fPesel = $state('');
 	let fEmail = $state('');
 	let fTelefon = $state('');
+	let fGwarancje = $state(false);
 	let saving = $state(false);
 	let formError = $state('');
 
@@ -120,7 +121,7 @@
 	function openNew(typ: 'firma' | 'osoba') {
 		modalTyp = typ;
 		fNazwa = ''; fNazwaSkrocona = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
-		fEmail = ''; fTelefon = ''; formError = '';
+		fEmail = ''; fTelefon = ''; fGwarancje = false; formError = '';
 		showModal = true;
 	}
 
@@ -139,7 +140,8 @@
 			regon: modalTyp === 'firma' ? (fRegon.trim() || null) : null,
 			krs: modalTyp === 'firma' ? (fKrs.trim() || null) : null,
 			email: fEmail.trim() || null,
-			telefon: fTelefon.trim() || null
+			telefon: fTelefon.trim() || null,
+			gwarancje: fGwarancje
 		};
 
 		const { error } = await sb.from('crm_clients').insert([{
@@ -342,6 +344,14 @@
 		<div>
 			<label class={labelCls}>E-mail</label>
 			<input bind:value={fEmail} type="email" class={inputCls} placeholder="kontakt@firma.pl" />
+		</div>
+		<!-- Gwarancje — po zaznaczeniu Panel Klienta pokaże zakładkę Gwarancje -->
+		<div class="col-span-2">
+			<label class="flex items-center gap-2 cursor-pointer text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+				<input type="checkbox" bind:checked={fGwarancje} class="w-4 h-4 accent-blue-600" />
+				<span class="font-medium">Gwarancje</span>
+				<span class="text-xs text-slate-400">— klient korzysta z gwarancji ubezpieczeniowych (pokaże zakładkę Gwarancje)</span>
+			</label>
 		</div>
 	</div>
 </Modal>

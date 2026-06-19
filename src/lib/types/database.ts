@@ -35,6 +35,7 @@ export interface Client {
 	rodo_zgoda: boolean;
 	rodo_data: string | null;
 	rodo_kanal: string | null;
+	gwarancje?: boolean;
 	created_at?: string;
 }
 

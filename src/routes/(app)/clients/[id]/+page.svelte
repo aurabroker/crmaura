@@ -110,10 +110,16 @@
 
 	const isAuraTenant = $derived(appState.tenantNazwa.toLowerCase().includes('aura'));
 
-	type TabKey = 'polisy' | 'pojazdy' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'mailing';
+	// Gwarancje klienta: UG gwarancyjne + polisy gwarancyjne (limit + lista).
+	const clientGwarancje = $derived(clientPolicies.filter(p =>
+		p.ug_podtyp === 'gwarancje' || p.gwarancja_typ != null || (p.rodzaj ?? '').includes('gwarancj')
+	));
+	const showGwarancje = $derived(!!client?.gwarancje || clientGwarancje.length > 0);
+
+	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'mailing';
 	let activeTab = $state<TabKey>('polisy');
 	const tabs = $derived(
-		['polisy', 'pojazdy', 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
+		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
 	);
 
 	// ── Mailing GetResponse (tylko Aura Expert) ───────────────────────────────
@@ -627,7 +633,7 @@
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
@@ -825,6 +831,49 @@
 						</tr>
 					{:else}
 						<tr><td colspan="6" class="px-5 py-6 text-center text-slate-400">Brak pojazdów</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+
+	{:else if activeTab === 'gwarancje'}
+		{@const limitTotal = clientGwarancje.reduce((s, p) => s + Number(p.ug_limit ?? 0), 0)}
+		{#if limitTotal > 0}
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+			<div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
+				<p class="text-xs font-medium text-blue-600 mb-1">Łączny limit gwarancyjny</p>
+				<p class="text-xl font-semibold text-blue-700">{fmtPln(limitTotal)} PLN</p>
+			</div>
+			<div class="bg-white border border-slate-200 rounded-xl p-4">
+				<p class="text-xs font-medium text-slate-500 mb-1">Liczba gwarancji / umów</p>
+				<p class="text-xl font-semibold text-slate-900">{clientGwarancje.length}</p>
+			</div>
+		</div>
+		{/if}
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			<table class="w-full text-left text-sm">
+				<thead>
+					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<th class="px-5 py-3">Nr / Umowa</th>
+						<th class="px-5 py-3">Typ</th>
+						<th class="px-5 py-3">Beneficjent / Kontrakt</th>
+						<th class="px-5 py-3">OD</th>
+						<th class="px-5 py-3">DO</th>
+						<th class="px-5 py-3 text-right">Limit / Suma</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each clientGwarancje as g}
+						<tr class="border-t border-slate-100 hover:bg-slate-50">
+							<td class="px-5 py-3 font-medium text-blue-700"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a></td>
+							<td class="px-5 py-3 text-slate-600">{g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : '—')}</td>
+							<td class="px-5 py-3 text-xs text-slate-500">{g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt ?? '—'}</td>
+							<td class="px-5 py-3">{g.data_od}</td>
+							<td class="px-5 py-3">{g.data_do}</td>
+							<td class="px-5 py-3 text-right font-semibold text-slate-800">{g.ug_limit != null ? `${fmtPln(g.ug_limit)} PLN` : '—'}</td>
+						</tr>
+					{:else}
+						<tr><td colspan="6" class="px-5 py-8 text-center text-slate-400">Brak gwarancji. Dodaj umowę generalną gwarancyjną i powiązane gwarancje w module Ubezpieczenia → Umowy Generalne.</td></tr>
 					{/each}
 				</tbody>
 			</table>
