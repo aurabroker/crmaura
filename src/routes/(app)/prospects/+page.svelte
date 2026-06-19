@@ -264,19 +264,32 @@
 							</button>
 						</th>
 					{/snippet}
-					{@render thSort('nazwa', 'Firma', 'min-w-[220px]')}
+					<th class="px-4 py-3 w-24">Akcje</th>
+					{@render thSort('nazwa', 'Firma', 'min-w-[150px]')}
 					{@render thSort('zatrudnienie', 'Zatrudnienie', 'w-32')}
 					{@render thSort('branza', 'Branża', 'w-36')}
 					<th class="px-4 py-3 w-44">Kontakt</th>
 					{@render thSort('status', 'Status', 'w-28')}
 					{@render thSort('created_at', 'Dodano', 'w-24')}
-					<th class="px-4 py-3 w-24">Akcje</th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each filtered() as p}
 					{@const zatrud = getZatrudnienie(p)}
 					<tr class="border-t border-slate-100 hover:bg-slate-50 group">
+						<td class="px-4 py-2.5">
+							<div class="flex items-center gap-1">
+								<button onclick={() => goto(`/prospects/${p.id}`)} title="Otwórz" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+									<ExternalLink size={13} />
+								</button>
+								<button onclick={() => openEdit(p)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+									<Pencil size={13} />
+								</button>
+								<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" class="p-1.5 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
+									<UserPlus size={13} />
+								</button>
+							</div>
+						</td>
 						<td class="px-4 py-2.5">
 							<button
 								onclick={() => goto(`/prospects/${p.id}`)}
@@ -307,19 +320,6 @@
 						</td>
 						<td class="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">
 							{p.created_at ? p.created_at.slice(0, 10) : '—'}
-						</td>
-						<td class="px-4 py-2.5">
-							<div class="flex items-center gap-1">
-								<button onclick={() => goto(`/prospects/${p.id}`)} title="Otwórz" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-									<ExternalLink size={13} />
-								</button>
-								<button onclick={() => openEdit(p)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-									<Pencil size={13} />
-								</button>
-								<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" class="p-1.5 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
-									<UserPlus size={13} />
-								</button>
-							</div>
 						</td>
 					</tr>
 				{:else}

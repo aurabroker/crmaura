@@ -4,6 +4,7 @@
 	import { onMount } from 'svelte';
 	import { fmtPln } from '$lib/utils';
 	import KpiCard from '$lib/components/KpiCard.svelte';
+	import { Download } from 'lucide-svelte';
 
 	onMount(() => {
 		if (!isAdmin(appState.profile)) goto('/dashboard');
@@ -30,6 +31,30 @@
 			{ sPrz: 0, sZai: 0, pPrz: 0, pZai: 0 }
 		)
 	);
+
+	async function exportXlsx() {
+		const XLSX = await import('xlsx');
+		const header = [
+			'Nr Polisy', 'TU', 'Data Od',
+			'Składka Przypisana', 'Składka Zainkasowana',
+			'Prowizja Przypisana', 'Prowizja Zainkasowana'
+		];
+		const rows = knfPolicies.map((p) => [
+			p.nr_polisy ?? '',
+			p.crm_insurers?.nazwa ?? '',
+			p.data_od ?? '',
+			Number(p.skladka_przypisana ?? 0),
+			Number(p.skladka_zainkasowana ?? 0),
+			Number(p.prowizja_przypisana ?? 0),
+			Number(p.prowizja_zainkasowana ?? 0)
+		]);
+		const totalsRow = ['RAZEM', '', '', totals.sPrz, totals.sZai, totals.pPrz, totals.pZai];
+		const ws = XLSX.utils.aoa_to_sheet([header, ...rows, [], totalsRow]);
+		ws['!cols'] = [{ wch: 18 }, { wch: 22 }, { wch: 12 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }];
+		const wb = XLSX.utils.book_new();
+		XLSX.utils.book_append_sheet(wb, ws, 'Raport KNF');
+		XLSX.writeFile(wb, `Raport_KNF_${dOd}_${dDo}.xlsx`);
+	}
 </script>
 
 <svelte:head><title>Raport KNF — FRANK67 CRM</title></svelte:head>
@@ -50,6 +75,9 @@
 			<label for="knf-do" class="block text-sm font-medium text-slate-700 mb-1">Data Do</label>
 			<input id="knf-do" type="date" bind:value={dDo} class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 		</div>
+		<button onclick={exportXlsx} class="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors">
+			<Download size={15} /> Export do Excel
+		</button>
 		<button onclick={() => window.print()} class="flex items-center gap-2 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition-colors">
 			Drukuj PDF
 		</button>
