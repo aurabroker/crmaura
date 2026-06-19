@@ -35,6 +35,8 @@
 	// --- Filtered policies for current month settlement ---
 	const filteredPolicies = $derived(
 		policies.filter((p) => {
+			// Umowa generalna bez przypisanych składek nie idzie do rozliczenia prowizji.
+			if (p.typ_umowy === 'generalna' && Number(p.skladka_przypisana ?? 0) <= 0) return false;
 			if (!search) return true;
 			const nr = p.nr_polisy ?? '';
 			const klient = p.crm_clients?.nazwa ?? '';
@@ -57,7 +59,7 @@
 	async function loadPolicies() {
 		const { data } = await sb
 			.from('crm_policies')
-			.select('id, nr_polisy, skladka_przypisana, prowizja_przypisana, prowizja_zainkasowana, crm_clients!klient_id(nazwa)')
+			.select('id, nr_polisy, typ_umowy, skladka_przypisana, prowizja_przypisana, prowizja_zainkasowana, crm_clients!klient_id(nazwa)')
 			.order('nr_polisy');
 		policies = data ?? [];
 	}
