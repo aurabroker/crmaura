@@ -25,6 +25,14 @@
 		ubez_zycie_opis: string | null;
 		ubez_medyczne: 'maja' | 'nie_maja' | null;
 		ubez_medyczne_opis: string | null;
+		ubez_flota: 'maja' | 'nie_maja' | null;
+		ubez_flota_opis: string | null;
+		ubez_majatek: 'maja' | 'nie_maja' | null;
+		ubez_majatek_opis: string | null;
+		ubez_gwarancje: 'maja' | 'nie_maja' | null;
+		ubez_gwarancje_opis: string | null;
+		ubez_inne: 'maja' | 'nie_maja' | null;
+		ubez_inne_opis: string | null;
 		created_at: string;
 		crm_profiles?: { imie_nazwisko: string } | null;
 	};
@@ -90,12 +98,7 @@
 			.eq('id', prospectId)
 			.single();
 		prospect = p as Prospect | null;
-		if (prospect) {
-			fUbezZycie = prospect.ubez_zycie ?? '';
-			fUbezZycieOpis = prospect.ubez_zycie_opis ?? '';
-			fUbezMedyczne = prospect.ubez_medyczne ?? '';
-			fUbezMedyczneOpis = prospect.ubez_medyczne_opis ?? '';
-		}
+		syncUbezFromProspect();
 
 		const { data: acts } = await sb.from('crm_prospect_activities')
 			.select('*, crm_profiles(imie_nazwisko)')
@@ -330,25 +333,45 @@
 	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
-	// ---- Ubezpieczenia posiadane (Życie / Medyczne) ----
-	let fUbezZycie = $state<'maja' | 'nie_maja' | ''>('');
-	let fUbezZycieOpis = $state('');
-	let fUbezMedyczne = $state<'maja' | 'nie_maja' | ''>('');
-	let fUbezMedyczneOpis = $state('');
+	// ---- Ubezpieczenia posiadane (Życie / Medyczne / Flota / Majątek / Gwarancje / Inne) ----
+	const UBEZ_OPIS_MAX = 150;
+	const ubezCategories = [
+		{ key: 'zycie', label: 'Życie' },
+		{ key: 'medyczne', label: 'Medyczne' },
+		{ key: 'flota', label: 'Flota' },
+		{ key: 'majatek', label: 'Majątek' },
+		{ key: 'gwarancje', label: 'Gwarancje' },
+		{ key: 'inne', label: 'Inne' }
+	] as const;
+
+	type UbezVal = { status: 'maja' | 'nie_maja' | ''; opis: string };
+	let ubez = $state<Record<string, UbezVal>>(
+		Object.fromEntries(ubezCategories.map((c) => [c.key, { status: '', opis: '' }]))
+	);
 	let ubezSaving = $state(false);
 	let ubezSaved = $state(false);
+
+	function syncUbezFromProspect() {
+		if (!prospect) return;
+		for (const c of ubezCategories) {
+			const p = prospect as unknown as Record<string, string | null>;
+			ubez[c.key] = {
+				status: (p[`ubez_${c.key}`] as UbezVal['status']) ?? '',
+				opis: p[`ubez_${c.key}_opis`] ?? ''
+			};
+		}
+	}
 
 	async function saveUbez() {
 		if (!prospect) return;
 		ubezSaving = true; ubezSaved = false;
-		const payload = {
-			ubez_zycie: fUbezZycie || null,
-			ubez_zycie_opis: fUbezZycieOpis.trim() || null,
-			ubez_medyczne: fUbezMedyczne || null,
-			ubez_medyczne_opis: fUbezMedyczneOpis.trim() || null
-		};
+		const payload: Record<string, string | null> = {};
+		for (const c of ubezCategories) {
+			payload[`ubez_${c.key}`] = ubez[c.key].status || null;
+			payload[`ubez_${c.key}_opis`] = ubez[c.key].opis.trim().slice(0, UBEZ_OPIS_MAX) || null;
+		}
 		await sb.from('crm_prospects').update(payload).eq('id', prospect.id);
-		prospect = { ...prospect, ...payload };
+		prospect = { ...prospect, ...payload } as Prospect;
 		ubezSaving = false;
 		ubezSaved = true;
 		setTimeout(() => { ubezSaved = false; }, 2000);
@@ -371,8 +394,11 @@
 	{@const zatrud = extractZatrudnienie(prospect)}
 	{@const www = extractWWW(prospect.notatki)}
 
-	<!-- Header -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 mb-5 w-1/2 min-w-[480px]">
+	<!-- Górny rząd: Klient + Ubezpieczenia (na równi) -->
+	<div class="grid grid-cols-2 gap-5 mb-5 items-start">
+
+	<!-- Klient -->
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
 		{#if editingProspect}
 			<div class="space-y-3">
 				<div class="grid grid-cols-2 gap-3">
@@ -471,7 +497,43 @@
 		{/if}
 	</div>
 
-	<!-- Tasks + Activity (side by side) -->
+	<!-- Ubezpieczenia (na równi z boxem Klienta) -->
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
+		<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
+				<Shield size={15} class="text-indigo-500" /> Ubezpieczenia
+			</h2>
+			<button onclick={saveUbez} disabled={ubezSaving} class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">
+				{ubezSaving ? 'Zapisywanie...' : ubezSaved ? 'Zapisano ✓' : 'Zapisz'}
+			</button>
+		</div>
+		<div class="p-4 space-y-2.5">
+			{#each ubezCategories as cat}
+				<div class="flex items-center gap-3">
+					<span class="text-sm font-medium text-slate-700 w-20 shrink-0">{cat.label}</span>
+					<div class="flex gap-3 shrink-0">
+						<label class="flex items-center gap-1 text-xs cursor-pointer text-slate-600">
+							<input type="radio" name="ubez_{cat.key}" value="maja" bind:group={ubez[cat.key].status} class="accent-blue-600" /> Mają
+						</label>
+						<label class="flex items-center gap-1 text-xs cursor-pointer text-slate-600">
+							<input type="radio" name="ubez_{cat.key}" value="nie_maja" bind:group={ubez[cat.key].status} class="accent-blue-600" /> Nie mają
+						</label>
+					</div>
+					<input
+						bind:value={ubez[cat.key].opis}
+						maxlength={UBEZ_OPIS_MAX}
+						placeholder="Opis (max {UBEZ_OPIS_MAX} zn.)"
+						class="flex-1 min-w-0 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+					/>
+				</div>
+			{/each}
+		</div>
+	</div>
+
+	</div>
+	<!-- /górny rząd -->
+
+	<!-- Tasks + Aktywność (side by side) -->
 	<div class="grid grid-cols-2 gap-5">
 	<!-- Tasks -->
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
@@ -639,53 +701,6 @@
 		{/if}
 	</div>
 
-	<!-- Prawa kolumna: Ubezpieczenia (4. tabela) + Aktywność -->
-	<div class="flex flex-col gap-5">
-
-	<!-- Ubezpieczenia posiadane -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
-		<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
-				<Shield size={15} class="text-indigo-500" /> Ubezpieczenia
-			</h2>
-			<button onclick={saveUbez} disabled={ubezSaving} class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">
-				{ubezSaving ? 'Zapisywanie...' : ubezSaved ? 'Zapisano ✓' : 'Zapisz'}
-			</button>
-		</div>
-		<div class="p-5 space-y-4">
-			<!-- Życie -->
-			<div>
-				<div class="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
-					<span class="text-sm font-medium text-slate-700">Życie</span>
-					<div class="flex gap-4">
-						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
-							<input type="radio" name="ubez_zycie" value="maja" bind:group={fUbezZycie} class="accent-blue-600" /> Mają
-						</label>
-						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
-							<input type="radio" name="ubez_zycie" value="nie_maja" bind:group={fUbezZycie} class="accent-blue-600" /> Nie mają
-						</label>
-					</div>
-				</div>
-				<textarea bind:value={fUbezZycieOpis} rows="2" placeholder="Szczegóły (TU, zakres, składka...)" class="{inputCls} resize-none"></textarea>
-			</div>
-			<!-- Medyczne -->
-			<div>
-				<div class="flex items-center justify-between gap-3 mb-1.5 flex-wrap">
-					<span class="text-sm font-medium text-slate-700">Medyczne</span>
-					<div class="flex gap-4">
-						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
-							<input type="radio" name="ubez_medyczne" value="maja" bind:group={fUbezMedyczne} class="accent-blue-600" /> Mają
-						</label>
-						<label class="flex items-center gap-1.5 text-sm cursor-pointer text-slate-700">
-							<input type="radio" name="ubez_medyczne" value="nie_maja" bind:group={fUbezMedyczne} class="accent-blue-600" /> Nie mają
-						</label>
-					</div>
-				</div>
-				<textarea bind:value={fUbezMedyczneOpis} rows="2" placeholder="Szczegóły (TU, zakres, składka...)" class="{inputCls} resize-none"></textarea>
-			</div>
-		</div>
-	</div>
-
 	<!-- Activity feed -->
 	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
 		<div class="px-6 pt-5 pb-4 border-b border-slate-100">
@@ -746,7 +761,6 @@
 				</button>
 			</div>
 		</div>
-	</div>
 	</div>
 	</div>
 {/if}
