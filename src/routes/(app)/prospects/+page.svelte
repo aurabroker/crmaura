@@ -128,11 +128,22 @@
 	});
 
 	async function loadProspects() {
-		const { data } = await sb
-			.from('crm_prospects')
-			.select('*, crm_profiles(imie_nazwisko)')
-			.order('created_at', { ascending: false });
-		prospects = (data ?? []) as Prospect[];
+		// Supabase/PostgREST zwraca maks. 1000 wierszy na zapytanie —
+		// pobieramy wszystkie rekordy stronami, żeby nic nie ucięło.
+		const pageSize = 1000;
+		const all: Prospect[] = [];
+		for (let from = 0; ; from += pageSize) {
+			const { data, error } = await sb
+				.from('crm_prospects')
+				.select('*, crm_profiles(imie_nazwisko)')
+				.order('created_at', { ascending: false })
+				.range(from, from + pageSize - 1);
+			if (error) break;
+			const batch = (data ?? []) as Prospect[];
+			all.push(...batch);
+			if (batch.length < pageSize) break;
+		}
+		prospects = all;
 	}
 
 	onMount(() => { loadProspects(); });
