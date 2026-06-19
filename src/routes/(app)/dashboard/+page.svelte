@@ -222,6 +222,14 @@
 		}));
 	});
 
+	// --- Zadania (stały panel ZADANIA w pulpicie) ---
+	const dashOpenTasks = $derived(
+		appState.tasks.filter((t) => t.status === 'otwarte' || t.status === 'w_toku')
+	);
+	const dashOverdueTasks = $derived(
+		dashOpenTasks.filter((t) => t.termin && t.termin < today)
+	);
+
 	// --- Alerty ---
 	const unresolvedAlerts = $derived(appState.alerts.filter((a) => !a.resolved));
 
@@ -265,7 +273,8 @@
 
 	$effect(() => {
 		draggableItems = kpiItems.filter((w) => KPI_WIDGET_IDS.has(w.id));
-		bottomDraggableItems = kpiItems.filter((w) => !KPI_WIDGET_IDS.has(w.id));
+		// ZADANIA ma teraz stały panel w górnym pasie — nie renderujemy go w dolnych widgetach.
+		bottomDraggableItems = kpiItems.filter((w) => !KPI_WIDGET_IDS.has(w.id) && w.id !== 'zadania');
 	});
 
 	function handleDnd(e: CustomEvent) {
@@ -278,6 +287,8 @@
 
 	async function saveWidgetOrder() {
 		const order = [...draggableItems.map((i) => i.id), ...bottomDraggableItems.map((i) => i.id)];
+		// ZADANIA nie jest w listach D&D, ale zostaje w preferencjach jeśli było włączone.
+		if (appState.dashboardWidgets.includes('zadania') && !order.includes('zadania')) order.push('zadania');
 		appState.dashboardWidgets = order;
 		await sb.from('crm_dashboard_prefs').upsert({
 			user_id: appState.profile!.id,
@@ -467,31 +478,83 @@
 	</div>
 {/if}
 
-<!-- KPI Grid — drag & drop (tylko kpi widgety) -->
-{#if draggableItems.some((w) => KPI_WIDGET_IDS.has(w.id))}
-<section class="mb-8">
-<SectionHeader title="Kluczowe wskaźniki" />
-<div
-	class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4"
-	use:dndzone={{ items: draggableItems, flipDurationMs: 200 }}
-	onconsider={handleDnd}
-	onfinalize={finalizeDnd}
->
-	{#each draggableItems as widget (widget.id)}
-		{#if KPI_WIDGET_IDS.has(widget.id)}
-		<div class={configMode ? 'cursor-grab active:cursor-grabbing' : ''}>
-			<KpiCard
-				label={ALL_WIDGETS.find((w) => w.id === widget.id)?.label ?? widget.id}
-				value={kpiValue(widget.id)}
-				sub={kpiSub(widget.id)}
-				color={kpiColor(widget.id)}
-			/>
+<!-- Pulpit oparty na 8 kolumnach: lewa połowa = kafelki KPI, prawa połowa = ZADANIA -->
+<section class="mb-8 grid grid-cols-1 xl:grid-cols-8 gap-5 items-start">
+
+	<!-- Lewa połowa (4 z 8 kolumn): kafelki wskaźników -->
+	<div class="xl:col-span-4">
+		<SectionHeader title="Kluczowe wskaźniki" />
+		{#if draggableItems.some((w) => KPI_WIDGET_IDS.has(w.id))}
+		<div
+			class="grid grid-cols-2 gap-3"
+			use:dndzone={{ items: draggableItems, flipDurationMs: 200 }}
+			onconsider={handleDnd}
+			onfinalize={finalizeDnd}
+		>
+			{#each draggableItems as widget (widget.id)}
+				{#if KPI_WIDGET_IDS.has(widget.id)}
+				<div class={configMode ? 'cursor-grab active:cursor-grabbing' : ''}>
+					<KpiCard
+						label={ALL_WIDGETS.find((w) => w.id === widget.id)?.label ?? widget.id}
+						value={kpiValue(widget.id)}
+						sub={kpiSub(widget.id)}
+						color={kpiColor(widget.id)}
+					/>
+				</div>
+				{/if}
+			{/each}
 		</div>
+		{:else}
+		<p class="text-sm text-slate-400 py-4">Brak wybranych wskaźników — włącz je w „Dostosuj pulpit".</p>
 		{/if}
-	{/each}
-</div>
+	</div>
+
+	<!-- Prawa połowa (4 z 8 kolumn): ZADANIA — stały panel -->
+	<aside class="xl:col-span-4">
+		<SectionHeader title="Zadania" />
+		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+				<h2 class="font-semibold text-slate-900 text-base flex items-center gap-2">✓ Zadania</h2>
+				<a href="/calendar" class="text-xs text-blue-600 hover:underline">Zobacz wszystkie →</a>
+			</div>
+			<div class="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
+				<div class="px-4 py-3 text-center">
+					<div class="text-2xl font-bold text-slate-900">{dashOpenTasks.length}</div>
+					<div class="text-xs text-slate-400 mt-0.5">Otwarte</div>
+				</div>
+				<div class="px-4 py-3 text-center">
+					<div class="text-2xl font-bold {dashOverdueTasks.length > 0 ? 'text-red-600' : 'text-slate-400'}">{dashOverdueTasks.length}</div>
+					<div class="text-xs text-slate-400 mt-0.5">Przeterminowane</div>
+				</div>
+			</div>
+			<ul class="divide-y divide-slate-100">
+				{#each dashOpenTasks.slice(0, 12) as t}
+					{@const pct = t.postep_pct ?? 0}
+					{@const overdue = t.termin && t.termin < today}
+					<li class="px-4 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors" onclick={() => openTask(t)}>
+						<div class="flex items-center gap-2 mb-1">
+							<span class="text-sm font-medium text-slate-800 flex-1 truncate">{t.tytul}</span>
+							{#if t.termin}
+								<span class="text-xs shrink-0 {overdue ? 'text-red-500 font-semibold' : 'text-slate-400'}">{t.termin}</span>
+							{/if}
+						</div>
+						{#if t.czas_trwania_dni}
+							<div class="flex items-center gap-2">
+								<div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+									<div class="h-full rounded-full {pct >= 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-400'}" style="width:{pct}%"></div>
+								</div>
+								<span class="text-[10px] text-slate-400 shrink-0">{pct}%</span>
+							</div>
+						{/if}
+					</li>
+				{:else}
+					<li class="px-4 py-8 text-center text-slate-400 text-sm">Brak otwartych zadań</li>
+				{/each}
+			</ul>
+		</div>
+	</aside>
+
 </section>
-{/if}
 
 <!-- Wznowienia + Zaległe płatności — ta sama linia -->
 {#if appState.dashboardWidgets.includes('renewals') || appState.dashboardWidgets.includes('payments') || appState.dashboardWidgets.includes('expiring_payments')}
