@@ -5,26 +5,12 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown } from 'lucide-svelte';
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import type { Prospect } from '$lib/types/database';
 
-	type Prospect = {
-		id: string;
-		tenant_id: string;
-		nazwa: string;
-		nip: string | null;
-		adres: string | null;
-		telefon: string | null;
-		email: string | null;
-		branza: string | null;
-		notatki: string | null;
-		zatrudnienie: number | null;
-		broker_id: string | null;
-		status: string;
-		created_at: string;
-		crm_profiles?: { imie_nazwisko: string } | null;
-	};
-
-	let prospects = $state<Prospect[]>([]);
+	// Lista korzysta ze wspólnego cache w appState — dzięki temu powrót z karty
+	// prospekta jest natychmiastowy (bez ponownego pobierania ~5 tys. rekordów).
+	const prospects = $derived(appState.prospects);
+	let loading = $state(false);
 	let search = $state('');
 	let statusFilter = $state('Nowy');
 	let letterFilter = $state('');
@@ -119,7 +105,7 @@
 				bv = getZatrudnienie(b) ?? 0;
 			}
 			else if (sortCol === 'status') { av = statusOrder[a.status] ?? 99; bv = statusOrder[b.status] ?? 99; }
-			else if (sortCol === 'created_at') { av = a.created_at; bv = b.created_at; }
+			else if (sortCol === 'created_at') { av = a.created_at ?? ''; bv = b.created_at ?? ''; }
 			if (av < bv) return sortAsc ? -1 : 1;
 			if (av > bv) return sortAsc ? 1 : -1;
 			return 0;
@@ -127,26 +113,72 @@
 		return list;
 	});
 
-	async function loadProspects() {
-		// Supabase/PostgREST zwraca maks. 1000 wierszy na zapytanie —
-		// pobieramy wszystkie rekordy stronami, żeby nic nie ucięło.
+	// Lista nie potrzebuje wszystkich ~28 kolumn (m.in. 12 pól ubez_*) — pobieramy
+	// tylko to, co widać w tabeli. Mniej danych = szybsze ładowanie.
+	const PROSPECT_COLS =
+		'id, tenant_id, nazwa, nip, adres, telefon, email, branza, notatki, zatrudnienie, broker_id, status, created_at, crm_profiles(imie_nazwisko)';
+
+	async function loadProspects(background = false) {
+		// Pierwsza strona + dokładny licznik; resztę stron dociągamy równolegle
+		// (zamiast jedna po drugiej), więc całość pobiera się znacznie szybciej.
+		if (!background) loading = true;
 		const pageSize = 1000;
-		const all: Prospect[] = [];
-		for (let from = 0; ; from += pageSize) {
-			const { data, error } = await sb
-				.from('crm_prospects')
-				.select('*, crm_profiles(imie_nazwisko)')
-				.order('created_at', { ascending: false })
-				.range(from, from + pageSize - 1);
-			if (error) break;
-			const batch = (data ?? []) as Prospect[];
-			all.push(...batch);
-			if (batch.length < pageSize) break;
+		const { data: first, count } = await sb
+			.from('crm_prospects')
+			.select(PROSPECT_COLS, { count: 'exact' })
+			.order('created_at', { ascending: false })
+			.order('id', { ascending: false })
+			.range(0, pageSize - 1);
+		const all: Prospect[] = (first ?? []) as Prospect[];
+		const total = count ?? all.length;
+		if (total > pageSize) {
+			const reqs = [];
+			for (let from = pageSize; from < total; from += pageSize) {
+				reqs.push(
+					sb.from('crm_prospects')
+						.select(PROSPECT_COLS)
+						.order('created_at', { ascending: false })
+						.order('id', { ascending: false })
+						.range(from, from + pageSize - 1)
+				);
+			}
+			const results = await Promise.all(reqs);
+			for (const r of results) all.push(...((r.data ?? []) as Prospect[]));
 		}
-		prospects = all;
+		appState.prospects = all;
+		appState.prospectsLoaded = true;
+		loading = false;
 	}
 
-	onMount(() => { loadProspects(); });
+	// --- Pamięć filtrów na czas sesji (status / litera / szukaj / sortowanie) ---
+	const FILTERS_KEY = 'prospects:filters';
+	let stateRestored = $state(false);
+
+	onMount(() => {
+		try {
+			const raw = sessionStorage.getItem(FILTERS_KEY);
+			if (raw) {
+				const f = JSON.parse(raw);
+				if (typeof f.search === 'string') search = f.search;
+				if (typeof f.statusFilter === 'string') statusFilter = f.statusFilter;
+				if (typeof f.letterFilter === 'string') letterFilter = f.letterFilter;
+				if (typeof f.sortCol === 'string') sortCol = f.sortCol as SortCol;
+				if (typeof f.sortAsc === 'boolean') sortAsc = f.sortAsc;
+			}
+		} catch { /* brak zapisanych filtrów — pomijamy */ }
+		stateRestored = true;
+
+		// Jeśli dane są już w cache — pokazujemy je od razu i odświeżamy w tle
+		// (np. po edycji prospekta). Inaczej ładujemy z paskiem "Ładowanie".
+		loadProspects(appState.prospectsLoaded);
+	});
+
+	// Zapis filtrów po każdej zmianie (dopiero po przywróceniu, by nie nadpisać).
+	$effect(() => {
+		if (!stateRestored) return;
+		const snapshot = JSON.stringify({ search, statusFilter, letterFilter, sortCol, sortAsc });
+		try { sessionStorage.setItem(FILTERS_KEY, snapshot); } catch { /* ignore */ }
+	});
 
 	function openNew() {
 		editingProspect = null;
@@ -279,9 +311,9 @@
 					<tr class="border-t border-slate-100 hover:bg-slate-50 group">
 						<td class="px-4 py-2.5">
 							<div class="flex items-center gap-1">
-								<button onclick={() => goto(`/prospects/${p.id}`)} title="Otwórz" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+								<a href={`/prospects/${p.id}`} title="Otwórz (Ctrl/⌘+klik = nowa karta)" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
 									<ExternalLink size={13} />
-								</button>
+								</a>
 								<button onclick={() => openEdit(p)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
 									<Pencil size={13} />
 								</button>
@@ -291,10 +323,10 @@
 							</div>
 						</td>
 						<td class="px-4 py-2.5">
-							<button
-								onclick={() => goto(`/prospects/${p.id}`)}
-								class="font-medium text-blue-700 hover:text-blue-900 hover:underline text-left leading-snug"
-							>{p.nazwa}</button>
+							<a
+								href={`/prospects/${p.id}`}
+								class="block font-medium text-blue-700 hover:text-blue-900 hover:underline text-left leading-snug"
+							>{p.nazwa}</a>
 							<div class="flex items-center gap-2 mt-0.5 flex-wrap">
 								{#if p.nip}<span class="text-[11px] text-slate-400">NIP: {p.nip}</span>{/if}
 							</div>
@@ -323,7 +355,7 @@
 						</td>
 					</tr>
 				{:else}
-					<tr><td colspan="7" class="px-5 py-8 text-center text-slate-400">Brak prospectów</td></tr>
+					<tr><td colspan="7" class="px-5 py-8 text-center text-slate-400">{loading ? 'Ładowanie…' : 'Brak prospectów'}</td></tr>
 				{/each}
 			</tbody>
 		</table>

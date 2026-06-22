@@ -72,6 +72,11 @@
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();
 		if (prefs?.widgets) appState.dashboardWidgets = prefs.widgets as string[];
 
+		// Interfejs (menu, nagłówek) potrzebuje tylko profilu i tenanta — pokazujemy go
+		// od razu, a ciężkie kolekcje (klienci, polisy, płatności...) doczytujemy w tle.
+		// Dzięki temu aplikacja "wstaje" szybciej, m.in. przy otwieraniu w nowej karcie.
+		initialized = true;
+
 		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL, rTasks, rLeasings] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
 			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
@@ -109,7 +114,6 @@
 		appState.alerts = (rAL.data ?? []) as typeof appState.alerts;
 		appState.tasks = (rTasks.data ?? []) as typeof appState.tasks;
 		appState.leasings = (rLeasings.data ?? []) as typeof appState.leasings;
-		initialized = true;
 		if (!loginLogged) {
 			loginLogged = true;
 			logAudit('login', 'user', user.id, profile.imie_nazwisko ?? user.email);
