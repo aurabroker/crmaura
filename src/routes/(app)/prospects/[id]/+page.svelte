@@ -507,11 +507,11 @@
 				{ubezSaving ? 'Zapisywanie...' : ubezSaved ? 'Zapisano ✓' : 'Zapisz'}
 			</button>
 		</div>
-		<div class="p-4 space-y-2.5">
+		<div class="p-4 grid grid-cols-2 gap-x-4 gap-y-2.5">
 			{#each ubezCategories as cat}
-				<div class="flex items-center gap-3">
-					<span class="text-sm font-medium text-slate-700 w-20 shrink-0">{cat.label}</span>
-					<div class="flex gap-3 shrink-0">
+				<div class="flex items-center gap-2.5">
+					<span class="text-sm font-medium text-slate-700 w-16 shrink-0">{cat.label}</span>
+					<div class="flex gap-2.5 shrink-0">
 						<label class="flex items-center gap-1 text-xs cursor-pointer text-slate-600">
 							<input type="radio" name="ubez_{cat.key}" value="maja" bind:group={ubez[cat.key].status} class="accent-blue-600" /> Mają
 						</label>
@@ -522,7 +522,7 @@
 					<input
 						bind:value={ubez[cat.key].opis}
 						maxlength={UBEZ_OPIS_MAX}
-						placeholder="Opis (max {UBEZ_OPIS_MAX} zn.)"
+						placeholder="Opis"
 						class="flex-1 min-w-0 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
 					/>
 				</div>
