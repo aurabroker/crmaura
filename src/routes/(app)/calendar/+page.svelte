@@ -46,6 +46,14 @@
 	let fPostep = $state(0);
 	let fStatus = $state<CrmTask['status']>('otwarte');
 
+	// Zadanie pochodzące z Prospekta — Prospect musi pozostać przypisany (pole stałe, nie lista).
+	const isProspectTask = $derived(!!editingTask?.prospect_id);
+	const editingProspectName = $derived(
+		editingTask?.crm_prospects?.nazwa
+		?? prospects.find(p => p.id === editingTask?.prospect_id)?.nazwa
+		?? ''
+	);
+
 	let history = $state<import('$lib/types/database').CrmTaskHistory[]>([]);
 	async function loadHistory() {
 		const { data } = await sb.from('crm_task_history')
@@ -629,7 +637,7 @@
 {/if}
 
 <!-- Modal -->
-<Modal title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showModal} onclose={() => { showModal = false; formError = ''; }}>
+<Modal windowed title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showModal} onclose={() => { showModal = false; formError = ''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveTask} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
@@ -672,13 +680,18 @@
 				</select>
 			</div>
 			<div>
-				<label class={labelCls}>Klient</label>
+				<label class={labelCls}>{isProspectTask ? 'Prospect' : 'Klient'}</label>
+				{#if isProspectTask}
+					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg truncate" title={editingProspectName}>{editingProspectName || 'Prospect'}</div>
+				{:else}
 				<select bind:value={fKlient} class={inputCls}>
 					<option value="">— brak —</option>
 					{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
 				</select>
+				{/if}
 			</div>
 		</div>
+		{#if !isProspectTask}
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label class={labelCls}>Prospect</label>
@@ -697,6 +710,7 @@
 				</select>
 			</div>
 		</div>
+		{/if}
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label class={labelCls}>Przypisz do (główny)</label>
