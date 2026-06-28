@@ -5,7 +5,7 @@ usługi **GUS BIR 1.1** (BIR1 — Baza Internetowa REGON). Przeznaczona dla inny
 projektów, które chcą dopisać integrację z REGON na podstawie implementacji
 użytej w tym CRM.
 
-Implementacja referencyjna: [`src/routes/api/regon/lookup/+server.ts`](../src/routes/api/regon/lookup/+server.ts).
+Implementacja referencyjna: [`src/routes/api/regon/lookup/+server.ts`](src/routes/api/regon/lookup/+server.ts).
 
 ---
 
@@ -24,15 +24,12 @@ endpointem. Komunikacja przebiega w trzech krokach:
 > wielokrotnie używać, ale w tym CRM logowanie wykonujemy przy każdym
 > zapytaniu dla prostoty.
 
-### Endpointy i klucze
+### Endpoint i klucz
 
-| Środowisko | Endpoint | Klucz |
-| --- | --- | --- |
-| **Testowe** | `https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc` | `abcde12345abcde12345` (publiczny klucz testowy) |
-| **Produkcyjne** | `https://wyszukiwarkaregon.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc` | własny klucz z [api.stat.gov.pl/Home/RegonApi](https://api.stat.gov.pl/Home/RegonApi) |
-
-> ⚠️ Środowisko testowe zwraca **dane przykładowe**, nie rzeczywiste. Do
-> produkcji potrzebujesz własnego klucza (wniosek przez stronę GUS).
+| | |
+| --- | --- |
+| **Endpoint** | `https://wyszukiwarkaregon.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc` |
+| **Klucz API** | własny klucz produkcyjny z [api.stat.gov.pl/Home/RegonApi](https://api.stat.gov.pl/Home/RegonApi) |
 
 ### Przestrzenie nazw (namespaces)
 
@@ -52,7 +49,7 @@ Vite):
 
 ```bash
 # .env  — bez przedrostka VITE_, inaczej trafi do bundla przeglądarki!
-GUS_API_KEY=your_gus_api_key_here
+GUS_API_KEY=twoj_klucz_produkcyjny
 ```
 
 Odczyt na serwerze:
@@ -336,5 +333,3 @@ Dodatkowo:
 
 - Wniosek o klucz produkcyjny: <https://api.stat.gov.pl/Home/RegonApi>
 - Dokumentacja GUS BIR 1.1 (PDF/WSDL) dostępna z powyższej strony.
-- Endpoint testowy: `https://wyszukiwarkaregontest.stat.gov.pl/wsBIR/UslugaBIRzewnPubl.svc`
-- Klucz testowy: `abcde12345abcde12345`
