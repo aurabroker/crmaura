@@ -53,6 +53,36 @@
 		return groups;
 	});
 
+	// Klucz grupy = powód + dokładny zestaw ID klientów. Dzięki temu odrzucenie
+	// grupy jako "nie duplikat" chowa ją trwale, ale jeśli do tego samego
+	// NIP/PESEL dołączy NOWY klient, zestaw ID się zmieni i grupa wróci jako nowa.
+	function dedupeKey(group: DupGroup): string {
+		const ids = group.clients.map(c => c.id).sort().join(',');
+		return `${group.reason}::${ids}`;
+	}
+
+	let dismissedKeys = $state<Set<string>>(new Set());
+	const visibleDuplicateGroups = $derived(duplicateGroups().filter(g => !dismissedKeys.has(dedupeKey(g))));
+
+	async function loadDismissedDuplicates() {
+		const { data } = await sb.from('crm_dismissed_duplicates').select('dedupe_key');
+		dismissedKeys = new Set((data ?? []).map(r => r.dedupe_key as string));
+	}
+	loadDismissedDuplicates();
+
+	let dismissing = $state<string | null>(null);
+	async function dismissGroup(group: DupGroup) {
+		const key = dedupeKey(group);
+		dismissing = key;
+		const { error } = await sb.from('crm_dismissed_duplicates').insert({
+			tenant_id: appState.profile!.tenant_id,
+			dedupe_key: key,
+			dismissed_by: appState.profile!.id
+		});
+		if (!error) dismissedKeys = new Set([...dismissedKeys, key]);
+		dismissing = null;
+	}
+
 	// Merge / delete duplicates
 	const KLIENT_ID_TABLES = ['crm_client_contacts', 'crm_policies', 'crm_claims', 'crm_vehicles', 'apk_forms', 'crm_tasks', 'crm_task_history'];
 	let mergeTarget = $state<Record<string, string>>({});
@@ -85,7 +115,15 @@
 		for (const table of KLIENT_ID_TABLES) {
 			await sb.from(table).update({ klient_id: targetId }).in('klient_id', otherIds);
 		}
-		await sb.from('crm_clients').delete().in('id', otherIds);
+		// crm_policies.ubezpieczony_id (drugi ubezpieczony) też wskazuje na klienta —
+		// jeśli go nie przepniemy, usunięcie duplikatu poniżej padnie na FK i wróci przy odświeżeniu.
+		await sb.from('crm_policies').update({ ubezpieczony_id: targetId }).in('ubezpieczony_id', otherIds);
+		const { error: delError } = await sb.from('crm_clients').delete().in('id', otherIds);
+		if (delError) {
+			mergeError[group.reason] = `Nie udało się usunąć duplikatów: ${delError.message}`;
+			merging = null;
+			return;
+		}
 		await logAudit('clients_merged', 'client', targetId, group.reason, { merged_ids: otherIds });
 
 		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
@@ -108,15 +146,21 @@
 		merging = null;
 	}
 
-	const filtered = $derived(
-		appState.clients.filter(
-			(c) =>
-				!search ||
-				c.nazwa.toLowerCase().includes(search.toLowerCase()) ||
-				(c.nazwa_skrocona ?? '').toLowerCase().includes(search.toLowerCase()) ||
-				(c.nip ?? '').includes(search)
-		)
-	);
+	const filtered = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		if (!q) return appState.clients;
+		return appState.clients.filter((c) =>
+			c.nazwa.toLowerCase().includes(q) ||
+			(c.nazwa_skrocona ?? '').toLowerCase().includes(q) ||
+			(c.nip ?? '').toLowerCase().includes(q) ||
+			(c.pesel ?? '').toLowerCase().includes(q) ||
+			(c.regon ?? '').toLowerCase().includes(q) ||
+			(c.krs ?? '').toLowerCase().includes(q) ||
+			(c.email ?? '').toLowerCase().includes(q) ||
+			(c.telefon ?? '').toLowerCase().includes(q) ||
+			(c.ulica ?? '').toLowerCase().includes(q)
+		);
+	});
 
 	function openNew(typ: 'firma' | 'osoba') {
 		modalTyp = typ;
@@ -177,7 +221,7 @@
 	</div>
 	<div class="flex gap-2">
 		<button onclick={() => showDuplicates = true} class="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-100 transition-colors">
-			Sprawdź duplikaty {#if duplicateGroups().length > 0}<span class="bg-amber-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[11px]">{duplicateGroups().length}</span>{/if}
+			Sprawdź duplikaty {#if visibleDuplicateGroups.length > 0}<span class="bg-amber-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[11px]">{visibleDuplicateGroups.length}</span>{/if}
 		</button>
 		<button onclick={() => openNew('firma')} class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 			<Building2 size={15} /> Dodaj Firmę
@@ -191,7 +235,7 @@
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj po nazwie lub NIP..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
+		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, PESEL, REGON, KRS, e-mailu, telefonie lub adresie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 		<div class="flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0">
 			<button onclick={() => compactView = false}
 				class="px-3 py-1.5 text-xs font-medium transition-colors {!compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
@@ -360,13 +404,19 @@
 	{#snippet footer()}
 		<button onclick={() => showDuplicates = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 	{/snippet}
-	{#if duplicateGroups().length === 0}
-		<div class="text-center py-6 text-emerald-600 font-medium">✓ Brak wykrytych duplikatów (NIP / PESEL)</div>
+	{#if visibleDuplicateGroups.length === 0}
+		<div class="text-center py-6 text-emerald-600 font-medium">✓ Brak nowych duplikatów (NIP / PESEL)</div>
 	{:else}
 		<div class="space-y-4">
-			{#each duplicateGroups() as group}
+			{#each visibleDuplicateGroups as group}
 			<div class="border border-amber-200 rounded-lg overflow-hidden">
-				<div class="bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 uppercase tracking-wide">{group.reason}</div>
+				<div class="bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center justify-between">
+					<span>{group.reason}</span>
+					<button onclick={() => dismissGroup(group)} disabled={dismissing === dedupeKey(group)}
+						class="text-[11px] font-medium text-amber-700 border border-amber-300 rounded px-2 py-0.5 hover:bg-amber-100 disabled:opacity-60 normal-case">
+						{dismissing === dedupeKey(group) ? 'Zapisywanie...' : 'To nie są duplikaty'}
+					</button>
+				</div>
 				<div class="divide-y divide-slate-100">
 					{#each group.clients as c}
 					{@const pCount = policyCount(c.id)}
