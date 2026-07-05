@@ -3,11 +3,13 @@ import { getAdminClient } from '$lib/server/auth';
 import { env } from '$env/dynamic/private';
 import type { RequestHandler } from './$types';
 
-// Weryfikacja Cloudflare Turnstile. Gdy sekret nie jest skonfigurowany — pomijamy
-// (środowiska bez Turnstile działają jak dotąd). Gdy jest — wymagamy ważnego tokenu.
+// Weryfikacja Cloudflare Turnstile dla PUBLICZNEJ, nieuwierzytelnionej rejestracji.
+// Fail-closed: bez skonfigurowanego sekretu nie ma ochrony antybotowej, więc
+// rejestracji NIE wpuszczamy (wcześniej brak sekretu = pełny bypass — S5).
+// Świadomy bypass tylko przez jawną flagę środowiskową (dev/testy).
 async function verifyTurnstile(token: string | undefined): Promise<boolean> {
 	const secret = env.TURNSTILE_SECRET_KEY;
-	if (!secret) return true;
+	if (!secret) return env.ALLOW_INSECURE_REGISTRATION === 'true';
 	if (!token) return false;
 	const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
 		method: 'POST',
