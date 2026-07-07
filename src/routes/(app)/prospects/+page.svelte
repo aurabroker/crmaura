@@ -3,7 +3,8 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown } from 'lucide-svelte';
+	import { Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown, LayoutGrid, List } from 'lucide-svelte';
+	import { dndzone } from 'svelte-dnd-action';
 	import { onMount } from 'svelte';
 	import type { Prospect } from '$lib/types/database';
 
@@ -14,6 +15,7 @@
 	let search = $state('');
 	let statusFilter = $state('Nowy');
 	let letterFilter = $state('');
+	let view = $state<'tabela' | 'kanban'>('tabela');
 	let showModal = $state(false);
 	let editingProspect = $state<Prospect | null>(null);
 	let saving = $state(false);
@@ -113,6 +115,90 @@
 		return list;
 	});
 
+	// ---- Widok KANBAN (kolumny = statusy, karty przeciągane między nimi) ----
+	const KANBAN_COLS = [
+		{ key: 'nowy', label: 'Nowy', accent: 'bg-slate-400' },
+		{ key: 'w_kontakcie', label: 'W kontakcie', accent: 'bg-blue-500' },
+		{ key: 'oferta_wyslana', label: 'Oferta wysłana', accent: 'bg-amber-500' },
+		{ key: 'wygrany', label: 'Wygrany', accent: 'bg-emerald-500' },
+		{ key: 'przegrany', label: 'Przegrany', accent: 'bg-red-500' }
+	];
+
+	// Kanban ignoruje pojedynczy filtr statusu (kolumny same są statusami),
+	// ale respektuje wyszukiwarkę i filtr litery.
+	const searchLetterFiltered = $derived.by(() =>
+		prospects.filter((p) => {
+			if (letterFilter && firstLetterOf(p.nazwa) !== letterFilter) return false;
+			if (search) {
+				const q = search.toLowerCase();
+				return p.nazwa.toLowerCase().includes(q) || (p.nip ?? '').includes(q) || (p.branza ?? '').toLowerCase().includes(q);
+			}
+			return true;
+		})
+	);
+
+	const kanbanSource = $derived.by(() => {
+		const g: Record<string, Prospect[]> = {};
+		for (const c of KANBAN_COLS) g[c.key] = [];
+		for (const p of searchLetterFiltered) (g[p.status] ??= []).push(p);
+		for (const k in g) g[k].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+		return g;
+	});
+
+	// Mutowalne kolumny dla svelte-dnd-action. Przebudowujemy je z danych, gdy
+	// nie trwa przeciąganie — inaczej reaktywność „walczyłaby" z biblioteką d&d.
+	let kanban = $state<Record<string, Prospect[]>>(
+		Object.fromEntries(KANBAN_COLS.map((c) => [c.key, [] as Prospect[]]))
+	);
+	let dragging = $state(false);
+
+	$effect(() => {
+		if (view !== 'kanban') return;
+		const src = kanbanSource;
+		if (dragging) return;
+		const next: Record<string, Prospect[]> = {};
+		for (const c of KANBAN_COLS) next[c.key] = [...(src[c.key] ?? [])];
+		kanban = next;
+	});
+
+	function kanbanConsider(key: string, e: CustomEvent) {
+		dragging = true;
+		kanban[key] = e.detail.items;
+	}
+
+	async function kanbanFinalize(key: string, e: CustomEvent) {
+		const items = e.detail.items as Prospect[];
+		kanban[key] = items;
+		dragging = false;
+		// Karty, które trafiły do tej kolumny z innego statusu → zapis nowego statusu.
+		const moved = items.filter((p) => p.status !== key);
+		for (const p of moved) {
+			p.status = key;
+			const idx = appState.prospects.findIndex((x) => x.id === p.id);
+			if (idx >= 0) appState.prospects[idx] = { ...appState.prospects[idx], status: key };
+			await sb.from('crm_prospects').update({ status: key }).eq('id', p.id);
+		}
+	}
+
+	// Liczba widocznych rekordów zależnie od aktywnego widoku.
+	const visibleCount = $derived(view === 'kanban' ? searchLetterFiltered.length : filtered().length);
+
+	// Kolejność widocznych prospektów — zapisujemy do sessionStorage, aby karta
+	// prospekta mogła udostępnić przyciski „Poprzedni / Następny".
+	const ORDER_KEY = 'prospects:order';
+	const visibleOrder = $derived.by(() => {
+		if (view === 'kanban') {
+			const ids: string[] = [];
+			for (const c of KANBAN_COLS) for (const p of kanban[c.key] ?? []) ids.push(p.id);
+			return ids;
+		}
+		return filtered().map((p) => p.id);
+	});
+	$effect(() => {
+		if (!stateRestored) return;
+		try { sessionStorage.setItem(ORDER_KEY, JSON.stringify(visibleOrder)); } catch { /* ignore */ }
+	});
+
 	// Lista nie potrzebuje wszystkich ~28 kolumn (m.in. 12 pól ubez_*) — pobieramy
 	// tylko to, co widać w tabeli. Mniej danych = szybsze ładowanie.
 	const PROSPECT_COLS =
@@ -164,6 +250,7 @@
 				if (typeof f.letterFilter === 'string') letterFilter = f.letterFilter;
 				if (typeof f.sortCol === 'string') sortCol = f.sortCol as SortCol;
 				if (typeof f.sortAsc === 'boolean') sortAsc = f.sortAsc;
+				if (f.view === 'tabela' || f.view === 'kanban') view = f.view;
 			}
 		} catch { /* brak zapisanych filtrów — pomijamy */ }
 		stateRestored = true;
@@ -176,7 +263,7 @@
 	// Zapis filtrów po każdej zmianie (dopiero po przywróceniu, by nie nadpisać).
 	$effect(() => {
 		if (!stateRestored) return;
-		const snapshot = JSON.stringify({ search, statusFilter, letterFilter, sortCol, sortAsc });
+		const snapshot = JSON.stringify({ search, statusFilter, letterFilter, sortCol, sortAsc, view });
 		try { sessionStorage.setItem(FILTERS_KEY, snapshot); } catch { /* ignore */ }
 	});
 
@@ -244,13 +331,33 @@
 <div class="flex items-center justify-between mb-6">
 	<div>
 		<h1 class="text-2xl font-semibold text-slate-900">Prospects</h1>
-		<p class="text-sm text-slate-500 mt-1">Potencjalni klienci — {filtered().length} rekordów</p>
+		<p class="text-sm text-slate-500 mt-1">Potencjalni klienci — {visibleCount} rekordów</p>
 	</div>
-	<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
-		+ Nowy Prospect
-	</button>
+	<div class="flex items-center gap-2">
+		<!-- Przełącznik widoku: Tabela / Kanban -->
+		<div class="flex items-center bg-slate-100 rounded-lg p-0.5">
+			<button
+				onclick={() => view = 'tabela'}
+				title="Widok tabeli"
+				class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors {view === 'tabela' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}"
+			>
+				<List size={15} /> Tabela
+			</button>
+			<button
+				onclick={() => view = 'kanban'}
+				title="Widok Kanban"
+				class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors {view === 'kanban' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}"
+			>
+				<LayoutGrid size={15} /> Kanban
+			</button>
+		</div>
+		<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			+ Nowy Prospect
+		</button>
+	</div>
 </div>
 
+{#if view === 'tabela'}
 <div class="flex items-center gap-2 mb-3 flex-wrap">
 	{#each statuses as s}
 		<button
@@ -259,6 +366,7 @@
 		>{s}</button>
 	{/each}
 </div>
+{/if}
 
 <!-- Alfabet — filtr po pierwszej literze nazwy (cyfry pod "A") -->
 <div class="flex items-center gap-1 mb-4 flex-wrap">
@@ -276,6 +384,7 @@
 	{/each}
 </div>
 
+{#if view === 'tabela'}
 <div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
 	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
@@ -361,6 +470,69 @@
 		</table>
 	</div>
 </div>
+{:else}
+	<!-- Widok KANBAN -->
+	<div class="bg-white border border-slate-200 rounded-xl shadow-sm px-5 py-3 mb-4 flex items-center gap-3">
+		<Search size={16} class="text-slate-400" />
+		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, branży..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
+	</div>
+	<div class="flex gap-4 overflow-x-auto pb-4 items-start">
+		{#each KANBAN_COLS as col}
+			<div class="flex-1 min-w-[240px] bg-slate-50 border border-slate-200 rounded-xl flex flex-col">
+				<div class="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
+					<span class="w-2 h-2 rounded-full {col.accent}"></span>
+					<h3 class="text-sm font-semibold text-slate-700">{col.label}</h3>
+					<span class="ml-auto text-xs font-semibold text-slate-400 bg-white border border-slate-200 rounded-full px-2 py-0.5">{(kanban[col.key] ?? []).length}</span>
+				</div>
+				<div
+					class="p-2 flex flex-col gap-2 min-h-[120px] flex-1"
+					use:dndzone={{ items: kanban[col.key] ?? [], flipDurationMs: 150, dropTargetStyle: {} }}
+					onconsider={(e) => kanbanConsider(col.key, e)}
+					onfinalize={(e) => kanbanFinalize(col.key, e)}
+				>
+					{#each kanban[col.key] ?? [] as p (p.id)}
+						{@const zatrud = getZatrudnienie(p)}
+						<div class="bg-white border border-slate-200 rounded-lg shadow-sm p-3 cursor-grab active:cursor-grabbing hover:border-blue-300 transition-colors group">
+							<div class="flex items-start justify-between gap-2">
+								<a
+									href={`/prospects/${p.id}`}
+									class="font-medium text-blue-700 hover:text-blue-900 hover:underline text-sm leading-snug break-words"
+								>{p.nazwa}</a>
+								<div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+									<a href={`/prospects/${p.id}`} title="Otwórz" class="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50">
+										<ExternalLink size={12} />
+									</a>
+									<button onclick={() => openEdit(p)} title="Edytuj" class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100">
+										<Pencil size={12} />
+									</button>
+									<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" class="p-1 rounded text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50">
+										<UserPlus size={12} />
+									</button>
+								</div>
+							</div>
+							{#if p.nip}<div class="text-[11px] text-slate-400 mt-1">NIP: {p.nip}</div>{/if}
+							<div class="flex items-center gap-2 mt-1.5 flex-wrap text-[11px] text-slate-500">
+								{#if p.branza}<span class="truncate max-w-[140px]">{p.branza}</span>{/if}
+								{#if zatrud != null}<span class="text-slate-400">· {zatrud} os.</span>{/if}
+							</div>
+							{#if p.telefon || p.email}
+								<div class="mt-1.5 space-y-0.5 text-[11px]">
+									{#if p.telefon}<div class="text-slate-500 truncate">{p.telefon}</div>{/if}
+									{#if p.email}<div class="text-blue-600 truncate">{p.email}</div>{/if}
+								</div>
+							{/if}
+						</div>
+					{/each}
+					{#if (kanban[col.key] ?? []).length === 0}
+						<div class="text-center text-xs text-slate-300 py-6 select-none">
+							{loading ? 'Ładowanie…' : 'Przeciągnij tutaj'}
+						</div>
+					{/if}
+				</div>
+			</div>
+		{/each}
+	</div>
+{/if}
 
 <Modal title={editingProspect ? `Edytuj — ${editingProspect.nazwa}` : 'Nowy Prospect'} open={showModal} onclose={closeModal}>
 	{#snippet footer()}

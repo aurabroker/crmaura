@@ -5,7 +5,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, Shield, X } from 'lucide-svelte';
+	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, Shield, X, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import type { CrmTask } from '$lib/types/database';
 
 	type Prospect = {
@@ -109,7 +109,37 @@
 		await loadTasks();
 	}
 
-	onMount(load);
+	// Ta sama trasa `[id]` jest współdzielona między prospektami — przy przejściu
+	// „Poprzedni/Następny" komponent nie montuje się ponownie, więc dane
+	// przeładowujemy przez efekt reagujący na zmianę id.
+	$effect(() => {
+		void prospectId;
+		load();
+	});
+
+	// ---- Nawigacja Poprzedni / Następny (kolejność z listy Prospects) ----
+	let navIds = $state<string[]>([]);
+	onMount(() => {
+		try {
+			const raw = sessionStorage.getItem('prospects:order');
+			if (raw) navIds = JSON.parse(raw);
+		} catch { /* brak zapisanej kolejności — przyciski się nie pokażą */ }
+	});
+	const navIndex = $derived(navIds.indexOf(prospectId));
+	const prevId = $derived(navIndex > 0 ? navIds[navIndex - 1] : null);
+	const nextId = $derived(navIndex >= 0 && navIndex < navIds.length - 1 ? navIds[navIndex + 1] : null);
+
+	function goToProspect(id: string | null) {
+		if (id) goto(`/prospects/${id}`);
+	}
+
+	// Strzałki ← / → przełączają prospekty (poza polami tekstowymi).
+	function onKeydown(e: KeyboardEvent) {
+		const t = e.target as HTMLElement | null;
+		if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+		if (e.key === 'ArrowLeft' && prevId) { e.preventDefault(); goToProspect(prevId); }
+		else if (e.key === 'ArrowRight' && nextId) { e.preventDefault(); goToProspect(nextId); }
+	}
 
 	async function addActivity() {
 		if (!newText.trim() || !prospect) return;
@@ -380,10 +410,33 @@
 
 <svelte:head><title>{prospect?.nazwa ?? 'Prospect'} — CRM</title></svelte:head>
 
-<div class="mb-5">
+<svelte:window onkeydown={onKeydown} />
+
+<div class="mb-5 flex items-center justify-between gap-3 flex-wrap">
 	<button onclick={() => goto('/prospects')} class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
 		<ArrowLeft size={15} /> Powrót do Prospects
 	</button>
+	{#if navIndex >= 0 && navIds.length > 1}
+		<div class="flex items-center gap-1.5">
+			<button
+				onclick={() => goToProspect(prevId)}
+				disabled={!prevId}
+				title="Poprzedni prospect (←)"
+				class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+			>
+				<ChevronLeft size={15} /> Poprzedni
+			</button>
+			<span class="text-xs text-slate-400 tabular-nums px-1">{navIndex + 1} / {navIds.length}</span>
+			<button
+				onclick={() => goToProspect(nextId)}
+				disabled={!nextId}
+				title="Następny prospect (→)"
+				class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+			>
+				Następny <ChevronRight size={15} />
+			</button>
+		</div>
+	{/if}
 </div>
 
 {#if loading}
