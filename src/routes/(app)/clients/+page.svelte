@@ -12,6 +12,8 @@
 
 	let search = $state('');
 	let compactView = $state(false);
+	// Filtr Klientów: domyślnie tylko firmy z ≥1 polisą (reszta to Prospekty).
+	let policyFilter = $state<'z_polisa' | 'wszyscy'>('z_polisa');
 	let showModal = $state(false);
 	let modalTyp = $state<'firma' | 'osoba'>('firma');
 
@@ -146,10 +148,23 @@
 		merging = null;
 	}
 
+	// Zbiór id klientów, którzy mają co najmniej jedną (nieusuniętą) polisę.
+	const clientIdsWithPolicy = $derived(
+		new Set(appState.policies.filter((p) => !p.deleted_at).map((p) => p.klient_id))
+	);
+	const withPolicyCount = $derived(
+		appState.clients.filter((c) => clientIdsWithPolicy.has(c.id)).length
+	);
+	const shownTotal = $derived(policyFilter === 'z_polisa' ? withPolicyCount : appState.clients.length);
+
 	const filtered = $derived.by(() => {
+		const base =
+			policyFilter === 'z_polisa'
+				? appState.clients.filter((c) => clientIdsWithPolicy.has(c.id))
+				: appState.clients;
 		const q = search.trim().toLowerCase();
-		if (!q) return appState.clients;
-		return appState.clients.filter((c) =>
+		if (!q) return base;
+		return base.filter((c) =>
 			c.nazwa.toLowerCase().includes(q) ||
 			(c.nazwa_skrocona ?? '').toLowerCase().includes(q) ||
 			(c.nip ?? '').toLowerCase().includes(q) ||
@@ -216,8 +231,8 @@
 
 <div class="flex items-center justify-between mb-6">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Klienci <span class="text-slate-400 text-lg font-normal">({appState.clients.length})</span></h1>
-		<p class="text-sm text-slate-500 mt-1">Zarządzanie portfelem i statusami RODO</p>
+		<h1 class="text-2xl font-semibold text-slate-900">Klienci <span class="text-slate-400 text-lg font-normal">({shownTotal})</span></h1>
+		<p class="text-sm text-slate-500 mt-1">{policyFilter === 'z_polisa' ? 'Firmy z aktywną polisą' : 'Wszystkie firmy w bazie'} · statusy RODO</p>
 	</div>
 	<div class="flex gap-2">
 		<button onclick={() => showDuplicates = true} class="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-100 transition-colors">
@@ -236,6 +251,16 @@
 	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, PESEL, REGON, KRS, e-mailu, telefonie lub adresie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
+		<div class="flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0">
+			<button onclick={() => policyFilter = 'z_polisa'}
+				class="px-3 py-1.5 text-xs font-medium transition-colors {policyFilter === 'z_polisa' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
+				Z polisą ({withPolicyCount})
+			</button>
+			<button onclick={() => policyFilter = 'wszyscy'}
+				class="px-3 py-1.5 text-xs font-medium border-l border-slate-200 transition-colors {policyFilter === 'wszyscy' ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
+				Wszyscy ({appState.clients.length})
+			</button>
+		</div>
 		<div class="flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0">
 			<button onclick={() => compactView = false}
 				class="px-3 py-1.5 text-xs font-medium transition-colors {!compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
