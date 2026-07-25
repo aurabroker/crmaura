@@ -348,6 +348,7 @@ export interface CrmTask {
 	tytul: string;
 	opis: string | null;
 	termin: string | null;
+	godzina?: string | null;
 	priorytet: 'niski' | 'normalny' | 'wysoki' | 'pilny';
 	status: 'otwarte' | 'w_toku' | 'zakonczone' | 'anulowane';
 	created_at?: string;

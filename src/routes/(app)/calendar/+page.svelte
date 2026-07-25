@@ -3,7 +3,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import type { CrmTask } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
-	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History } from 'lucide-svelte';
+	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	// Schedule-X — komponent-wrapper (izomorficzny) importujemy statycznie,
@@ -33,6 +33,7 @@
 	let fTytul = $state('');
 	let fOpis = $state('');
 	let fTermin = $state('');
+	let fGodzina = $state('');
 	let fPriorytet = $state<CrmTask['priorytet']>('normalny');
 	let fAssigned = $state('');
 	let fKlient = $state('');
@@ -111,19 +112,27 @@
 		const d = t.termin!.slice(0, 10);
 		const who = t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? '';
 		const rel = t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? '';
-		return {
+		const base = {
 			id: t.id,
 			title: t.tytul,
-			start: Temporal.PlainDate.from(d),
-			end: Temporal.PlainDate.from(d),
 			calendarId: calId(t),
 			description: [rel, who ? `→ ${who}` : ''].filter(Boolean).join('  ')
 		};
+		// Z godziną -> event czasowy (widoczny w siatce godzin). Bez -> całodniowy.
+		if (t.godzina) {
+			const [hh, mm] = t.godzina.slice(0, 5).split(':').map(Number);
+			const start = Temporal.PlainDate.from(d).toZonedDateTime({
+				timeZone: Temporal.Now.timeZoneId(),
+				plainTime: Temporal.PlainTime.from({ hour: hh || 0, minute: mm || 0 })
+			});
+			return { ...base, start, end: start.add({ hours: 1 }) };
+		}
+		return { ...base, start: Temporal.PlainDate.from(d), end: Temporal.PlainDate.from(d) };
 	}
 
-	// Buduje eventy z appState.tasks (tylko zadania z terminem).
+	// Buduje eventy z przefiltrowanych zadań (tylko z terminem) — filtry działają też na kalendarzu.
 	function buildEvents() {
-		return appState.tasks.filter(t => t.termin).map(taskToEvent);
+		return filteredTasks.filter(t => t.termin).map(taskToEvent);
 	}
 
 	let calendarApp = $state<any>(null);
@@ -167,19 +176,28 @@
 				},
 				async onEventUpdate(event: any) {
 					const id = String(event.id);
-					const newDate = String(event.start).slice(0, 10);
-					await sb.from('crm_tasks').update({ termin: newDate }).eq('id', id);
-					appState.tasks = appState.tasks.map(t => t.id === id ? { ...t, termin: newDate } : t);
+					const s = String(event.start); // 'YYYY-MM-DD' (całodniowe) lub 'YYYY-MM-DDTHH:mm...' (czasowe)
+					const patch: Record<string, string> = { termin: s.slice(0, 10) };
+					if (s.length > 10 && s.includes('T')) patch.godzina = s.slice(11, 16); // przeciągnięcie w siatce godzin
+					await sb.from('crm_tasks').update(patch).eq('id', id);
+					appState.tasks = appState.tasks.map(t => t.id === id ? { ...t, ...patch } : t);
 				}
 			}
 		}, [eventsService, dnd]);
 	});
 
-	// Synchronizacja eventów przy każdej zmianie zadań (dodanie/edycja/status/DnD).
+	// Synchronizacja eventów przy każdej zmianie zadań/filtrów (dodanie/edycja/status/DnD).
 	$effect(() => {
-		const evts = buildEvents(); // czyta appState.tasks -> zależność reaktywna
+		const evts = buildEvents(); // czyta filteredTasks -> zależność reaktywna
 		if (eventsService && calendarApp) eventsService.set(evts);
 	});
+
+	// Dark mode kalendarza (opcjonalny, domyślnie jasny — spójnie z resztą aplikacji).
+	let calDark = $state(false);
+	function toggleCalDark() {
+		calDark = !calDark;
+		calendarApp?.setTheme(calDark ? 'dark' : 'light');
+	}
 
 	// =========================================================================
 	//  CRUD zadań (logika bez zmian względem wersji custom)
@@ -190,13 +208,14 @@
 		fTytul = ''; fOpis = ''; fTermin = date ?? ''; fPriorytet = 'normalny';
 		fAssigned = appState.profile?.id ?? '';
 		fKlient = ''; fPolisa = ''; fProspect = ''; fStatus = 'otwarte';
-		fExtraAssignees = []; fCzasTrwania = ''; fPostep = 0;
+		fExtraAssignees = []; fCzasTrwania = ''; fPostep = 0; fGodzina = '';
 		formError = ''; showModal = true;
 	}
 
 	function openEdit(t: CrmTask) {
 		editingTask = t;
 		fTytul = t.tytul; fOpis = t.opis ?? ''; fTermin = t.termin ?? '';
+		fGodzina = t.godzina ? t.godzina.slice(0, 5) : '';
 		fPriorytet = t.priorytet; fAssigned = t.assigned_to ?? '';
 		fKlient = t.klient_id ?? ''; fPolisa = t.polisa_id ?? '';
 		fProspect = t.prospect_id ?? '';
@@ -228,6 +247,7 @@
 			tytul: fTytul.trim(),
 			opis: fOpis || null,
 			termin: fTermin || null,
+			godzina: fGodzina || null,
 			priorytet: fPriorytet,
 			status: fStatus,
 			extra_assignees: fExtraAssignees,
@@ -329,31 +349,10 @@
 	</div>
 </div>
 
-<!-- ===== KALENDARZ (Schedule-X) ===== -->
-{#if tab === 'calendar'}
-<div class="bg-white border border-line rounded-xl shadow-sm p-3 sx-app-calendar">
-	{#if calendarApp}
-		<ScheduleXCalendar {calendarApp} />
-	{:else}
-		<div class="px-5 py-16 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
-			<CalendarDays size={18} class="text-slate-300" /> Ładowanie kalendarza…
-		</div>
-	{/if}
-	<div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pt-3 pb-1 text-[11px] text-slate-500 border-t border-line-soft mt-3">
-		<span class="font-semibold text-slate-400 uppercase tracking-wide">Priorytet:</span>
-		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#dc2626]"></span> Pilny</span>
-		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#ea580c]"></span> Wysoki</span>
-		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#2563eb]"></span> Normalny</span>
-		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#64748b]"></span> Niski</span>
-		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#94a3b8]"></span> Zakończone</span>
-		<span class="text-slate-400">· Przeciągnij zadanie, aby zmienić termin · Kliknij dzień, aby dodać</span>
-	</div>
-</div>
-
-<!-- ===== LISTA ===== -->
-{:else if tab === 'list'}
+<!-- Pasek filtrów — wspólny dla Kalendarza i Listy -->
+{#if tab !== 'rejestr'}
 	<div class="flex gap-3 mb-4 flex-wrap">
-		<div class="flex items-center gap-2 flex-1 bg-white border border-line rounded-xl px-4 py-2">
+		<div class="flex items-center gap-2 flex-1 min-w-[220px] bg-white border border-line rounded-xl px-4 py-2">
 			<Search size={15} class="text-slate-400" />
 			<input bind:value={search} placeholder="Szukaj zadania lub klienta..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 		</div>
@@ -372,7 +371,37 @@
 			</button>
 		{/each}
 	</div>
+{/if}
 
+<!-- ===== KALENDARZ (Schedule-X) ===== -->
+{#if tab === 'calendar'}
+<div class="border border-line rounded-xl shadow-sm p-3 sx-app-calendar {calDark ? 'sx-dark' : 'bg-white'}">
+	<div class="flex justify-end mb-2">
+		<button onclick={toggleCalDark} title="Motyw kalendarza"
+			class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-line {calDark ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-500 hover:bg-slate-50'} transition-colors">
+			{#if calDark}<Sun size={14} /> Jasny{:else}<Moon size={14} /> Ciemny{/if}
+		</button>
+	</div>
+	{#if calendarApp}
+		<ScheduleXCalendar {calendarApp} />
+	{:else}
+		<div class="px-5 py-16 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
+			<CalendarDays size={18} class="text-slate-300" /> Ładowanie kalendarza…
+		</div>
+	{/if}
+	<div class="cal-legend flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pt-3 pb-1 text-[11px] text-slate-500 border-t border-line-soft mt-3">
+		<span class="font-semibold text-slate-400 uppercase tracking-wide">Priorytet:</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#dc2626]"></span> Pilny</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#ea580c]"></span> Wysoki</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#2563eb]"></span> Normalny</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#64748b]"></span> Niski</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#94a3b8]"></span> Zakończone</span>
+		<span class="text-slate-400">· Przeciągnij zadanie, aby zmienić termin · Kliknij dzień, aby dodać</span>
+	</div>
+</div>
+
+<!-- ===== LISTA ===== -->
+{:else if tab === 'list'}
 	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		{#if filteredTasks.length === 0}
 			<div class="px-5 py-12 text-center text-slate-400">Brak zadań</div>
@@ -460,10 +489,15 @@
 			<label class={labelCls}>Opis</label>
 			<textarea bind:value={fOpis} class="{inputCls} resize-none" rows="2" placeholder="Szczegóły..."></textarea>
 		</div>
-		<div class="grid grid-cols-2 gap-3">
+		<div class="grid grid-cols-3 gap-3">
 			<div>
 				<label class={labelCls}>Termin</label>
 				<input type="date" bind:value={fTermin} class={inputCls} />
+			</div>
+			<div>
+				<label class={labelCls}>Godzina</label>
+				<input type="time" bind:value={fGodzina} class={inputCls} />
+				<p class="text-[11px] text-slate-400 mt-1">puste = całodniowe</p>
 			</div>
 			<div>
 				<label class={labelCls}>Priorytet</label>
@@ -559,7 +593,8 @@
 </Modal>
 
 <style>
-	/* Schedule-X — dopasowanie do wyglądu aplikacji (Inter, akcent, ramki). */
+	/* Schedule-X — dopasowanie do wyglądu aplikacji (Inter, akcent, ramki).
+	   Nadpisania jasne zawężone do :not(.is-dark), by nie psuć wbudowanego dark mode. */
 	.sx-app-calendar :global(.sx__calendar) {
 		font-family: 'Inter', sans-serif;
 		border: none;
@@ -567,6 +602,8 @@
 		--sx-color-on-primary: #ffffff;
 		--sx-color-primary-container: #dbeafe;
 		--sx-color-on-primary-container: #1e3a8a;
+	}
+	.sx-app-calendar :global(.sx__calendar:not(.is-dark)) {
 		--sx-color-surface: #ffffff;
 		--sx-color-background: #ffffff;
 		--sx-internal-color-text: #0f172a;
@@ -578,5 +615,15 @@
 	}
 	.sx-app-calendar :global(.sx__event) {
 		cursor: pointer;
+	}
+
+	/* Ciemna karta kalendarza (opcjonalny toggle). */
+	.sx-app-calendar.sx-dark {
+		background: #0f172a;
+		border-color: #1e293b;
+	}
+	.sx-app-calendar.sx-dark .cal-legend {
+		color: #94a3b8;
+		border-color: #1e293b;
 	}
 </style>
