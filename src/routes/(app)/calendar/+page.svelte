@@ -3,7 +3,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import type { CrmTask } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
-	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon } from 'lucide-svelte';
+	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon, Target, User, ExternalLink } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 
 	// Schedule-X — komponent-wrapper (izomorficzny) importujemy statycznie,
@@ -42,12 +42,25 @@
 	let fPostep = $state(0);
 	let fStatus = $state<CrmTask['status']>('otwarte');
 
-	// Zadanie pochodzące z Prospekta — Prospect musi pozostać przypisany (pole stałe, nie lista).
+	// Zadanie powiązane z Prospektem/Klientem — powiązanie jest "na sztywno":
+	// pokazujemy je jako klikalny link do karty, a selecty przypisania chowamy.
 	const isProspectTask = $derived(!!editingTask?.prospect_id);
+	const isLinkedTask = $derived(!!editingTask && (!!editingTask.prospect_id || !!editingTask.klient_id));
 	const editingProspectName = $derived(
 		editingTask?.crm_prospects?.nazwa
 		?? prospects.find(p => p.id === editingTask?.prospect_id)?.nazwa
 		?? ''
+	);
+	const editingClientName = $derived(
+		editingTask?.crm_clients?.nazwa
+		?? appState.clients.find(c => c.id === editingTask?.klient_id)?.nazwa
+		?? ''
+	);
+	const linkedName = $derived(isProspectTask ? editingProspectName : editingClientName);
+	const linkedHref = $derived(
+		editingTask?.prospect_id ? `/prospects/${editingTask.prospect_id}`
+		: editingTask?.klient_id ? `/clients/${editingTask.klient_id}`
+		: ''
 	);
 
 	let history = $state<import('$lib/types/database').CrmTaskHistory[]>([]);
@@ -115,9 +128,11 @@
 		const d = t.termin!.slice(0, 10);
 		const who = t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? '';
 		const rel = t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? '';
+		// Znacznik na kafelku: 🎯 dla zadań prospektowych, 👤 dla klienckich.
+		const marker = t.prospect_id ? '🎯 ' : t.klient_id ? '👤 ' : '';
 		const base = {
 			id: t.id,
-			title: t.tytul,
+			title: marker + t.tytul,
 			calendarId: calId(t),
 			description: [rel, who ? `→ ${who}` : ''].filter(Boolean).join('  ')
 		};
@@ -480,6 +495,18 @@
 	{/snippet}
 	{#if formError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
 	<div class="space-y-3">
+		{#if isLinkedTask}
+			<!-- Powiązanie na sztywno + wejście w kartę prospekta/klienta -->
+			<a href={linkedHref} onclick={() => { showModal = false; formError = ''; }}
+				class="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors">
+				<span class="flex items-center gap-2 min-w-0">
+					{#if isProspectTask}<Target size={16} class="text-blue-600 shrink-0" />{:else}<User size={16} class="text-blue-600 shrink-0" />{/if}
+					<span class="text-[11px] uppercase font-semibold text-blue-500 shrink-0">{isProspectTask ? 'Prospekt' : 'Klient'}</span>
+					<span class="font-semibold text-slate-800 truncate">{linkedName || '—'}</span>
+				</span>
+				<span class="flex items-center gap-1 text-xs font-semibold text-blue-700 shrink-0 whitespace-nowrap">Otwórz kartę <ExternalLink size={13} /></span>
+			</a>
+		{/if}
 		<div>
 			<label class={labelCls}>Tytuł *</label>
 			<input bind:value={fTytul} class={inputCls} placeholder="Co trzeba zrobić?" />
@@ -508,6 +535,18 @@
 				</select>
 			</div>
 		</div>
+		{#if isLinkedTask}
+			<!-- Powiązanie zablokowane (pokazane w chipie u góry) — tylko Status do zmiany. -->
+			<div>
+				<label class={labelCls}>Status</label>
+				<select bind:value={fStatus} class={inputCls}>
+					<option value="otwarte">Otwarte</option>
+					<option value="w_toku">W toku</option>
+					<option value="zakonczone">Zakończone</option>
+					<option value="anulowane">Anulowane</option>
+				</select>
+			</div>
+		{:else}
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label class={labelCls}>Status</label>
@@ -519,18 +558,13 @@
 				</select>
 			</div>
 			<div>
-				<label class={labelCls}>{isProspectTask ? 'Prospect' : 'Klient'}</label>
-				{#if isProspectTask}
-					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-line rounded-lg truncate" title={editingProspectName}>{editingProspectName || 'Prospect'}</div>
-				{:else}
+				<label class={labelCls}>Klient</label>
 				<select bind:value={fKlient} class={inputCls}>
 					<option value="">— brak —</option>
 					{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
 				</select>
-				{/if}
 			</div>
 		</div>
-		{#if !isProspectTask}
 		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label class={labelCls}>Prospect</label>
