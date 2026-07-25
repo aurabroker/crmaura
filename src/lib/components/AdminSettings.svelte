@@ -264,7 +264,7 @@
 		appState.leasings = (data??[]) as typeof appState.leasings;
 	}
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
@@ -275,10 +275,10 @@
 	<div class="grid grid-cols-2 gap-6">
 		{#each [['Majątkowy', 'Majątkowe'], ['Życiowy', 'Życiowe']] as [dzial, label]}
 			{@const tuDzial = appState.insurers.filter(t => t.dzial === dzial)}
-			<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-				<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+			<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+				<div class="px-5 py-4 border-b border-line flex items-center justify-between">
 					<h2 class="font-semibold text-slate-900">TU — {label} <span class="text-xs font-normal text-slate-400">({tuDzial.length})</span></h2>
-					<button onclick={openNewTU} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50">+ Dodaj TU</button>
+					<button onclick={openNewTU} class="text-xs border border-line rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50">+ Dodaj TU</button>
 				</div>
 				<table class="w-full text-left text-sm">
 					<thead>
@@ -294,7 +294,7 @@
 							{@const tBranches = appState.insurerBranches.filter(b => b.tu_id === t.id)}
 							{@const tContacts = appState.insurerContacts.filter(c => c.tu_id === t.id)}
 							{@const isExpanded = expandedTU.has(t.id)}
-							<tr class="border-t border-slate-100 hover:bg-slate-50">
+							<tr class="border-t border-line-soft hover:bg-slate-50">
 								<td class="px-5 py-3">
 									<div class="flex items-center gap-2">
 										<button onclick={() => toggleTU(t.id)} class="text-slate-400 hover:text-slate-700">
@@ -335,7 +335,7 @@
 								<!-- Oddziały -->
 								{#each tBranches as br}
 									{@const brContacts = appState.insurerContacts.filter(c => c.branch_id === br.id)}
-									<tr class="border-t border-slate-100 bg-blue-50/30">
+									<tr class="border-t border-line-soft bg-blue-50/30">
 										<td class="pl-14 pr-5 py-2" colspan="2">
 											<div class="flex items-center gap-2">
 												<Building2 size={12} class="text-blue-500" />
@@ -355,7 +355,7 @@
 										</td>
 									</tr>
 									{#each brContacts as c}
-										<tr class="border-t border-slate-50 bg-emerald-50/20">
+										<tr class="border-t border-line-soft bg-emerald-50/20">
 											<td class="pl-20 pr-5 py-2" colspan="2">
 												<div class="flex items-center gap-2">
 													<UserRound size={11} class="text-emerald-600" />
@@ -375,7 +375,7 @@
 								{/each}
 								<!-- Osoby bez oddziału -->
 								{#each appState.insurerContacts.filter(c => c.tu_id === t.id && !c.branch_id) as c}
-									<tr class="border-t border-slate-50 bg-emerald-50/20">
+									<tr class="border-t border-line-soft bg-emerald-50/20">
 										<td class="pl-14 pr-5 py-2" colspan="2">
 											<div class="flex items-center gap-2">
 												<UserRound size={11} class="text-emerald-600" />
@@ -407,8 +407,8 @@
 <!-- ===================== USTAWIENIA KANCELARII ===================== -->
 <div class="space-y-4">
 	<p class="text-sm text-slate-500">Zarządzanie brokerami, rolami i dostępami</p>
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+		<div class="px-5 py-4 border-b border-line flex items-center justify-between">
 			<h2 class="font-semibold text-slate-900">Zespół ({teamLabel()})</h2>
 				<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
 					<UserPlus size={13} /> Dodaj użytkownika
@@ -426,7 +426,7 @@
 				</thead>
 				<tbody>
 					{#each appState.brokers as b}
-						<tr class="border-t border-slate-100 hover:bg-slate-50 {viewingBroker?.id === b.id ? 'bg-blue-50' : ''}">
+						<tr class="border-t border-line-soft hover:bg-slate-50 {viewingBroker?.id === b.id ? 'bg-blue-50' : ''}">
 							<td class="px-5 py-3">
 								<div class="font-medium">{b.imie_nazwisko ?? b.email}</div>
 								<div class="text-xs text-slate-400">{b.email}</div>
@@ -480,7 +480,7 @@
 					</thead>
 					<tbody>
 						{#each brokerPolicies as p}
-							<tr class="border-t border-slate-100 hover:bg-slate-50">
+							<tr class="border-t border-line-soft hover:bg-slate-50">
 								<td class="px-4 py-2 font-medium text-blue-700">
 									<a href="/policies/{p.id}" class="hover:underline">{p.nr_polisy}</a>
 								</td>
@@ -503,10 +503,10 @@
 <!-- ===================== LEASINGI ===================== -->
 <div class="space-y-4">
 	<p class="text-sm text-slate-500">Firmy leasingowe powiązane z polisami komunikacyjnymi i flotowymi</p>
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+		<div class="px-5 py-4 border-b border-line flex items-center justify-between">
 			<h2 class="font-semibold text-slate-900">Firmy leasingowe <span class="text-xs font-normal text-slate-400">({appState.leasings.length})</span></h2>
-			<button onclick={openNewLeasing} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50">+ Dodaj</button>
+			<button onclick={openNewLeasing} class="text-xs border border-line rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50">+ Dodaj</button>
 		</div>
 		<table class="w-full text-left text-sm">
 			<thead>
@@ -519,7 +519,7 @@
 			</thead>
 			<tbody>
 				{#each appState.leasings as l}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-3 font-medium">{l.nazwa}</td>
 						<td class="px-5 py-3 text-xs font-mono text-slate-500">{l.nip ?? '—'}</td>
 						<td class="px-5 py-3 text-xs text-slate-500">{l.adres ?? '—'}</td>
@@ -541,11 +541,11 @@
 	<div class="flex items-center justify-between gap-3 flex-wrap">
 		<p class="text-sm text-slate-500">Ostatnie 500 zdarzeń w systemie</p>
 		<div class="flex items-center gap-3">
-			<input bind:value={auditSearch} placeholder="Szukaj po użytkowniku, akcji, encji..." class="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-slate-300" />
-			<button onclick={loadAuditLogs} class="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600">↻ Odśwież</button>
+			<input bind:value={auditSearch} placeholder="Szukaj po użytkowniku, akcji, encji..." class="border border-line rounded-lg px-3 py-1.5 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-slate-300" />
+			<button onclick={loadAuditLogs} class="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line rounded-lg hover:bg-slate-50 text-slate-600">↻ Odśwież</button>
 		</div>
 	</div>
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		{#if auditLoading}
 			<div class="px-6 py-10 text-center text-slate-400 text-sm">Ładowanie logów…</div>
 		{:else if filteredLogs.length === 0}
@@ -553,7 +553,7 @@
 		{:else}
 			<div class="overflow-x-auto">
 				<table class="w-full text-sm">
-					<thead class="bg-slate-50 border-b border-slate-200">
+					<thead class="bg-slate-50 border-b border-line">
 						<tr>
 							<th class="px-4 py-2.5 text-left font-medium text-slate-500 whitespace-nowrap">Czas</th>
 							<th class="px-4 py-2.5 text-left font-medium text-slate-500">Użytkownik</th>
@@ -564,7 +564,7 @@
 					</thead>
 					<tbody>
 						{#each filteredLogs as log}
-							<tr class="border-t border-slate-100 hover:bg-slate-50">
+							<tr class="border-t border-line-soft hover:bg-slate-50">
 								<td class="px-4 py-2 text-slate-400 whitespace-nowrap text-xs">{fmtDate(log.created_at)}</td>
 								<td class="px-4 py-2 text-slate-700">
 									<div class="font-medium">{log.crm_users?.imie_nazwisko ?? '—'}</div>
@@ -598,7 +598,7 @@
 <!-- Modal: TU -->
 <Modal title={editingTU ? `Edytuj TU — ${editingTU.nazwa}` : 'Nowe Towarzystwo (TU)'} open={showTU} onclose={() => { showTU=false; tuError=''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showTU=false; tuError=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showTU=false; tuError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveTU} disabled={savingTU} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingTU ? 'Zapisywanie...' : editingTU ? 'Zapisz zmiany' : 'Zapisz TU'}
 		</button>
@@ -626,7 +626,7 @@
 <!-- Modal: Zaproś użytkownika -->
 <Modal title="Utwórz konto użytkownika" open={showInvite} onclose={() => { showInvite=false; inviteSuccess=''; tempPassword=''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showInvite=false; inviteSuccess=''; tempPassword=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+		<button onclick={() => { showInvite=false; inviteSuccess=''; tempPassword=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 		{#if !inviteSuccess}
 			<button onclick={inviteUser} disabled={inviting} class="flex items-center gap-2 px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 				<UserPlus size={14} /> {inviting ? 'Tworzenie...' : 'Utwórz konto'}
@@ -661,7 +661,7 @@
 {#if editingUser}
 <Modal title="Edytuj użytkownika — {editingUser.imie_nazwisko ?? editingUser.email}" open={showEditUser} onclose={() => { showEditUser=false; }}>
 	{#snippet footer()}
-		<button onclick={() => showEditUser=false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => showEditUser=false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveUserRole} disabled={savingUser} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingUser ? 'Zapisywanie...' : 'Zapisz zmiany'}
 		</button>
@@ -687,7 +687,7 @@
 <!-- Modal: Oddział TU -->
 <Modal title={editingBranch ? `Edytuj oddział — ${editingBranch.nazwa}` : 'Nowy Oddział TU'} open={showBranch} onclose={() => { showBranch=false; branchError=''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showBranch=false; branchError=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showBranch=false; branchError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveBranch} disabled={savingBranch} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingBranch ? 'Zapisywanie...' : editingBranch ? 'Zapisz zmiany' : 'Dodaj oddział'}
 		</button>
@@ -706,7 +706,7 @@
 <!-- Modal: Firma leasingowa -->
 <Modal title={editingLeasing ? `Edytuj — ${editingLeasing.nazwa}` : 'Nowa firma leasingowa'} open={showLeasing} onclose={() => { showLeasing=false; leasingError=''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showLeasing=false; leasingError=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showLeasing=false; leasingError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveLeasing} disabled={savingLeasing} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingLeasing ? 'Zapisywanie...' : editingLeasing ? 'Zapisz zmiany' : 'Dodaj'}
 		</button>
@@ -722,7 +722,7 @@
 <!-- Modal: Osoba kontaktowa TU -->
 <Modal title={editingContact ? `Edytuj osobę — ${editingContact.imie_nazwisko}` : 'Nowa Osoba Kontaktowa TU'} open={showContactModal} onclose={() => { showContactModal=false; contactMError=''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showContactModal=false; contactMError=''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showContactModal=false; contactMError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveContact} disabled={savingContactM} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingContactM ? 'Zapisywanie...' : editingContact ? 'Zapisz zmiany' : 'Dodaj osobę'}
 		</button>

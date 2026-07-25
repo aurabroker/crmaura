@@ -82,12 +82,12 @@
 				type="text"
 				bind:value={search}
 				placeholder="Szukaj klienta lub nr polisy..."
-				class="w-full rounded-lg border border-slate-300 py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-80"
+				class="w-full rounded-lg border border-line py-2 pl-10 pr-4 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:w-80"
 			/>
 		</div>
 		<button
 			onclick={() => (sortAsc = !sortAsc)}
-			class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+			class="rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
 		>
 			{sortAsc ? 'Najwcześniej wygasa' : 'Najpóźniej wygasa'}
 		</button>
@@ -97,7 +97,7 @@
 	<div class="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
 		<table class="min-w-full text-sm">
 			<thead>
-				<tr class="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+				<tr class="border-b border-line text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
 					<th class="px-4 py-3">Nr Polisy</th>
 					<th class="px-4 py-3">Klient</th>
 					<th class="px-4 py-3">TU</th>
@@ -108,7 +108,7 @@
 					<th class="px-4 py-3 text-right">Dni do wygaśnięcia</th>
 				</tr>
 			</thead>
-			<tbody class="divide-y divide-slate-100">
+			<tbody class="divide-y divide-line-soft">
 				{#each filtered as p (p.id)}
 					{@const days = daysUntil(p.data_do)}
 					{@const badge = statusBadge(p.data_do)}

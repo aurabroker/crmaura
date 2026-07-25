@@ -66,7 +66,7 @@
 	</div>
 {:else if phase === 'denied'}
 	<div class="min-h-screen flex items-center justify-center bg-slate-50">
-		<div class="bg-white border border-slate-200 rounded-2xl shadow-xl p-8 w-full max-w-sm text-center">
+		<div class="bg-white border border-line rounded-2xl shadow-xl p-8 w-full max-w-sm text-center">
 			<ShieldCheck size={28} class="text-slate-400 mx-auto mb-3" />
 			<p class="text-slate-700 font-semibold mb-1">To konto nie ma dostępu do Panelu Klienta</p>
 			<p class="text-sm text-slate-500 mb-5">Zaloguj się danymi przekazanymi przez Twojego doradcę.</p>
@@ -77,7 +77,7 @@
 	</div>
 {:else}
 	<div class="min-h-screen bg-slate-50">
-		<header class="bg-white border-b border-slate-200 sticky top-0 z-10">
+		<header class="bg-white border-b border-line sticky top-0 z-10">
 			<div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
 				<div class="flex items-center gap-2">
 					<ShieldCheck size={24} class="text-blue-500" />

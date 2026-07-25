@@ -167,7 +167,7 @@
 	}
 
 	const isAuraTenant = $derived(appState.tenantNazwa.toLowerCase().includes('aura'));
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const lbl = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 	const ratyCount = $derived(parseInt(fpRaty) || 1);
 	const RATY_OPCJE = ['1','2','3','4','6','12','24'];
@@ -201,7 +201,7 @@
 			{#each [['flota','Flota'],['gwarancje','Gwarancje'],['cpm','CPM'],['car_ear','CAR/EAR'],['beauty_tax','BeautyTAX'], ...(isAuraTenant ? [['oc_beauty','OC Beauty']] : [])] as [val, label]}
 				<button type="button" onclick={() => fpUgPodtyp = val}
 					class="py-2 px-3 rounded-lg text-sm border text-center transition-colors
-						{fpUgPodtyp === val ? 'bg-blue-50 text-blue-700 border-blue-400 font-semibold' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+						{fpUgPodtyp === val ? 'bg-blue-50 text-blue-700 border-blue-400 font-semibold' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">
 					{label}
 				</button>
 			{/each}
@@ -231,7 +231,7 @@
 					class={inp}
 				/>
 				{#if clientOpen}
-					<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+					<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-line rounded-lg shadow-2xl max-h-60 overflow-y-auto">
 						{#if filteredClients.length === 0}
 							<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
 						{:else}
@@ -271,7 +271,7 @@
 						class={inp}
 					/>
 					{#if tuOpen}
-						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-line rounded-lg shadow-2xl max-h-60 overflow-y-auto">
 							{#if filteredTU.length === 0}
 								<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
 							{:else}
@@ -328,7 +328,7 @@
 	</div>
 
 	<!-- Dane finansowe -->
-	<div class="border-t border-slate-100 pt-4">
+	<div class="border-t border-line-soft pt-4">
 		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">Dane Finansowe</p>
 		<div class="grid grid-cols-3 gap-4">
 			<div>
@@ -347,7 +347,7 @@
 	</div>
 
 	<!-- Rozliczaj płatności -->
-	<div class="border-t border-slate-100 pt-3">
+	<div class="border-t border-line-soft pt-3">
 		<label class="flex items-center gap-3 cursor-pointer">
 			<input type="checkbox" bind:checked={fpRozliczajPlatnosci} class="w-4 h-4 rounded accent-blue-600" />
 			<div>
@@ -361,25 +361,25 @@
 	<div>
 		<div class="flex items-center gap-4 mb-3">
 			<label class={lbl + ' mb-0'}>Liczba rat</label>
-			<select bind:value={fpRaty} class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40">
+			<select bind:value={fpRaty} class="border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40">
 				{#each RATY_OPCJE as opt}
 					<option value={opt}>{opt === '1' ? 'Jednorazowo' : `${opt} rat`}</option>
 				{/each}
 			</select>
 		</div>
-		<div class="border border-slate-200 rounded-lg overflow-hidden">
-			<div class="grid grid-cols-[80px_1fr_1fr] bg-slate-50 border-b border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+		<div class="border border-line rounded-lg overflow-hidden">
+			<div class="grid grid-cols-[80px_1fr_1fr] bg-slate-50 border-b border-line px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 				<div>{ratyCount === 1 ? 'Płatność' : 'Rata'}</div>
 				<div>Termin płatności</div>
 				<div>Kwota (PLN)</div>
 			</div>
 			{#each fpDatyRatArr as _, i}
-				<div class="grid grid-cols-[80px_1fr_1fr] items-center gap-3 px-4 py-2 border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
+				<div class="grid grid-cols-[80px_1fr_1fr] items-center gap-3 px-4 py-2 border-b border-line-soft last:border-b-0 hover:bg-slate-50">
 					<div class="text-sm font-semibold text-slate-600">{ratyCount === 1 ? '—' : `Rata ${i + 1}`}</div>
 					<input type="date" bind:value={fpDatyRatArr[i]}
-						class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+						class="border border-line rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 					<input type="number" step="0.01" bind:value={fpKwotypRatArr[i]} placeholder="0.00"
-						class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+						class="border border-line rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 				</div>
 			{/each}
 		</div>

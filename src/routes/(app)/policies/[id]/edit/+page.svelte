@@ -97,7 +97,7 @@
 	{#if !policy}
 		<p class="text-slate-400">Polisa nie istnieje lub nie masz dostępu.</p>
 	{:else}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-6">
 			{#if formError}
 				<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>
 			{/if}
@@ -109,7 +109,7 @@
 		</div>
 
 		<div class="flex justify-end gap-3 mt-4">
-			<button onclick={() => goto(`/policies/${policyId}`)} class="px-5 py-2.5 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+			<button onclick={() => goto(`/policies/${policyId}`)} class="px-5 py-2.5 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 				Anuluj
 			</button>
 			<button onclick={save} disabled={saving} class="px-6 py-2.5 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">

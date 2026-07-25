@@ -15,7 +15,7 @@
 	const admin = $derived(isAdmin(appState.profile));
 	const ADMIN_TABS = ['system', 'kancelaria', 'leasingi', 'logi'];
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// --- Tabs ---
@@ -284,7 +284,7 @@
 	<h1 class="text-2xl font-bold text-slate-900">Ustawienia</h1>
 
 	<!-- Tabs -->
-	<div class="flex gap-1 border-b border-slate-200">
+	<div class="flex gap-1 border-b border-line">
 		<button
 			onclick={() => activeTab = 'vehicles'}
 			class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'vehicles' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
@@ -355,7 +355,7 @@
 
 	<!-- Pojazdy Tab -->
 	{#if activeTab === 'vehicles'}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-6">
 			<div class="flex items-center justify-between mb-5">
 				<h2 class="text-lg font-semibold text-slate-800">Pojazdy</h2>
 				<button onclick={openNewVehicle} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
@@ -371,7 +371,7 @@
 					type="text"
 					placeholder="Szukaj po nr rej., marce, VIN..."
 					bind:value={vehicleSearch}
-					class="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					class="w-full pl-9 pr-3 py-2 border border-line rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
 			</div>
 
@@ -382,7 +382,7 @@
 				<div class="overflow-x-auto">
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="border-b border-slate-200 text-left text-slate-500">
+							<tr class="border-b border-line text-left text-slate-500">
 								<th class="pb-2 font-medium">Nr rej.</th>
 								<th class="pb-2 font-medium">Marka / Model</th>
 								<th class="pb-2 font-medium">VIN</th>
@@ -395,7 +395,7 @@
 						<tbody>
 							{#each filteredVehicles as v (v.id)}
 								{@const assigned = assignedPolicyFor(v.id, appState.policies)}
-								<tr class="border-b border-slate-100 hover:bg-slate-50">
+								<tr class="border-b border-line-soft hover:bg-slate-50">
 									<td class="py-2.5 font-medium text-slate-900">{v.nr_rejestracyjny}</td>
 									<td class="py-2.5 text-slate-700">{v.marka_model}</td>
 									<td class="py-2.5 text-slate-500 font-mono text-xs">{v.vin ?? '—'}</td>
@@ -454,7 +454,7 @@
 						<p class="text-sm text-red-600">{vehicleError}</p>
 					{/if}
 					<div class="flex justify-end gap-2 pt-2">
-						<button onclick={closeVehicleModal} class="px-4 py-2 text-sm border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50">Anuluj</button>
+						<button onclick={closeVehicleModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-700 hover:bg-slate-50">Anuluj</button>
 						<button onclick={saveVehicle} disabled={vehicleSaving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
 							{vehicleSaving ? 'Zapisywanie...' : 'Zapisz'}
 						</button>
@@ -467,7 +467,7 @@
 	<!-- Profile Tab -->
 	{#if activeTab === 'profile'}
 		<!-- Read-only info -->
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-6">
 			<h2 class="text-lg font-semibold text-slate-800 mb-5">Informacje o koncie</h2>
 			<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
 				<div>
@@ -486,7 +486,7 @@
 		</div>
 
 		<!-- Edit profile -->
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-6">
 			<h2 class="text-lg font-semibold text-slate-800 mb-5">Dane profilu</h2>
 			<div class="space-y-4">
 				<div>
@@ -514,7 +514,7 @@
 		</div>
 
 		<!-- Change password -->
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-6">
 			<h2 class="text-lg font-semibold text-slate-800 mb-5">Zmiana hasła</h2>
 			<div class="space-y-4">
 				<div>
@@ -559,7 +559,7 @@
 		</div>
 
 		{#each rodoTexts as t, i}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5">
 			<div class="flex items-start justify-between gap-4">
 				<div class="flex-1 min-w-0">
 					{#if t.editing}
@@ -592,7 +592,7 @@
 							<button onclick={() => saveRodoText(t)} disabled={rodoLoading} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
 								{rodoLoading ? 'Zapisywanie...' : 'Zapisz'}
 							</button>
-							<button onclick={() => { t.editing = false; rodoTexts = [...rodoTexts]; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+							<button onclick={() => { t.editing = false; rodoTexts = [...rodoTexts]; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 						</div>
 					</div>
 					{:else}
@@ -621,7 +621,7 @@
 		{/each}
 
 		{#if rodoTexts.length === 0}
-		<div class="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
+		<div class="bg-white border border-line rounded-xl p-8 text-center text-slate-400">
 			Brak zdefiniowanych zgód RODO. Kliknij "Dodaj zgodę" aby rozpocząć.
 		</div>
 		{/if}
@@ -635,11 +635,11 @@
 				<h2 class="text-lg font-semibold text-slate-900">Dokumenty rozliczeniowe</h2>
 				<p class="text-sm text-slate-500">Zaimportowane noty prowizyjne i zestawienia TU</p>
 			</div>
-			<button onclick={loadNoty} class="flex items-center gap-1.5 px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+			<button onclick={loadNoty} class="flex items-center gap-1.5 px-3 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 				{#if notyLoading}Ładowanie...{:else}Odśwież{/if}
 			</button>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-sm text-left">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -655,7 +655,7 @@
 				</thead>
 				<tbody>
 					{#each noty as n}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-3 font-mono font-semibold text-slate-900">{n.numer_noty}</td>
 						<td class="px-5 py-3"><span class="px-2 py-0.5 rounded-full text-xs font-bold bg-blue-100 text-blue-700">{n.tu_skrot ?? '—'}</span></td>
 						<td class="px-5 py-3 text-xs">{n.data_zestawienia ?? '—'}</td>
@@ -687,7 +687,7 @@
 			<p class="text-sm text-slate-500">Godziny i dni pracy widoczne w kalendarzu zadań</p>
 		</div>
 
-		<div class="bg-white border border-slate-200 rounded-xl p-6 space-y-5">
+		<div class="bg-white border border-line rounded-xl p-6 space-y-5">
 			<div>
 				<label class={labelCls}>Godziny pracy</label>
 				<div class="flex items-center gap-3">
@@ -712,7 +712,7 @@
 							class="px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors
 								{calSettings.dni_pracy.includes(d)
 									? 'bg-slate-900 text-white border-slate-900'
-									: 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+									: 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
 						>
 							{DAYS_PL[d].slice(0, 3)}
 						</button>

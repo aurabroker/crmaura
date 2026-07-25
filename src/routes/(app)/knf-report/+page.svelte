@@ -65,20 +65,20 @@
 	<span class="text-red-600 font-semibold">UWAGA:</span> Raport pomija umowy oznaczone jako "Polisa Obca".
 </p>
 
-<div class="bg-white border border-slate-200 rounded-xl p-5 mb-6 hide-on-print">
+<div class="bg-white border border-line rounded-xl p-5 mb-6 hide-on-print">
 	<div class="flex gap-4 items-end">
 		<div>
 			<label for="knf-od" class="block text-sm font-medium text-slate-700 mb-1">Data Od</label>
-			<input id="knf-od" type="date" bind:value={dOd} class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			<input id="knf-od" type="date" bind:value={dOd} class="border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 		</div>
 		<div>
 			<label for="knf-do" class="block text-sm font-medium text-slate-700 mb-1">Data Do</label>
-			<input id="knf-do" type="date" bind:value={dDo} class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+			<input id="knf-do" type="date" bind:value={dDo} class="border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 		</div>
 		<button onclick={exportXlsx} class="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700 transition-colors">
 			<Download size={15} /> Export do Excel
 		</button>
-		<button onclick={() => window.print()} class="flex items-center gap-2 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition-colors">
+		<button onclick={() => window.print()} class="flex items-center gap-2 border border-line text-slate-700 px-4 py-2 rounded-lg text-sm hover:bg-slate-50 transition-colors">
 			Drukuj PDF
 		</button>
 	</div>
@@ -92,8 +92,8 @@
 	<KpiCard label="Prowizja Zainkasowana" value="{fmtPln(totals.pZai)} PLN" color="text-emerald-600" />
 </div>
 
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-4 border-b border-slate-200">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+	<div class="px-5 py-4 border-b border-line">
 		<h2 class="font-semibold text-slate-900">Rejestr Polis objętych raportem KNF</h2>
 	</div>
 	<table class="w-full text-left text-sm">
@@ -110,7 +110,7 @@
 		</thead>
 		<tbody>
 			{#each knfPolicies as p}
-				<tr class="border-t border-slate-100 hover:bg-slate-50">
+				<tr class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3 font-medium">{p.nr_polisy}</td>
 					<td class="px-5 py-3">{p.crm_insurers?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3">{p.data_od}</td>

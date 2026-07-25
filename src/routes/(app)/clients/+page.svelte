@@ -206,7 +206,7 @@
 		if (params.get('new') === '1') openNew('firma');
 	});
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	const modalTitle = $derived(modalTyp === 'firma' ? 'Nowa Firma' : 'Nowa Osoba');
@@ -226,29 +226,29 @@
 		<button onclick={() => openNew('firma')} class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
 			<Building2 size={15} /> Dodaj Firmę
 		</button>
-		<button onclick={() => openNew('osoba')} class="flex items-center gap-1.5 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors">
+		<button onclick={() => openNew('osoba')} class="flex items-center gap-1.5 bg-white text-slate-700 border border-line px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors">
 			<User size={15} /> Dodaj Osobę
 		</button>
 	</div>
 </div>
 
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+	<div class="px-5 py-3 border-b border-line flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, PESEL, REGON, KRS, e-mailu, telefonie lub adresie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
-		<div class="flex items-center rounded-lg border border-slate-200 overflow-hidden shrink-0">
+		<div class="flex items-center rounded-lg border border-line overflow-hidden shrink-0">
 			<button onclick={() => compactView = false}
 				class="px-3 py-1.5 text-xs font-medium transition-colors {!compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
 				Pełny
 			</button>
 			<button onclick={() => compactView = true}
-				class="px-3 py-1.5 text-xs font-medium border-l border-slate-200 transition-colors {compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
+				class="px-3 py-1.5 text-xs font-medium border-l border-line transition-colors {compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
 				Kompaktowy
 			</button>
 		</div>
 	</div>
 	{#if compactView}
-		<div class="divide-y divide-slate-100">
+		<div class="divide-y divide-line-soft">
 			{#each filtered as c}
 				<button onclick={() => goto(`/clients/${c.id}`)}
 					class="w-full flex items-center gap-2 px-5 py-1 text-left hover:bg-slate-50 transition-colors">
@@ -276,7 +276,7 @@
 		</thead>
 		<tbody>
 			{#each filtered as c}
-				<tr class="border-t border-slate-100 hover:bg-slate-50">
+				<tr class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3">
 						<div class="flex items-center gap-2">
 							{#if c.typ === 'osoba'}
@@ -309,7 +309,7 @@
 					</td>
 					<td class="px-5 py-3">
 						<div class="flex items-center gap-1">
-							<button onclick={() => goto(`/clients/${c.id}`)} class="text-xs border border-slate-200 rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 transition-colors">
+							<button onclick={() => goto(`/clients/${c.id}`)} class="text-xs border border-line rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 transition-colors">
 								Profil 360°
 							</button>
 							<button onclick={() => goto(`/clients/${c.id}/edit`)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
@@ -328,7 +328,7 @@
 
 <Modal title={modalTitle} open={showModal} onclose={closeModal}>
 	{#snippet footer()}
-		<button onclick={closeModal} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={closeModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : (modalTyp === 'firma' ? 'Zapisz Firmę' : 'Zapisz Osobę')}
 		</button>
@@ -391,7 +391,7 @@
 		</div>
 		<!-- Gwarancje — po zaznaczeniu Panel Klienta pokaże zakładkę Gwarancje -->
 		<div class="col-span-2">
-			<label class="flex items-center gap-2 cursor-pointer text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+			<label class="flex items-center gap-2 cursor-pointer text-sm text-slate-700 bg-slate-50 border border-line rounded-lg px-3 py-2.5">
 				<input type="checkbox" bind:checked={fGwarancje} class="w-4 h-4 accent-blue-600" />
 				<span class="font-medium">Gwarancje</span>
 				<span class="text-xs text-slate-400">— klient korzysta z gwarancji ubezpieczeniowych (pokaże zakładkę Gwarancje)</span>
@@ -402,7 +402,7 @@
 
 <Modal title="Wykryte duplikaty klientów" open={showDuplicates} onclose={() => showDuplicates = false}>
 	{#snippet footer()}
-		<button onclick={() => showDuplicates = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+		<button onclick={() => showDuplicates = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 	{/snippet}
 	{#if visibleDuplicateGroups.length === 0}
 		<div class="text-center py-6 text-emerald-600 font-medium">✓ Brak nowych duplikatów (NIP / PESEL)</div>
@@ -417,7 +417,7 @@
 						{dismissing === dedupeKey(group) ? 'Zapisywanie...' : 'To nie są duplikaty'}
 					</button>
 				</div>
-				<div class="divide-y divide-slate-100">
+				<div class="divide-y divide-line-soft">
 					{#each group.clients as c}
 					{@const pCount = policyCount(c.id)}
 					{@const aCount = apkCount(c.id)}
@@ -443,7 +443,7 @@
 					</div>
 					{/each}
 				</div>
-				<div class="px-4 py-3 bg-slate-50 border-t border-slate-100">
+				<div class="px-4 py-3 bg-slate-50 border-t border-line-soft">
 					{#if mergeError[group.reason]}
 						<div class="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{mergeError[group.reason]}</div>
 					{/if}

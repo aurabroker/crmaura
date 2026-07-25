@@ -481,7 +481,7 @@
 		pilny: 'bg-red-500', wysoki: 'bg-orange-400', normalny: 'bg-blue-400', niski: 'bg-slate-300'
 	};
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// Opiekun klienta
@@ -532,14 +532,14 @@
 				<!-- Opiekun klienta -->
 				<div class="flex items-center gap-2 mt-1">
 					{#if editingOpiekun}
-						<select bind:value={selectedOpiekun} class="border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+						<select bind:value={selectedOpiekun} class="border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
 							<option value="">— brak opiekuna —</option>
 							{#each appState.brokers as b}
 								<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>
 							{/each}
 						</select>
 						<button onclick={saveOpiekun} disabled={savingOpiekun} class="px-2 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">{savingOpiekun ? '...' : 'Zapisz'}</button>
-						<button onclick={() => editingOpiekun = false} class="px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
+						<button onclick={() => editingOpiekun = false} class="px-2 py-1 text-xs border border-line rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
 					{:else}
 						<span class="text-xs text-slate-400">Opiekun:</span>
 						<span class="text-xs font-medium text-slate-700">{opiekunNazwa() ?? '— brak —'}</span>
@@ -552,14 +552,14 @@
 			<button
 				onclick={openPortal}
 				class="flex items-center gap-1.5 bg-white border px-4 py-2 rounded-lg text-sm font-semibold transition-colors
-					{hasPortal ? 'text-emerald-700 border-emerald-300 hover:bg-emerald-50' : 'text-slate-700 border-slate-300 hover:bg-slate-50'}"
+					{hasPortal ? 'text-emerald-700 border-emerald-300 hover:bg-emerald-50' : 'text-slate-700 border-line hover:bg-slate-50'}"
 				title="Dostęp do Panelu Klienta"
 			>
 				<Link size={14} /> {hasPortal ? 'Panel klienta ✓' : 'Panel klienta'}
 			</button>
 			<button
 				onclick={() => goto(`/clients/${clientId}/edit`)}
-				class="flex items-center gap-1.5 bg-white text-slate-700 border border-slate-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
+				class="flex items-center gap-1.5 bg-white text-slate-700 border border-line px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
 			>
 				<Pencil size={14} /> Edytuj
 			</button>
@@ -577,7 +577,7 @@
 		<!-- Składki — zawsze jeśli są polisy -->
 		{#if clientPolicies.length > 0}
 		<button onclick={() => dashModal = 'skladki'}
-			class="bg-white border border-slate-200 rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
+			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
 			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><Coins size={13} /> Składki</div>
 			<div class="text-xl font-bold text-slate-900">{fmtPln(totalPrzyp)}</div>
 			<div class="text-xs text-slate-400">{totalPrzyp - totalOpl > 0 ? `Zaległość: ${fmtPln(totalPrzyp - totalOpl)}` : 'Bez zaległości'}</div>
@@ -587,7 +587,7 @@
 		<!-- Polisy — zawsze jeśli są polisy -->
 		{#if clientPolicies.length > 0}
 		<button onclick={() => dashModal = 'polisy'}
-			class="bg-white border border-slate-200 rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
+			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
 			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><FileText size={13} /> Polisy</div>
 			<div class="text-xl font-bold text-slate-900">{clientPolicies.length}</div>
 			<div class="text-xs text-slate-400">
@@ -599,7 +599,7 @@
 		<!-- Pojazdy — tylko jeśli ma -->
 		{#if hasVehicles}
 		<button onclick={() => dashModal = 'pojazdy'}
-			class="bg-white border border-slate-200 rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
+			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
 			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><Car size={13} /> Pojazdy</div>
 			<div class="text-xl font-bold text-slate-900">{clientVehicles.length}</div>
 			<div class="text-xs text-slate-400">w flocie</div>
@@ -609,7 +609,7 @@
 		<!-- Szkody — tylko jeśli ma -->
 		{#if hasClaims}
 		<button onclick={() => dashModal = 'szkody'}
-			class="bg-white border {activeClaims.length > 0 ? 'border-red-200 bg-red-50' : 'border-slate-200'} rounded-xl px-5 py-3 shadow-sm hover:shadow-md transition-all text-left">
+			class="bg-white border {activeClaims.length > 0 ? 'border-red-200 bg-red-50' : 'border-line'} rounded-xl px-5 py-3 shadow-sm hover:shadow-md transition-all text-left">
 			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><AlertTriangle size={13} /> Szkody</div>
 			<div class="text-xl font-bold {activeClaims.length > 0 ? 'text-red-600' : 'text-slate-900'}">{clientClaims.length}</div>
 			<div class="text-xs text-slate-400">{activeClaims.length} aktywnych</div>
@@ -619,7 +619,7 @@
 		<!-- Grupowe — tylko jeśli ma -->
 		{#if hasGrupowe}
 		<button onclick={() => dashModal = 'grupowe'}
-			class="bg-white border border-slate-200 rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
+			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
 			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><Users size={13} /> Grupowe</div>
 			<div class="text-xl font-bold text-slate-900">{grupowePolicies.length}</div>
 			<div class="text-xs text-slate-400">ubezpieczenia grupowe</div>
@@ -628,7 +628,7 @@
 	</div>
 
 	<!-- Tabs -->
-	<div class="flex gap-6 border-b border-slate-200 mb-4">
+	<div class="flex gap-6 border-b border-line mb-4">
 		{#each tabs as tab}
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
@@ -642,7 +642,7 @@
 		{@const today = new Date().toISOString().slice(0,10)}
 		{@const activePolicies = clientPolicies.filter(p => p.data_do === null || p.data_do >= today)}
 		{@const archivedPolicies = clientPolicies.filter(p => p.data_do !== null && p.data_do < today && p.deleted_at === null)}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -662,7 +662,7 @@
 						{@const isRenewed = renewedPolicyIds.has(p.id)}
 						{@const isPendingRenewal = !!p.renewal_of && p.data_od > today}
 						{@const canRenew = !isRenewed && daysLeft >= 0 && daysLeft <= 45}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3">
 								<div class="flex items-center gap-1.5 flex-wrap">
 									<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
@@ -713,7 +713,7 @@
 					<span class="group-open:rotate-90 transition-transform">▶</span>
 					Archiwum polis ({archivedPolicies.length})
 				</summary>
-				<div class="mt-2 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden opacity-70">
+				<div class="mt-2 bg-white border border-line rounded-xl shadow-sm overflow-hidden opacity-70">
 					<table class="w-full text-left text-sm">
 						<thead>
 							<tr class="bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
@@ -730,7 +730,7 @@
 							{#each archivedPolicies as p}
 								{@const st = policyStatus(p.data_do)}
 								{@const isRenewed = renewedPolicyIds.has(p.id)}
-								<tr class="border-t border-slate-100 hover:bg-slate-50">
+								<tr class="border-t border-line-soft hover:bg-slate-50">
 									<td class="px-5 py-3">
 										<div class="flex items-center gap-1.5">
 											<a href="/policies/{p.id}" class="font-medium text-slate-500 hover:underline">{p.nr_polisy}</a>
@@ -771,7 +771,7 @@
 				<Plus size={14} /> Dodaj pojazd
 			</button>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -787,7 +787,7 @@
 					{#each clientVehicles as v}
 						{@const assigned = assignedPolicyFor(v.id, appState.policies)}
 						{@const unlinkedPolicies = clientPolicies.filter(p => (p.rodzaj === 'komunikacja' || p.rodzaj === 'flota') && !p.pojazd_id && !p.deleted_at)}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium">{v.nr_rejestracyjny}</td>
 							<td class="px-5 py-3">{v.marka_model}</td>
 							<td class="px-5 py-3 text-slate-500">{v.vin ?? '—'}</td>
@@ -807,7 +807,7 @@
 									{#if !assigned}
 										{#if linkingVehicleId === v.id}
 											<div class="flex items-center gap-1.5">
-												<select bind:value={linkPolicyId} class="border border-slate-300 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+												<select bind:value={linkPolicyId} class="border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
 													<option value="">— wybierz polisę —</option>
 													{#each unlinkedPolicies as p}
 														<option value={p.id}>{p.nr_polisy} ({p.rodzaj})</option>
@@ -817,7 +817,7 @@
 												<button onclick={() => linkVehicleToPolicy(v.id)} disabled={!linkPolicyId || linkingSaving} class="px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50">
 													{linkingSaving ? '...' : 'OK'}
 												</button>
-												<button onclick={() => { linkingVehicleId = null; linkPolicyId = ''; }} class="px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">✕</button>
+												<button onclick={() => { linkingVehicleId = null; linkPolicyId = ''; }} class="px-2 py-1 text-xs border border-line rounded-lg text-slate-500 hover:bg-slate-50">✕</button>
 											</div>
 										{:else}
 											<button onclick={() => { linkingVehicleId = v.id; linkPolicyId = ''; }}
@@ -844,13 +844,13 @@
 				<p class="text-xs font-medium text-blue-600 mb-1">Łączny limit gwarancyjny</p>
 				<p class="text-xl font-semibold text-blue-700">{fmtPln(limitTotal)} PLN</p>
 			</div>
-			<div class="bg-white border border-slate-200 rounded-xl p-4">
+			<div class="bg-white border border-line rounded-xl p-4">
 				<p class="text-xs font-medium text-slate-500 mb-1">Liczba gwarancji / umów</p>
 				<p class="text-xl font-semibold text-slate-900">{clientGwarancje.length}</p>
 			</div>
 		</div>
 		{/if}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -864,7 +864,7 @@
 				</thead>
 				<tbody>
 					{#each clientGwarancje as g}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium text-blue-700"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a></td>
 							<td class="px-5 py-3 text-slate-600">{g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : '—')}</td>
 							<td class="px-5 py-3 text-xs text-slate-500">{g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt ?? '—'}</td>
@@ -880,7 +880,7 @@
 		</div>
 
 	{:else if activeTab === 'szkody'}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -894,14 +894,14 @@
 				</thead>
 				<tbody>
 					{#each clientClaims as cl}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium">{cl.nr_szkody ?? 'Zgłoszenie'}</td>
 							<td class="px-5 py-3">{cl.data_szkody}</td>
 							<td class="px-5 py-3">{cl.crm_policies?.nr_polisy ?? '—'}</td>
 							<td class="px-5 py-3 text-xs text-slate-500">{cl.opis_szkody ?? '—'}</td>
 							<td class="px-5 py-3">
 								{#if editingClaim?.id === cl.id}
-									<select bind:value={claimStatus} class="border border-slate-300 rounded-lg px-2 py-1 text-xs">
+									<select bind:value={claimStatus} class="border border-line rounded-lg px-2 py-1 text-xs">
 										{#each CLAIM_STATUSES as s}<option>{s}</option>{/each}
 									</select>
 								{:else}
@@ -912,7 +912,7 @@
 								{#if editingClaim?.id === cl.id}
 									<div class="flex gap-1">
 										<button onclick={saveClaim} disabled={savingClaim} class="px-2 py-1 text-xs bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">{savingClaim ? '...' : 'Zapisz'}</button>
-										<button onclick={() => editingClaim = null} class="px-2 py-1 text-xs border border-slate-200 rounded-lg hover:bg-slate-50">Anuluj</button>
+										<button onclick={() => editingClaim = null} class="px-2 py-1 text-xs border border-line rounded-lg hover:bg-slate-50">Anuluj</button>
 									</div>
 								{:else}
 									<button onclick={() => openEditClaim(cl)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
@@ -932,7 +932,7 @@
 				<UserPlus size={14} /> Dodaj osobę kontaktową
 			</button>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -946,7 +946,7 @@
 				</thead>
 				<tbody>
 					{#each clientContacts as cc}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium">{cc.imie_nazwisko}</td>
 							<td class="px-5 py-3 text-slate-500">{cc.stanowisko ?? '—'}</td>
 							<td class="px-5 py-3">{cc.telefon ?? '—'}</td>
@@ -968,15 +968,15 @@
 
 	{:else if activeTab === 'saldo'}
 		<div class="grid grid-cols-3 gap-4">
-			<div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+			<div class="bg-white border border-line rounded-xl p-5 shadow-sm">
 				<p class="text-sm font-medium text-slate-500 mb-2">Składka Przypisana</p>
 				<p class="text-2xl font-semibold text-slate-900">{fmtPln(totalPrzyp)}</p>
 			</div>
-			<div class="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+			<div class="bg-white border border-line rounded-xl p-5 shadow-sm">
 				<p class="text-sm font-medium text-slate-500 mb-2">Składka Zainkasowana</p>
 				<p class="text-2xl font-semibold text-emerald-600">{fmtPln(totalOpl)}</p>
 			</div>
-			<div class="bg-{totalPrzyp - totalOpl > 0 ? 'red-50 border-red-200' : 'white border-slate-200'} border rounded-xl p-5 shadow-sm">
+			<div class="bg-{totalPrzyp - totalOpl > 0 ? 'red-50 border-red-200' : 'white border-line'} border rounded-xl p-5 shadow-sm">
 				<p class="text-sm font-medium text-{totalPrzyp - totalOpl > 0 ? 'red-500' : 'slate-500'} mb-2">Zaległości</p>
 				<p class="text-2xl font-semibold text-{totalPrzyp - totalOpl > 0 ? 'red-600' : 'slate-900'}">{fmtPln(totalPrzyp - totalOpl)}</p>
 			</div>
@@ -992,14 +992,14 @@
 		</div>
 
 		{#if clientApk.length === 0}
-			<div class="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
+			<div class="bg-white border border-line rounded-xl p-8 text-center text-slate-400">
 				<ClipboardList size={28} class="mx-auto mb-2 opacity-30" />
 				Brak formularzy APK dla tego klienta
 			</div>
 		{:else}
-			<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+			<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 				<table class="w-full text-sm text-left">
-					<thead class="bg-slate-50 border-b border-slate-200">
+					<thead class="bg-slate-50 border-b border-line">
 						<tr>
 							<th class="px-5 py-3 font-semibold text-slate-600">Ref</th>
 							<th class="px-5 py-3 font-semibold text-slate-600">Doradca</th>
@@ -1011,7 +1011,7 @@
 					</thead>
 					<tbody>
 						{#each clientApk as f}
-							<tr class="border-t border-slate-100 hover:bg-slate-50">
+							<tr class="border-t border-line-soft hover:bg-slate-50">
 								<td class="px-5 py-3 font-mono text-xs text-slate-500">{f.ref_number}</td>
 								<td class="px-5 py-3 text-slate-600">{f.advisor_name ?? '—'}</td>
 								<td class="px-5 py-3 text-slate-500">{f.form_date}</td>
@@ -1030,11 +1030,11 @@
 										<button
 											onclick={() => apkLinkPopover = apkLinkPopover === f.id ? null : f.id}
 											title="Pokaż link dla klienta"
-											class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+											class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 											<Link size={12} /> Link
 										</button>
 										<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
-											class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+											class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
 											<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
 										</button>
 										{#if f.pdf_url}
@@ -1053,9 +1053,9 @@
 									{#if apkLinkPopover === f.id}
 										{@const link = apkTokenLink(f)}
 										<div class="mt-2 flex gap-1.5 items-center">
-											<input readonly value={link} class="text-xs font-mono bg-slate-50 border border-slate-200 rounded px-2 py-1 flex-1 min-w-0" />
+											<input readonly value={link} class="text-xs font-mono bg-slate-50 border border-line rounded px-2 py-1 flex-1 min-w-0" />
 											<button onclick={async () => { await navigator.clipboard.writeText(link); }}
-												class="shrink-0 px-2 py-1 text-xs border border-slate-200 rounded hover:bg-slate-50 text-slate-600">
+												class="shrink-0 px-2 py-1 text-xs border border-line rounded hover:bg-slate-50 text-slate-600">
 												<Copy size={11} />
 											</button>
 										</div>
@@ -1073,11 +1073,11 @@
 				<Plus size={14} /> Nowe zadanie
 			</button>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			{#if clientTasks.length === 0}
 				<div class="px-5 py-10 text-center text-slate-400 text-sm">Brak zadań dla tego klienta</div>
 			{:else}
-				<ul class="divide-y divide-slate-100">
+				<ul class="divide-y divide-line-soft">
 					{#each clientTasks as t}
 						{@const done = t.status === 'zakonczone'}
 						{@const overdue = isOverdue(t)}
@@ -1125,15 +1125,15 @@
 		</div>
 
 	{:else if activeTab === 'mailing'}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-			<div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
 				<div class="flex items-center gap-2">
 					<Mail size={16} class="text-slate-400" />
 					<span class="text-sm font-semibold text-slate-700">Mailing GetResponse</span>
 					<span class="text-xs text-slate-400">— informacyjnie, tylko podgląd</span>
 				</div>
 				<button onclick={() => loadMailing(true)} disabled={grLoading}
-					class="flex items-center gap-1.5 text-xs text-slate-500 border border-slate-200 rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+					class="flex items-center gap-1.5 text-xs text-slate-500 border border-line rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
 					<RefreshCw size={12} class={grLoading ? 'animate-spin' : ''} /> Odśwież
 				</button>
 			</div>
@@ -1144,7 +1144,7 @@
 				{:else if grError}
 					<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{grError}</div>
 				{:else if grLink?.ignored}
-					<div class="flex items-center justify-between text-sm bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+					<div class="flex items-center justify-between text-sm bg-slate-50 border border-line rounded-lg px-3 py-2">
 						<span class="text-slate-500">Mailing dla tego klienta jest pominięty (ignorowany).</span>
 						<button onclick={undoIgnore} disabled={grSaving} class="text-blue-600 hover:underline">Przywróć</button>
 					</div>
@@ -1166,7 +1166,7 @@
 							</thead>
 							<tbody>
 								{#each grResult.messages as m}
-									<tr class="border-t border-slate-100">
+									<tr class="border-t border-line-soft">
 										<td class="px-4 py-2.5 font-medium text-slate-800">{m.subject}</td>
 										<td class="px-4 py-2.5 text-slate-500"><span class="inline-flex items-center gap-1"><Send size={12} class="text-slate-300" />{fmtDateTime(m.sentOn)}</span></td>
 										<td class="px-4 py-2.5">
@@ -1196,9 +1196,9 @@
 						</div>
 						{#if grEditEmail}
 							<div class="flex items-center gap-2 mt-3">
-								<input type="email" bind:value={grEmailInput} placeholder="adres e-mail w GetResponse" class="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+								<input type="email" bind:value={grEmailInput} placeholder="adres e-mail w GetResponse" class="flex-1 border border-line rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 								<button onclick={saveGrEmail} disabled={grSaving} class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">Zapisz</button>
-								<button onclick={() => grEditEmail = false} class="px-3 py-1.5 text-sm border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
+								<button onclick={() => grEditEmail = false} class="px-3 py-1.5 text-sm border border-line rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
 							</div>
 						{:else}
 							<div class="flex items-center gap-3 mt-3">
@@ -1216,7 +1216,7 @@
 <!-- Modal: Osoba kontaktowa -->
 <Modal title={editingContact ? 'Edytuj Kontakt' : 'Dodaj Osobę Kontaktową'} open={showContact} onclose={() => { showContact = false; editingContact = null; }}>
 	{#snippet footer()}
-		<button onclick={() => { showContact = false; editingContact = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showContact = false; editingContact = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveContact} disabled={savingCC} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingCC ? 'Zapisywanie...' : editingContact ? 'Zapisz zmiany' : 'Dodaj kontakt'}
 		</button>
@@ -1234,7 +1234,7 @@
 <!-- Modal: Pojazd -->
 <Modal title={editingVehicle ? 'Edytuj Pojazd' : 'Dodaj Pojazd'} open={showVehicle} onclose={() => { showVehicle = false; editingVehicle = null; }}>
 	{#snippet footer()}
-		<button onclick={() => { showVehicle = false; editingVehicle = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showVehicle = false; editingVehicle = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveVehicle} disabled={savingV} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingV ? 'Zapisywanie...' : editingVehicle ? 'Zapisz zmiany' : 'Dodaj pojazd'}
 		</button>
@@ -1250,7 +1250,7 @@
 
 <!-- Dashboard Modals -->
 <Modal title="Składki klienta" open={dashModal === 'skladki'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
+	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
 	<div class="space-y-3">
 		<div class="grid grid-cols-3 gap-3">
 			<div class="bg-slate-50 rounded-xl p-4">
@@ -1270,7 +1270,7 @@
 			<thead><tr class="text-[11px] text-slate-500 uppercase"><th class="py-2 text-left">Polisa</th><th class="py-2 text-right">Składka</th></tr></thead>
 			<tbody>
 				{#each clientPolicies as p}
-					<tr class="border-t border-slate-100">
+					<tr class="border-t border-line-soft">
 						<td class="py-2"><a href="/policies/{p.id}" class="text-blue-700 hover:underline">{p.nr_polisy}</a></td>
 						<td class="py-2 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
 					</tr>
@@ -1281,7 +1281,7 @@
 </Modal>
 
 <Modal title="Polisy klienta ({clientPolicies.length})" open={dashModal === 'polisy'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
+	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
 	<div class="space-y-2">
 		{#each clientPolicies as p}
 			{@const st = policyStatus(p.data_do)}
@@ -1300,7 +1300,7 @@
 </Modal>
 
 <Modal title="Flota klienta ({clientVehicles.length} poj.)" open={dashModal === 'pojazdy'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
+	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
 	<div class="space-y-2">
 		{#each clientVehicles as v}
 			{@const assigned = assignedPolicyFor(v.id, appState.policies)}
@@ -1323,7 +1323,7 @@
 </Modal>
 
 <Modal title="Rejestr szkód ({clientClaims.length})" open={dashModal === 'szkody'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
+	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
 	<div class="space-y-2">
 		{#each clientClaims as cl}
 			<div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
@@ -1338,7 +1338,7 @@
 </Modal>
 
 <Modal title="Ubezpieczenia grupowe ({grupowePolicies.length})" open={dashModal === 'grupowe'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
+	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
 	<div class="space-y-2">
 		{#each grupowePolicies as p}
 			{@const st = policyStatus(p.data_do)}
@@ -1372,7 +1372,7 @@
 		{#if apkToken}
 			<button onclick={closeApkModal} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Gotowe</button>
 		{:else}
-			<button onclick={closeApkModal} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+			<button onclick={closeApkModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 			<button onclick={createApk} disabled={savingApk} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 				{savingApk ? 'Tworzenie...' : 'Utwórz i wygeneruj link'}
 			</button>
@@ -1389,7 +1389,7 @@
 				<div class="flex gap-2">
 					<input readonly value={apkLink} class="{inputCls} bg-slate-50 font-mono text-xs" />
 					<button onclick={copyApkLink}
-						class="flex items-center gap-1 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 shrink-0 {apkCopied ? 'text-emerald-600 border-emerald-300' : 'text-slate-600'}">
+						class="flex items-center gap-1 px-3 py-2 text-sm border border-line rounded-lg hover:bg-slate-50 shrink-0 {apkCopied ? 'text-emerald-600 border-emerald-300' : 'text-slate-600'}">
 						{#if apkCopied}<Check size={14} /> Skopiowano{:else}<Copy size={14} /> Kopiuj{/if}
 					</button>
 				</div>
@@ -1409,7 +1409,7 @@
 					{#each [['client','Klient wypełnia sam'],['advisor','Doradca wypełnia z klientem']] as [val, label]}
 						<button type="button" onclick={() => apkMode = val as typeof apkMode}
 							class="flex-1 py-2 text-sm rounded-lg border transition-colors
-								{apkMode === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+								{apkMode === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">
 							{label}
 						</button>
 					{/each}
@@ -1436,7 +1436,7 @@
 			<div class="flex gap-2">
 				<input bind:value={portalPass} class="{inputCls} font-mono" placeholder="min. 8 znaków" />
 				<button type="button" onclick={() => (portalPass = genPass())}
-					class="flex items-center gap-1 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 shrink-0 text-slate-600">
+					class="flex items-center gap-1 px-3 py-2 text-sm border border-line rounded-lg hover:bg-slate-50 shrink-0 text-slate-600">
 					<RefreshCw size={14} /> Losuj
 				</button>
 			</div>

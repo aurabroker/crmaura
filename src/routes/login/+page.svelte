@@ -32,7 +32,7 @@
 <svelte:head><title>Logowanie — FRANK67 CRM</title></svelte:head>
 
 <div class="min-h-screen flex items-center justify-center bg-slate-50">
-	<div class="bg-white border border-slate-200 rounded-2xl shadow-xl p-8 w-full max-w-sm">
+	<div class="bg-white border border-line rounded-2xl shadow-xl p-8 w-full max-w-sm">
 
 		<div class="flex items-center justify-center gap-2 mb-8">
 			<ShieldCheck size={28} class="text-blue-500" />
@@ -55,7 +55,7 @@
 					placeholder="jan@auraconsulting.pl"
 					autocomplete="username"
 					required
-					class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
 				/>
 			</div>
 			<div>
@@ -67,7 +67,7 @@
 					placeholder="••••••••"
 					autocomplete="current-password"
 					required
-					class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+					class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
 				/>
 			</div>
 			{#if useTurnstile}

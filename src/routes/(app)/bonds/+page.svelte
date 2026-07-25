@@ -198,7 +198,7 @@
 				<Plus size={15} /> Dodaj gwarancję
 			</button>
 		{:else if activeTab === 'ul'}
-			<button onclick={() => { showTenant = true; tenantError = ''; tenantClientId = ''; }} class="border border-slate-200 text-slate-600 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2">
+			<button onclick={() => { showTenant = true; tenantError = ''; tenantClientId = ''; }} class="border border-line text-slate-600 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors flex items-center gap-2">
 				<Building2 size={15} /> Dodaj podmiot
 			</button>
 			<button onclick={() => openUl(null)} class="bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors flex items-center gap-2">
@@ -209,7 +209,7 @@
 </div>
 
 <!-- Tabs -->
-<div class="flex items-center gap-1 border-b border-slate-200 mb-5">
+<div class="flex items-center gap-1 border-b border-line mb-5">
 	<button onclick={() => (activeTab = 'gwarancje')}
 		class="px-4 py-2 text-sm font-medium border-b-2 -mb-px flex items-center gap-2 {activeTab === 'gwarancje' ? 'border-violet-600 text-violet-700' : 'border-transparent text-slate-500 hover:text-slate-800'}">
 		<FileText size={15} /> Gwarancje
@@ -236,37 +236,37 @@
 {:else if activeTab === 'gwarancje'}
 	<!-- KPI -->
 	<div class="grid grid-cols-4 gap-4 mb-5">
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="bg-white border border-line rounded-xl px-5 py-4">
 			<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Gwarancje</div>
 			<div class="text-2xl font-bold text-slate-900">{kpiCount}</div>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="bg-white border border-line rounded-xl px-5 py-4">
 			<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Aktywne</div>
 			<div class="text-2xl font-bold text-emerald-600">{kpiActive}</div>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="bg-white border border-line rounded-xl px-5 py-4">
 			<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Suma gwarancyjna</div>
 			<div class="text-2xl font-bold text-violet-700">{fmtPln(kpiSuma)}</div>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="bg-white border border-line rounded-xl px-5 py-4">
 			<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Składka</div>
 			<div class="text-2xl font-bold text-slate-700">{fmtPln(kpiSkladka)}</div>
 		</div>
 	</div>
 
 	<!-- Search -->
-	<div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2 mb-4">
+	<div class="flex items-center gap-2 bg-white border border-line rounded-xl px-4 py-2 mb-4">
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nr, kontrakcie, beneficjencie, podmiocie…" class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
 
 	{#if filteredBonds.length === 0}
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-12 text-center text-slate-400">Brak gwarancji</div>
+		<div class="bg-white border border-line rounded-xl px-5 py-12 text-center text-slate-400">Brak gwarancji</div>
 	{:else}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		<table class="w-full text-sm text-left">
 			<thead>
-				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-100 bg-slate-50">
+				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-b border-line-soft bg-slate-50">
 					<th class="px-4 py-2.5">Nr / Typ</th>
 					<th class="px-4 py-2.5">Podmiot / TU</th>
 					<th class="px-4 py-2.5">Kontrakt / Beneficjent</th>
@@ -281,7 +281,7 @@
 				{#each filteredBonds as b}
 					{@const st = policyStatus(b.bond_data_do)}
 					{@const tp = pctElapsed(b.bond_data_od, b.bond_data_do)}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-4 py-2.5">
 							<div class="font-medium text-slate-800">{b.bond_nr}</div>
 							<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold {bondRodzajCls(b.bond_rodzaj)}">{bondRodzajLabel[b.bond_rodzaj] ?? b.bond_rodzaj}</span>
@@ -321,22 +321,22 @@
 {:else if activeTab === 'ul'}
 	<!-- KPI limitów -->
 	<div class="grid grid-cols-3 gap-4 mb-5">
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="bg-white border border-line rounded-xl px-5 py-4">
 			<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Umowy limitowe</div>
 			<div class="text-2xl font-bold text-slate-900">{uls.length}</div>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="bg-white border border-line rounded-xl px-5 py-4">
 			<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Łączny limit</div>
 			<div class="text-2xl font-bold text-violet-700">{fmtPln(totalLimit)}</div>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+		<div class="bg-white border border-line rounded-xl px-5 py-4">
 			<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Wolny limit</div>
 			<div class="text-2xl font-bold text-emerald-600">{fmtPln(totalWolny)}</div>
 		</div>
 	</div>
 
 	{#if tenants.length === 0}
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-12 text-center text-slate-400">Brak podmiotów — dodaj podmiot, aby utworzyć UL.</div>
+		<div class="bg-white border border-line rounded-xl px-5 py-12 text-center text-slate-400">Brak podmiotów — dodaj podmiot, aby utworzyć UL.</div>
 	{/if}
 
 	<div class="space-y-5">
@@ -359,7 +359,7 @@
 						{@const zaang = Number(v?.bond_zaangazowane ?? 0)}
 						{@const wolny = v?.bond_wolny_limit != null ? Number(v.bond_wolny_limit) : limit - zaang}
 						{@const pct = limit > 0 ? Math.min(100, Math.round((zaang / limit) * 100)) : 0}
-						<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+						<div class="bg-white border border-line rounded-xl shadow-sm p-4">
 							<div class="flex items-start justify-between">
 								<div>
 									<div class="font-semibold text-slate-800">{u.bond_nazwa}</div>
@@ -395,12 +395,12 @@
 
 {:else if activeTab === 'audit'}
 	{#if audit.length === 0}
-		<div class="bg-white border border-slate-200 rounded-xl px-5 py-12 text-center text-slate-400">Brak wpisów w dzienniku.</div>
+		<div class="bg-white border border-line rounded-xl px-5 py-12 text-center text-slate-400">Brak wpisów w dzienniku.</div>
 	{:else}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		<table class="w-full text-sm text-left">
 			<thead>
-				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-b border-slate-100 bg-slate-50">
+				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-b border-line-soft bg-slate-50">
 					<th class="px-4 py-2.5">Kiedy</th>
 					<th class="px-4 py-2.5">Operacja</th>
 					<th class="px-4 py-2.5">Tabela</th>
@@ -410,7 +410,7 @@
 			</thead>
 			<tbody>
 				{#each audit as a}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-4 py-2.5 text-slate-500 whitespace-nowrap">{new Date(a.occurred_at).toLocaleString('pl-PL')}</td>
 						<td class="px-4 py-2.5">
 							<Badge variant={a.operation === 'INSERT' ? 'success' : a.operation === 'DELETE' ? 'error' : 'info'}>{a.operation}</Badge>
@@ -429,7 +429,7 @@
 <!-- Modal: gwarancja -->
 <Modal title={editingBond ? `Edytuj gwarancję — ${editingBond.bond_nr}` : 'Nowa gwarancja'} open={showBond} onclose={() => { showBond = false; editingBond = null; }}>
 	{#snippet footer()}
-		<button onclick={() => { showBond = false; editingBond = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showBond = false; editingBond = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveBond} disabled={savingBond} class="px-4 py-2 text-sm bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-60">
 			{savingBond ? 'Zapisywanie…' : editingBond ? 'Zapisz zmiany' : 'Wystaw gwarancję'}
 		</button>
@@ -445,7 +445,7 @@
 <!-- Modal: UL -->
 <Modal title={editingUl ? `Edytuj UL — ${editingUl.bond_nazwa}` : 'Nowa Umowa Limitowa'} open={showUl} onclose={() => { showUl = false; editingUl = null; }}>
 	{#snippet footer()}
-		<button onclick={() => { showUl = false; editingUl = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showUl = false; editingUl = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveUl} disabled={savingUl} class="px-4 py-2 text-sm bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-60">
 			{savingUl ? 'Zapisywanie…' : editingUl ? 'Zapisz zmiany' : 'Dodaj UL'}
 		</button>
@@ -461,14 +461,14 @@
 <!-- Modal: podmiot -->
 <Modal title="Dodaj podmiot (powiąż klienta CRM)" open={showTenant} onclose={() => { showTenant = false; }}>
 	{#snippet footer()}
-		<button onclick={() => { showTenant = false; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showTenant = false; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveTenant} disabled={savingTenant} class="px-4 py-2 text-sm bg-violet-600 text-white rounded-lg font-semibold hover:bg-violet-700 disabled:opacity-60">
 			{savingTenant ? 'Zapisywanie…' : 'Dodaj podmiot'}
 		</button>
 	{/snippet}
 	{#if tenantError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{tenantError}</div>{/if}
 	<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Klient CRM *</label>
-	<select bind:value={tenantClientId} class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+	<select bind:value={tenantClientId} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
 		<option value="">— wybierz klienta —</option>
 		{#each linkableClients as c}
 			<option value={c.id}>{c.nazwa_skrocona ?? c.nazwa}{c.nip ? ` · NIP ${c.nip}` : ''}</option>

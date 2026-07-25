@@ -370,12 +370,12 @@
 				onfocus={() => { if (globalSearch.trim().length >= 2) searchOpen = true; }}
 				onblur={() => setTimeout(() => searchOpen = false, 150)}
 				placeholder="Szukaj klienta, polisy..."
-				class="pl-9 pr-4 py-2 w-64 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+				class="pl-9 pr-4 py-2 w-64 border border-line rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
 			/>
 			{#if searchOpen}
 			{@const res = searchResults()}
 			{#if res.clients.length > 0 || res.policies.length > 0}
-			<div class="absolute right-0 top-full mt-1 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+			<div class="absolute right-0 top-full mt-1 w-80 bg-white border border-line rounded-xl shadow-xl z-50 overflow-hidden">
 				{#if res.clients.length > 0}
 					<p class="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Klienci</p>
 					{#each res.clients as c}
@@ -387,7 +387,7 @@
 					{/each}
 				{/if}
 				{#if res.policies.length > 0}
-					<p class="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide border-t border-slate-100">Polisy</p>
+					<p class="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide border-t border-line-soft">Polisy</p>
 					{#each res.policies as p}
 						<button onclick={() => { goto(`/policies/${p.id}`); searchOpen = false; globalSearch = ''; }}
 							class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center gap-2">
@@ -402,7 +402,7 @@
 		</div>
 		<button
 			onclick={() => configMode = !configMode}
-			class="flex items-center gap-2 px-3 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
+			class="flex items-center gap-2 px-3 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
 		>
 			<Settings2 size={15} />
 			{configMode ? 'Gotowe' : 'Dostosuj pulpit'}
@@ -420,7 +420,7 @@
 					class="px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors
 						{appState.dashboardWidgets.includes(w.id)
 							? 'bg-blue-600 text-white border-blue-600'
-							: 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+							: 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
 				>
 					{w.label}
 				</button>
@@ -512,12 +512,12 @@
 	<!-- Prawa połowa (4 z 8 kolumn): ZADANIA — stały panel -->
 	<aside class="xl:col-span-4">
 		<SectionHeader title="Zadania" />
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-			<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+			<div class="px-5 py-4 border-b border-line flex items-center justify-between">
 				<h2 class="font-semibold text-slate-900 text-base flex items-center gap-2">✓ Zadania</h2>
 				<a href="/calendar" class="text-xs text-blue-600 hover:underline">Zobacz wszystkie →</a>
 			</div>
-			<div class="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
+			<div class="grid grid-cols-2 divide-x divide-line-soft border-b border-line-soft">
 				<div class="px-4 py-3 text-center">
 					<div class="text-2xl font-bold text-slate-900">{dashOpenTasks.length}</div>
 					<div class="text-xs text-slate-400 mt-0.5">Otwarte</div>
@@ -527,7 +527,7 @@
 					<div class="text-xs text-slate-400 mt-0.5">Przeterminowane</div>
 				</div>
 			</div>
-			<ul class="divide-y divide-slate-100">
+			<ul class="divide-y divide-line-soft">
 				{#each dashOpenTasks.slice(0, 12) as t}
 					{@const pct = t.postep_pct ?? 0}
 					{@const overdue = t.termin && t.termin < today}
@@ -564,8 +564,8 @@
 
 	<!-- Tabela wznowień -->
 	{#if appState.dashboardWidgets.includes('renewals')}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-		<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+		<div class="px-5 py-4 border-b border-line flex items-center justify-between">
 			<h2 class="font-semibold text-slate-900 text-sm">Wznowienia (≤30 dni)</h2>
 			<span class="text-xs text-slate-400">{renewals.length} polis</span>
 		</div>
@@ -580,7 +580,7 @@
 			</thead>
 			<tbody>
 				{#each renewals.slice(0, 8) as p}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-4 py-2 font-medium text-blue-700"><a href="/policies/{p.id}" class="hover:underline">{p.nr_polisy}</a></td>
 						<td class="px-4 py-2 truncate max-w-[100px]">{p.crm_clients?.nazwa ?? '—'}</td>
 						<td class="px-4 py-2">{p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? '—'}</td>
@@ -601,8 +601,8 @@
 	{#if appState.dashboardWidgets.includes('payments') || appState.dashboardWidgets.includes('expiring_payments')}
 	<div class="flex flex-col gap-4">
 		{#if appState.dashboardWidgets.includes('payments')}
-		<div class="bg-white border {overduePayments.length > 0 ? 'border-red-200' : 'border-slate-200'} rounded-xl shadow-sm overflow-hidden flex-1">
-			<div class="px-4 py-3 border-b {overduePayments.length > 0 ? 'border-red-200' : 'border-slate-200'} flex items-center justify-between">
+		<div class="bg-white border {overduePayments.length > 0 ? 'border-red-200' : 'border-line'} rounded-xl shadow-sm overflow-hidden flex-1">
+			<div class="px-4 py-3 border-b {overduePayments.length > 0 ? 'border-red-200' : 'border-line'} flex items-center justify-between">
 				<h2 class="font-semibold {overduePayments.length > 0 ? 'text-red-700' : 'text-slate-700'} text-sm">Zaległe płatności</h2>
 				<a href="/payments" class="text-xs text-slate-400 hover:underline">Wszystkie →</a>
 			</div>
@@ -671,8 +671,8 @@
 	<div class="{widget.id === 'premium_chart' ? 'lg:col-span-2' : ''} {configMode ? 'cursor-grab active:cursor-grabbing' : ''}">
 
 		{#if widget.id === 'top_clients'}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden h-full">
-			<div class="px-5 py-4 border-b border-slate-200">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden h-full">
+			<div class="px-5 py-4 border-b border-line">
 				<h2 class="font-semibold text-slate-900 text-sm">Top 5 klientów wg liczby polis</h2>
 			</div>
 			<table class="w-full text-left text-sm">
@@ -685,7 +685,7 @@
 				</thead>
 				<tbody>
 					{#each topClients() as c, i}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium">
 								<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-xs text-slate-500 mr-2">{i + 1}</span>
 								{c.nazwa}
@@ -702,7 +702,7 @@
 
 		{:else if widget.id === 'policy_count'}
 		{@const pd = policiesByRodzaj()}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Liczba polis wg rodzaju</h2>
 			{#if pd.total === 0}
 				<p class="text-center text-slate-400 text-sm py-4">Brak polis</p>
@@ -736,7 +736,7 @@
 		</div>
 
 		{:else if widget.id === 'policies_by_insurer'}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Polisy wg TU (top 5)</h2>
 			{#if policiesByInsurer().length === 0}
 				<p class="text-center text-slate-400 text-sm py-4">Brak danych</p>
@@ -756,7 +756,7 @@
 		</div>
 
 		{:else if widget.id === 'monthly_premium'}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-1 text-sm">Składka przypisana — bieżący miesiąc</h2>
 			<p class="text-xs text-slate-400 mb-4">{thisMonth.replace('-', '.')}</p>
 			<div class="flex items-end gap-4">
@@ -780,7 +780,7 @@
 		</div>
 
 		{:else if widget.id === 'claims_stats' && isBroker()}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Statystyki szkód</h2>
 			<div class="grid grid-cols-2 gap-3">
 				{#each claimsStats() as stat}
@@ -794,7 +794,7 @@
 
 		{:else if widget.id === 'premium_chart'}
 		{@const chart = premiumChart()}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-1 text-base">Przypis składki — ostatnie 12 miesięcy</h2>
 			<p class="text-sm text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
 			<div class="flex items-end gap-2 h-48">
@@ -819,7 +819,7 @@
 
 		{:else if widget.id === 'dynamika'}
 		{@const dyn = dynamika()}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5 h-full">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-3 text-sm">Wzrost składki R/R</h2>
 			{#if dyn.growth !== null}
 				<div class="text-3xl font-bold {dyn.growth >= 0 ? 'text-emerald-600' : 'text-red-600'}">
@@ -830,7 +830,7 @@
 				<div class="text-2xl font-bold text-slate-400">—</div>
 				<p class="text-xs text-slate-400 mt-1">Brak danych za poprzedni rok</p>
 			{/if}
-			<div class="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-4">
+			<div class="mt-4 grid grid-cols-2 gap-3 border-t border-line-soft pt-4">
 				<div>
 					<p class="text-xs text-slate-400 uppercase tracking-wide font-semibold mb-1">Nowi klienci (mies.)</p>
 					<div class="text-2xl font-bold text-slate-900">{dyn.newClientsThisMonth}</div>
@@ -848,14 +848,14 @@
 		{#if appState.tenantFeatures['kalendarz']}
 		{@const openTasks = appState.tasks.filter(t => t.status === 'otwarte' || t.status === 'w_toku')}
 		{@const overdueTasks = openTasks.filter(t => t.termin && t.termin < new Date().toISOString().slice(0,10))}
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden h-full">
-			<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden h-full">
+			<div class="px-5 py-4 border-b border-line flex items-center justify-between">
 				<h2 class="font-semibold text-slate-900 text-sm flex items-center gap-2">
 					✓ Zadania
 				</h2>
 				<a href="/calendar" class="text-xs text-blue-600 hover:underline">Zobacz wszystkie</a>
 			</div>
-			<div class="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
+			<div class="grid grid-cols-2 divide-x divide-line-soft border-b border-line-soft">
 				<div class="px-4 py-3 text-center">
 					<div class="text-xl font-bold text-slate-900">{openTasks.length}</div>
 					<div class="text-xs text-slate-400 mt-0.5">Otwarte</div>
@@ -865,7 +865,7 @@
 					<div class="text-xs text-slate-400 mt-0.5">Przeterminowane</div>
 				</div>
 			</div>
-			<ul class="divide-y divide-slate-100">
+			<ul class="divide-y divide-line-soft">
 				{#each openTasks.slice(0, 5) as t}
 					{@const pct = t.postep_pct ?? 0}
 					{@const overdue = t.termin && t.termin < new Date().toISOString().slice(0,10)}

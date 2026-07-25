@@ -85,7 +85,7 @@
 		return d ? new Date(d).toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 	}
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 </script>
 
 <svelte:head><title>Kosz — Polisy — FRANK67 CRM</title></svelte:head>
@@ -102,12 +102,12 @@
 {#if loading}
 	<p class="text-slate-400 text-sm">Ładowanie...</p>
 {:else if deletedPolicies.length === 0}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-10 text-center">
+	<div class="bg-white border border-line rounded-xl shadow-sm p-10 text-center">
 		<Trash2 size={40} class="text-slate-300 mx-auto mb-3" />
 		<p class="text-slate-500">Kosz jest pusty.</p>
 	</div>
 {:else}
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -123,7 +123,7 @@
 		</thead>
 		<tbody>
 			{#each deletedPolicies as p}
-				<tr class="border-t border-slate-100 hover:bg-slate-50 bg-red-50/30">
+				<tr class="border-t border-line-soft hover:bg-slate-50 bg-red-50/30">
 					<td class="px-5 py-3 font-medium text-slate-700">{p.nr_polisy}</td>
 					<td class="px-5 py-3 text-slate-600">{p.crm_clients?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3">
@@ -164,7 +164,7 @@
 {#if restoring}
 <Modal title="Przywróć polisę" open={showRestore} onclose={() => showRestore = false}>
 	{#snippet footer()}
-		<button onclick={() => showRestore = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => showRestore = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={confirmRestore} class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700">Przywróć polisę</button>
 	{/snippet}
 	{#if restoreError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{restoreError}</div>{/if}
@@ -177,7 +177,7 @@
 {#if permDeleting}
 <Modal title="Trwałe usunięcie polisy" open={showPermDelete} onclose={() => showPermDelete = false}>
 	{#snippet footer()}
-		<button onclick={() => showPermDelete = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => showPermDelete = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={confirmPermDelete} class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700">Usuń trwale</button>
 	{/snippet}
 	{#if permDeleteError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{permDeleteError}</div>{/if}

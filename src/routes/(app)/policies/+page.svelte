@@ -225,7 +225,7 @@
 		if (typ === 'generalna' || typ === 'jednostkowa') { filterTyp = typ; lockedTyp = true; }
 	});
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
@@ -237,7 +237,7 @@
 		<p class="text-sm text-slate-500 mt-1">{lockedTyp && filterTyp === 'generalna' ? 'Rejestr umów generalnych' : 'Rejestr ubezpieczeń całego portfela'}</p>
 	</div>
 	<div class="flex gap-2">
-		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
+		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-line text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
 			Zgłoś Szkodę
 		</button>
 		{#if lockedTyp && filterTyp === 'generalna'}
@@ -254,7 +254,7 @@
 
 <!-- Filters -->
 <div class="flex gap-3 mb-4 flex-wrap">
-	<div class="flex items-center gap-2 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2">
+	<div class="flex items-center gap-2 flex-1 bg-white border border-line rounded-xl px-4 py-2">
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nr polisy lub kliencie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
@@ -263,7 +263,7 @@
 			<button
 				onclick={() => filterTyp = val as typeof filterTyp}
 				class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
-					{filterTyp === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+					{filterTyp === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
 			>
 				{label}
 			</button>
@@ -271,12 +271,12 @@
 	{/if}
 	<button onclick={() => flatView = !flatView}
 		class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
-			{flatView ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+			{flatView ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
 		{flatView ? '↕ Płaski' : '↕ Drzewo'}
 	</button>
 </div>
 
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -297,7 +297,7 @@
 				{#each flatPolicies as p}
 					{@const st = policyStatus(p.data_do)}
 					{@const isUG = p.typ_umowy === 'generalna'}
-					<tr class="border-t border-slate-100 hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
+					<tr class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
 						<td class="px-5 py-3">
 							<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
 						</td>
@@ -346,7 +346,7 @@
 				{@const expanded = expandedUG.has(p.id)}
 
 				<!-- Główny wiersz -->
-				<tr class="border-t border-slate-100 hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
+				<tr class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
 					<td class="px-5 py-3">
 						<div class="flex items-center gap-2">
 							{#if isUG && (children.length > 0)}
@@ -399,7 +399,7 @@
 
 				<!-- Aneksy (sub-wiersze) -->
 				{#each axs as ax}
-					<tr class="border-t border-slate-100 bg-amber-50/40">
+					<tr class="border-t border-line-soft bg-amber-50/40">
 						<td class="pl-12 pr-5 py-2 text-xs text-amber-700">
 							↳ Aneks {ax.nr_aneksu}
 						</td>
@@ -416,7 +416,7 @@
 				{#if isUG && expanded}
 					{#each children as ch}
 						{@const chSt = policyStatus(ch.data_do)}
-						<tr class="border-t border-slate-100 bg-slate-50/80">
+						<tr class="border-t border-line-soft bg-slate-50/80">
 							<td class="pl-12 pr-5 py-2.5 text-sm">↳ <a href="/policies/{ch.id}" class="font-medium text-blue-700 hover:underline">{ch.nr_polisy}</a></td>
 							<td class="px-5 py-2.5 text-sm">
 								<a href="/clients/{ch.klient_id}" class="hover:text-blue-700 hover:underline">{ch.crm_clients?.nazwa ?? '—'}</a>
@@ -454,7 +454,7 @@
 <!-- Modal: Nowa Polisa -->
 <Modal title="Nowa Polisa" open={showPolicy} onclose={() => { showPolicy = false; formError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showPolicy = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showPolicy = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveNewPolicy} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Zapisz'}
 		</button>
@@ -467,7 +467,7 @@
 {#if editingPolicy}
 <Modal title="Edytuj Polisę — {editingPolicy.nr_polisy}" open={showEdit} onclose={() => { showEdit = false; editingPolicy = null; formError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showEdit = false; editingPolicy = null; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showEdit = false; editingPolicy = null; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveEditPolicy} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Zapisz zmiany'}
 		</button>
@@ -481,7 +481,7 @@
 {#if annexingPolicy}
 <Modal title="Aneks do polisy {annexingPolicy.nr_polisy}" open={showAnnex} onclose={() => { showAnnex = false; annexingPolicy = null; resetAnnexForm(); formError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showAnnex = false; annexingPolicy = null; resetAnnexForm(); formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showAnnex = false; annexingPolicy = null; resetAnnexForm(); formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveAnnex} disabled={saving} class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Zapisz Aneks'}
 		</button>
@@ -506,7 +506,7 @@
 						type="button"
 						onclick={() => axTyp = val as typeof axTyp}
 						class="py-2 px-3 rounded-lg text-sm border text-left transition-colors
-							{axTyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}"
+							{axTyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}"
 					>{label}</button>
 				{/each}
 			</div>
@@ -515,7 +515,7 @@
 			<label class={labelCls}>Opis zmiany</label>
 			<input bind:value={axOpis} class={inputCls} placeholder="Krótki opis..." />
 		</div>
-		<hr class="border-slate-200" />
+		<hr class="border-line" />
 		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide">Wartości po zmianie (zostaw puste = bez zmiany)</p>
 		<div class="grid grid-cols-2 gap-3">
 			<div>
@@ -547,7 +547,7 @@
 <!-- Modal: Szkoda -->
 <Modal title="Rejestracja Szkody" open={showClaim} onclose={() => { showClaim = false; formError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showClaim = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showClaim = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveClaim} disabled={saving} class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Zgłoś Szkodę'}
 		</button>

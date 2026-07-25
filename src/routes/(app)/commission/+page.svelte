@@ -138,7 +138,7 @@
 
 <!-- Summary cards -->
 <div class="grid grid-cols-3 gap-4 mb-6">
-	<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+	<div class="bg-white border border-line rounded-xl p-4 shadow-sm">
 		<p class="text-xs font-medium text-slate-500 mb-1">Prowizja przypisana</p>
 		<p class="text-xl font-semibold text-slate-900">{fmtPln(prowizjaPrzypisana)} PLN</p>
 	</div>
@@ -153,8 +153,8 @@
 </div>
 
 <!-- Current month settlement -->
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm mb-6">
-	<div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+<div class="bg-white border border-line rounded-xl shadow-sm mb-6">
+	<div class="flex items-center justify-between px-5 py-4 border-b border-line-soft">
 		<div class="flex items-center gap-3">
 			<h2 class="text-lg font-semibold text-slate-900">Rozliczenie: {currentMonth}</h2>
 			{#if currentSettlement}
@@ -180,8 +180,8 @@
 	</div>
 
 	<!-- Search -->
-	<div class="px-5 py-3 border-b border-slate-100">
-		<div class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 w-72">
+	<div class="px-5 py-3 border-b border-line-soft">
+		<div class="flex items-center gap-2 bg-slate-50 border border-line rounded-lg px-3 py-2 w-72">
 			<Search size={15} class="text-slate-400" />
 			<input
 				bind:value={search}
@@ -198,7 +198,7 @@
 		<div class="overflow-x-auto">
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase">
+					<tr class="border-b border-line-soft text-xs text-slate-500 uppercase">
 						<th class="px-5 py-3 font-medium">Nr polisy</th>
 						<th class="px-5 py-3 font-medium">Klient</th>
 						<th class="px-5 py-3 font-medium text-right">Składka</th>
@@ -208,7 +208,7 @@
 				</thead>
 				<tbody>
 					{#each filteredPolicies as pol}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium text-slate-900">{pol.nr_polisy ?? '—'}</td>
 							<td class="px-5 py-3 text-slate-600">{pol.crm_clients?.nazwa ?? '—'}</td>
 							<td class="px-5 py-3 text-right text-slate-700">{fmtPln(pol.skladka_przypisana)} PLN</td>
@@ -223,8 +223,8 @@
 </div>
 
 <!-- History -->
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
-	<div class="px-5 py-4 border-b border-slate-100">
+<div class="bg-white border border-line rounded-xl shadow-sm">
+	<div class="px-5 py-4 border-b border-line-soft">
 		<h2 class="text-lg font-semibold text-slate-900">Historia rozliczeń</h2>
 	</div>
 
@@ -234,7 +234,7 @@
 		<div class="overflow-x-auto">
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="border-b border-slate-100 text-xs text-slate-500 uppercase">
+					<tr class="border-b border-line-soft text-xs text-slate-500 uppercase">
 						<th class="px-5 py-3 font-medium">Miesiąc</th>
 						<th class="px-5 py-3 font-medium text-right">Przypisana</th>
 						<th class="px-5 py-3 font-medium text-right">Rozliczona</th>
@@ -244,7 +244,7 @@
 				</thead>
 				<tbody>
 					{#each settlements as s}
-						<tr class="border-t border-slate-100 hover:bg-slate-50">
+						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium text-slate-900">{s.miesiac}</td>
 							<td class="px-5 py-3 text-right text-slate-700">{fmtPln(s.kwota_przypisana)} PLN</td>
 							<td class="px-5 py-3 text-right text-slate-700">{fmtPln(s.kwota_rozliczona)} PLN</td>
@@ -272,7 +272,7 @@
 		<div class="flex justify-end gap-3">
 			<button
 				onclick={() => (showConfirmModal = false)}
-				class="px-4 py-2 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50"
+				class="px-4 py-2 text-sm font-medium text-slate-600 border border-line rounded-lg hover:bg-slate-50"
 			>
 				Anuluj
 			</button>

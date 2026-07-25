@@ -226,7 +226,7 @@
 		appState.policies = (data ?? []) as typeof appState.policies;
 	}
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// Płatności: live sum + edit/add
@@ -330,7 +330,7 @@
 					<RefreshCw size={14} /> Odnów polisę
 				</a>
 			{/if}
-			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
+			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-line rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<Users size={14} /> Podział prowizji {#if polisaBrokers.length > 0}<span class="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-semibold">{polisaBrokers.length}</span>{/if}
 			</button>
 			{#if policy.typ_umowy === 'generalna'}
@@ -339,7 +339,7 @@
 					<PlusCircle size={14} /> Dodaj polisę do UG
 				</a>
 			{/if}
-			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
+			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-line rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<FilePlus2 size={14} /> Aneks
 			</button>
 			<a href="/policies/{policyId}/edit" class="flex items-center gap-1.5 text-sm bg-slate-900 text-white rounded-lg px-3 py-2 hover:bg-slate-700">
@@ -353,22 +353,22 @@
 
 	<!-- Dane polisy -->
 	<div class="grid gap-3 mb-5" style="grid-template-columns: repeat({policy.typ_umowy === 'generalna' ? 6 : 5}, minmax(0,1fr))">
-		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna składka polis' : 'Składka'}</p>
 			<p class="text-base font-semibold text-slate-900">{fmtPln(policy.typ_umowy === 'generalna' ? childSkladka : policy.skladka_przypisana)}</p>
 			<p class="text-xs text-slate-400">{policy.typ_umowy === 'generalna' ? `${childPolicies.length} polis` : `Raty: ${policy.ilosc_rat}`}</p>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">Okres</p>
 			<p class="text-sm font-semibold text-slate-900">{policy.data_od}</p>
 			<p class="text-xs text-slate-400">{policy.data_do}</p>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna prowizja' : 'Prowizja'}</p>
 			<p class="text-base font-semibold text-emerald-600">{fmtPln(policy.typ_umowy === 'generalna' ? childProwizja : policy.prowizja_przypisana)}</p>
 			<p class="text-xs text-slate-400">{policy.prowizja_pct}%</p>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">Rodzaj</p>
 			<p class="text-sm font-semibold text-slate-900">{policy.rodzaj}</p>
 			{#if policy.przedmiot}
@@ -385,7 +385,7 @@
 				{/if}
 		</div>
 		<!-- Osoba kontaktowa TU — kafelka inline -->
-		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5 flex items-center justify-between">
 				<span>Kontakt TU</span>
 				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; }}
@@ -403,12 +403,12 @@
 			{/if}
 		</div>
 		{#if policy.typ_umowy === 'generalna'}
-		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">Liczba polis</p>
 			<p class="text-base font-semibold text-slate-900">{childPolicies.length}</p>
 			<p class="text-xs text-slate-400">certyfikatów</p>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl py-2.5 px-3 shadow-sm">
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">Śr. prowizja</p>
 			<p class="text-base font-semibold text-emerald-600">{childPolicies.length > 0 ? fmtPln(childProwizja / childPolicies.length) : '—'}</p>
 			<p class="text-xs text-slate-400">na polisę</p>
@@ -420,7 +420,7 @@
 	{#if (policy.rodzaj === 'komunikacja' || policy.rodzaj === 'flota') && policy.pojazd_id}
 		{@const linkedVehicle = appState.vehicles.find(v => v.id === policy.pojazd_id)}
 		{#if linkedVehicle}
-		<div class="inline-flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 mb-5">
+		<div class="inline-flex items-center gap-3 bg-slate-50 border border-line rounded-xl px-4 py-2 mb-5">
 			<Car size={14} class="text-slate-400" />
 			<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Pojazd:</span>
 			<span class="text-sm font-semibold text-slate-900">{linkedVehicle.nr_rejestracyjny}{linkedVehicle.vin ? ' / ' + linkedVehicle.vin : ''} — {linkedVehicle.marka_model}</span>
@@ -471,12 +471,12 @@
 
 	<!-- Podział prowizji (mini-panel jeśli są wpisy) -->
 	{#if polisaBrokers.length > 0}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
-		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5">
+		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex items-center justify-between">
 			<p class="text-sm font-semibold text-slate-700 flex items-center gap-2"><Users size={14} /> Podział prowizji</p>
 			<button onclick={() => { showBrokers = true; pbError = ''; }} class="text-xs text-slate-500 hover:text-slate-800">Zarządzaj</button>
 		</div>
-		<div class="divide-y divide-slate-100">
+		<div class="divide-y divide-line-soft">
 			{#each polisaBrokers as pb}
 				<div class="px-5 py-3 flex items-center justify-between">
 					<div>
@@ -497,8 +497,8 @@
 
 	<!-- Polisy podrzędne (certyfikaty) UG -->
 	{#if childPolicies.length > 0}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
-		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5">
+		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex items-center justify-between">
 			<p class="text-sm font-semibold text-slate-700">Polisy w ramach UG ({childPolicies.length})</p>
 			<div class="flex gap-4 text-xs text-slate-500">
 				<span>Łączna składka: <strong class="text-slate-900">{fmtPln(childSkladka)}</strong></span>
@@ -519,7 +519,7 @@
 			<tbody>
 				{#each childPolicies as cp}
 					{@const cst = policyStatus(cp.data_do)}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-2">
 							<a href="/policies/{cp.id}" class="font-medium text-blue-700 hover:underline">{cp.nr_polisy}</a>
 						</td>
@@ -532,7 +532,7 @@
 						<td class="px-5 py-2 text-right text-emerald-600">{fmtPln(cp.prowizja_przypisana)}</td>
 					</tr>
 				{/each}
-				<tr class="border-t-2 border-slate-200 bg-slate-50 font-semibold">
+				<tr class="border-t-2 border-line bg-slate-50 font-semibold">
 					<td colspan="4" class="px-5 py-2 text-sm text-slate-600">SUMA</td>
 					<td class="px-5 py-2 text-right">{fmtPln(childSkladka)}</td>
 					<td class="px-5 py-2 text-right text-emerald-700">{fmtPln(childProwizja)}</td>
@@ -544,8 +544,8 @@
 
 	<!-- Aneksy -->
 	{#if annexes.length > 0}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-5">
-		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5">
+		<div class="px-5 py-3 border-b border-line-soft bg-slate-50">
 			<p class="text-sm font-semibold text-slate-700">Aneksy ({annexes.length})</p>
 		</div>
 		<table class="w-full text-sm text-left">
@@ -560,7 +560,7 @@
 			</thead>
 			<tbody>
 				{#each annexes as ax}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-2 font-medium">{ax.nr_aneksu}</td>
 						<td class="px-5 py-2">{ax.data_aneksu}</td>
 						<td class="px-5 py-2"><Badge variant="info">{ax.typ}</Badge></td>
@@ -576,12 +576,12 @@
 	{/if}
 
 	<!-- Płatności -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden w-1/2 min-w-[480px]">
-		<div class="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden w-1/2 min-w-[480px]">
+		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex items-center justify-between">
 			<p class="text-sm font-semibold text-slate-700">Płatności ({payments.length})</p>
 			<div class="flex items-center gap-3">
 				<span class="text-xs text-slate-500">Suma: <strong class="text-slate-900">{fmtPln(sumaPlatnosci)}</strong></span>
-				<button onclick={openAddPayment} class="flex items-center gap-1 text-xs border border-slate-200 rounded-lg px-2 py-1 text-slate-600 hover:bg-slate-50">
+				<button onclick={openAddPayment} class="flex items-center gap-1 text-xs border border-line rounded-lg px-2 py-1 text-slate-600 hover:bg-slate-50">
 					<FilePlus2 size={12} /> Dodaj płatność
 				</button>
 			</div>
@@ -590,7 +590,7 @@
 		<table class="w-full text-sm text-left">
 			<tbody>
 				{#each payments as pay}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-2.5 text-slate-500 font-medium w-16">Rata {pay.nr_raty}</td>
 						<td class="px-5 py-2.5">
 							<div class="flex items-center justify-between gap-3">
@@ -617,7 +617,7 @@
 <!-- Modal: Aneks -->
 <Modal title="Aneks do polisy {policy.nr_polisy}" open={showAnnex} onclose={() => { showAnnex = false; axError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showAnnex = false; axError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showAnnex = false; axError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveAnnex} disabled={savingAx} class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60">
 			{savingAx ? 'Zapisywanie...' : 'Zapisz Aneks'}
 		</button>
@@ -634,14 +634,14 @@
 				{#each [['korekta','Korekta'],['doubezpieczenie','Doubezpieczenie'],['zmiana_zakresu','Zmiana zakresu'],['inne','Inne']] as [val, lbl]}
 					<button type="button" onclick={() => axTyp = val as typeof axTyp}
 						class="py-2 px-3 rounded-lg text-sm border text-left transition-colors
-							{axTyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+							{axTyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">
 						{lbl}
 					</button>
 				{/each}
 			</div>
 		</div>
 		<div><label class={labelCls}>Opis</label><input bind:value={axOpis} class={inputCls} /></div>
-		<hr class="border-slate-200" />
+		<hr class="border-line" />
 		<div class="grid grid-cols-2 gap-3">
 			<div><label class={labelCls}>Nowa Data Do</label><input type="date" bind:value={axNewDataDo} class={inputCls} /></div>
 			<div><label class={labelCls}>Nowa Składka</label><input type="number" step="0.01" bind:value={axNewSkladka} class={inputCls} /></div>
@@ -656,11 +656,11 @@
 {#if policy}
 <Modal title="Podział prowizji — {policy.nr_polisy}" open={showBrokers} onclose={() => { showBrokers = false; pbError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showBrokers = false; pbError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+		<button onclick={() => { showBrokers = false; pbError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 	{/snippet}
 
 	{#if polisaBrokers.length > 0}
-	<div class="mb-4 divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+	<div class="mb-4 divide-y divide-line-soft border border-line rounded-xl overflow-hidden">
 		{#each polisaBrokers as pb}
 			<div class="flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50">
 				<div class="flex items-center gap-3">
@@ -729,7 +729,7 @@
 <!-- Modal: Usuń polisę -->
 <Modal title="Usuń polisę — {policy?.nr_polisy}" open={showDelete} onclose={() => showDelete = false}>
 	{#snippet footer()}
-		<button onclick={() => showDelete = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => showDelete = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={softDelete} disabled={deleting} class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-60">
 			{deleting ? 'Usuwanie...' : 'Przenieś do Kosza'}
 		</button>
@@ -750,7 +750,7 @@
 {#if policy}
 <Modal title="Osoba kontaktowa TU — {policy.crm_insurers?.skrot ?? policy.crm_insurers?.nazwa ?? ''}" open={showContact} onclose={() => showContact = false}>
 	{#snippet footer()}
-		<button onclick={() => showContact = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => showContact = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveContact} disabled={savingContact} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingContact ? 'Zapisywanie...' : 'Przypisz osobę'}
 		</button>
@@ -786,7 +786,7 @@
 {#if editingPayment}
 <Modal title="Edytuj płatność — Rata {editingPayment.nr_raty}" open={showEditPayment} onclose={() => { showEditPayment = false; editingPayment = null; }}>
 	{#snippet footer()}
-		<button onclick={() => { showEditPayment = false; editingPayment = null; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showEditPayment = false; editingPayment = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveEditPayment} disabled={savingEp} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingEp ? 'Zapisywanie...' : 'Zapisz zmiany'}
 		</button>
@@ -814,7 +814,7 @@
 {#if policy}
 <Modal title="Dodaj płatność — {policy.nr_polisy}" open={showAddPayment} onclose={() => showAddPayment = false}>
 	{#snippet footer()}
-		<button onclick={() => showAddPayment = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => showAddPayment = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveAddPayment} disabled={savingAp} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{savingAp ? 'Zapisywanie...' : 'Dodaj płatność'}
 		</button>

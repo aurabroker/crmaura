@@ -75,7 +75,7 @@
 		s === 'Wypłacona' || s === 'Zakończona' ? 'success' :
 		s === 'Odmowa' ? 'error' : 'warning';
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
@@ -92,7 +92,7 @@
 </div>
 
 <div class="flex gap-3 mb-4">
-	<div class="flex items-center gap-2 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2">
+	<div class="flex items-center gap-2 flex-1 bg-white border border-line rounded-xl px-4 py-2">
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po kliencie lub nr szkody..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
@@ -100,12 +100,12 @@
 		<button
 			onclick={() => filterStatus = val}
 			class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors whitespace-nowrap
-				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
 		>{label}</button>
 	{/each}
 </div>
 
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -121,7 +121,7 @@
 		</thead>
 		<tbody>
 			{#each filtered as c}
-				<tr class="border-t border-slate-100 hover:bg-slate-50">
+				<tr class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3 font-medium">{c.nr_szkody ?? 'Zgłoszenie'}</td>
 					<td class="px-5 py-3">{c.crm_clients?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3">{c.crm_policies?.nr_polisy ?? '—'}</td>
@@ -144,7 +144,7 @@
 
 <Modal title={editingClaim ? 'Edytuj Szkodę' : 'Nowa Szkoda'} open={showModal} onclose={() => { showModal = false; formError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : editingClaim ? 'Zapisz zmiany' : 'Zgłoś Szkodę'}
 		</button>

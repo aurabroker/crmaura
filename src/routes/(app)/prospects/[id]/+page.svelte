@@ -360,7 +360,7 @@
 		pilny: 'bg-red-500', wysoki: 'bg-orange-400', normalny: 'bg-blue-400', niski: 'bg-slate-300'
 	};
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// ---- Ubezpieczenia posiadane (Życie / Medyczne / Flota / Majątek / Gwarancje / Inne) ----
@@ -422,7 +422,7 @@
 				onclick={() => goToProspect(prevId)}
 				disabled={!prevId}
 				title="Poprzedni prospect (←)"
-				class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+				class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
 			>
 				<ChevronLeft size={15} /> Poprzedni
 			</button>
@@ -431,7 +431,7 @@
 				onclick={() => goToProspect(nextId)}
 				disabled={!nextId}
 				title="Następny prospect (→)"
-				class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+				class="inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
 			>
 				Następny <ChevronRight size={15} />
 			</button>
@@ -451,7 +451,7 @@
 	<div class="grid grid-cols-2 gap-5 mb-5 items-start">
 
 	<!-- Klient -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6">
+	<div class="bg-white border border-line rounded-xl shadow-sm p-6">
 		{#if editingProspect}
 			<div class="space-y-3">
 				<div class="grid grid-cols-2 gap-3">
@@ -481,7 +481,7 @@
 					<button onclick={saveEdit} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 						{saving ? 'Zapisuję...' : 'Zapisz'}
 					</button>
-					<button onclick={() => editingProspect = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+					<button onclick={() => editingProspect = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 						Anuluj
 					</button>
 				</div>
@@ -551,8 +551,8 @@
 	</div>
 
 	<!-- Ubezpieczenia (na równi z boxem Klienta) -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
-		<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm">
+		<div class="px-6 py-4 border-b border-line-soft flex items-center justify-between">
 			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
 				<Shield size={15} class="text-indigo-500" /> Ubezpieczenia
 			</h2>
@@ -576,7 +576,7 @@
 						bind:value={ubez[cat.key].opis}
 						maxlength={UBEZ_OPIS_MAX}
 						placeholder="Opis"
-						class="flex-1 min-w-0 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+						class="flex-1 min-w-0 border border-line rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
 					/>
 				</div>
 			{/each}
@@ -589,8 +589,8 @@
 	<!-- Tasks + Aktywność (side by side) -->
 	<div class="grid grid-cols-2 gap-5">
 	<!-- Tasks -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
-		<div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+	<div class="bg-white border border-line rounded-xl shadow-sm">
+		<div class="px-6 py-4 border-b border-line-soft flex items-center justify-between">
 			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
 				<CheckCircle2 size={15} class="text-blue-500" /> Zadania
 				{#if tasks.filter(t => t.status !== 'zakonczone').length > 0}
@@ -598,7 +598,7 @@
 				{/if}
 			</h2>
 			{#if showTaskForm}
-				<button onclick={cancelTaskForm} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50">
+				<button onclick={cancelTaskForm} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-slate-600 rounded-lg hover:bg-slate-50">
 					<X size={12} /> Zamknij
 				</button>
 			{:else}
@@ -610,7 +610,7 @@
 
 		<!-- Formularz zadania (inline — pojawia się w panelu, bez modala) -->
 		{#if showTaskForm}
-			<div class="px-5 py-4 border-b border-slate-100 bg-slate-50/70 space-y-3">
+			<div class="px-5 py-4 border-b border-line-soft bg-slate-50/70 space-y-3">
 				{#if tfError}<div class="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">{tfError}</div>{/if}
 				<input bind:value={tfTytul} placeholder="Tytuł zadania *" class={inputCls} />
 				<textarea bind:value={tfOpis} rows="2" placeholder="Opis (opcjonalnie)" class="{inputCls} resize-none"></textarea>
@@ -684,7 +684,7 @@
 					<button onclick={saveTaskInline} disabled={tfSaving} class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">
 						{tfSaving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
 					</button>
-					<button onclick={cancelTaskForm} class="px-3 py-1.5 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+					<button onclick={cancelTaskForm} class="px-3 py-1.5 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 				</div>
 			</div>
 		{/if}
@@ -692,7 +692,7 @@
 		{#if tasks.length === 0}
 			<div class="px-6 py-6 text-center text-slate-400 text-sm">Brak zadań — dodaj pierwsze zadanie dla tej firmy</div>
 		{:else}
-			<ul class="divide-y divide-slate-100">
+			<ul class="divide-y divide-line-soft">
 				{#each tasks as t}
 					{@const done = t.status === 'zakonczone'}
 					{@const overdue = isOverdue(t)}
@@ -755,8 +755,8 @@
 	</div>
 
 	<!-- Activity feed -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm">
-		<div class="px-6 pt-5 pb-4 border-b border-slate-100">
+	<div class="bg-white border border-line rounded-xl shadow-sm">
+		<div class="px-6 pt-5 pb-4 border-b border-line-soft">
 			<h2 class="text-sm font-semibold text-slate-700 mb-3">Aktywność</h2>
 			<!-- Tab selector -->
 			<div class="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
@@ -770,7 +770,7 @@
 		</div>
 
 		<!-- Feed -->
-		<div class="divide-y divide-slate-50 max-h-[420px] overflow-y-auto">
+		<div class="divide-y divide-line-soft max-h-[420px] overflow-y-auto">
 			{#if activities.length === 0}
 				<div class="px-6 py-8 text-center text-slate-400 text-sm">Brak aktywności — dodaj pierwszy wpis poniżej</div>
 			{/if}
@@ -795,12 +795,12 @@
 		</div>
 
 		<!-- Input -->
-		<div class="px-6 py-4 border-t border-slate-100 bg-slate-50 rounded-b-xl">
+		<div class="px-6 py-4 border-t border-line-soft bg-slate-50 rounded-b-xl">
 			<textarea
 				bind:value={newText}
 				placeholder="Dodaj {typLabels[activeTab].toLowerCase()}..."
 				rows="3"
-				class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white"
+				class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white"
 				onkeydown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) addActivity(); }}
 			></textarea>
 			<div class="flex items-center justify-between mt-2">

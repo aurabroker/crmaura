@@ -81,7 +81,7 @@
 		<div class="fixed inset-0 z-50 pointer-events-none">
 			<div
 				bind:this={boxEl}
-				class="absolute bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col pointer-events-auto overflow-hidden"
+				class="absolute bg-white rounded-xl shadow-2xl border border-line flex flex-col pointer-events-auto overflow-hidden"
 				style={maximized
 					? 'left:0.5rem; top:0.5rem; width:calc(100vw - 1rem); height:calc(100vh - 1rem); resize:none;'
 					: `left:${posX}px; top:${posY}px; width:${width}px; ${minimized ? 'height:auto; resize:none;' : `height:${height}px; resize:both;`} min-width:340px; min-height:48px;`}
@@ -91,7 +91,7 @@
 			>
 				<!-- Pasek tytułu (przeciąganie) -->
 				<div
-					class="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-slate-200 bg-slate-50 select-none shrink-0 {maximized ? 'cursor-default' : 'cursor-move'}"
+					class="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-line bg-slate-50 select-none shrink-0 {maximized ? 'cursor-default' : 'cursor-move'}"
 					onpointerdown={onHeaderPointerDown}
 					onpointermove={onHeaderPointerMove}
 					onpointerup={onHeaderPointerUp}
@@ -115,7 +115,7 @@
 						{@render children()}
 					</div>
 					{#if footer}
-						<div class="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 shrink-0">
+						<div class="px-5 py-3 border-t border-line bg-slate-50 flex justify-end gap-3 shrink-0">
 							{@render footer()}
 						</div>
 					{/if}
@@ -130,7 +130,7 @@
 			aria-modal="true"
 		>
 			<div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col">
-				<div class="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+				<div class="flex items-center justify-between px-5 py-4 border-b border-line">
 					<h2 class="text-base font-semibold text-slate-900">{title}</h2>
 					<button onclick={onclose} class="text-slate-400 hover:text-slate-600 transition-colors">
 						<X size={18} />
@@ -140,7 +140,7 @@
 					{@render children()}
 				</div>
 				{#if footer}
-					<div class="px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-xl flex justify-end gap-3">
+					<div class="px-5 py-3 border-t border-line bg-slate-50 rounded-b-xl flex justify-end gap-3">
 						{@render footer()}
 					</div>
 				{/if}

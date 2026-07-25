@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Turnstile from '$lib/components/Turnstile.svelte';
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	const turnstileEnabled = !!import.meta.env.VITE_TURNSTILE_SITE_KEY;
@@ -73,7 +73,7 @@
 			<p class="text-slate-500 text-sm mt-2">Utwórz konto dla swojej kancelarii</p>
 		</div>
 
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-8">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-8">
 			{#if success}
 				<div class="text-center space-y-4">
 					<div class="text-green-600 text-lg font-semibold">Konto utworzone!</div>
@@ -94,12 +94,12 @@
 						<div class="grid grid-cols-2 gap-2">
 							<button type="button" onclick={() => typ = 'broker'}
 								class="px-3 py-2 rounded-lg text-sm font-medium border transition-colors
-									{typ === 'broker' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+									{typ === 'broker' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
 								Broker ubezpieczeniowy
 							</button>
 							<button type="button" onclick={() => typ = 'agent'}
 								class="px-3 py-2 rounded-lg text-sm font-medium border transition-colors
-									{typ === 'agent' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+									{typ === 'agent' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
 								Agent ubezpieczeniowy
 							</button>
 						</div>

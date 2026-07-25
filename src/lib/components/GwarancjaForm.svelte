@@ -7,7 +7,7 @@
 	}
 	let { parentUg }: Props = $props();
 
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const lbl = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 
 	const TYPY = [
@@ -126,7 +126,7 @@
 			{#each TYPY as [val, label]}
 				<button type="button" onclick={() => fpTyp = val}
 					class="py-2 px-3 rounded-lg text-sm border text-left transition-colors
-						{fpTyp === val ? 'bg-violet-50 text-violet-700 border-violet-400 font-semibold' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+						{fpTyp === val ? 'bg-violet-50 text-violet-700 border-violet-400 font-semibold' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">
 					{label}
 				</button>
 			{/each}
@@ -174,7 +174,7 @@
 	</div>
 
 	<!-- Beneficjent -->
-	<div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+	<div class="border border-line rounded-xl p-4 bg-slate-50">
 		<p class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">Beneficjent gwarancji</p>
 		<div class="grid grid-cols-[1fr_auto] gap-2 mb-3">
 			<div>

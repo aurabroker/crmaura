@@ -439,7 +439,7 @@
 		return [...set].sort();
 	});
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	const totalFiltered = $derived(filtered.reduce((s, p) => s + Number(p.kwota), 0));
@@ -533,11 +533,11 @@
 
 <!-- Filtry -->
 <div class="flex gap-3 mb-4 flex-wrap">
-	<div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2">
+	<div class="flex items-center gap-2 bg-white border border-line rounded-xl px-4 py-2">
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj klienta / polisy..." class="text-sm outline-none placeholder:text-slate-400 w-48" />
 	</div>
-	<select bind:value={filterMonth} class="bg-white border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-700">
+	<select bind:value={filterMonth} class="bg-white border border-line rounded-xl px-4 py-2 text-sm text-slate-700">
 		<option value="all">Wszystkie miesiące</option>
 		{#each months() as m}
 			<option value={m}>{m}</option>
@@ -547,14 +547,14 @@
 		<button
 			onclick={() => filterStatus = val}
 			class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors
-				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
 		>{label}</button>
 	{/each}
 </div>
 
 <!-- Podsumowanie -->
 <div class="grid grid-cols-3 gap-4 mb-6">
-	<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+	<div class="bg-white border border-line rounded-xl p-4 shadow-sm">
 		<p class="text-xs font-medium text-slate-500 mb-1">Łącznie rat</p>
 		<p class="text-xl font-semibold text-slate-900">{fmtPln(totalFiltered)} PLN</p>
 	</div>
@@ -600,9 +600,9 @@
 			<div class="flex-1 h-px bg-slate-200"></div>
 			<div class="text-xs text-slate-400">{pays.length} rat · {fmtPln(pays.reduce((s,p) => s+Number(p.kwota),0))} PLN</div>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm border-collapse table-fixed">
-				<thead class="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+				<thead class="bg-slate-50 border-b border-line text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
 					<tr>
 						<th class="px-4 py-2 w-10"></th>
 						<th class="px-4 py-2 w-[14%]">Polisa</th>
@@ -618,25 +618,25 @@
 					{#each pays as pay}
 						{@const checked = selected.has(pay.id)}
 						<tr onclick={() => toggleSelect(pay.id)}
-							class="border-t border-slate-200 cursor-pointer transition-colors
+							class="border-t border-line cursor-pointer transition-colors
 								{checked ? 'bg-blue-50' : pay.status === 'Zaległa' || isOverdue(pay) ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}">
 							<td class="px-4 py-2.5 text-center" onclick={(e) => e.stopPropagation()}>
 								<input type="checkbox" {checked} onchange={() => toggleSelect(pay.id)}
 									class="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer" />
 							</td>
-							<td class="px-4 py-2.5 font-mono text-xs font-semibold text-blue-700 border-l border-slate-200">
+							<td class="px-4 py-2.5 font-mono text-xs font-semibold text-blue-700 border-l border-line">
 								<a href="/policies/{pay.polisa_id}" onclick={(e) => e.stopPropagation()} class="hover:underline">{pay.crm_policies?.nr_polisy ?? '—'}</a>
 							</td>
-							<td class="px-4 py-2.5 border-l border-slate-200">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</td>
-							<td class="px-4 py-2.5 text-center text-slate-500 border-l border-slate-200">{pay.nr_raty}</td>
-							<td class="px-4 py-2.5 text-right font-semibold border-l border-slate-200">{fmtPln(pay.kwota)}</td>
-							<td class="px-4 py-2.5 text-right text-xs border-l border-slate-200">
+							<td class="px-4 py-2.5 border-l border-line">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</td>
+							<td class="px-4 py-2.5 text-center text-slate-500 border-l border-line">{pay.nr_raty}</td>
+							<td class="px-4 py-2.5 text-right font-semibold border-l border-line">{fmtPln(pay.kwota)}</td>
+							<td class="px-4 py-2.5 text-right text-xs border-l border-line">
 								{#if pay.prowizja_z_noty}<span class="text-blue-600 font-medium">{fmtPln(pay.prowizja_z_noty)}</span>{:else}<span class="text-slate-300">—</span>{/if}
 							</td>
-							<td class="px-4 py-2.5 border-l border-slate-200">
+							<td class="px-4 py-2.5 border-l border-line">
 								<Badge variant={statusVariant(pay.status)}>{pay.status}</Badge>
 							</td>
-							<td class="px-4 py-2.5 text-xs text-slate-400 border-l border-slate-200">
+							<td class="px-4 py-2.5 text-xs text-slate-400 border-l border-line">
 								{pay.data_oplacenia ? `Zapł. ${pay.data_oplacenia}` : ''}{pay.notatka ? ` · ${pay.notatka}` : ''}
 							</td>
 						</tr>
@@ -646,7 +646,7 @@
 		</div>
 	</div>
 {:else}
-	<div class="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-400">
+	<div class="bg-white border border-line rounded-xl p-8 text-center text-slate-400">
 		Brak rat płatności w wybranym filtrze
 	</div>
 {/each}
@@ -654,7 +654,7 @@
 <!-- Modal: Dodaj Ratę -->
 <Modal title="Dodaj Ratę Płatności" open={showModal} onclose={() => { showModal = false; formError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={addPayment} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Dodaj Ratę'}
 		</button>
@@ -689,7 +689,7 @@
 		{#if importDone}
 			<button onclick={closeImport} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Zamknij</button>
 		{:else}
-			<button onclick={closeImport} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+			<button onclick={closeImport} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 			{#if importToProcess.length > 0 && !importLoading}
 				<button onclick={saveImport} disabled={importSaving} class="px-4 py-2 text-sm {importMode === 'ergo' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-violet-600 hover:bg-violet-700'} text-white rounded-lg font-semibold disabled:opacity-60">
 					{importSaving ? 'Rozliczanie...' : `Rozlicz ${importToProcess.filter(r => r.operator_action === 'settle').length} rat`}
@@ -750,7 +750,7 @@
 
 				<!-- Już rozliczone -->
 				{#if importAlreadySettled.length > 0}
-					<div class="bg-slate-50 border border-slate-200 rounded-lg px-4 py-3">
+					<div class="bg-slate-50 border border-line rounded-lg px-4 py-3">
 						<div class="text-sm font-semibold text-slate-600 mb-1">Już rozliczone — pominięte ({importAlreadySettled.length}):</div>
 						{#each importAlreadySettled as r}<div class="text-xs text-slate-500 font-mono">{r.nr_polisy_raw}</div>{/each}
 					</div>
@@ -758,9 +758,9 @@
 
 				<!-- Tabela do rozliczenia -->
 				{#if importToProcess.length > 0}
-					<div class="border border-slate-200 rounded-lg overflow-hidden">
+					<div class="border border-line rounded-lg overflow-hidden">
 						<table class="w-full text-xs">
-							<thead class="bg-slate-50 border-b border-slate-200">
+							<thead class="bg-slate-50 border-b border-line">
 								<tr>
 									<th class="px-3 py-2 text-left font-semibold text-slate-600">Nr polisy</th>
 									<th class="px-3 py-2 text-left font-semibold text-slate-600">Ubezpieczający</th>
@@ -773,7 +773,7 @@
 							<tbody>
 								{#each importToProcess as r}
 									{@const bigDiff = r.prowizja_diff > 0.5}
-									<tr class="border-t border-slate-100 {bigDiff ? 'bg-amber-50/60' : ''}">
+									<tr class="border-t border-line-soft {bigDiff ? 'bg-amber-50/60' : ''}">
 										<td class="px-3 py-2 font-mono">{r.nr_polisy}</td>
 										<td class="px-3 py-2 text-slate-600 truncate max-w-[120px]">{r.ubezpieczajacy}</td>
 										<td class="px-3 py-2 text-right">{fmtPln(r.skladka_nota)}</td>
@@ -787,12 +787,12 @@
 													<div class="flex gap-1">
 														<button
 															onclick={() => setOperatorAction(r, 'settle')}
-															class="px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors {r.operator_action === 'settle' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}">
+															class="px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors {r.operator_action === 'settle' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-line text-slate-600 hover:bg-slate-50'}">
 															Rozlicz
 														</button>
 														<button
 															onclick={() => setOperatorAction(r, 'skip')}
-															class="px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors {r.operator_action === 'skip' ? 'bg-red-600 text-white border-red-600' : 'border-slate-300 text-slate-600 hover:bg-slate-50'}">
+															class="px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors {r.operator_action === 'skip' ? 'bg-red-600 text-white border-red-600' : 'border-line text-slate-600 hover:bg-slate-50'}">
 															Aneks
 														</button>
 													</div>

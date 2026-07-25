@@ -46,17 +46,17 @@
 
 <!-- KPI -->
 <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
-	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm">
+	<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm">
 		<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><FileText size={13} /> Aktywne polisy</div>
 		<div class="text-2xl font-bold text-slate-900">{aktywne}</div>
 		<div class="text-xs text-slate-400">z {policies.length} łącznie</div>
 	</div>
-	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm">
+	<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm">
 		<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><CreditCard size={13} /> Zaległości</div>
 		<div class="text-2xl font-bold {zalegleSuma > 0 ? 'text-red-600' : 'text-slate-900'}">{fmtPln(zalegleSuma)}</div>
 		<div class="text-xs text-slate-400">{zalegle.length} {zalegle.length === 1 ? 'rata' : 'rat'}</div>
 	</div>
-	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm">
+	<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm">
 		<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><AlertTriangle size={13} /> Szkody</div>
 		<div class="text-2xl font-bold text-slate-900">{claims.length}</div>
 		<div class="text-xs text-slate-400">zgłoszone łącznie</div>
@@ -64,7 +64,7 @@
 </div>
 
 <!-- Zakładki -->
-<div class="flex gap-1 border-b border-slate-200 mb-5 overflow-x-auto">
+<div class="flex gap-1 border-b border-line mb-5 overflow-x-auto">
 	{#each tabs as t}
 		<button
 			onclick={() => (tab = t.id)}
@@ -85,7 +85,7 @@
 		<div class="space-y-3">
 			{#each policies as p}
 				{@const st = policyStatus(p.data_do)}
-				<div class="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-2">
+				<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-2">
 					<div class="min-w-[160px]">
 						<div class="text-xs text-slate-400 uppercase tracking-wide">{p.rodzaj ?? '—'}</div>
 						<div class="font-semibold text-slate-900">{p.nr_polisy}</div>
@@ -108,7 +108,7 @@
 	{#if payments.length === 0}
 		<p class="text-sm text-slate-400 py-10 text-center">Brak płatności.</p>
 	{:else}
-		<div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+		<div class="bg-white border border-line rounded-xl overflow-hidden shadow-sm">
 			<table class="w-full text-sm">
 				<thead class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
 					<tr>
@@ -119,7 +119,7 @@
 						<th class="text-right px-4 py-2.5 font-semibold">Status</th>
 					</tr>
 				</thead>
-				<tbody class="divide-y divide-slate-100">
+				<tbody class="divide-y divide-line-soft">
 					{#each payments as p}
 						<tr class="hover:bg-slate-50">
 							<td class="px-4 py-2.5 text-slate-700">{polNr.get(p.polisa_id) ?? '—'}</td>
@@ -141,7 +141,7 @@
 	{:else}
 		<div class="space-y-3">
 			{#each claims as c}
-				<div class="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-2">
+				<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-2">
 					<div class="min-w-[140px]">
 						<div class="text-[11px] text-slate-400 uppercase">Nr szkody</div>
 						<div class="font-semibold text-slate-900">{c.nr_szkody ?? '—'}</div>
@@ -168,7 +168,7 @@
 	{:else}
 		<div class="grid sm:grid-cols-2 gap-3">
 			{#each vehicles as v}
-				<div class="bg-white border border-slate-200 rounded-xl px-5 py-4 shadow-sm">
+				<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm">
 					<div class="flex items-center gap-2 mb-1">
 						<Car size={15} class="text-slate-400" />
 						<span class="font-semibold text-slate-900">{v.nr_rejestracyjny ?? '—'}</span>

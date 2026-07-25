@@ -98,13 +98,13 @@
 		onclose();
 	}
 
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const lbl = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
 <Modal title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={open} onclose={onclose}>
 	{#snippet footer()}
-		<button onclick={onclose} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={onclose} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveTask} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
 		</button>
@@ -151,7 +151,7 @@
 			<div>
 				<label class={lbl}>Klient</label>
 				{#if presetKlientId}
-					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">{presetKlientNazwa ?? presetKlientId}</div>
+					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-line rounded-lg">{presetKlientNazwa ?? presetKlientId}</div>
 				{:else}
 					<select bind:value={fKlient} class={inp}>
 						<option value="">— brak —</option>
@@ -165,7 +165,7 @@
 			<div>
 				<label class={lbl}>Prospect</label>
 				{#if presetProspectId}
-					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">{presetProspectNazwa ?? presetProspectId}</div>
+					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-line rounded-lg">{presetProspectNazwa ?? presetProspectId}</div>
 				{:else}
 					<select bind:value={fProspect} class={inp}>
 						<option value="">— brak —</option>

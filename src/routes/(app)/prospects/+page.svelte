@@ -322,7 +322,7 @@
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
@@ -362,7 +362,7 @@
 	{#each statuses as s}
 		<button
 			onclick={() => statusFilter = s}
-			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {statusFilter === s ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}"
+			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {statusFilter === s ? 'bg-slate-900 text-white' : 'bg-white border border-line text-slate-600 hover:bg-slate-50'}"
 		>{s}</button>
 	{/each}
 </div>
@@ -372,21 +372,21 @@
 <div class="flex items-center gap-1 mb-4 flex-wrap">
 	<button
 		onclick={() => letterFilter = ''}
-		class="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors {letterFilter === '' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-50'}"
+		class="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors {letterFilter === '' ? 'bg-blue-600 text-white' : 'bg-white border border-line text-slate-500 hover:bg-slate-50'}"
 	>Wszystkie</button>
 	{#each alphabet as L}
 		{@const has = lettersWithData.has(L)}
 		<button
 			onclick={() => { if (has) letterFilter = letterFilter === L ? '' : L; }}
 			disabled={!has}
-			class="w-7 h-7 rounded-md text-xs font-semibold transition-colors {letterFilter === L ? 'bg-blue-600 text-white' : has ? 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50' : 'text-slate-300 cursor-default'}"
+			class="w-7 h-7 rounded-md text-xs font-semibold transition-colors {letterFilter === L ? 'bg-blue-600 text-white' : has ? 'bg-white border border-line text-slate-600 hover:bg-slate-50' : 'text-slate-300 cursor-default'}"
 		>{L}</button>
 	{/each}
 </div>
 
 {#if view === 'tabela'}
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-3 border-b border-slate-200 flex items-center gap-3">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+	<div class="px-5 py-3 border-b border-line flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, branży..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
@@ -417,7 +417,7 @@
 			<tbody>
 				{#each filtered() as p}
 					{@const zatrud = getZatrudnienie(p)}
-					<tr class="border-t border-slate-100 hover:bg-slate-50 group">
+					<tr class="border-t border-line-soft hover:bg-slate-50 group">
 						<td class="px-4 py-2.5">
 							<div class="flex items-center gap-1">
 								<a href={`/prospects/${p.id}`} title="Otwórz (Ctrl/⌘+klik = nowa karta)" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
@@ -472,17 +472,17 @@
 </div>
 {:else}
 	<!-- Widok KANBAN -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm px-5 py-3 mb-4 flex items-center gap-3">
+	<div class="bg-white border border-line rounded-xl shadow-sm px-5 py-3 mb-4 flex items-center gap-3">
 		<Search size={16} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, branży..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
 	<div class="flex gap-4 overflow-x-auto pb-4 items-start">
 		{#each KANBAN_COLS as col}
-			<div class="flex-1 min-w-[240px] bg-slate-50 border border-slate-200 rounded-xl flex flex-col">
-				<div class="px-4 py-3 border-b border-slate-200 flex items-center gap-2">
+			<div class="flex-1 min-w-[240px] bg-slate-50 border border-line rounded-xl flex flex-col">
+				<div class="px-4 py-3 border-b border-line flex items-center gap-2">
 					<span class="w-2 h-2 rounded-full {col.accent}"></span>
 					<h3 class="text-sm font-semibold text-slate-700">{col.label}</h3>
-					<span class="ml-auto text-xs font-semibold text-slate-400 bg-white border border-slate-200 rounded-full px-2 py-0.5">{(kanban[col.key] ?? []).length}</span>
+					<span class="ml-auto text-xs font-semibold text-slate-400 bg-white border border-line rounded-full px-2 py-0.5">{(kanban[col.key] ?? []).length}</span>
 				</div>
 				<div
 					class="p-2 flex flex-col gap-2 min-h-[120px] flex-1"
@@ -492,7 +492,7 @@
 				>
 					{#each kanban[col.key] ?? [] as p (p.id)}
 						{@const zatrud = getZatrudnienie(p)}
-						<div class="bg-white border border-slate-200 rounded-lg shadow-sm p-3 cursor-grab active:cursor-grabbing hover:border-blue-300 transition-colors group">
+						<div class="bg-white border border-line rounded-lg shadow-sm p-3 cursor-grab active:cursor-grabbing hover:border-blue-300 transition-colors group">
 							<div class="flex items-start justify-between gap-2">
 								<a
 									href={`/prospects/${p.id}`}
@@ -536,7 +536,7 @@
 
 <Modal title={editingProspect ? `Edytuj — ${editingProspect.nazwa}` : 'Nowy Prospect'} open={showModal} onclose={closeModal}>
 	{#snippet footer()}
-		<button onclick={closeModal} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={closeModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : editingProspect ? 'Zapisz zmiany' : 'Zapisz Prospect'}
 		</button>

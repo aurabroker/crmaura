@@ -156,7 +156,7 @@
 {:else}
 <div class="min-h-screen flex flex-col bg-slate-50" style="font-family: 'Inter', sans-serif">
 
-	<header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 sticky top-0 z-40 shadow-sm">
+	<header class="h-16 bg-white border-b border-line flex items-center justify-between px-6 sticky top-0 z-40 shadow-sm">
 		<div class="flex items-center gap-6">
 			<a href="/dashboard" class="flex items-center gap-2 font-bold text-xl text-slate-900">
 				<ShieldCheck size={22} class="text-blue-500" />
@@ -182,27 +182,27 @@
 									{/if}
 								</button>
 								{#if insuranceMenuOpen}
-									<div class="absolute left-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-52 overflow-hidden z-50">
+									<div class="absolute left-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-52 overflow-hidden z-50">
 										<a href="/policies" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/policies') ? 'font-semibold text-blue-700' : ''}">
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/policies') ? 'font-semibold text-blue-700' : ''}">
 											<FileText size={14} /> Polisy
 										</a>
 										{#if appState.tenantFeatures['gwarancje']}
 										<a href="/bonds" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/bonds') ? 'font-semibold text-blue-700' : ''}">
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/bonds') ? 'font-semibold text-blue-700' : ''}">
 											<Shield size={14} /> Gwarancje
 										</a>
 										{/if}
 										<a href="/policies?typ=generalna" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 											<ClipboardList size={14} /> Umowy Generalne
 										</a>
 										<a href="/renewals" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/renewals') ? 'font-semibold text-blue-700' : ''}">
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/renewals') ? 'font-semibold text-blue-700' : ''}">
 											<RefreshCw size={14} /> Odnowienia
 										</a>
 										<a href="/apk" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100 {currentPath.startsWith('/apk') ? 'font-semibold text-blue-700' : ''}">
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/apk') ? 'font-semibold text-blue-700' : ''}">
 											<ClipboardList size={14} /> APK
 										</a>
 										{#if isBroker()}
@@ -250,19 +250,19 @@
 					<ChevronDown size={14} />
 				</button>
 				{#if addMenuOpen}
-					<div class="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl w-56 overflow-hidden z-50">
-						<a href="/policies/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+					<div class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-56 overflow-hidden z-50">
+						<a href="/policies/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 							<FileText size={15} /> Nowa Polisa / UG
 						</a>
-						<a href="/clients?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+						<a href="/clients?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 							<Users size={15} /> Nowy Klient (RODO)
 						</a>
 						{#if isBroker()}
-						<a href="/claims?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+						<a href="/claims?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 							<AlertTriangle size={15} /> Zgłoś Szkodę
 						</a>
 						{/if}
-						<a href="/vehicles/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-slate-100">
+						<a href="/vehicles/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 							<Plus size={15} /> Dodaj Pojazd
 						</a>
 						{#if appState.tenantFeatures['gwarancje']}

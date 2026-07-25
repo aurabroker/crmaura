@@ -11,7 +11,7 @@
 	}
 	let { bond = null, uls, limitViews = [], presetInsurerId = '' }: Props = $props();
 
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500';
 	const lbl = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 
 	let fpInsurer = $state(bond?.bond_insurer_id ?? presetInsurerId);
@@ -106,7 +106,7 @@
 			{#each BOND_RODZAJ as [val, label]}
 				<button type="button" onclick={() => (fpRodzaj = val)}
 					class="py-2 px-2 rounded-lg text-sm border text-center transition-colors
-						{fpRodzaj === val ? 'bg-violet-50 text-violet-700 border-violet-400 font-semibold' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+						{fpRodzaj === val ? 'bg-violet-50 text-violet-700 border-violet-400 font-semibold' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">
 					{label}
 				</button>
 			{/each}
@@ -157,7 +157,7 @@
 	</div>
 
 	<!-- Opcje -->
-	<div class="border-t border-slate-100 pt-3 space-y-2">
+	<div class="border-t border-line-soft pt-3 space-y-2">
 		<label class="flex items-center gap-3 cursor-pointer">
 			<input type="checkbox" bind:checked={fpBezLimitu} class="w-4 h-4 rounded accent-violet-600" />
 			<span class="text-sm text-slate-700">Poza limitem (nie obciąża Umowy Limitowej)</span>

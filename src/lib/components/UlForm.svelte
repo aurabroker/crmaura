@@ -9,7 +9,7 @@
 	}
 	let { ul = null, tenants, tuDict, presetTenantId = '' }: Props = $props();
 
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500';
 	const lbl = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 
 	let fpTenant = $state(ul?.bond_tenant_id ?? presetTenantId);
@@ -98,7 +98,7 @@
 	</div>
 
 	<!-- Parametry finansowe -->
-	<div class="border-t border-slate-100 pt-4">
+	<div class="border-t border-line-soft pt-4">
 		<p class="text-xs font-semibold text-violet-600 uppercase tracking-wider mb-3">Parametry limitu</p>
 		<div class="grid grid-cols-3 gap-4">
 			<div>

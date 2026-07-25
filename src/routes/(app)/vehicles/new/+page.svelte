@@ -56,7 +56,7 @@
 		else goto('/clients');
 	}
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	const TYPY = ['osobowy','ciężarowy','ciągnik siodłowy','przyczepka','naczepa','autobus'];
@@ -73,7 +73,7 @@
 
 	{#if error}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</div>{/if}
 
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-6 space-y-4">
+	<div class="bg-white border border-line rounded-xl shadow-sm p-6 space-y-4">
 
 		<!-- Klient -->
 		<div>
@@ -88,7 +88,7 @@
 					class={inputCls}
 				/>
 				{#if clientDropOpen && filteredClients.length > 0}
-					<div class="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+					<div class="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-line rounded-lg shadow-lg max-h-48 overflow-y-auto">
 						{#each filteredClients as c}
 							<button type="button" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50"
 								onmousedown={() => { vKlient = c.id; clientSearch = ''; clientDropOpen = false; }}>
@@ -144,7 +144,7 @@
 		</div>
 
 		<div class="flex justify-end gap-3 pt-2">
-			<button onclick={() => history.back()} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+			<button onclick={() => history.back()} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 				Anuluj
 			</button>
 			<button onclick={save} disabled={saving} class="px-5 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">

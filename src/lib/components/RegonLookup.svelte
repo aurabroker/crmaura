@@ -13,7 +13,7 @@
 	let mode: 'nip' | 'regon' = $state('nip');
 	let status: 'idle' | 'loading' | 'ok' | 'not_found' | 'error' = $state('idle');
 	let warning = $state('');
-	let inputCls = 'border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	let inputCls = 'border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 
 	function cleanDigits(v: string) {
 		return v.replace(/[^0-9]/g, '');
@@ -73,7 +73,7 @@
 		<select
 			bind:value={mode}
 			onchange={() => { query = ''; status = 'idle'; }}
-			class="border border-slate-300 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+			class="border border-line rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
 		>
 			<option value="nip">NIP</option>
 			<option value="regon">REGON</option>

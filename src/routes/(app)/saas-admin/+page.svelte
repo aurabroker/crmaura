@@ -294,11 +294,11 @@
 	<h1 class="text-2xl font-bold text-slate-900">SAAS Admin — Wszystkie firmy</h1>
 
 	<div class="grid grid-cols-2 gap-4 max-w-sm">
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-4">
 			<div class="text-2xl font-bold text-slate-900">{tenants.length}</div>
 			<div class="text-xs text-slate-500 mt-1">Firm łącznie</div>
 		</div>
-		<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+		<div class="bg-white border border-line rounded-xl shadow-sm p-4">
 			<div class="text-2xl font-bold text-slate-900">{allProfiles.length}</div>
 			<div class="text-xs text-slate-500 mt-1">Użytkowników łącznie</div>
 		</div>
@@ -306,8 +306,8 @@
 
 	<div class="flex gap-6">
 		<!-- Tenant list -->
-		<div class="w-80 shrink-0 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden self-start">
-			<div class="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+		<div class="w-80 shrink-0 bg-white border border-line rounded-xl shadow-sm overflow-hidden self-start">
+			<div class="px-4 py-3 border-b border-line bg-slate-50 flex items-center justify-between">
 				<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Firmy ({tenants.length})</span>
 				<button onclick={openNewTenant} class="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors">
 					<Plus size={13} /> Dodaj
@@ -317,7 +317,7 @@
 				{@const count = profilesFor(tenant.id).length}
 				<button
 					onclick={() => selectedTenant = selectedTenant?.id === tenant.id ? null : tenant}
-					class="w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 transition-colors
+					class="w-full text-left px-4 py-3 border-b border-line-soft hover:bg-slate-50 transition-colors
 						{selectedTenant?.id === tenant.id ? 'bg-blue-50 border-l-2 border-l-blue-500' : ''}"
 				>
 					<div class="font-medium text-sm text-slate-900">{tenant.nazwa}</div>
@@ -335,7 +335,7 @@
 		{@const stAdmin = adminFor(st.id)}
 		{@const stProfiles = profilesFor(st.id)}
 		<div class="flex-1 space-y-4">
-			<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+			<div class="bg-white border border-line rounded-xl shadow-sm p-5">
 				<div class="flex items-start justify-between mb-4">
 					<div>
 						<h2 class="text-lg font-bold text-slate-900">{st.nazwa}</h2>
@@ -360,7 +360,7 @@
 							</label>
 						{/each}
 					</div>
-					<div class="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100">
+					<div class="flex items-center gap-3 mt-3 pt-3 border-t border-line-soft">
 						<button
 							onclick={saveFeatures}
 							disabled={savingFeatures}
@@ -378,13 +378,13 @@
 				</div>
 
 				<!-- Resend API key -->
-				<div class="mb-5 border-t border-slate-100 pt-4">
+				<div class="mb-5 border-t border-line-soft pt-4">
 					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Resend API (email)</p>
 					{#if editingResend === st.id}
 						<div class="flex items-center gap-2">
-							<input type="text" bind:value={resendInput} placeholder="re_..." class="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<input type="text" bind:value={resendInput} placeholder="re_..." class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 							<button onclick={() => saveResendKey(st)} disabled={savingResend} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingResend ? '…' : 'Zapisz'}</button>
-							<button onclick={() => { editingResend = null; }} class="px-3 py-2 text-sm border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+							<button onclick={() => { editingResend = null; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
 						</div>
 					{:else}
 						<div class="flex items-center gap-3">
@@ -397,7 +397,7 @@
 				</div>
 
 				<!-- Użytkownicy -->
-				<div class="border-t border-slate-100 pt-4">
+				<div class="border-t border-line-soft pt-4">
 					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Użytkownicy ({stProfiles.length})</p>
 					<div class="space-y-1">
 						{#each stProfiles as u}
@@ -409,7 +409,7 @@
 								{#if u.rola === 'ADMIN BROKER'}
 									<button
 										onclick={() => openResetModal(u)}
-										class="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100"
+										class="inline-flex items-center gap-1 px-2 py-1 text-xs text-slate-600 border border-line rounded-lg hover:bg-slate-100"
 									>
 										<KeyRound size={12} /> Reset hasła
 									</button>
@@ -430,7 +430,7 @@
 	</div>
 
 	<!-- Sync BEAUTY -->
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm p-5">
+	<div class="bg-white border border-line rounded-xl shadow-sm p-5">
 		<div class="flex items-center justify-between mb-3">
 			<div>
 				<h2 class="text-sm font-semibold text-slate-900">Synchronizacja BEAUTY → Aura Expert</h2>
@@ -450,12 +450,12 @@
 		{/if}
 		{#if syncLog.length > 0}
 			<table class="w-full text-xs text-slate-600">
-				<thead><tr class="text-slate-400 text-left border-b border-slate-100">
+				<thead><tr class="text-slate-400 text-left border-b border-line-soft">
 					<th class="pb-1">Data</th><th class="pb-1">Rekordów</th><th class="pb-1">Status</th>
 				</tr></thead>
 				<tbody>
 					{#each syncLog as log}
-						<tr class="border-b border-slate-50">
+						<tr class="border-b border-line-soft">
 							<td class="py-1">{new Date(log.started_at).toLocaleString('pl-PL')}</td>
 							<td class="py-1">{log.records_synced ?? '—'}</td>
 							<td class="py-1 {log.status === 'error' ? 'text-red-500' : log.status === 'done' ? 'text-emerald-600' : 'text-amber-500'}">
@@ -487,28 +487,28 @@
 			<RegonLookup onResult={(d) => { ntNazwa = ntNazwa || d.nazwa; }} />
 			<div>
 				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Nazwa firmy *</label>
-				<input bind:value={ntNazwa} placeholder="np. Broker ABC sp. z o.o." class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+				<input bind:value={ntNazwa} placeholder="np. Broker ABC sp. z o.o." class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 			</div>
 			<div>
 				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Typ</label>
-				<select bind:value={ntTyp} class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+				<select bind:value={ntTyp} class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
 					<option value="broker">Broker</option>
 					<option value="agent">Agent</option>
 				</select>
 			</div>
-			<hr class="border-slate-100" />
+			<hr class="border-line-soft" />
 			<p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Konto ADMIN BROKER</p>
 			<div>
 				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Imię i nazwisko *</label>
-				<input bind:value={ntImie} placeholder="Jan Kowalski" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+				<input bind:value={ntImie} placeholder="Jan Kowalski" class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 			</div>
 			<div>
 				<label class="block text-xs font-semibold text-slate-600 mb-1.5">E-mail *</label>
-				<input bind:value={ntEmail} type="email" placeholder="admin@firma.pl" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+				<input bind:value={ntEmail} type="email" placeholder="admin@firma.pl" class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 			</div>
 			<div>
 				<label class="block text-xs font-semibold text-slate-600 mb-1.5">Hasło * (min. 8 znaków)</label>
-				<input bind:value={ntPassword} type="password" placeholder="Min. 8 znaków" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+				<input bind:value={ntPassword} type="password" placeholder="Min. 8 znaków" class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 			</div>
 
 			{#if ntError}
@@ -523,7 +523,7 @@
 			>
 				{ntLoading ? 'Tworzę...' : 'Utwórz firmę'}
 			</button>
-			<button onclick={() => newTenantModal = false} class="flex-1 border border-slate-200 text-slate-600 text-sm font-semibold py-2 rounded-lg hover:bg-slate-50">
+			<button onclick={() => newTenantModal = false} class="flex-1 border border-line text-slate-600 text-sm font-semibold py-2 rounded-lg hover:bg-slate-50">
 				Anuluj
 			</button>
 		</div>
@@ -554,7 +554,7 @@
 					type="password"
 					bind:value={resetPassword}
 					placeholder="Min. 8 znaków"
-					class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
 			</div>
 			<div>
@@ -563,7 +563,7 @@
 					type="password"
 					bind:value={resetConfirm}
 					placeholder="Powtórz hasło"
-					class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+					class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
 				/>
 			</div>
 
@@ -587,7 +587,7 @@
 			{/if}
 			<button
 				onclick={closeResetModal}
-				class="flex-1 border border-slate-200 text-slate-600 text-sm font-semibold py-2 rounded-lg hover:bg-slate-50 transition-colors"
+				class="flex-1 border border-line text-slate-600 text-sm font-semibold py-2 rounded-lg hover:bg-slate-50 transition-colors"
 			>
 				{resetSuccess ? 'Zamknij' : 'Anuluj'}
 			</button>

@@ -303,7 +303,7 @@
 		return (t.status === 'otwarte' || t.status === 'w_toku') && !!t.termin && t.termin < today;
 	}
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
@@ -340,15 +340,15 @@
 
 <!-- KPI strip -->
 <div class="grid grid-cols-3 gap-4 mb-5">
-	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+	<div class="bg-white border border-line rounded-xl px-5 py-4">
 		<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Otwarte</div>
 		<div class="text-2xl font-bold text-slate-900">{openCount}</div>
 	</div>
-	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+	<div class="bg-white border border-line rounded-xl px-5 py-4">
 		<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Przeterminowane</div>
 		<div class="text-2xl font-bold {overdueCount > 0 ? 'text-red-600' : 'text-slate-400'}">{overdueCount}</div>
 	</div>
-	<div class="bg-white border border-slate-200 rounded-xl px-5 py-4">
+	<div class="bg-white border border-line rounded-xl px-5 py-4">
 		<div class="text-xs text-slate-500 uppercase tracking-wide font-semibold mb-1">Zakończone</div>
 		<div class="text-2xl font-bold text-emerald-600">{doneCount}</div>
 	</div>
@@ -360,7 +360,7 @@
 	<button onclick={prev} class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><ChevronLeft size={18} /></button>
 	<button onclick={next} class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><ChevronRight size={18} /></button>
 	<h2 class="text-base font-semibold text-slate-900 min-w-[200px]">{navTitle()}</h2>
-	<button onclick={goToday} class="px-3 py-1 text-xs font-semibold border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Dziś</button>
+	<button onclick={goToday} class="px-3 py-1 text-xs font-semibold border border-line rounded-lg text-slate-600 hover:bg-slate-50">Dziś</button>
 	{#if viewMode === 'week'}
 	<label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer ml-4">
 		<input type="checkbox" bind:checked={showFullWeek} class="w-3.5 h-3.5 accent-blue-600" />
@@ -372,8 +372,8 @@
 
 <!-- ===== MONTH VIEW ===== -->
 {#if viewMode === 'month'}
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="grid grid-cols-7 border-b border-slate-100">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+	<div class="grid grid-cols-7 border-b border-line-soft">
 		{#each DAYS_SHORT as d}
 			<div class="text-center text-[11px] font-semibold text-slate-400 uppercase py-2">{d}</div>
 		{/each}
@@ -385,7 +385,7 @@
 			{@const isWeekend = (i % 7) >= 5}
 			{@const isDragOver = false}
 			<div
-				class="min-h-[90px] border-b border-r border-slate-100 p-1.5 transition-colors
+				class="min-h-[90px] border-b border-r border-line-soft p-1.5 transition-colors
 					{cell.date ? 'cursor-default' : 'bg-slate-50/50'}
 					{isWeekend && cell.date ? 'bg-orange-50/30' : ''}
 					{cell.date ? 'hover:bg-slate-50' : ''}"
@@ -435,8 +435,8 @@
 <!-- ===== WEEK VIEW ===== -->
 {:else if viewMode === 'week'}
 {@const wdays = weekDays()}
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="grid border-b border-slate-100" style="grid-template-columns: repeat({wdays.length}, minmax(0, 1fr))">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+	<div class="grid border-b border-line-soft" style="grid-template-columns: repeat({wdays.length}, minmax(0, 1fr))">
 		{#each wdays as d, i}
 			{@const ds = dateStr(d)}
 			{@const isToday = ds === today}
@@ -453,7 +453,7 @@
 			{@const dayTasks = tasksByDate()[ds] ?? []}
 			{@const isWeekend = d.getDay() === 0 || d.getDay() === 6}
 			<div
-				class="border-r border-slate-100 p-2 min-h-[200px] {isWeekend ? 'bg-orange-50/20' : 'hover:bg-slate-50'} transition-colors"
+				class="border-r border-line-soft p-2 min-h-[200px] {isWeekend ? 'bg-orange-50/20' : 'hover:bg-slate-50'} transition-colors"
 				ondragover={onDragOver}
 				ondrop={(e) => onDrop(e, ds)}
 			>
@@ -495,8 +495,8 @@
 {:else if viewMode === 'day'}
 {@const dayStr = `${navYear}-${String(navMonth+1).padStart(2,'0')}-${String(navDay).padStart(2,'0')}`}
 {@const dayTasks = tasksByDate()[dayStr] ?? []}
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+	<div class="px-5 py-4 border-b border-line-soft flex items-center justify-between">
 		<div>
 			<span class="text-sm font-semibold text-slate-500 uppercase">{DAYS_FULL[(new Date(navDate).getDay() + 6) % 7]}</span>
 			<div class="text-2xl font-bold text-slate-900 mt-0.5">{navTitle()}</div>
@@ -511,7 +511,7 @@
 			Brak zadań na ten dzień
 		</div>
 	{:else}
-		<ul class="divide-y divide-slate-100">
+		<ul class="divide-y divide-line-soft">
 			{#each dayTasks as t}
 				{@const done = t.status === 'zakonczone'}
 				{@const overdue = isOverdue(t)}
@@ -548,31 +548,31 @@
 <!-- ===== LIST VIEW ===== -->
 {:else}
 	<div class="flex gap-3 mb-4 flex-wrap">
-		<div class="flex items-center gap-2 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2">
+		<div class="flex items-center gap-2 flex-1 bg-white border border-line rounded-xl px-4 py-2">
 			<Search size={15} class="text-slate-400" />
 			<input bind:value={search} placeholder="Szukaj zadania lub klienta..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 		</div>
 		{#each [['all','Wszystkie'],['otwarte','Otwarte'],['w_toku','W toku'],['zakonczone','Zakończone']] as [val, label]}
 			<button onclick={() => filterStatus = val as FilterStatus}
 				class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors
-					{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+					{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
 				{label}
 			</button>
 		{/each}
 		{#each [['all','Priorytety'],['pilny','Pilne'],['wysoki','Wysokie']] as [val, label]}
 			<button onclick={() => filterPriority = val as FilterPriority}
 				class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors
-					{filterPriority === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+					{filterPriority === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
 				{label}
 			</button>
 		{/each}
 	</div>
 
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		{#if filteredTasks.length === 0}
 			<div class="px-5 py-12 text-center text-slate-400">Brak zadań</div>
 		{:else}
-			<ul class="divide-y divide-slate-100">
+			<ul class="divide-y divide-line-soft">
 				{#each filteredTasks as t}
 					{@const done = t.status === 'zakonczone'}
 					{@const overdue = isOverdue(t)}
@@ -610,14 +610,14 @@
 	</div>
 
 {:else if viewMode === 'rejestr'}
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-4 border-b border-slate-100">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+	<div class="px-5 py-4 border-b border-line-soft">
 		<h2 class="text-sm font-semibold text-slate-700">Rejestr ukończonych zadań</h2>
 	</div>
 	{#if history.length === 0}
 		<div class="px-5 py-10 text-center text-slate-400">Brak wpisów w rejestrze</div>
 	{:else}
-		<ul class="divide-y divide-slate-100">
+		<ul class="divide-y divide-line-soft">
 			{#each history as h}
 				<li class="px-5 py-3 flex items-center gap-3">
 					<span class="w-2 h-2 rounded-full shrink-0 {h.nowy_status === 'zakonczone' ? 'bg-emerald-500' : 'bg-slate-300'}"></span>
@@ -639,7 +639,7 @@
 <!-- Modal -->
 <Modal windowed title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showModal} onclose={() => { showModal = false; formError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveTask} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
 		</button>
@@ -682,7 +682,7 @@
 			<div>
 				<label class={labelCls}>{isProspectTask ? 'Prospect' : 'Klient'}</label>
 				{#if isProspectTask}
-					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg truncate" title={editingProspectName}>{editingProspectName || 'Prospect'}</div>
+					<div class="text-sm font-medium text-slate-700 px-3 py-2 bg-slate-50 border border-line rounded-lg truncate" title={editingProspectName}>{editingProspectName || 'Prospect'}</div>
 				{:else}
 				<select bind:value={fKlient} class={inputCls}>
 					<option value="">— brak —</option>

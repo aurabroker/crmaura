@@ -220,7 +220,7 @@
 
 	const generalPolicies = $derived(appState.policies.filter(p => p.typ_umowy === 'generalna'));
 
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const lbl = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 
 	let clientSearch = $state('');
@@ -313,7 +313,7 @@
 					class={inp}
 				/>
 				{#if clientOpen}
-					<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+					<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-line rounded-lg shadow-2xl max-h-60 overflow-y-auto">
 						{#if filteredClients.length === 0}
 							<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
 						{:else}
@@ -354,7 +354,7 @@
 						class={inp}
 					/>
 					{#if tuOpen}
-						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-line rounded-lg shadow-2xl max-h-60 overflow-y-auto">
 							{#if filteredTU.length === 0}
 								<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
 							{:else}
@@ -399,7 +399,7 @@
 						class={inp}
 					/>
 					{#if ubezpieczonyOpen}
-						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-2xl max-h-60 overflow-y-auto">
+						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-line rounded-lg shadow-2xl max-h-60 overflow-y-auto">
 							{#if filteredUbezpieczeni.length === 0}
 								<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
 							{:else}
@@ -482,7 +482,7 @@
 
 	<!-- Leasing (dla komunikacja / flota) -->
 	{#if isKomunikacja || isFlota}
-	<div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+	<div class="border border-line rounded-xl p-4 bg-slate-50">
 		<label class="flex items-center gap-3 cursor-pointer mb-3">
 			<input type="checkbox" bind:checked={fpHasLeasing} class="w-4 h-4 rounded accent-blue-600" />
 			<span class="text-sm font-semibold text-slate-700">Finansowanie leasingowe</span>
@@ -527,7 +527,7 @@
 	</div>
 
 	<!-- Finansowe -->
-	<div class="border-t border-slate-100 pt-4">
+	<div class="border-t border-line-soft pt-4">
 		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wider mb-3">Dane Finansowe</p>
 		<div class="grid grid-cols-3 gap-4">
 			<div>
@@ -549,25 +549,25 @@
 	<div>
 		<div class="flex items-center gap-4 mb-3">
 			<label class={lbl + ' mb-0'}>Liczba rat</label>
-			<select bind:value={fpRaty} class="border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40">
+			<select bind:value={fpRaty} class="border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-40">
 				{#each RATY_OPCJE as opt}
 					<option value={opt}>{opt === '1' ? 'Jednorazowo' : `${opt} rat`}</option>
 				{/each}
 			</select>
 		</div>
-		<div class="border border-slate-200 rounded-lg overflow-hidden">
-			<div class="grid grid-cols-[80px_1fr_1fr] bg-slate-50 border-b border-slate-200 px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+		<div class="border border-line rounded-lg overflow-hidden">
+			<div class="grid grid-cols-[80px_1fr_1fr] bg-slate-50 border-b border-line px-4 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 				<div>{ratyCount === 1 ? 'Płatność' : 'Rata'}</div>
 				<div>Termin płatności</div>
 				<div>Kwota (PLN)</div>
 			</div>
 			{#each fpDatyRatArr as _, i}
-				<div class="grid grid-cols-[80px_1fr_1fr] items-center gap-3 px-4 py-2 border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
+				<div class="grid grid-cols-[80px_1fr_1fr] items-center gap-3 px-4 py-2 border-b border-line-soft last:border-b-0 hover:bg-slate-50">
 					<div class="text-sm font-semibold text-slate-600">{ratyCount === 1 ? '—' : `Rata ${i + 1}`}</div>
 					<input type="date" bind:value={fpDatyRatArr[i]}
-						class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+						class="border border-line rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 					<input type="number" step="0.01" bind:value={fpKwotypRatArr[i]} placeholder="0.00"
-						class="border border-slate-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+						class="border border-line rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 				</div>
 			{/each}
 		</div>

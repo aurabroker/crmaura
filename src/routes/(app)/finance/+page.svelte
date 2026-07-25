@@ -80,7 +80,7 @@
 	};
 	const rozlVariant = (s: string) => s === 'rozliczona' ? 'success' : s === 'czesciowo' ? 'warning' : 'neutral';
 
-	const inputCls = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
@@ -90,22 +90,22 @@
 <p class="text-sm text-slate-500 mb-6">Moduł administracji ubezpieczeniowej</p>
 
 <div class="grid grid-cols-3 gap-4 mb-6">
-	<div class="bg-white border border-slate-200 rounded-xl p-4">
+	<div class="bg-white border border-line rounded-xl p-4">
 		<div class="text-xs text-slate-500">Prowizja przypisana</div>
 		<div class="text-xl font-bold text-slate-900">{fmtPln(totalPrzyp)}</div>
 	</div>
-	<div class="bg-white border border-slate-200 rounded-xl p-4">
+	<div class="bg-white border border-line rounded-xl p-4">
 		<div class="text-xs text-slate-500">Prowizja zainkasowana</div>
 		<div class="text-xl font-bold text-emerald-600">{fmtPln(totalZaink)}</div>
 	</div>
-	<div class="bg-white border border-slate-200 rounded-xl p-4">
+	<div class="bg-white border border-line rounded-xl p-4">
 		<div class="text-xs text-slate-500">Różnica</div>
 		<div class="text-xl font-bold text-amber-600">{fmtPln(totalPrzyp - totalZaink)}</div>
 	</div>
 </div>
 
 <div class="flex gap-3 mb-4">
-	<div class="flex items-center gap-2 flex-1 bg-white border border-slate-200 rounded-xl px-4 py-2">
+	<div class="flex items-center gap-2 flex-1 bg-white border border-line rounded-xl px-4 py-2">
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj po nr polisy lub kliencie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
 	</div>
@@ -113,12 +113,12 @@
 		<button
 			onclick={() => filterStatus = val as typeof filterStatus}
 			class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors whitespace-nowrap
-				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}"
+				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
 		>{label}</button>
 	{/each}
 </div>
 
-<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
@@ -136,7 +136,7 @@
 		<tbody>
 			{#each rows as p}
 				{@const rs = (p as any).rozliczenie_status ?? 'nierozliczona'}
-				<tr class="border-t border-slate-100 hover:bg-slate-50">
+				<tr class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3 font-medium">{p.nr_polisy}</td>
 					<td class="px-5 py-3">{p.crm_clients?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3">{p.crm_insurers?.nazwa ?? '—'}</td>
@@ -154,7 +154,7 @@
 						{/if}
 					</td>
 					<td class="px-5 py-3">
-						<button onclick={() => openSettle(p)} class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors">
+						<button onclick={() => openSettle(p)} class="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-600 border border-line rounded-lg hover:bg-slate-100 transition-colors">
 							<CheckCircle size={13} />
 							Rozlicz
 						</button>
@@ -169,7 +169,7 @@
 
 <Modal title="Szczegóły rozliczenia — {detailPolicy?.nr_polisy ?? ''}" open={showDetail} onclose={() => showDetail = false}>
 	{#snippet footer()}
-		<button onclick={() => showDetail = false} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+		<button onclick={() => showDetail = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 		<button onclick={() => { showDetail = false; openSettle(detailPolicy!); }} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
 			Edytuj rozliczenie
 		</button>
@@ -200,7 +200,7 @@
 
 <Modal title="Rozlicz polisę — {settlePolicy?.nr_polisy ?? ''}" open={showSettle} onclose={() => { showSettle = false; settleError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showSettle = false; settleError = ''; }} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={() => { showSettle = false; settleError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 		<button onclick={saveSettle} disabled={settling} class="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 disabled:opacity-60">
 			{settling ? 'Zapisywanie...' : 'Rozlicz'}
 		</button>

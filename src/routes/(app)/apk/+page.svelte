@@ -163,7 +163,7 @@
 	const statusVariant = (f: ApkForm) => f.client_declined ? 'warning' : f.status === 'submitted' ? 'success' : 'neutral';
 	const statusLabel = (f: ApkForm) => f.client_declined ? 'Klient zrezygnował' : f.status === 'submitted' ? 'Złożony' : 'Szkic';
 
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const lbl = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
@@ -182,14 +182,14 @@
 
 <!-- Filtry -->
 <div class="flex gap-3 mb-5 flex-wrap">
-	<div class="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-2">
+	<div class="flex items-center gap-2 bg-white border border-line rounded-xl px-4 py-2">
 		<Search size={15} class="text-slate-400" />
 		<input bind:value={search} placeholder="Szukaj klienta / ref..." class="text-sm outline-none placeholder:text-slate-400 w-44" />
 	</div>
 	{#each [['all','Wszystkie'],['draft','Szkice'],['submitted','Złożone']] as [val, label]}
 		<button onclick={() => filterStatus = val}
 			class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors
-				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'}">
+				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
 			{label}
 		</button>
 	{/each}
@@ -197,7 +197,7 @@
 
 <!-- Stats -->
 <div class="grid grid-cols-3 gap-4 mb-6">
-	<div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+	<div class="bg-white border border-line rounded-xl p-4 shadow-sm">
 		<p class="text-xs font-medium text-slate-500 mb-1">Wszystkich APK</p>
 		<p class="text-2xl font-bold text-slate-900">{appState.apkForms.length}</p>
 	</div>
@@ -213,14 +213,14 @@
 
 <!-- Lista -->
 {#if filtered.length === 0}
-	<div class="bg-white border border-slate-200 rounded-xl p-10 text-center text-slate-400">
+	<div class="bg-white border border-line rounded-xl p-10 text-center text-slate-400">
 		<ClipboardList size={32} class="mx-auto mb-2 opacity-30" />
 		Brak formularzy APK
 	</div>
 {:else}
-	<div class="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		<table class="w-full text-sm text-left">
-			<thead class="bg-slate-50 border-b border-slate-200">
+			<thead class="bg-slate-50 border-b border-line">
 				<tr>
 					<th class="px-5 py-3 font-semibold text-slate-600">Ref</th>
 					<th class="px-5 py-3 font-semibold text-slate-600">Klient</th>
@@ -234,7 +234,7 @@
 			</thead>
 			<tbody>
 				{#each filtered as f}
-					<tr class="border-t border-slate-100 hover:bg-slate-50">
+					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-3 font-mono text-xs text-slate-500">{f.ref_number}</td>
 						<td class="px-5 py-3 font-medium">{f.crm_clients?.nazwa_skrocona ?? f.crm_clients?.nazwa ?? f.client_name}</td>
 						<td class="px-5 py-3 text-slate-500">{f.advisor_name ?? '—'}</td>
@@ -258,11 +258,11 @@
 						<td class="px-5 py-3">
 							<div class="flex items-center gap-2">
 								<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
-									class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">
+									class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 									<ExternalLink size={12} /> Otwórz
 								</a>
 								<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
-									class="flex items-center gap-1 px-2 py-1 text-xs border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+									class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
 									<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
 								</button>
 								{#if f.pdf_url}
@@ -286,7 +286,7 @@
 		{#if createdFormId}
 			<button onclick={closeNew} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Gotowe</button>
 		{:else}
-			<button onclick={closeNew} class="px-4 py-2 text-sm border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+			<button onclick={closeNew} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 			<button onclick={createApk} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
 				{saving ? 'Tworzenie...' : (clientDeclined ? 'Zapisz odmowę' : 'Utwórz i wygeneruj link')}
 			</button>
@@ -313,7 +313,7 @@
 				<div class="flex gap-2">
 					<input readonly value={tokenLink} class="{inp} bg-slate-50 font-mono text-xs" />
 					<button onclick={copyLink}
-						class="flex items-center gap-1 px-3 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 shrink-0 {copied ? 'text-emerald-600 border-emerald-300' : 'text-slate-600'}">
+						class="flex items-center gap-1 px-3 py-2 text-sm border border-line rounded-lg hover:bg-slate-50 shrink-0 {copied ? 'text-emerald-600 border-emerald-300' : 'text-slate-600'}">
 						{#if copied}<Check size={14} /> Skopiowano{:else}<Copy size={14} /> Kopiuj{/if}
 					</button>
 				</div>
@@ -337,7 +337,7 @@
 						class={inp}
 					/>
 					{#if fKlientOpen}
-						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-slate-300 rounded-lg shadow-xl max-h-52 overflow-y-auto">
+						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-line rounded-lg shadow-xl max-h-52 overflow-y-auto">
 							{#each filteredClients as c}
 								<button tabindex="0" type="button" onclick={() => { fKlient = c.id; fKlientOpen = false; fKlientSearch = ''; }}
 									class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50">
@@ -365,7 +365,7 @@
 					{#each [['client','Klient wypełnia sam'],['advisor','Doradca wypełnia z klientem']] as [val, label]}
 						<button type="button" onclick={() => fMode = val as typeof fMode}
 							class="flex-1 py-2 text-sm rounded-lg border transition-colors
-								{fMode === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}">
+								{fMode === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">
 							{label}
 						</button>
 					{/each}
@@ -387,7 +387,7 @@
 			</div>
 
 			<!-- RODO -->
-			<div class="border border-slate-200 rounded-xl p-4 bg-slate-50">
+			<div class="border border-line rounded-xl p-4 bg-slate-50">
 				<p class="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-3">Zgoda RODO (opcjonalnie)</p>
 				<label class="flex items-center gap-2 text-sm cursor-pointer mb-3">
 					<input type="checkbox" bind:checked={rodoZgoda} class="w-4 h-4 accent-blue-600" />

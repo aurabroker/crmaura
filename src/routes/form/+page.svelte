@@ -112,7 +112,7 @@
 		saving = false;
 	}
 
-	const inp = 'w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
+	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 </script>
 
 <svelte:head><title>Analiza Potrzeb Klienta — FRANK67</title></svelte:head>
@@ -130,7 +130,7 @@
 		</div>
 
 		{#if status === 'loading'}
-			<div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-10 text-center text-slate-400">
+			<div class="bg-white rounded-2xl shadow-sm border border-line p-10 text-center text-slate-400">
 				Ładowanie formularza…
 			</div>
 
@@ -149,7 +149,7 @@
 			</div>
 
 		{:else if status === 'used'}
-			<div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-10 text-center">
+			<div class="bg-white rounded-2xl shadow-sm border border-line p-10 text-center">
 				<div class="text-4xl mb-3">✅</div>
 				<h2 class="text-lg font-semibold text-slate-900 mb-1">Formularz już wypełniony</h2>
 				<p class="text-slate-500 text-sm">Ten formularz został już wcześniej przesłany. Dziękujemy!</p>
@@ -163,7 +163,7 @@
 			</div>
 
 		{:else if status === 'ready'}
-			<div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+			<div class="bg-white rounded-2xl shadow-sm border border-line overflow-hidden">
 				<!-- Klient header -->
 				<div class="bg-slate-900 px-6 py-5">
 					<p class="text-slate-400 text-xs uppercase tracking-wider mb-0.5">Klient</p>
@@ -176,7 +176,7 @@
 				<div class="p-6 space-y-8">
 					<!-- Sekcja 1: Dane osobowe -->
 					<section>
-						<h2 class="text-base font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">1. Sytuacja rodzinna</h2>
+						<h2 class="text-base font-semibold text-slate-900 border-b border-line-soft pb-2 mb-4">1. Sytuacja rodzinna</h2>
 						<div class="grid grid-cols-2 gap-4">
 							<div>
 								<label class="block text-sm font-medium text-slate-700 mb-1">Stan cywilny</label>
@@ -197,7 +197,7 @@
 
 					<!-- Sekcja 2: Praca i dochody -->
 					<section>
-						<h2 class="text-base font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">2. Sytuacja zawodowa i finansowa</h2>
+						<h2 class="text-base font-semibold text-slate-900 border-b border-line-soft pb-2 mb-4">2. Sytuacja zawodowa i finansowa</h2>
 						<div class="grid grid-cols-2 gap-4">
 							<div>
 								<label class="block text-sm font-medium text-slate-700 mb-1">Zatrudnienie</label>
@@ -218,12 +218,12 @@
 
 					<!-- Sekcja 3: Obecna ochrona -->
 					<section>
-						<h2 class="text-base font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">3. Posiadane ubezpieczenia</h2>
+						<h2 class="text-base font-semibold text-slate-900 border-b border-line-soft pb-2 mb-4">3. Posiadane ubezpieczenia</h2>
 						<p class="text-xs text-slate-500 mb-3">Zaznacz wszystkie, które posiadasz:</p>
 						<div class="grid grid-cols-2 gap-2">
 							{#each ubOptions as o}
 								<label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
-									<input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+									<input type="checkbox" class="rounded border-line text-blue-600 focus:ring-blue-500"
 										checked={posiadaneUb.includes(o)}
 										onchange={() => posiadaneUb = toggleArr(posiadaneUb, o)} />
 									{o}
@@ -234,12 +234,12 @@
 
 					<!-- Sekcja 4: Potrzeby -->
 					<section>
-						<h2 class="text-base font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">4. Cel i potrzeby ubezpieczeniowe</h2>
+						<h2 class="text-base font-semibold text-slate-900 border-b border-line-soft pb-2 mb-4">4. Cel i potrzeby ubezpieczeniowe</h2>
 						<p class="text-xs text-slate-500 mb-3">Zaznacz co jest dla Ciebie ważne:</p>
 						<div class="grid grid-cols-2 gap-2 mb-4">
 							{#each celOptions as o}
 								<label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer p-2 rounded-lg hover:bg-slate-50">
-									<input type="checkbox" class="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+									<input type="checkbox" class="rounded border-line text-blue-600 focus:ring-blue-500"
 										checked={celUbezpieczenia.includes(o)}
 										onchange={() => celUbezpieczenia = toggleArr(celUbezpieczenia, o)} />
 									{o}
@@ -257,7 +257,7 @@
 
 					<!-- Sekcja 5: Dodatkowe -->
 					<section>
-						<h2 class="text-base font-semibold text-slate-900 border-b border-slate-100 pb-2 mb-4">5. Informacje dodatkowe</h2>
+						<h2 class="text-base font-semibold text-slate-900 border-b border-line-soft pb-2 mb-4">5. Informacje dodatkowe</h2>
 						<textarea bind:value={dodatkowe} rows="4" class={inp}
 							placeholder="Wpisz wszelkie dodatkowe informacje, pytania lub uwagi dla doradcy…"></textarea>
 					</section>
@@ -277,7 +277,7 @@
 					<!-- Przyciski -->
 					<div class="flex gap-3 pt-2">
 						<button onclick={() => submit(true)} disabled={saving}
-							class="flex-1 py-2.5 text-sm border border-slate-300 rounded-xl text-slate-600 hover:bg-slate-50 disabled:opacity-60 transition-colors">
+							class="flex-1 py-2.5 text-sm border border-line rounded-xl text-slate-600 hover:bg-slate-50 disabled:opacity-60 transition-colors">
 							{saving ? 'Zapisywanie…' : 'Zapisz szkic'}
 						</button>
 						<button onclick={() => submit(false)} disabled={saving}

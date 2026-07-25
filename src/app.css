@@ -4,4 +4,10 @@
   --color-primary: #0f172a;
   --color-primary-hover: #1e293b;
   --font-sans: 'Inter', sans-serif;
+
+  /* Ramki — jeden centralny "pokrętło" na przyciemnienie.
+     line      = główne ramki kart/sekcji/inputów (wyraźna)
+     line-soft = delikatne wewnętrzne linie i dzielniki list */
+  --color-line: #cbd5e1;       /* było slate-200 (#e2e8f0) — teraz wyraźniejsze */
+  --color-line-soft: #e2e8f0;  /* było slate-100 (#f1f5f9) — subtelny dzielnik */
 }
