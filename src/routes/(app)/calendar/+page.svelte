@@ -535,8 +535,8 @@
 				</select>
 			</div>
 		</div>
-		{#if isLinkedTask}
-			<!-- Powiązanie zablokowane (pokazane w chipie u góry) — tylko Status do zmiany. -->
+		<!-- Status / Czas trwania / Przypisz — jeden wiersz -->
+		<div class="grid grid-cols-3 gap-3">
 			<div>
 				<label class={labelCls}>Status</label>
 				<select bind:value={fStatus} class={inputCls}>
@@ -546,17 +546,21 @@
 					<option value="anulowane">Anulowane</option>
 				</select>
 			</div>
-		{:else}
-		<div class="grid grid-cols-2 gap-3">
 			<div>
-				<label class={labelCls}>Status</label>
-				<select bind:value={fStatus} class={inputCls}>
-					<option value="otwarte">Otwarte</option>
-					<option value="w_toku">W toku</option>
-					<option value="zakonczone">Zakończone</option>
-					<option value="anulowane">Anulowane</option>
+				<label class={labelCls}>Czas trwania (dni)</label>
+				<input type="number" bind:value={fCzasTrwania} min="1" class={inputCls} placeholder="np. 7" />
+			</div>
+			<div>
+				<label class={labelCls}>Przypisz do</label>
+				<select bind:value={fAssigned} class={inputCls}>
+					<option value="">— nieprzypisane —</option>
+					{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>{/each}
 				</select>
 			</div>
+		</div>
+		{#if !isLinkedTask}
+		<!-- Powiązanie (tylko dla zadań tworzonych w kalendarzu; powiązane są zablokowane w chipie) -->
+		<div class="grid grid-cols-3 gap-3">
 			<div>
 				<label class={labelCls}>Klient</label>
 				<select bind:value={fKlient} class={inputCls}>
@@ -564,8 +568,6 @@
 					{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
 				</select>
 			</div>
-		</div>
-		<div class="grid grid-cols-2 gap-3">
 			<div>
 				<label class={labelCls}>Prospect</label>
 				<select bind:value={fProspect} class={inputCls}>
@@ -584,19 +586,6 @@
 			</div>
 		</div>
 		{/if}
-		<div class="grid grid-cols-2 gap-3">
-			<div>
-				<label class={labelCls}>Przypisz do (główny)</label>
-				<select bind:value={fAssigned} class={inputCls}>
-					<option value="">— nieprzypisane —</option>
-					{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>{/each}
-				</select>
-			</div>
-			<div>
-				<label class={labelCls}>Czas trwania (dni)</label>
-				<input type="number" bind:value={fCzasTrwania} min="1" class={inputCls} placeholder="np. 7" />
-			</div>
-		</div>
 		<div>
 			<label class={labelCls}>Dodatkowe osoby</label>
 			<div class="flex flex-wrap gap-2 mt-1">
