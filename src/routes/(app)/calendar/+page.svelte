@@ -10,8 +10,6 @@
 	// a ciężki rdzeń (referuje DOM) ładujemy dynamicznie w onMount (SPA, ssr=false).
 	import { ScheduleXCalendar } from '@schedule-x/svelte';
 	import '@schedule-x/theme-default/dist/index.css';
-	// Schedule-X 3.x (linia Temporal) — eventy/daty wymagają obiektów Temporal.
-	import { Temporal } from 'temporal-polyfill';
 
 	type FilterStatus = 'all' | 'otwarte' | 'w_toku' | 'zakonczone';
 	type FilterPriority = 'all' | 'pilny' | 'wysoki' | 'normalny' | 'niski';
@@ -106,9 +104,14 @@
 		return t.priorytet;
 	}
 
-	// Zwracamy any: typy Temporal biblioteki pochodzą z 'temporal-spec',
-	// a my tworzymy je z 'temporal-polyfill' (identyczny runtime, inna deklaracja).
-	function taskToEvent(t: CrmTask): any {
+	// Godzina + 1h (koniec eventu), przycięte do końca dnia — bez przechodzenia na kolejny.
+	function plusHour(hm: string): string {
+		const [h, m] = hm.split(':').map(Number);
+		const nh = Math.min((h || 0) + 1, 23);
+		return `${String(nh).padStart(2, '0')}:${String(m || 0).padStart(2, '0')}`;
+	}
+
+	function taskToEvent(t: CrmTask) {
 		const d = t.termin!.slice(0, 10);
 		const who = t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? '';
 		const rel = t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? '';
@@ -118,16 +121,12 @@
 			calendarId: calId(t),
 			description: [rel, who ? `→ ${who}` : ''].filter(Boolean).join('  ')
 		};
-		// Z godziną -> event czasowy (widoczny w siatce godzin). Bez -> całodniowy.
+		// Z godziną -> event czasowy 'YYYY-MM-DD HH:mm' (siatka godzin). Bez -> całodniowy 'YYYY-MM-DD'.
 		if (t.godzina) {
-			const [hh, mm] = t.godzina.slice(0, 5).split(':').map(Number);
-			const start = Temporal.PlainDate.from(d).toZonedDateTime({
-				timeZone: Temporal.Now.timeZoneId(),
-				plainTime: Temporal.PlainTime.from({ hour: hh || 0, minute: mm || 0 })
-			});
-			return { ...base, start, end: start.add({ hours: 1 }) };
+			const hm = t.godzina.slice(0, 5);
+			return { ...base, start: `${d} ${hm}`, end: `${d} ${plusHour(hm)}` };
 		}
-		return { ...base, start: Temporal.PlainDate.from(d), end: Temporal.PlainDate.from(d) };
+		return { ...base, start: d, end: d };
 	}
 
 	// Buduje eventy z przefiltrowanych zadań (tylko z terminem) — filtry działają też na kalendarzu.
@@ -153,37 +152,37 @@
 		]);
 
 		eventsService = createEventsServicePlugin();
-		const dnd = createDragAndDropPlugin();
 
 		calendarApp = createCalendar({
 			locale: 'pl-PL',
 			firstDayOfWeek: 1,
 			views: [viewMonthGrid, viewWeek, viewDay, viewMonthAgenda],
 			defaultView: viewMonthGrid.name,
-			selectedDate: Temporal.PlainDate.from(today) as any,
+			selectedDate: today,
 			calendars: sxCalendars,
 			events: buildEvents(),
+			plugins: [eventsService, createDragAndDropPlugin()],
 			callbacks: {
 				onEventClick(event: any) {
 					const t = appState.tasks.find(x => x.id === String(event.id));
 					if (t) openEdit(t);
 				},
-				onClickDate(date: any) {
-					openNew(String(date));
+				onClickDate(date: string) {
+					openNew(date);
 				},
-				onDoubleClickDate(date: any) {
-					openNew(String(date));
+				onDoubleClickDate(date: string) {
+					openNew(date);
 				},
 				async onEventUpdate(event: any) {
 					const id = String(event.id);
-					const s = String(event.start); // 'YYYY-MM-DD' (całodniowe) lub 'YYYY-MM-DDTHH:mm...' (czasowe)
+					const s = String(event.start); // 'YYYY-MM-DD' (całodniowe) lub 'YYYY-MM-DD HH:mm' (czasowe)
 					const patch: Record<string, string> = { termin: s.slice(0, 10) };
-					if (s.length > 10 && s.includes('T')) patch.godzina = s.slice(11, 16); // przeciągnięcie w siatce godzin
+					if (s.length > 10) patch.godzina = s.slice(11, 16); // przeciągnięcie w siatce godzin
 					await sb.from('crm_tasks').update(patch).eq('id', id);
 					appState.tasks = appState.tasks.map(t => t.id === id ? { ...t, ...patch } : t);
 				}
 			}
-		}, [eventsService, dnd]);
+		});
 	});
 
 	// Synchronizacja eventów przy każdej zmianie zadań/filtrów (dodanie/edycja/status/DnD).
