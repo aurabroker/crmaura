@@ -3,14 +3,21 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import type { CrmTask } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
-	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History } from 'lucide-svelte';
 	import { onMount } from 'svelte';
+
+	// Schedule-X — komponent-wrapper (izomorficzny) importujemy statycznie,
+	// a ciężki rdzeń (referuje DOM) ładujemy dynamicznie w onMount (SPA, ssr=false).
+	import { ScheduleXCalendar } from '@schedule-x/svelte';
+	import '@schedule-x/theme-default/dist/index.css';
+	// Schedule-X 3.x (linia Temporal) — eventy/daty wymagają obiektów Temporal.
+	import { Temporal } from 'temporal-polyfill';
 
 	type FilterStatus = 'all' | 'otwarte' | 'w_toku' | 'zakonczone';
 	type FilterPriority = 'all' | 'pilny' | 'wysoki' | 'normalny' | 'niski';
-	type ViewMode = 'month' | 'week' | 'day' | 'list' | 'rejestr';
+	type Tab = 'calendar' | 'list' | 'rejestr';
 
-	let viewMode = $state<ViewMode>('month');
+	let tab = $state<Tab>('calendar');
 	let filterStatus = $state<FilterStatus>('all');
 	let filterPriority = $state<FilterPriority>('all');
 	let search = $state('');
@@ -19,18 +26,8 @@
 	let saving = $state(false);
 	let formError = $state('');
 
-	// Calendar nav — anchor date
-	let navDate = $state(new Date());
-
-	// Drag state
-	let dragTaskId = $state<string | null>(null);
-
 	// Prospects list for modal
 	let prospects = $state<Array<{id: string; nazwa: string}>>([]);
-	onMount(async () => {
-		const { data } = await sb.from('crm_prospects').select('id, nazwa').order('nazwa');
-		prospects = data ?? [];
-	});
 
 	// form fields
 	let fTytul = $state('');
@@ -65,69 +62,7 @@
 
 	const today = new Date().toISOString().slice(0, 10);
 
-	const DAYS_SHORT = ['Pon', 'Wt', 'Śr', 'Czw', 'Pt', 'Sob', 'Nd'];
-	const DAYS_FULL = ['Poniedziałek', 'Wtorek', 'Środa', 'Czwartek', 'Piątek', 'Sobota', 'Niedziela'];
-	const MONTHS = ['Styczeń','Luty','Marzec','Kwiecień','Maj','Czerwiec','Lipiec','Sierpień','Wrzesień','Październik','Listopad','Grudzień'];
-
-	// ---- Derived nav values ----
-	const navYear = $derived(navDate.getFullYear());
-	const navMonth = $derived(navDate.getMonth());
-	const navDay = $derived(navDate.getDate());
-
-	// Week start (Monday of navDate's week)
-	const weekStart = $derived(() => {
-		const d = new Date(navDate);
-		const dow = d.getDay() === 0 ? 6 : d.getDay() - 1;
-		d.setDate(d.getDate() - dow);
-		return d;
-	});
-
-	function dateStr(d: Date) {
-		return d.toISOString().slice(0, 10);
-	}
-
-	function addDays(d: Date, n: number) {
-		const r = new Date(d);
-		r.setDate(r.getDate() + n);
-		return r;
-	}
-
-	let showFullWeek = $state(false);
-	const weekDays = $derived(() => {
-		const all7 = Array.from({ length: 7 }, (_, i) => addDays(weekStart(), i));
-		return showFullWeek ? all7 : all7.filter(d => d.getDay() >= 1 && d.getDay() <= 5);
-	});
-
-	// ---- Navigation ----
-	function prev() {
-		const d = new Date(navDate);
-		if (viewMode === 'month') { d.setMonth(d.getMonth() - 1); d.setDate(1); }
-		else if (viewMode === 'week') d.setDate(d.getDate() - 7);
-		else if (viewMode === 'day') d.setDate(d.getDate() - 1);
-		navDate = d;
-	}
-	function next() {
-		const d = new Date(navDate);
-		if (viewMode === 'month') { d.setMonth(d.getMonth() + 1); d.setDate(1); }
-		else if (viewMode === 'week') d.setDate(d.getDate() + 7);
-		else if (viewMode === 'day') d.setDate(d.getDate() + 1);
-		navDate = d;
-	}
-	function goToday() { navDate = new Date(); }
-
-	// ---- Title ----
-	const navTitle = $derived(() => {
-		if (viewMode === 'month') return `${MONTHS[navMonth]} ${navYear}`;
-		if (viewMode === 'week') {
-			const ws = weekStart();
-			const we = addDays(ws, 6);
-			if (ws.getMonth() === we.getMonth()) return `${ws.getDate()}–${we.getDate()} ${MONTHS[ws.getMonth()]} ${ws.getFullYear()}`;
-			return `${ws.getDate()} ${MONTHS[ws.getMonth()]} – ${we.getDate()} ${MONTHS[we.getMonth()]} ${we.getFullYear()}`;
-		}
-		return `${navDay} ${MONTHS[navMonth]} ${navYear}`;
-	});
-
-	// ---- Filters ----
+	// ---- Filtry (widok Lista) ----
 	const filteredTasks = $derived(
 		appState.tasks
 			.filter(t => filterStatus === 'all' || t.status === filterStatus)
@@ -139,42 +74,116 @@
 			)
 	);
 
-	// Tasks indexed by date
-	const tasksByDate = $derived(() => {
-		const map: Record<string, CrmTask[]> = {};
-		for (const t of appState.tasks) {
-			if (t.termin) {
-				const d = t.termin.slice(0, 10);
-				if (!map[d]) map[d] = [];
-				map[d].push(t);
-			}
-		}
-		return map;
-	});
-
-	// Month grid cells
-	const calDays = $derived(() => {
-		const firstDay = new Date(navYear, navMonth, 1);
-		let startDow = firstDay.getDay();
-		startDow = startDow === 0 ? 6 : startDow - 1;
-		const daysInMonth = new Date(navYear, navMonth + 1, 0).getDate();
-		const cells: Array<{ date: string | null; day: number | null }> = [];
-		for (let i = 0; i < startDow; i++) cells.push({ date: null, day: null });
-		for (let d = 1; d <= daysInMonth; d++) {
-			const mm = String(navMonth + 1).padStart(2, '0');
-			const dd = String(d).padStart(2, '0');
-			cells.push({ date: `${navYear}-${mm}-${dd}`, day: d });
-		}
-		while (cells.length % 7 !== 0) cells.push({ date: null, day: null });
-		return cells;
-	});
-
-	// KPI
+	// ---- KPI ----
 	const openCount = $derived(appState.tasks.filter(t => t.status === 'otwarte' || t.status === 'w_toku').length);
 	const overdueCount = $derived(appState.tasks.filter(t =>
 		(t.status === 'otwarte' || t.status === 'w_toku') && t.termin && t.termin < today
 	).length);
 	const doneCount = $derived(appState.tasks.filter(t => t.status === 'zakonczone').length);
+
+	function isOverdue(t: CrmTask) {
+		return (t.status === 'otwarte' || t.status === 'w_toku') && !!t.termin && t.termin < today;
+	}
+
+	// =========================================================================
+	//  Schedule-X — mapowanie zadań na eventy + integracja
+	// =========================================================================
+
+	// Kolory kalendarzy per priorytet/stan (dopasowane do palety aplikacji).
+	const sxCalendars = {
+		pilny:    { colorName: 'pilny',    lightColors: { main: '#dc2626', container: '#fee2e2', onContainer: '#7f1d1d' } },
+		wysoki:   { colorName: 'wysoki',   lightColors: { main: '#ea580c', container: '#ffedd5', onContainer: '#7c2d12' } },
+		normalny: { colorName: 'normalny', lightColors: { main: '#2563eb', container: '#dbeafe', onContainer: '#1e3a8a' } },
+		niski:    { colorName: 'niski',    lightColors: { main: '#64748b', container: '#f1f5f9', onContainer: '#334155' } },
+		overdue:  { colorName: 'overdue',  lightColors: { main: '#dc2626', container: '#fecaca', onContainer: '#7f1d1d' } },
+		done:     { colorName: 'done',     lightColors: { main: '#94a3b8', container: '#f1f5f9', onContainer: '#64748b' } }
+	};
+
+	function calId(t: CrmTask): string {
+		if (t.status === 'zakonczone') return 'done';
+		if (isOverdue(t)) return 'overdue';
+		return t.priorytet;
+	}
+
+	// Zwracamy any: typy Temporal biblioteki pochodzą z 'temporal-spec',
+	// a my tworzymy je z 'temporal-polyfill' (identyczny runtime, inna deklaracja).
+	function taskToEvent(t: CrmTask): any {
+		const d = t.termin!.slice(0, 10);
+		const who = t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? '';
+		const rel = t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? '';
+		return {
+			id: t.id,
+			title: t.tytul,
+			start: Temporal.PlainDate.from(d),
+			end: Temporal.PlainDate.from(d),
+			calendarId: calId(t),
+			description: [rel, who ? `→ ${who}` : ''].filter(Boolean).join('  ')
+		};
+	}
+
+	// Buduje eventy z appState.tasks (tylko zadania z terminem).
+	function buildEvents() {
+		return appState.tasks.filter(t => t.termin).map(taskToEvent);
+	}
+
+	let calendarApp = $state<any>(null);
+	let eventsService: any = null;
+
+	onMount(async () => {
+		const { data } = await sb.from('crm_prospects').select('id, nazwa').order('nazwa');
+		prospects = data ?? [];
+		await loadHistory();
+
+		// Rdzeń Schedule-X — dynamiczny import (browser-only).
+		const [{ createCalendar, viewMonthGrid, viewWeek, viewDay, viewMonthAgenda },
+			{ createEventsServicePlugin },
+			{ createDragAndDropPlugin }] = await Promise.all([
+			import('@schedule-x/calendar'),
+			import('@schedule-x/events-service'),
+			import('@schedule-x/drag-and-drop')
+		]);
+
+		eventsService = createEventsServicePlugin();
+		const dnd = createDragAndDropPlugin();
+
+		calendarApp = createCalendar({
+			locale: 'pl-PL',
+			firstDayOfWeek: 1,
+			views: [viewMonthGrid, viewWeek, viewDay, viewMonthAgenda],
+			defaultView: viewMonthGrid.name,
+			selectedDate: Temporal.PlainDate.from(today) as any,
+			calendars: sxCalendars,
+			events: buildEvents(),
+			callbacks: {
+				onEventClick(event: any) {
+					const t = appState.tasks.find(x => x.id === String(event.id));
+					if (t) openEdit(t);
+				},
+				onClickDate(date: any) {
+					openNew(String(date));
+				},
+				onDoubleClickDate(date: any) {
+					openNew(String(date));
+				},
+				async onEventUpdate(event: any) {
+					const id = String(event.id);
+					const newDate = String(event.start).slice(0, 10);
+					await sb.from('crm_tasks').update({ termin: newDate }).eq('id', id);
+					appState.tasks = appState.tasks.map(t => t.id === id ? { ...t, termin: newDate } : t);
+				}
+			}
+		}, [eventsService, dnd]);
+	});
+
+	// Synchronizacja eventów przy każdej zmianie zadań (dodanie/edycja/status/DnD).
+	$effect(() => {
+		const evts = buildEvents(); // czyta appState.tasks -> zależność reaktywna
+		if (eventsService && calendarApp) eventsService.set(evts);
+	});
+
+	// =========================================================================
+	//  CRUD zadań (logika bez zmian względem wersji custom)
+	// =========================================================================
 
 	function openNew(date?: string) {
 		editingTask = null;
@@ -264,44 +273,14 @@
 		await reloadTasks();
 	}
 
-	// ---- Drag & Drop ----
-	function onDragStart(e: DragEvent, taskId: string) {
-		dragTaskId = taskId;
-		e.dataTransfer!.effectAllowed = 'move';
-		e.dataTransfer!.setData('text/plain', taskId);
-	}
-
-	function onDragOver(e: DragEvent) {
-		e.preventDefault();
-		e.dataTransfer!.dropEffect = 'move';
-	}
-
-	async function onDrop(e: DragEvent, date: string) {
-		e.preventDefault();
-		const id = dragTaskId ?? e.dataTransfer!.getData('text/plain');
-		dragTaskId = null;
-		if (!id || !date) return;
-		await sb.from('crm_tasks').update({ termin: date }).eq('id', id);
-		await reloadTasks();
-	}
-
-	function onDragEnd() { dragTaskId = null; }
-
 	const priorityClsMap: Record<CrmTask['priorytet'], string> = {
 		pilny:   'bg-red-100 text-red-700',
 		wysoki:  'bg-orange-100 text-orange-700',
 		normalny:'bg-blue-100 text-blue-700',
 		niski:   'bg-slate-100 text-slate-500'
 	};
-	const priorityDotMap: Record<CrmTask['priorytet'], string> = {
-		pilny: 'bg-red-500', wysoki: 'bg-orange-400', normalny: 'bg-blue-400', niski: 'bg-slate-300'
-	};
 
 	const statusIcon = (t: CrmTask) => t.status === 'zakonczone' ? CheckCircle2 : t.status === 'w_toku' ? Clock : Circle;
-
-	function isOverdue(t: CrmTask) {
-		return (t.status === 'otwarte' || t.status === 'w_toku') && !!t.termin && t.termin < today;
-	}
 
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
@@ -317,20 +296,16 @@
 		<p class="text-sm text-slate-500 mt-1">Zadania i przypomnienia zespołu</p>
 	</div>
 	<div class="flex items-center gap-2">
-		<!-- View toggle -->
+		<!-- Przełącznik zakładek -->
 		<div class="flex bg-slate-100 rounded-lg p-1">
-			{#each [['month','Miesiąc'],['week','Tydzień'],['day','Dzień'],['list','Lista']] as [v, lbl]}
-				<button onclick={() => viewMode = v as ViewMode}
+			{#each [['calendar','Kalendarz'],['list','Lista'],['rejestr','Rejestr']] as [v, lbl]}
+				<button onclick={() => tab = v as Tab}
 					class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center gap-1
-						{viewMode === v ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}">
-					{#if v === 'month'}<CalendarDays size={13} />{:else if v === 'list'}<List size={13} />{/if}
+						{tab === v ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}">
+					{#if v === 'calendar'}<CalendarDays size={13} />{:else if v === 'list'}<List size={13} />{:else}<History size={13} />{/if}
 					{lbl}
 				</button>
 			{/each}
-			<button onclick={() => viewMode = 'rejestr'}
-				class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors {viewMode === 'rejestr' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}">
-				Rejestr
-			</button>
 		</div>
 		<button onclick={() => openNew()} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors flex items-center gap-2">
 			<Plus size={15} /> Nowe zadanie
@@ -354,199 +329,29 @@
 	</div>
 </div>
 
-<!-- Nav bar (for calendar views) -->
-{#if viewMode !== 'list' && viewMode !== 'rejestr'}
-<div class="flex items-center gap-3 mb-4">
-	<button onclick={prev} class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><ChevronLeft size={18} /></button>
-	<button onclick={next} class="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"><ChevronRight size={18} /></button>
-	<h2 class="text-base font-semibold text-slate-900 min-w-[200px]">{navTitle()}</h2>
-	<button onclick={goToday} class="px-3 py-1 text-xs font-semibold border border-line rounded-lg text-slate-600 hover:bg-slate-50">Dziś</button>
-	{#if viewMode === 'week'}
-	<label class="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer ml-4">
-		<input type="checkbox" bind:checked={showFullWeek} class="w-3.5 h-3.5 accent-blue-600" />
-		Pokaż cały tydzień (pon–nd)
-	</label>
-	{/if}
-</div>
-{/if}
-
-<!-- ===== MONTH VIEW ===== -->
-{#if viewMode === 'month'}
-<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-	<div class="grid grid-cols-7 border-b border-line-soft">
-		{#each DAYS_SHORT as d}
-			<div class="text-center text-[11px] font-semibold text-slate-400 uppercase py-2">{d}</div>
-		{/each}
-	</div>
-	<div class="grid grid-cols-7">
-		{#each calDays() as cell, i}
-			{@const isToday = cell.date === today}
-			{@const dayTasks = cell.date ? (tasksByDate()[cell.date] ?? []) : []}
-			{@const isWeekend = (i % 7) >= 5}
-			{@const isDragOver = false}
-			<div
-				class="min-h-[90px] border-b border-r border-line-soft p-1.5 transition-colors
-					{cell.date ? 'cursor-default' : 'bg-slate-50/50'}
-					{isWeekend && cell.date ? 'bg-orange-50/30' : ''}
-					{cell.date ? 'hover:bg-slate-50' : ''}"
-				ondragover={cell.date ? onDragOver : undefined}
-				ondrop={cell.date ? (e) => onDrop(e, cell.date!) : undefined}
-			>
-				{#if cell.day}
-					<div class="flex items-center justify-between mb-1">
-						<span class="text-xs font-semibold {isToday ? 'bg-blue-600 text-white w-5 h-5 rounded-full flex items-center justify-center text-[11px]' : 'text-slate-600'}">{cell.day}</span>
-						{#if cell.date}
-							<button onclick={() => openNew(cell.date!)} class="w-4 h-4 rounded flex items-center justify-center text-slate-300 hover:text-blue-600 hover:bg-blue-50 transition-all text-[10px] font-bold leading-none">+</button>
-						{/if}
-					</div>
-					<div class="space-y-0.5">
-						{#each dayTasks.slice(0, 3) as t}
-							{@const overdue = isOverdue(t)}
-							<button
-								draggable="true"
-								ondragstart={(e) => onDragStart(e, t.id)}
-								ondragend={onDragEnd}
-								onclick={() => openEdit(t)}
-								class="w-full text-left text-[10px] leading-tight px-1.5 py-0.5 rounded font-medium truncate flex items-center gap-1 transition-colors cursor-grab active:cursor-grabbing
-									{t.status === 'zakonczone' ? 'bg-slate-100 text-slate-400 line-through' : overdue ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}
-									{dragTaskId === t.id ? 'opacity-40' : ''}"
-								title={t.tytul}
-							>
-								<span class="w-1.5 h-1.5 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
-								<span class="truncate">{t.tytul}</span>
-								{#if t.czas_trwania_dni && t.status !== 'zakonczone'}
-									{@const pct = t.postep_pct ?? 0}
-									<div class="w-full h-0.5 bg-white/50 rounded-full mt-0.5">
-										<div class="h-0.5 rounded-full bg-current" style="width:{pct}%"></div>
-									</div>
-								{/if}
-							</button>
-						{/each}
-						{#if dayTasks.length > 3}
-							<div class="text-[10px] text-slate-400 px-1">+{dayTasks.length - 3} więcej</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
-		{/each}
-	</div>
-</div>
-
-<!-- ===== WEEK VIEW ===== -->
-{:else if viewMode === 'week'}
-{@const wdays = weekDays()}
-<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-	<div class="grid border-b border-line-soft" style="grid-template-columns: repeat({wdays.length}, minmax(0, 1fr))">
-		{#each wdays as d, i}
-			{@const ds = dateStr(d)}
-			{@const isToday = ds === today}
-			{@const isWeekend = d.getDay() === 0 || d.getDay() === 6}
-			<div class="text-center py-3 {isToday ? 'bg-blue-50' : ''} {isWeekend ? 'bg-orange-50/40' : ''}">
-				<div class="text-[11px] font-semibold text-slate-400 uppercase">{DAYS_SHORT[d.getDay() === 0 ? 6 : d.getDay() - 1]}</div>
-				<div class="text-lg font-bold mt-0.5 {isToday ? 'text-blue-600' : 'text-slate-700'}">{d.getDate()}</div>
-			</div>
-		{/each}
-	</div>
-	<div class="grid min-h-[300px]" style="grid-template-columns: repeat({wdays.length}, minmax(0, 1fr))">
-		{#each wdays as d, i}
-			{@const ds = dateStr(d)}
-			{@const dayTasks = tasksByDate()[ds] ?? []}
-			{@const isWeekend = d.getDay() === 0 || d.getDay() === 6}
-			<div
-				class="border-r border-line-soft p-2 min-h-[200px] {isWeekend ? 'bg-orange-50/20' : 'hover:bg-slate-50'} transition-colors"
-				ondragover={onDragOver}
-				ondrop={(e) => onDrop(e, ds)}
-			>
-				<button onclick={() => openNew(ds)} class="w-full text-left text-[10px] text-slate-300 hover:text-blue-500 mb-1 flex items-center gap-1 py-0.5">
-					<Plus size={10} /> nowe
-				</button>
-				<div class="space-y-1">
-					{#each dayTasks as t}
-						{@const overdue = isOverdue(t)}
-						<button
-							draggable="true"
-							ondragstart={(e) => onDragStart(e, t.id)}
-							ondragend={onDragEnd}
-							onclick={() => openEdit(t)}
-							class="w-full text-left text-[11px] leading-tight px-2 py-1 rounded font-medium transition-colors cursor-grab active:cursor-grabbing
-								{t.status === 'zakonczone' ? 'bg-slate-100 text-slate-400 line-through' : overdue ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}
-								{dragTaskId === t.id ? 'opacity-40' : ''}"
-							title={t.tytul}
-						>
-							<div class="flex items-center gap-1.5 truncate">
-								<span class="w-1.5 h-1.5 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
-								<span class="truncate">{t.tytul}</span>
-							</div>
-							{#if t.czas_trwania_dni && t.status !== 'zakonczone'}
-								{@const pct = t.postep_pct ?? 0}
-								<div class="w-full h-0.5 bg-white/50 rounded-full mt-0.5">
-									<div class="h-0.5 rounded-full bg-current" style="width:{pct}%"></div>
-								</div>
-							{/if}
-						</button>
-					{/each}
-				</div>
-			</div>
-		{/each}
-	</div>
-</div>
-
-<!-- ===== DAY VIEW ===== -->
-{:else if viewMode === 'day'}
-{@const dayStr = `${navYear}-${String(navMonth+1).padStart(2,'0')}-${String(navDay).padStart(2,'0')}`}
-{@const dayTasks = tasksByDate()[dayStr] ?? []}
-<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-4 border-b border-line-soft flex items-center justify-between">
-		<div>
-			<span class="text-sm font-semibold text-slate-500 uppercase">{DAYS_FULL[(new Date(navDate).getDay() + 6) % 7]}</span>
-			<div class="text-2xl font-bold text-slate-900 mt-0.5">{navTitle()}</div>
-		</div>
-		<button onclick={() => openNew(dayStr)} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-700">
-			<Plus size={14} /> Dodaj zadanie
-		</button>
-	</div>
-	{#if dayTasks.length === 0}
-		<div class="px-5 py-12 text-center text-slate-400">
-			<CalendarDays size={32} class="mx-auto mb-3 text-slate-200" />
-			Brak zadań na ten dzień
-		</div>
+<!-- ===== KALENDARZ (Schedule-X) ===== -->
+{#if tab === 'calendar'}
+<div class="bg-white border border-line rounded-xl shadow-sm p-3 sx-app-calendar">
+	{#if calendarApp}
+		<ScheduleXCalendar {calendarApp} />
 	{:else}
-		<ul class="divide-y divide-line-soft">
-			{#each dayTasks as t}
-				{@const done = t.status === 'zakonczone'}
-				{@const overdue = isOverdue(t)}
-				{@const Icon = statusIcon(t)}
-				<li class="flex items-start gap-3 px-5 py-4 hover:bg-slate-50 group {done ? 'opacity-60' : ''}">
-					<button onclick={() => toggleStatus(t)} class="mt-0.5 shrink-0 text-slate-400 hover:text-emerald-600 transition-colors">
-						<Icon size={18} class={done ? 'text-emerald-500' : t.status === 'w_toku' ? 'text-blue-400' : ''} />
-					</button>
-					<div class="flex-1 min-w-0">
-						<div class="flex items-center gap-2 flex-wrap">
-							<span class="font-medium text-slate-900 {done ? 'line-through text-slate-400' : ''}">{t.tytul}</span>
-							<span class="text-xs px-2 py-0.5 rounded-full font-semibold {priorityClsMap[t.priorytet]}">{t.priorytet}</span>
-							{#if overdue}
-								<span class="text-xs px-2 py-0.5 rounded-full font-semibold bg-red-100 text-red-700 flex items-center gap-1"><AlertCircle size={11} /> Przeterminowane</span>
-							{/if}
-						</div>
-						{#if t.opis}<p class="text-sm text-slate-500 mt-0.5">{t.opis}</p>{/if}
-						<div class="flex items-center gap-3 mt-1 text-xs text-slate-400 flex-wrap">
-							{#if t.crm_clients}<a href="/clients/{t.klient_id}" class="hover:text-blue-600 hover:underline">{t.crm_clients.nazwa}</a>{/if}
-							{#if t.crm_prospects}<a href="/prospects/{t.prospect_id}" class="hover:text-blue-600 hover:underline">{t.crm_prospects.nazwa}</a>{/if}
-							{#if t.assigned_profile}<span>→ {t.assigned_profile.imie_nazwisko ?? t.assigned_profile.email}</span>{/if}
-						</div>
-					</div>
-					<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-						<button onclick={() => openEdit(t)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
-						<button onclick={() => deleteTask(t)} class="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"><Trash2 size={14} /></button>
-					</div>
-				</li>
-			{/each}
-		</ul>
+		<div class="px-5 py-16 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
+			<CalendarDays size={18} class="text-slate-300" /> Ładowanie kalendarza…
+		</div>
 	{/if}
+	<div class="flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pt-3 pb-1 text-[11px] text-slate-500 border-t border-line-soft mt-3">
+		<span class="font-semibold text-slate-400 uppercase tracking-wide">Priorytet:</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#dc2626]"></span> Pilny</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#ea580c]"></span> Wysoki</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#2563eb]"></span> Normalny</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#64748b]"></span> Niski</span>
+		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#94a3b8]"></span> Zakończone</span>
+		<span class="text-slate-400">· Przeciągnij zadanie, aby zmienić termin · Kliknij dzień, aby dodać</span>
+	</div>
 </div>
 
-<!-- ===== LIST VIEW ===== -->
-{:else}
+<!-- ===== LISTA ===== -->
+{:else if tab === 'list'}
 	<div class="flex gap-3 mb-4 flex-wrap">
 		<div class="flex items-center gap-2 flex-1 bg-white border border-line rounded-xl px-4 py-2">
 			<Search size={15} class="text-slate-400" />
@@ -609,7 +414,8 @@
 		{/if}
 	</div>
 
-{:else if viewMode === 'rejestr'}
+<!-- ===== REJESTR ===== -->
+{:else}
 <div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 	<div class="px-5 py-4 border-b border-line-soft">
 		<h2 class="text-sm font-semibold text-slate-700">Rejestr ukończonych zadań</h2>
@@ -751,3 +557,26 @@
 		</div>
 	</div>
 </Modal>
+
+<style>
+	/* Schedule-X — dopasowanie do wyglądu aplikacji (Inter, akcent, ramki). */
+	.sx-app-calendar :global(.sx__calendar) {
+		font-family: 'Inter', sans-serif;
+		border: none;
+		--sx-color-primary: #2563eb;
+		--sx-color-on-primary: #ffffff;
+		--sx-color-primary-container: #dbeafe;
+		--sx-color-on-primary-container: #1e3a8a;
+		--sx-color-surface: #ffffff;
+		--sx-color-background: #ffffff;
+		--sx-internal-color-text: #0f172a;
+		--sx-color-outline-variant: #cbd5e1;
+	}
+	.sx-app-calendar :global(.sx__calendar-wrapper) {
+		border: none;
+		min-height: 620px;
+	}
+	.sx-app-calendar :global(.sx__event) {
+		cursor: pointer;
+	}
+</style>
