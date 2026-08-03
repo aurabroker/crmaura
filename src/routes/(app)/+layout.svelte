@@ -11,6 +11,7 @@
 	} from 'lucide-svelte';
 
 	import { logAudit } from '$lib/utils/audit';
+	import ContextMenu from '$lib/components/ContextMenu.svelte';
 
 	let { children } = $props();
 	let addMenuOpen = $state(false);
@@ -306,4 +307,6 @@
 		</div>
 	</main>
 </div>
+
+<ContextMenu />
 {/if}

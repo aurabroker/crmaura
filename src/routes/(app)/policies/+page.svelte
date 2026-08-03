@@ -6,10 +6,16 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
-	import { Search, Pencil, FilePlus2, ChevronDown, ChevronRight } from 'lucide-svelte';
+	import {
+		Search, Pencil, FilePlus2, ChevronDown, ChevronRight,
+		Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus
+	} from 'lucide-svelte';
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import type { CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { logAudit } from '$lib/utils/audit';
 
 	let search = $state('');
 	let filterTyp = $state<'all' | 'jednostkowa' | 'generalna'>('all');
@@ -225,6 +231,97 @@
 		if (typ === 'generalna' || typ === 'jednostkowa') { filterTyp = typ; lockedTyp = true; }
 	});
 
+	// --- Menu kontekstowe (prawy przycisk na wierszu) ---
+	let toast = $state('');
+	let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+	function showToast(msg: string) {
+		toast = msg;
+		if (toastTimer) clearTimeout(toastTimer);
+		toastTimer = setTimeout(() => (toast = ''), 1800);
+	}
+
+	async function copyToClipboard(value: string, label: string) {
+		try {
+			await navigator.clipboard.writeText(value);
+			showToast(`Skopiowano ${label}`);
+		} catch {
+			showToast('Nie udało się skopiować');
+		}
+	}
+
+	function openClaimFor(p: Policy) {
+		fclKlient = p.klient_id;
+		fclPolisa = p.id;
+		fclNr = ''; fclData = ''; fclOpis = '';
+		formError = '';
+		showClaim = true;
+	}
+
+	// --- Usuwanie (soft delete, wymaga uzasadnienia) ---
+	let deleteTarget = $state<Policy | null>(null);
+	let deletionReason = $state('');
+	let deleting = $state(false);
+	let deleteError = $state('');
+
+	async function softDeletePolicy() {
+		if (!deleteTarget) return;
+		if (!deletionReason.trim()) { deleteError = 'Podaj uzasadnienie usunięcia.'; return; }
+		deleting = true; deleteError = '';
+		const target = deleteTarget;
+		const { error } = await sb.from('crm_policies')
+			.update({ deleted_at: new Date().toISOString(), deletion_reason: deletionReason.trim() })
+			.eq('id', target.id);
+		deleting = false;
+		if (error) { deleteError = error.message; return; }
+		await logAudit('policy_deleted', 'policy', target.id, target.nr_polisy, { reason: deletionReason.trim() });
+		appState.policies = appState.policies.filter((p) => p.id !== target.id);
+		deleteTarget = null;
+		showToast(`Polisa ${target.nr_polisy} przeniesiona do kosza`);
+	}
+
+	function policyMenu(p: Policy): CtxItem[] {
+		const isUG = p.typ_umowy === 'generalna';
+		return [
+			{ label: 'Otwórz polisę', icon: Eye, onSelect: () => goto(`/policies/${p.id}`) },
+			{
+				label: 'Otwórz w nowej karcie',
+				icon: ExternalLink,
+				onSelect: () => window.open(`/policies/${p.id}`, '_blank', 'noopener')
+			},
+			{ separator: true },
+			{ label: 'Edytuj', icon: Pencil, onSelect: () => goto(`/policies/${p.id}/edit`) },
+			{ label: 'Dodaj aneks', icon: FilePlus2, onSelect: () => openAnnex(p) },
+			...(isUG
+				? [{
+						label: 'Dodaj polisę pod tę UG',
+						icon: Plus,
+						onSelect: () => goto(`/policies/new?parent_id=${p.id}`)
+					} as CtxItem]
+				: []),
+			{ label: 'Zgłoś szkodę', icon: AlertTriangle, onSelect: () => openClaimFor(p) },
+			{ separator: true },
+			{
+				label: 'Karta klienta',
+				icon: User,
+				disabled: !p.klient_id,
+				onSelect: () => goto(`/clients/${p.klient_id}`)
+			},
+			{
+				label: 'Kopiuj nr polisy',
+				icon: Copy,
+				onSelect: () => copyToClipboard(p.nr_polisy, 'nr polisy')
+			},
+			{ separator: true },
+			{
+				label: 'Przenieś do kosza',
+				icon: Trash2,
+				danger: true,
+				onSelect: () => { deleteTarget = p; deletionReason = ''; deleteError = ''; }
+			}
+		];
+	}
+
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
@@ -297,7 +394,8 @@
 				{#each flatPolicies as p}
 					{@const st = policyStatus(p.data_do)}
 					{@const isUG = p.typ_umowy === 'generalna'}
-					<tr class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
+					<tr use:ctxMenu={{ items: () => policyMenu(p), title: p.nr_polisy }}
+						class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
 						<td class="px-5 py-3">
 							<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
 						</td>
@@ -346,7 +444,8 @@
 				{@const expanded = expandedUG.has(p.id)}
 
 				<!-- Główny wiersz -->
-				<tr class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
+				<tr use:ctxMenu={{ items: () => policyMenu(p), title: p.nr_polisy }}
+					class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
 					<td class="px-5 py-3">
 						<div class="flex items-center gap-2">
 							{#if isUG && (children.length > 0)}
@@ -416,7 +515,8 @@
 				{#if isUG && expanded}
 					{#each children as ch}
 						{@const chSt = policyStatus(ch.data_do)}
-						<tr class="border-t border-line-soft bg-slate-50/80">
+						<tr use:ctxMenu={{ items: () => policyMenu(ch), title: ch.nr_polisy }}
+							class="border-t border-line-soft bg-slate-50/80">
 							<td class="pl-12 pr-5 py-2.5 text-sm">↳ <a href="/policies/{ch.id}" class="font-medium text-blue-700 hover:underline">{ch.nr_polisy}</a></td>
 							<td class="px-5 py-2.5 text-sm">
 								<a href="/clients/{ch.klient_id}" class="hover:text-blue-700 hover:underline">{ch.crm_clients?.nazwa ?? '—'}</a>
@@ -584,3 +684,25 @@
 		</div>
 	</div>
 </Modal>
+
+<!-- Modal: Usuń polisę (z menu kontekstowego) -->
+{#if deleteTarget}
+<Modal title="Usuń polisę — {deleteTarget.nr_polisy}" open={!!deleteTarget} onclose={() => deleteTarget = null}>
+	{#snippet footer()}
+		<button onclick={() => deleteTarget = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
+		<button onclick={softDeletePolicy} disabled={deleting} class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-60">
+			{deleting ? 'Usuwanie...' : 'Przenieś do kosza'}
+		</button>
+	{/snippet}
+	{#if deleteError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{deleteError}</div>{/if}
+	<p class="text-sm text-slate-500 mb-3">Polisa trafi do Kosza — można ją przywrócić.</p>
+	<label class={labelCls}>Uzasadnienie *</label>
+	<input bind:value={deletionReason} placeholder="Powód usunięcia..." class={inputCls} />
+</Modal>
+{/if}
+
+{#if toast}
+	<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
+		{toast}
+	</div>
+{/if}
