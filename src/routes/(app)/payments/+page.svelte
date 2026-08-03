@@ -5,7 +5,11 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { fmtPln, todayStr } from '$lib/utils';
-	import { Plus, Check, Search, FileSpreadsheet, AlertTriangle, CheckCircle2, Bell } from 'lucide-svelte';
+	import { Plus, Check, Search, FileSpreadsheet, AlertTriangle, CheckCircle2, Bell,
+		RotateCcw, FileText, User, Copy } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	const today = todayStr();
 	const currentMonth = $state(today.slice(0, 7));
 
@@ -408,6 +412,55 @@
 		await reloadPayments();
 	}
 
+	function paymentMenu(pay: PolicyPayment): CtxItem[] {
+		const pol = appState.policies.find((x) => x.id === pay.polisa_id);
+		return [
+			{
+				label: 'Oznacz jako Opłacona',
+				icon: Check,
+				disabled: pay.status === 'Opłacona',
+				onSelect: () => markPaid(pay)
+			},
+			{
+				label: 'Oznacz jako Zaległa',
+				icon: AlertTriangle,
+				disabled: pay.status === 'Zaległa',
+				onSelect: () => markOverdue(pay)
+			},
+			{
+				label: 'Cofnij do Oczekującej',
+				icon: RotateCcw,
+				disabled: pay.status === 'Oczekująca',
+				onSelect: () => revertPayment(pay)
+			},
+			{ separator: true },
+			{
+				label: 'Przejdź do polisy',
+				icon: FileText,
+				disabled: !pay.polisa_id,
+				onSelect: () => goto(`/policies/${pay.polisa_id}`)
+			},
+			{
+				label: 'Karta klienta',
+				icon: User,
+				disabled: !pol?.klient_id,
+				onSelect: () => goto(`/clients/${pol!.klient_id}`)
+			},
+			{ separator: true },
+			{
+				label: 'Kopiuj nr polisy',
+				icon: Copy,
+				disabled: !pay.crm_policies?.nr_polisy,
+				onSelect: () => ctxCopy(pay.crm_policies?.nr_polisy, 'nr polisy')
+			},
+			{
+				label: 'Kopiuj kwotę raty',
+				icon: Copy,
+				onSelect: () => ctxCopy(String(pay.kwota ?? ''), 'kwotę')
+			}
+		];
+	}
+
 	async function addPayment() {
 		if (!fPolisa || !fData || !fKwota) { formError = 'Wypełnij wymagane pola.'; return; }
 		saving = true; formError = '';
@@ -618,6 +671,7 @@
 					{#each pays as pay}
 						{@const checked = selected.has(pay.id)}
 						<tr onclick={() => toggleSelect(pay.id)}
+							use:ctxMenu={{ items: () => paymentMenu(pay), title: `${pay.crm_policies?.nr_polisy ?? 'Rata'} — rata ${pay.nr_raty}` }}
 							class="border-t border-line cursor-pointer transition-colors
 								{checked ? 'bg-blue-50' : pay.status === 'Zaległa' || isOverdue(pay) ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}">
 							<td class="px-4 py-2.5 text-center" onclick={(e) => e.stopPropagation()}>

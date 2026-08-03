@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ctxMenuState, closeCtxMenu, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { ctxMenuState, ctxToastState, closeCtxMenu, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
 	const MARGIN = 8;
 
@@ -89,17 +89,17 @@
 		onkeydown={onMenuKeyDown}
 		oncontextmenu={(e) => e.preventDefault()}
 		style="left: {px}px; top: {py}px;"
-		class="fixed z-[60] min-w-52 max-w-72 bg-white border border-line rounded-xl shadow-xl py-1 overflow-hidden
+		class="fixed z-[60] min-w-56 max-w-72 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl py-1 overflow-hidden
 			{placed ? 'opacity-100' : 'opacity-0'}"
 	>
 		{#if ctxMenuState.title}
-			<div class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 truncate border-b border-line-soft">
+			<div class="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 truncate border-b border-slate-700">
 				{ctxMenuState.title}
 			</div>
 		{/if}
 		{#each ctxMenuState.items as item}
 			{#if item.separator}
-				<div class="my-1 border-t border-line-soft"></div>
+				<div class="my-1 border-t border-slate-700"></div>
 			{:else}
 				<button
 					data-ctx-item
@@ -107,22 +107,28 @@
 					disabled={item.disabled}
 					onclick={() => select(item)}
 					class="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors
-						focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed
+						focus:outline-none disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:bg-transparent
 						{item.danger
-							? 'text-red-600 hover:bg-red-50 focus:bg-red-50'
-							: 'text-slate-700 hover:bg-slate-50 focus:bg-slate-50'}"
+							? 'text-red-400 hover:bg-red-500/20 focus:bg-red-500/20'
+							: 'text-slate-100 hover:bg-blue-600 focus:bg-blue-600'}"
 				>
 					{#if item.icon}
-						<item.icon size={14} class="shrink-0 {item.danger ? 'text-red-500' : 'text-slate-400'}" />
+						<item.icon size={14} class="shrink-0 {item.danger ? 'text-red-400' : 'text-slate-400'}" />
 					{:else}
 						<span class="w-3.5 shrink-0"></span>
 					{/if}
 					<span class="flex-1 truncate">{item.label}</span>
 					{#if item.hint}
-						<span class="text-[10px] text-slate-400 shrink-0">{item.hint}</span>
+						<span class="text-[10px] text-slate-500 shrink-0">{item.hint}</span>
 					{/if}
 				</button>
 			{/if}
 		{/each}
+	</div>
+{/if}
+
+{#if ctxToastState.msg}
+	<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-xl border border-slate-700">
+		{ctxToastState.msg}
 	</div>
 {/if}

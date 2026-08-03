@@ -4,7 +4,29 @@
 	import { fmtPln, todayStr } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Download, CheckCircle } from 'lucide-svelte';
+	import { Search, Download, CheckCircle, Eye, ExternalLink, User, Copy } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+
+	function commissionMenu(pol: any): CtxItem[] {
+		return [
+			{ label: 'Otwórz polisę', icon: Eye, onSelect: () => goto(`/policies/${pol.id}`) },
+			{
+				label: 'Otwórz w nowej karcie',
+				icon: ExternalLink,
+				onSelect: () => window.open(`/policies/${pol.id}`, '_blank', 'noopener')
+			},
+			{
+				label: 'Karta klienta',
+				icon: User,
+				disabled: !pol.klient_id,
+				onSelect: () => goto(`/clients/${pol.klient_id}`)
+			},
+			{ separator: true },
+			{ label: 'Kopiuj nr polisy', icon: Copy, onSelect: () => ctxCopy(pol.nr_polisy, 'nr polisy') }
+		];
+	}
 
 	const today = todayStr();
 	const currentMonth = today.slice(0, 7); // "2026-06"
@@ -208,7 +230,8 @@
 				</thead>
 				<tbody>
 					{#each filteredPolicies as pol}
-						<tr class="border-t border-line-soft hover:bg-slate-50">
+						<tr use:ctxMenu={{ items: () => commissionMenu(pol), title: pol.nr_polisy ?? 'Polisa' }}
+							class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium text-slate-900">{pol.nr_polisy ?? '—'}</td>
 							<td class="px-5 py-3 text-slate-600">{pol.crm_clients?.nazwa ?? '—'}</td>
 							<td class="px-5 py-3 text-right text-slate-700">{fmtPln(pol.skladka_przypisana)} PLN</td>

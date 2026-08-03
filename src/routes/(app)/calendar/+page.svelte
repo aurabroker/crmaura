@@ -5,6 +5,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon, Target, User, ExternalLink } from 'lucide-svelte';
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
 	// Schedule-X — komponent-wrapper (izomorficzny) importujemy statycznie,
 	// a ciężki rdzeń (referuje DOM) ładujemy dynamicznie w onMount (SPA, ssr=false).
@@ -307,6 +310,39 @@
 		await reloadTasks();
 	}
 
+	function taskMenu(t: CrmTask): CtxItem[] {
+		const done = t.status === 'zakonczone';
+		return [
+			{ label: 'Edytuj zadanie', icon: Pencil, onSelect: () => openEdit(t) },
+			{
+				label: done ? 'Oznacz jako otwarte' : 'Oznacz jako zakończone',
+				icon: done ? Circle : CheckCircle2,
+				onSelect: () => toggleStatus(t)
+			},
+			{ separator: true },
+			{
+				label: 'Karta klienta',
+				icon: User,
+				disabled: !t.klient_id,
+				onSelect: () => goto(`/clients/${t.klient_id}`)
+			},
+			{
+				label: 'Karta prospekta',
+				icon: Target,
+				disabled: !t.prospect_id,
+				onSelect: () => goto(`/prospects/${t.prospect_id}`)
+			},
+			{
+				label: 'Przejdź do polisy',
+				icon: ExternalLink,
+				disabled: !t.polisa_id,
+				onSelect: () => goto(`/policies/${t.polisa_id}`)
+			},
+			{ separator: true },
+			{ label: 'Usuń zadanie', icon: Trash2, danger: true, onSelect: () => deleteTask(t) }
+		];
+	}
+
 	const priorityClsMap: Record<CrmTask['priorytet'], string> = {
 		pilny:   'bg-red-100 text-red-700',
 		wysoki:  'bg-orange-100 text-orange-700',
@@ -425,7 +461,8 @@
 					{@const done = t.status === 'zakonczone'}
 					{@const overdue = isOverdue(t)}
 					{@const Icon = statusIcon(t)}
-					<li class="flex items-start gap-3 px-5 py-4 hover:bg-slate-50 group {done ? 'opacity-60' : ''}">
+					<li use:ctxMenu={{ items: () => taskMenu(t), title: t.tytul }}
+						class="flex items-start gap-3 px-5 py-4 hover:bg-slate-50 group {done ? 'opacity-60' : ''}">
 						<button onclick={() => toggleStatus(t)} class="mt-0.5 shrink-0 text-slate-400 hover:text-emerald-600 transition-colors">
 							<Icon size={18} class={done ? 'text-emerald-500' : t.status === 'w_toku' ? 'text-blue-400' : ''} />
 						</button>

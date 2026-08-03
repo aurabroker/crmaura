@@ -1,4 +1,8 @@
-import type { Component } from 'svelte';
+import type { Component, SvelteComponent } from 'svelte';
+
+// lucide-svelte 1.x eksportuje ikony jako klasy legacy (SvelteComponentTyped),
+// a nie jako funkcyjne komponenty Svelte 5 — stąd unia obu wariantów.
+export type IconLike = Component<any, any, any> | typeof SvelteComponent<any, any, any>;
 
 export type CtxItem =
 	| { separator: true }
@@ -6,7 +10,7 @@ export type CtxItem =
 			separator?: false;
 			label: string;
 			onSelect: () => void;
-			icon?: Component<any>;
+			icon?: IconLike;
 			hint?: string;
 			danger?: boolean;
 			disabled?: boolean;
@@ -36,6 +40,26 @@ export function openCtxMenu(
 	ctxMenuState.title = opts.title ?? '';
 	ctxMenuState.items = items;
 	ctxMenuState.open = true;
+}
+
+// Krótki komunikat po akcji z menu (renderowany przez ContextMenu.svelte).
+export const ctxToastState = $state({ msg: '' });
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function ctxToast(msg: string) {
+	ctxToastState.msg = msg;
+	if (toastTimer) clearTimeout(toastTimer);
+	toastTimer = setTimeout(() => (ctxToastState.msg = ''), 1800);
+}
+
+export async function ctxCopy(value: string | null | undefined, label: string) {
+	if (!value) { ctxToast(`Brak: ${label}`); return; }
+	try {
+		await navigator.clipboard.writeText(value);
+		ctxToast(`Skopiowano ${label}`);
+	} catch {
+		ctxToast('Nie udało się skopiować');
+	}
 }
 
 export function closeCtxMenu() {

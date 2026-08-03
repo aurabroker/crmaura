@@ -9,7 +9,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import BondForm from '$lib/components/BondForm.svelte';
 	import UlForm from '$lib/components/UlForm.svelte';
-	import { Search, Pencil, Plus, Shield, FileText, History, Building2 } from 'lucide-svelte';
+	import { Search, Pencil, Plus, Shield, FileText, History, Building2, Copy } from 'lucide-svelte';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
 	const isAdmin = $derived(isFinance(appState.profile));
 
@@ -96,6 +98,27 @@
 	let bondForm = $state<ReturnType<typeof BondForm> | null>(null);
 	let savingBond = $state(false);
 	let bondError = $state('');
+
+	function bondMenu(b: Bond): CtxItem[] {
+		return [
+			{ label: 'Edytuj gwarancję', icon: Pencil, onSelect: () => openBond(b) },
+			{ separator: true },
+			{ label: 'Kopiuj nr gwarancji', icon: Copy, onSelect: () => ctxCopy(b.bond_nr, 'nr gwarancji') },
+			{
+				label: 'Kopiuj kontrakt',
+				icon: Copy,
+				disabled: !b.bond_kontrakt,
+				onSelect: () => ctxCopy(b.bond_kontrakt, 'kontrakt')
+			},
+			{
+				label: 'Kopiuj beneficjenta',
+				icon: Copy,
+				disabled: !b.bond_beneficjent,
+				onSelect: () => ctxCopy(b.bond_beneficjent, 'beneficjenta')
+			},
+			{ label: 'Kopiuj sumę', icon: Copy, onSelect: () => ctxCopy(String(b.bond_suma ?? ''), 'sumę') }
+		];
+	}
 
 	function openBond(b: Bond | null) {
 		editingBond = b; bondError = ''; showBond = true;
@@ -281,7 +304,8 @@
 				{#each filteredBonds as b}
 					{@const st = policyStatus(b.bond_data_do)}
 					{@const tp = pctElapsed(b.bond_data_od, b.bond_data_do)}
-					<tr class="border-t border-line-soft hover:bg-slate-50">
+					<tr use:ctxMenu={{ items: () => bondMenu(b), title: b.bond_nr }}
+						class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-4 py-2.5">
 							<div class="font-medium text-slate-800">{b.bond_nr}</div>
 							<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold {bondRodzajCls(b.bond_rodzaj)}">{bondRodzajLabel[b.bond_rodzaj] ?? b.bond_rodzaj}</span>

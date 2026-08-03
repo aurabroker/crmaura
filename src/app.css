@@ -14,6 +14,6 @@
 
 /* Wiersz / karta, na której otwarto menu kontekstowe */
 .ctx-target {
-  background-color: #eff6ff !important;
-  box-shadow: inset 2px 0 0 0 #2563eb;
+  background-color: #dbeafe !important;
+  box-shadow: inset 3px 0 0 0 #1d4ed8;
 }

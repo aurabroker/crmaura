@@ -14,7 +14,7 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
-	import type { CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { logAudit } from '$lib/utils/audit';
 
 	let search = $state('');
@@ -232,24 +232,6 @@
 	});
 
 	// --- Menu kontekstowe (prawy przycisk na wierszu) ---
-	let toast = $state('');
-	let toastTimer: ReturnType<typeof setTimeout> | null = null;
-
-	function showToast(msg: string) {
-		toast = msg;
-		if (toastTimer) clearTimeout(toastTimer);
-		toastTimer = setTimeout(() => (toast = ''), 1800);
-	}
-
-	async function copyToClipboard(value: string, label: string) {
-		try {
-			await navigator.clipboard.writeText(value);
-			showToast(`Skopiowano ${label}`);
-		} catch {
-			showToast('Nie udało się skopiować');
-		}
-	}
-
 	function openClaimFor(p: Policy) {
 		fclKlient = p.klient_id;
 		fclPolisa = p.id;
@@ -277,7 +259,7 @@
 		await logAudit('policy_deleted', 'policy', target.id, target.nr_polisy, { reason: deletionReason.trim() });
 		appState.policies = appState.policies.filter((p) => p.id !== target.id);
 		deleteTarget = null;
-		showToast(`Polisa ${target.nr_polisy} przeniesiona do kosza`);
+		ctxToast(`Polisa ${target.nr_polisy} przeniesiona do kosza`);
 	}
 
 	function policyMenu(p: Policy): CtxItem[] {
@@ -310,7 +292,7 @@
 			{
 				label: 'Kopiuj nr polisy',
 				icon: Copy,
-				onSelect: () => copyToClipboard(p.nr_polisy, 'nr polisy')
+				onSelect: () => ctxCopy(p.nr_polisy, 'nr polisy')
 			},
 			{ separator: true },
 			{
@@ -699,10 +681,4 @@
 	<label class={labelCls}>Uzasadnienie *</label>
 	<input bind:value={deletionReason} placeholder="Powód usunięcia..." class={inputCls} />
 </Modal>
-{/if}
-
-{#if toast}
-	<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] bg-slate-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
-		{toast}
-	</div>
 {/if}

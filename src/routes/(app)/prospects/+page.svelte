@@ -3,7 +3,11 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown, LayoutGrid, List } from 'lucide-svelte';
+	import { Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown, LayoutGrid, List,
+		Eye, CircleDot, Copy, Mail, Phone } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { dndzone } from 'svelte-dnd-action';
 	import { onMount } from 'svelte';
 	import type { Prospect } from '$lib/types/database';
@@ -322,6 +326,51 @@
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
 
+	async function setProspectStatus(p: Prospect, status: string) {
+		const { error } = await sb.from('crm_prospects').update({ status }).eq('id', p.id);
+		if (error) { ctxToast(`Błąd: ${error.message}`); return; }
+		appState.prospects = appState.prospects.map((x) => (x.id === p.id ? { ...x, status } : x));
+		ctxToast(`Status: ${statusLabels[status] ?? status}`);
+	}
+
+	function prospectMenu(p: Prospect): CtxItem[] {
+		return [
+			{ label: 'Otwórz prospekta', icon: Eye, onSelect: () => goto(`/prospects/${p.id}`) },
+			{
+				label: 'Otwórz w nowej karcie',
+				icon: ExternalLink,
+				onSelect: () => window.open(`/prospects/${p.id}`, '_blank', 'noopener')
+			},
+			{ label: 'Edytuj', icon: Pencil, onSelect: () => openEdit(p) },
+			{ separator: true },
+			...KANBAN_COLS.filter((c) => c.key !== p.status).map((c): CtxItem => ({
+				label: `Status: ${c.label}`,
+				icon: CircleDot,
+				onSelect: () => setProspectStatus(p, c.key)
+			})),
+			{ separator: true },
+			{ label: 'Dodaj do Klientów', icon: UserPlus, onSelect: () => convertToClient(p) },
+			{ separator: true },
+			{
+				label: 'Napisz e-mail',
+				icon: Mail,
+				disabled: !p.email,
+				onSelect: () => window.open(`mailto:${p.email}`, '_self')
+			},
+			{
+				label: 'Zadzwoń',
+				icon: Phone,
+				disabled: !p.telefon,
+				onSelect: () => window.open(`tel:${p.telefon}`, '_self')
+			},
+			{ separator: true },
+			{ label: 'Kopiuj nazwę', icon: Copy, onSelect: () => ctxCopy(p.nazwa, 'nazwę') },
+			{ label: 'Kopiuj NIP', icon: Copy, disabled: !p.nip, onSelect: () => ctxCopy(p.nip, 'NIP') },
+			{ label: 'Kopiuj e-mail', icon: Copy, disabled: !p.email, onSelect: () => ctxCopy(p.email, 'e-mail') },
+			{ label: 'Kopiuj telefon', icon: Copy, disabled: !p.telefon, onSelect: () => ctxCopy(p.telefon, 'telefon') }
+		];
+	}
+
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
@@ -417,7 +466,8 @@
 			<tbody>
 				{#each filtered() as p}
 					{@const zatrud = getZatrudnienie(p)}
-					<tr class="border-t border-line-soft hover:bg-slate-50 group">
+					<tr use:ctxMenu={{ items: () => prospectMenu(p), title: p.nazwa }}
+						class="border-t border-line-soft hover:bg-slate-50 group">
 						<td class="px-4 py-2.5">
 							<div class="flex items-center gap-1">
 								<a href={`/prospects/${p.id}`} title="Otwórz (Ctrl/⌘+klik = nowa karta)" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
@@ -492,7 +542,8 @@
 				>
 					{#each kanban[col.key] ?? [] as p (p.id)}
 						{@const zatrud = getZatrudnienie(p)}
-						<div class="bg-white border border-line rounded-lg shadow-sm p-3 cursor-grab active:cursor-grabbing hover:border-blue-300 transition-colors group">
+						<div use:ctxMenu={{ items: () => prospectMenu(p), title: p.nazwa }}
+							class="bg-white border border-line rounded-lg shadow-sm p-3 cursor-grab active:cursor-grabbing hover:border-blue-300 transition-colors group">
 							<div class="flex items-start justify-between gap-2">
 								<a
 									href={`/prospects/${p.id}`}

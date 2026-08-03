@@ -5,10 +5,53 @@
 	import type { Client } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil, Building2, User } from 'lucide-svelte';
+	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone } from 'lucide-svelte';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 	import { page } from '$app/stores';
 	import { logAudit } from '$lib/utils/audit';
+
+	function clientMenu(c: Client): CtxItem[] {
+		return [
+			{ label: 'Profil 360°', icon: Eye, onSelect: () => goto(`/clients/${c.id}`) },
+			{
+				label: 'Otwórz w nowej karcie',
+				icon: ExternalLink,
+				onSelect: () => window.open(`/clients/${c.id}`, '_blank', 'noopener')
+			},
+			{ label: 'Edytuj dane', icon: Pencil, onSelect: () => goto(`/clients/${c.id}/edit`) },
+			{ separator: true },
+			{
+				label: 'Nowa polisa dla klienta',
+				icon: FileText,
+				onSelect: () => goto(`/policies/new?klient=${c.id}`)
+			},
+			{ separator: true },
+			{
+				label: 'Napisz e-mail',
+				icon: Mail,
+				disabled: !c.email,
+				onSelect: () => window.open(`mailto:${c.email}`, '_self')
+			},
+			{
+				label: 'Zadzwoń',
+				icon: Phone,
+				disabled: !c.telefon,
+				onSelect: () => window.open(`tel:${c.telefon}`, '_self')
+			},
+			{ separator: true },
+			{ label: 'Kopiuj nazwę', icon: Copy, onSelect: () => ctxCopy(c.nazwa, 'nazwę') },
+			{
+				label: c.typ === 'osoba' ? 'Kopiuj PESEL' : 'Kopiuj NIP',
+				icon: Copy,
+				disabled: !(c.typ === 'osoba' ? c.pesel : c.nip),
+				onSelect: () => ctxCopy(c.typ === 'osoba' ? c.pesel : c.nip, c.typ === 'osoba' ? 'PESEL' : 'NIP')
+			},
+			{ label: 'Kopiuj e-mail', icon: Copy, disabled: !c.email, onSelect: () => ctxCopy(c.email, 'e-mail') },
+			{ label: 'Kopiuj telefon', icon: Copy, disabled: !c.telefon, onSelect: () => ctxCopy(c.telefon, 'telefon') }
+		];
+	}
 
 	let search = $state('');
 	let compactView = $state(false);
@@ -251,6 +294,7 @@
 		<div class="divide-y divide-line-soft">
 			{#each filtered as c}
 				<button onclick={() => goto(`/clients/${c.id}`)}
+					use:ctxMenu={{ items: () => clientMenu(c), title: c.nazwa_skrocona ?? c.nazwa }}
 					class="w-full flex items-center gap-2 px-5 py-1 text-left hover:bg-slate-50 transition-colors">
 					{#if c.typ === 'osoba'}
 						<User size={12} class="text-slate-400 shrink-0" />
@@ -276,7 +320,8 @@
 		</thead>
 		<tbody>
 			{#each filtered as c}
-				<tr class="border-t border-line-soft hover:bg-slate-50">
+				<tr use:ctxMenu={{ items: () => clientMenu(c), title: c.nazwa_skrocona ?? c.nazwa }}
+					class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3">
 						<div class="flex items-center gap-2">
 							{#if c.typ === 'osoba'}

@@ -5,8 +5,11 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { todayStr } from '$lib/utils';
-	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download } from 'lucide-svelte';
+	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
+	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
 	let pdfSaving = $state<string | null>(null); // form.id currently saving
 
@@ -132,6 +135,43 @@
 		setTimeout(() => copied = false, 2000);
 	}
 
+	function apkMenu(f: ApkForm): CtxItem[] {
+		return [
+			{
+				label: 'Otwórz formularz APK',
+				icon: ExternalLink,
+				onSelect: () => window.open(`${APK_APP_URL}?form_id=${f.id}`, '_blank', 'noopener')
+			},
+			{
+				label: 'Generuj PDF',
+				icon: Download,
+				disabled: pdfSaving === f.id,
+				onSelect: () => handlePdf(f)
+			},
+			{
+				label: 'Otwórz zapisany PDF',
+				icon: Download,
+				disabled: !f.pdf_url,
+				onSelect: () => window.open(f.pdf_url!, '_blank', 'noopener')
+			},
+			{ separator: true },
+			{
+				label: 'Karta klienta',
+				icon: User,
+				disabled: !f.klient_id,
+				onSelect: () => goto(`/clients/${f.klient_id}`)
+			},
+			{ separator: true },
+			{ label: 'Kopiuj nr referencyjny', icon: Copy, onSelect: () => ctxCopy(f.ref_number, 'nr referencyjny') },
+			{
+				label: 'Kopiuj link do PDF',
+				icon: Copy,
+				disabled: !f.pdf_url,
+				onSelect: () => ctxCopy(f.pdf_url, 'link do PDF')
+			}
+		];
+	}
+
 	function closeNew() {
 		showNew = false;
 		err = '';
@@ -234,7 +274,8 @@
 			</thead>
 			<tbody>
 				{#each filtered as f}
-					<tr class="border-t border-line-soft hover:bg-slate-50">
+					<tr use:ctxMenu={{ items: () => apkMenu(f), title: f.ref_number }}
+						class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-3 font-mono text-xs text-slate-500">{f.ref_number}</td>
 						<td class="px-5 py-3 font-medium">{f.crm_clients?.nazwa_skrocona ?? f.crm_clients?.nazwa ?? f.client_name}</td>
 						<td class="px-5 py-3 text-slate-500">{f.advisor_name ?? '—'}</td>

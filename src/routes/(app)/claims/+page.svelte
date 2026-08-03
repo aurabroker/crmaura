@@ -4,8 +4,11 @@
 	import type { Claim } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil } from 'lucide-svelte';
+	import { Search, Pencil, Copy, User, FileText, CircleDot } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
+	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
 	let search = $state('');
 	let filterStatus = $state('all');
@@ -71,6 +74,44 @@
 		appState.claims = (data ?? []) as typeof appState.claims;
 	}
 
+	async function setStatus(c: Claim, status: string) {
+		const { error } = await sb.from('crm_claims').update({ status }).eq('id', c.id);
+		if (error) { ctxToast(`Błąd: ${error.message}`); return; }
+		appState.claims = appState.claims.map((x) => (x.id === c.id ? { ...x, status } : x));
+		ctxToast(`Status: ${status}`);
+	}
+
+	function claimMenu(c: Claim): CtxItem[] {
+		return [
+			{ label: 'Edytuj zgłoszenie', icon: Pencil, onSelect: () => openEdit(c) },
+			{ separator: true },
+			...STATUSES.filter((s) => s !== c.status).map((s): CtxItem => ({
+				label: `Status: ${s}`,
+				icon: CircleDot,
+				onSelect: () => setStatus(c, s)
+			})),
+			{ separator: true },
+			{
+				label: 'Karta klienta',
+				icon: User,
+				disabled: !c.klient_id,
+				onSelect: () => goto(`/clients/${c.klient_id}`)
+			},
+			{
+				label: 'Przejdź do polisy',
+				icon: FileText,
+				disabled: !c.polisa_id,
+				onSelect: () => goto(`/policies/${c.polisa_id}`)
+			},
+			{
+				label: 'Kopiuj nr szkody',
+				icon: Copy,
+				disabled: !c.nr_szkody,
+				onSelect: () => ctxCopy(c.nr_szkody, 'nr szkody')
+			}
+		];
+	}
+
 	const statusVariant = (s: string) =>
 		s === 'Wypłacona' || s === 'Zakończona' ? 'success' :
 		s === 'Odmowa' ? 'error' : 'warning';
@@ -121,7 +162,8 @@
 		</thead>
 		<tbody>
 			{#each filtered as c}
-				<tr class="border-t border-line-soft hover:bg-slate-50">
+				<tr use:ctxMenu={{ items: () => claimMenu(c), title: c.nr_szkody ?? 'Zgłoszenie' }}
+					class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3 font-medium">{c.nr_szkody ?? 'Zgłoszenie'}</td>
 					<td class="px-5 py-3">{c.crm_clients?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3">{c.crm_policies?.nr_polisy ?? '—'}</td>

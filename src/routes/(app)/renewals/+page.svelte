@@ -2,10 +2,40 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
-	import { Search } from 'lucide-svelte';
+	import { Search, Eye, ExternalLink, RefreshCw, Pencil, User, Copy } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
+	import { ctxMenu } from '$lib/actions/ctxMenu';
+	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import type { Policy } from '$lib/types/database';
 
 	let search = $state('');
 	let sortAsc = $state(true);
+
+	function renewalMenu(p: Policy): CtxItem[] {
+		return [
+			{ label: 'Otwórz polisę', icon: Eye, onSelect: () => goto(`/policies/${p.id}`) },
+			{
+				label: 'Otwórz w nowej karcie',
+				icon: ExternalLink,
+				onSelect: () => window.open(`/policies/${p.id}`, '_blank', 'noopener')
+			},
+			{ separator: true },
+			{
+				label: 'Wznów polisę',
+				icon: RefreshCw,
+				onSelect: () => goto(`/policies/new?renewal_of=${p.id}`)
+			},
+			{ label: 'Edytuj', icon: Pencil, onSelect: () => goto(`/policies/${p.id}/edit`) },
+			{ separator: true },
+			{
+				label: 'Karta klienta',
+				icon: User,
+				disabled: !p.klient_id,
+				onSelect: () => goto(`/clients/${p.klient_id}`)
+			},
+			{ label: 'Kopiuj nr polisy', icon: Copy, onSelect: () => ctxCopy(p.nr_polisy, 'nr polisy') }
+		];
+	}
 
 	const today = new Date();
 	today.setHours(0, 0, 0, 0);
@@ -112,7 +142,8 @@
 				{#each filtered as p (p.id)}
 					{@const days = daysUntil(p.data_do)}
 					{@const badge = statusBadge(p.data_do)}
-					<tr class="{rowClass(p.data_do)} hover:bg-slate-50/50 transition-colors">
+					<tr use:ctxMenu={{ items: () => renewalMenu(p), title: p.nr_polisy }}
+						class="{rowClass(p.data_do)} hover:bg-slate-50/50 transition-colors">
 						<td class="whitespace-nowrap px-4 py-3 font-medium text-slate-900">{p.nr_polisy}</td>
 						<td class="px-4 py-3 text-slate-700">{p.crm_clients?.nazwa ?? '—'}</td>
 						<td class="px-4 py-3 text-slate-700">{p.crm_insurers?.nazwa ?? '—'}</td>
