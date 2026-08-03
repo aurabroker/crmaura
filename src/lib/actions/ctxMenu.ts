@@ -6,7 +6,8 @@ export type CtxMenuOpts =
 	| ItemsProvider
 	| {
 			items: ItemsProvider;
-			title?: string;
+			// Funkcja — gdy tytuł zależy od miejsca kliknięcia (np. kafelek w kalendarzu).
+			title?: string | ((e: MouseEvent) => string | undefined);
 	  };
 
 // Pola formularzy zostawiamy systemowi — użytkownik musi mieć wklej / sprawdzanie pisowni.
@@ -38,8 +39,9 @@ export function ctxMenu(node: HTMLElement, opts: CtxMenuOpts) {
 
 		// Kolejność ma znaczenie: openCtxMenu sprząta po poprzednim celu,
 		// więc podświetlenie dokładamy dopiero po nim.
+		const rawTitle = typeof current === 'function' ? undefined : current.title;
 		openCtxMenu(x, y, items, {
-			title: typeof current === 'function' ? undefined : current.title,
+			title: typeof rawTitle === 'function' ? rawTitle(e) : rawTitle,
 			onClose: () => node.classList.remove('ctx-target')
 		});
 		node.classList.add('ctx-target');

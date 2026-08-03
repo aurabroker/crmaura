@@ -8,6 +8,7 @@
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 
 	// Schedule-X — komponent-wrapper (izomorficzny) importujemy statycznie,
 	// a ciężki rdzeń (referuje DOM) ładujemy dynamicznie w onMount (SPA, ssr=false).
@@ -305,7 +306,13 @@
 	}
 
 	async function deleteTask(t: CrmTask) {
-		if (!confirm(`Usunąć zadanie: "${t.tytul}"?`)) return;
+		const ok = await askConfirm({
+			title: 'Usunąć zadanie?',
+			message: t.tytul,
+			detail: 'Zadania nie da się przywrócić z Kosza.',
+			confirmLabel: 'Usuń zadanie'
+		});
+		if (!ok) return;
 		await sb.from('crm_tasks').delete().eq('id', t.id);
 		await reloadTasks();
 	}
@@ -339,8 +346,43 @@
 				onSelect: () => goto(`/policies/${t.polisa_id}`)
 			},
 			{ separator: true },
+			{ label: 'Dodaj zadanie', icon: Plus, onSelect: () => openNew(t.termin ?? undefined) },
+			{ separator: true },
 			{ label: 'Usuń zadanie', icon: Trash2, danger: true, onSelect: () => deleteTask(t) }
 		];
+	}
+
+	// Kalendarz Schedule-X renderuje własny DOM, więc menu podpinamy delegacyjnie
+	// na kontenerze: kafelek zadania -> menu zadania, puste miejsce -> dodanie zadania.
+	function eventTaskFrom(e: MouseEvent): CrmTask | null {
+		const el = (e.target as HTMLElement | null)?.closest('[data-event-id]');
+		const id = el?.getAttribute('data-event-id');
+		return id ? (appState.tasks.find((t) => t.id === id) ?? null) : null;
+	}
+
+	function dateFrom(e: MouseEvent): string | undefined {
+		const el = (e.target as HTMLElement | null)?.closest(
+			'[data-date], [data-time-grid-date], [data-date-grid-date]'
+		);
+		const raw =
+			el?.getAttribute('data-date') ??
+			el?.getAttribute('data-time-grid-date') ??
+			el?.getAttribute('data-date-grid-date') ??
+			undefined;
+		return raw ? raw.slice(0, 10) : undefined;
+	}
+
+	function calendarAreaMenu(e: MouseEvent): CtxItem[] {
+		const t = eventTaskFrom(e);
+		if (t) return taskMenu(t);
+		const d = dateFrom(e);
+		return [{ label: 'Dodaj zadanie', icon: Plus, onSelect: () => openNew(d) }];
+	}
+
+	function calendarAreaTitle(e: MouseEvent): string {
+		const t = eventTaskFrom(e);
+		if (t) return t.tytul;
+		return dateFrom(e) ?? 'Kalendarz';
 	}
 
 	const priorityClsMap: Record<CrmTask['priorytet'], string> = {
@@ -433,7 +475,9 @@
 		</button>
 	</div>
 	{#if calendarApp}
-		<ScheduleXCalendar {calendarApp} />
+		<div use:ctxMenu={{ items: calendarAreaMenu, title: calendarAreaTitle }}>
+			<ScheduleXCalendar {calendarApp} />
+		</div>
 	{:else}
 		<div class="px-5 py-16 text-center text-slate-400 text-sm flex items-center justify-center gap-2">
 			<CalendarDays size={18} class="text-slate-300" /> Ładowanie kalendarza…

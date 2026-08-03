@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor } from '$lib/utils';
 	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
@@ -468,7 +469,13 @@
 	}
 
 	async function deleteTask(t: CrmTask) {
-		if (!confirm(`Usunąć zadanie: "${t.tytul}"?`)) return;
+		const ok = await askConfirm({
+			title: 'Usunąć zadanie?',
+			message: t.tytul,
+			detail: 'Zadania nie da się przywrócić z Kosza.',
+			confirmLabel: 'Usuń zadanie'
+		});
+		if (!ok) return;
 		await sb.from('crm_tasks').delete().eq('id', t.id);
 		await loadTasks();
 	}

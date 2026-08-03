@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { sb } from '$lib/supabase';
+	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { onMount } from 'svelte';
@@ -347,7 +348,13 @@
 	}
 
 	async function deleteTask(t: CrmTask) {
-		if (!confirm(`Usunąć zadanie: "${t.tytul}"?`)) return;
+		const ok = await askConfirm({
+			title: 'Usunąć zadanie?',
+			message: t.tytul,
+			detail: 'Zadania nie da się przywrócić z Kosza.',
+			confirmLabel: 'Usuń zadanie'
+		});
+		if (!ok) return;
 		await sb.from('crm_tasks').delete().eq('id', t.id);
 		await loadTasks();
 	}

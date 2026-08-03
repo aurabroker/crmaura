@@ -12,6 +12,7 @@
 
 	import { logAudit } from '$lib/utils/audit';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
+	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
 	let { children } = $props();
 	let addMenuOpen = $state(false);
@@ -309,4 +310,5 @@
 </div>
 
 <ContextMenu />
+<ConfirmDialog />
 {/if}
