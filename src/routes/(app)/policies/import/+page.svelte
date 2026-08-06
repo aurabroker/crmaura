@@ -29,6 +29,7 @@
 	let saving = $state(false);
 	let parseError = $state('');
 	let extracted = $state<ExtractedPolicy | null>(null);
+	let utworzPojazd = $state(false);
 
 	const insurer = $derived(appState.insurers.find((i) => i.id === insurerId) ?? null);
 	const produkty = $derived<ProductTemplate[]>(insurer ? templatesFor(insurer) : []);
@@ -65,7 +66,10 @@
 					client,
 					insurerId,
 					policies: appState.policies,
-					tenantId: appState.profile.tenant_id
+					vehicles: appState.vehicles,
+					leasings: appState.leasings,
+					tenantId: appState.profile.tenant_id,
+					utworzPojazd
 				})
 			: null
 	);
@@ -76,6 +80,7 @@
 	function resetOdczyt() {
 		extracted = null;
 		parseError = '';
+		utworzPojazd = false;
 	}
 
 	function insurerLabel(i: Insurer): string {
@@ -130,9 +135,30 @@
 	async function save() {
 		if (!draft || !mozliweZapisanie()) return;
 		saving = true;
+
+		// Pojazd zakładamy przed polisą — bez jego id polisa nie miałaby powiązania.
+		const payload = { ...draft.payload };
+		if (draft.nowyPojazd) {
+			const { data: pojazd, error: vErr } = await sb
+				.from('crm_vehicles')
+				.insert([draft.nowyPojazd])
+				.select('id')
+				.single();
+			if (vErr) {
+				saving = false;
+				parseError = `Nie udało się założyć pojazdu: ${vErr.message}`;
+				return;
+			}
+			payload.pojazd_id = pojazd!.id;
+			await logAudit('vehicle_created', 'vehicle', pojazd!.id, draft.nowyPojazd.nr_rejestracyjny as string, {
+				zrodlo: 'import polisy',
+				plik: file?.name
+			});
+		}
+
 		const { data: inserted, error } = await sb
 			.from('crm_policies')
-			.insert([draft.payload])
+			.insert([payload])
 			.select('id')
 			.single();
 
@@ -155,14 +181,15 @@
 			);
 		}
 
-		await logAudit('policy_imported', 'policy', inserted?.id, draft.payload.nr_polisy as string, {
+		await logAudit('policy_imported', 'policy', inserted?.id, payload.nr_polisy as string, {
 			produkt: product?.label,
 			ubezpieczyciel: insurer?.nazwa,
 			plik: file?.name,
-			ug: draft.ug?.nr_polisy ?? null
+			ug: draft.ug?.nr_polisy ?? null,
+			pojazd: (payload.pojazd_id as string | null) ?? null
 		});
 
-		const [rP, rPay] = await Promise.all([
+		const [rP, rPay, rV] = await Promise.all([
 			sb
 				.from('crm_policies')
 				.select(
@@ -172,10 +199,12 @@
 			sb
 				.from('crm_policy_payments')
 				.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))')
-				.order('data_platnosci')
+				.order('data_platnosci'),
+			sb.from('crm_vehicles').select('*')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
+		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		saving = false;
 		goto(`/policies/${inserted!.id}`);
 	}
@@ -442,6 +471,58 @@
 						</div>
 					</dl>
 				</div>
+
+				<!-- Pojazd -->
+				{#if e.pojazd}
+					{@const v = e.pojazd}
+					<div>
+						<h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Pojazd</h3>
+						<dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">Nr rejestracyjny</dt>
+								<dd class="font-medium text-slate-900 text-right">{v.nr_rejestracyjny ?? '—'}</dd>
+							</div>
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">VIN</dt>
+								<dd class="font-medium text-slate-900 text-right font-mono text-xs">{v.vin ?? '—'}</dd>
+							</div>
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">Marka i model</dt>
+								<dd class="font-medium text-slate-900 text-right">{v.marka_model ?? '—'}</dd>
+							</div>
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">Rok / pojemność</dt>
+								<dd class="font-medium text-slate-900 text-right">
+									{v.rok_produkcji ?? '—'} / {v.pojemnosc_silnika ? `${v.pojemnosc_silnika} ccm` : '—'}
+								</dd>
+							</div>
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">Rodzaj</dt>
+								<dd class="font-medium text-slate-900 text-right">{v.rodzaj_pojazdu ?? '—'}</dd>
+							</div>
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">W kartotece CRM</dt>
+								<dd class="font-medium text-right {draft.pojazd ? 'text-emerald-700' : 'text-amber-700'}">
+									{draft.pojazd ? draft.pojazd.nr_rejestracyjny : 'brak — do założenia'}
+								</dd>
+							</div>
+						</dl>
+
+						{#if !draft.pojazd}
+							<label
+								class="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer"
+							>
+								<input type="checkbox" bind:checked={utworzPojazd} class="mt-0.5" />
+								<span class="text-sm text-amber-900">
+									Załóż ten pojazd w kartotece klienta na podstawie danych z polisy.
+									<span class="block text-xs text-amber-700 mt-0.5">
+										Bez tego import jest zablokowany — polisa komunikacyjna musi wskazywać pojazd.
+									</span>
+								</span>
+							</label>
+						{/if}
+					</div>
+				{/if}
 
 				<!-- Raty -->
 				{#if draft.raty.length}

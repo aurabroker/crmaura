@@ -16,6 +16,26 @@ export interface Installment {
 	kwota: number | null;
 }
 
+/** Dane pojazdu z polisy komunikacyjnej — odpowiadają kolumnom crm_vehicles. */
+export interface VehicleData {
+	nr_rejestracyjny: string | null;
+	vin: string | null;
+	marka_model: string | null;
+	rok_produkcji: number | null;
+	rodzaj_pojazdu: string | null;
+	pojemnosc_silnika: number | null;
+	moc: number | null;
+	ladownosc: number | null;
+}
+
+/** Finansujący wskazany na polisie (leasing / bank). */
+export interface LeasingData {
+	nazwa: string | null;
+	nip: string | null;
+	regon: string | null;
+	adres: string | null;
+}
+
 export interface ExtractedPolicy {
 	nr_polisy: string | null;
 	/** Numer polisy poprzedniej — Warta drukuje go przy wznowieniu. */
@@ -32,6 +52,17 @@ export interface ExtractedPolicy {
 
 	ubezpieczony_nazwa: string | null;
 	ubezpieczony_nip: string | null;
+	ubezpieczony_regon: string | null;
+
+	/** Pojazd i finansujący — wypełniane przez szablony komunikacyjne. */
+	pojazd: VehicleData | null;
+	leasing: LeasingData | null;
+
+	/**
+	 * Rodzaj polisy odczytany z dokumentu; nadpisuje domyślny rodzaj produktu.
+	 * Jeden szablon obsługuje flotę i pojedynczy pojazd, a różni je treść polisy.
+	 */
+	rodzaj: string | null;
 
 	skladka: number | null;
 	ilosc_rat: number | null;
@@ -62,6 +93,10 @@ export function emptyExtraction(): ExtractedPolicy {
 		klient_email: null,
 		ubezpieczony_nazwa: null,
 		ubezpieczony_nip: null,
+		ubezpieczony_regon: null,
+		pojazd: null,
+		leasing: null,
+		rodzaj: null,
 		skladka: null,
 		ilosc_rat: null,
 		raty: [],

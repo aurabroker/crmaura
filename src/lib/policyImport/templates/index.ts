@@ -5,6 +5,7 @@
 import type { InsurerTemplate, ProductTemplate } from '../types';
 import * as wartaEkstrabiznes from './warta-ekstrabiznes';
 import * as ergoOcZawodowe from './ergo-oc-zawodowe';
+import * as uniqaKomunikacja from './uniqa-komunikacja';
 
 export const INSURER_TEMPLATES: InsurerTemplate[] = [
 	{
@@ -26,9 +27,10 @@ export const INSURER_TEMPLATES: InsurerTemplate[] = [
 		produkty: [
 			{
 				id: 'uniqa-flota-komunikacja',
-				label: 'Flota / Komunikacja',
-				rodzaj: 'flota',
-				todo: 'Szablon czeka na wzorcową polisę UNIQA (flota / komunikacja).'
+				label: 'Flota / Komunikacja (Auto & Przestrzeń)',
+				rodzaj: 'komunikacja',
+				parse: uniqaKomunikacja.parse,
+				detect: uniqaKomunikacja.detect
 			}
 		]
 	},

@@ -2,7 +2,7 @@
 // Zasada: nic nie trafia do bazy bez zgodności identyfikatora klienta —
 // dopasowanie do złego podmiotu oznaczałoby udostępnienie polisy obcej firmie.
 
-import type { Client, Policy } from '$lib/types/database';
+import type { Client, Leasing, Policy, Vehicle } from '$lib/types/database';
 import type { ExtractedPolicy, ProductTemplate } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
 
@@ -21,6 +21,11 @@ export interface Draft {
 	/** Polisa, której to jest wznowienie. */
 	poprzednia: Policy | null;
 	raty: { nr: number; data: string; kwota: number }[];
+	/** Pojazd dopasowany w kartotece klienta. */
+	pojazd: Vehicle | null;
+	/** Rekord pojazdu do założenia, gdy operator się na to zgodzi. */
+	nowyPojazd: Record<string, unknown> | null;
+	leasing: Leasing | null;
 }
 
 export interface BuildInput {
@@ -29,7 +34,11 @@ export interface BuildInput {
 	client: Client;
 	insurerId: string;
 	policies: Policy[];
+	vehicles: Vehicle[];
+	leasings: Leasing[];
 	tenantId: string;
+	/** Operator wyraził zgodę na założenie pojazdu z danych polisy. */
+	utworzPojazd?: boolean;
 }
 
 export function buildDraft(input: BuildInput): Draft {
@@ -107,13 +116,16 @@ export function buildDraft(input: BuildInput): Draft {
 			text: 'Nie odczytano harmonogramu rat — nie powstaną pozycje w Płatnościach.'
 		});
 
+	const { pojazd, nowyPojazd } = dopasujPojazd(input, issues);
+	const leasing = dopasujLeasing(input, issues);
+
 	const skladka = extracted.skladka ?? 0;
 	const payload: Record<string, unknown> = {
 		tenant_id: tenantId,
 		klient_id: client.id,
 		tu_id: insurerId,
 		nr_polisy: extracted.nr_polisy ?? '',
-		rodzaj: product.rodzaj,
+		rodzaj: extracted.rodzaj ?? product.rodzaj,
 		typ_umowy: 'jednostkowa',
 		ug_podtyp: null,
 		ug_default_prowizja_pct: null,
@@ -121,8 +133,9 @@ export function buildDraft(input: BuildInput): Draft {
 		renewal_of: poprzednia?.id ?? null,
 		ubezpieczony_id: null,
 		przedmiot: extracted.przedmiot,
-		pojazd_id: null,
-		leasing_id: null,
+		// Pojazd zakładany w tej samej operacji nie ma jeszcze id — uzupełnia je zapis.
+		pojazd_id: pojazd?.id ?? null,
+		leasing_id: leasing?.id ?? null,
 		nr_umowy_leasingowej: null,
 		data_od: extracted.data_od,
 		data_do: extracted.data_do,
@@ -139,7 +152,116 @@ export function buildDraft(input: BuildInput): Draft {
 		rozliczaj_platnosci: null
 	};
 
-	return { payload, issues, ug, poprzednia, raty };
+	return { payload, issues, ug, poprzednia, raty, pojazd, nowyPojazd, leasing };
+}
+
+// Pojazd wiążemy po VIN, a gdy go brak — po numerze rejestracyjnym.
+// Nowy rekord powstaje wyłącznie na wyraźną zgodę operatora.
+function dopasujPojazd(
+	input: BuildInput,
+	issues: Issue[]
+): { pojazd: Vehicle | null; nowyPojazd: Record<string, unknown> | null } {
+	const { extracted, client, vehicles, policies, tenantId, utworzPojazd } = input;
+	const dane = extracted.pojazd;
+	if (!dane) return { pojazd: null, nowyPojazd: null };
+
+	const vin = dane.vin?.toUpperCase() ?? null;
+	const rej = normRej(dane.nr_rejestracyjny);
+
+	const kandydaci = vehicles.filter(
+		(v) => (vin && v.vin?.toUpperCase() === vin) || (rej && normRej(v.nr_rejestracyjny) === rej)
+	);
+	const wlasny = kandydaci.find((v) => v.klient_id === client.id) ?? null;
+
+	if (wlasny) {
+		issues.push({
+			level: 'info',
+			text: `Pojazd ${wlasny.nr_rejestracyjny} znaleziony w kartotece klienta — polisa zostanie z nim powiązana.`
+		});
+		const zajety = policies.find(
+			(p) => p.pojazd_id === wlasny.id && !p.deleted_at && p.data_do >= (extracted.data_od ?? '')
+		);
+		if (zajety)
+			issues.push({
+				level: 'warn',
+				text: `Pojazd jest już przypisany do polisy ${zajety.nr_polisy} obejmującej ten okres.`
+			});
+		return { pojazd: wlasny, nowyPojazd: null };
+	}
+
+	if (kandydaci.length) {
+		issues.push({
+			level: 'error',
+			text: `Pojazd ${dane.nr_rejestracyjny ?? dane.vin} istnieje w bazie, ale jest przypisany do innego klienta.`
+		});
+		return { pojazd: null, nowyPojazd: null };
+	}
+
+	const opis = [dane.nr_rejestracyjny, dane.marka_model].filter(Boolean).join(' — ');
+	if (!utworzPojazd) {
+		issues.push({
+			level: 'error',
+			text: `Pojazd ${opis} nie występuje w kartotece klienta. Potwierdź założenie go z danych polisy albo dodaj go wcześniej ręcznie.`
+		});
+		return { pojazd: null, nowyPojazd: null };
+	}
+
+	issues.push({
+		level: 'warn',
+		text: `Pojazd ${opis} zostanie założony w kartotece klienta na podstawie danych z polisy.`
+	});
+	return {
+		pojazd: null,
+		nowyPojazd: {
+			tenant_id: tenantId,
+			klient_id: client.id,
+			nr_rejestracyjny: dane.nr_rejestracyjny,
+			marka_model: dane.marka_model,
+			vin: dane.vin,
+			rok_produkcji: dane.rok_produkcji,
+			rodzaj_pojazdu: dane.rodzaj_pojazdu,
+			moc: dane.moc,
+			pojemnosc_silnika: dane.pojemnosc_silnika,
+			ladownosc: dane.ladownosc
+		}
+	};
+}
+
+// Finansujący musi już istnieć w słowniku leasingów — nie zakładamy go z polisy.
+function dopasujLeasing(input: BuildInput, issues: Issue[]): Leasing | null {
+	const dane = input.extracted.leasing;
+	if (!dane?.nazwa) return null;
+
+	const nip = digits(dane.nip);
+	const szukana = uprosc(dane.nazwa);
+	const hit =
+		input.leasings.find((l) => nip && digits(l.nip) === nip) ??
+		input.leasings.find((l) => {
+			const n = uprosc(l.nazwa);
+			return n === szukana || szukana.startsWith(n) || n.startsWith(szukana);
+		}) ??
+		null;
+
+	if (hit)
+		issues.push({ level: 'info', text: `Finansujący rozpoznany jako „${hit.nazwa}” w słowniku leasingów.` });
+	else
+		issues.push({
+			level: 'warn',
+			text: `Na polisie wskazano finansującego „${dane.nazwa}”, którego nie ma w słowniku leasingów — powiązanie zostanie pominięte.`
+		});
+	return hit;
+}
+
+function normRej(raw: string | null | undefined): string {
+	return (raw ?? '').replace(/\s/g, '').toUpperCase();
+}
+
+function uprosc(raw: string | null | undefined): string {
+	return (raw ?? '')
+		.toUpperCase()
+		.replace(/\b(S\.?A\.?|SP\.? Z O\.?O\.?|SPÓŁKA AKCYJNA|ODDZIAŁ.*)$/g, '')
+		.replace(/[^A-ZŁŚĆŻŹÓĄĘŃ0-9]/g, '')
+		.trim();
 }
 
 function sprawdzKlienta(extracted: ExtractedPolicy, client: Client): Issue[] {
