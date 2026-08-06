@@ -7,7 +7,7 @@
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
-		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield, CalendarCheck
+		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield, CalendarCheck, Upload
 	} from 'lucide-svelte';
 
 	import { logAudit } from '$lib/utils/audit';
@@ -186,8 +186,12 @@
 								{#if insuranceMenuOpen}
 									<div class="absolute left-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-52 overflow-hidden z-50">
 										<a href="/policies" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/policies') ? 'font-semibold text-blue-700' : ''}">
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath === '/policies' ? 'font-semibold text-blue-700' : ''}">
 											<FileText size={14} /> Polisy
+										</a>
+										<a href="/policies/import" onclick={() => insuranceMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/policies/import') ? 'font-semibold text-blue-700' : ''}">
+											<Upload size={14} /> Import polis
 										</a>
 										{#if appState.tenantFeatures['gwarancje']}
 										<a href="/bonds" onclick={() => insuranceMenuOpen = false}
@@ -255,6 +259,9 @@
 					<div class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-56 overflow-hidden z-50">
 						<a href="/policies/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 							<FileText size={15} /> Nowa Polisa / UG
+						</a>
+						<a href="/policies/import" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
+							<Upload size={15} /> Import polisy z PDF
 						</a>
 						<a href="/clients?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 							<Users size={15} /> Nowy Klient (RODO)
