@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { logAudit } from '$lib/utils/audit';
@@ -11,7 +12,7 @@
 	import type { Client, Insurer } from '$lib/types/database';
 	import {
 		ArrowLeft, Upload, FileText, CheckCircle2, AlertTriangle, XCircle,
-		Info, Loader2, Building2, Package, Users, Save
+		Info, Loader2, Building2, Package, Users, Save, RefreshCw
 	} from 'lucide-svelte';
 
 	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -31,6 +32,24 @@
 	let extracted = $state<ExtractedPolicy | null>(null);
 	let utworzPojazd = $state(false);
 	let wnioskujPojazd = $state(false);
+	let potwierdzOdnowienie = $state(false);
+
+	// Wejście z karty polisy: /policies/import?renewal_of=<id> — import od razu
+	// wiąże nową polisę jako odnowienie wskazanej.
+	const renewalOf = $page.url.searchParams.get('renewal_of');
+	const renewalSource = $derived(
+		renewalOf ? (appState.policies.find((p) => p.id === renewalOf) ?? null) : null
+	);
+
+	// Odnowienie dotyczy tego samego klienta i towarzystwa — podstawiamy je raz,
+	// gdy dane zdążą się doczytać. Broker może je nadpisać (zmiana TU przy odnowieniu).
+	let prefilled = false;
+	$effect(() => {
+		if (prefilled || !renewalSource) return;
+		prefilled = true;
+		clientId = renewalSource.klient_id;
+		insurerId = renewalSource.tu_id;
+	});
 
 	const insurer = $derived(appState.insurers.find((i) => i.id === insurerId) ?? null);
 	const produkty = $derived<ProductTemplate[]>(insurer ? templatesFor(insurer) : []);
@@ -74,7 +93,9 @@
 					leasings: appState.leasings,
 					tenantId: appState.profile.tenant_id,
 					utworzPojazd,
-					wnioskujPojazd
+					wnioskujPojazd,
+					potwierdzOdnowienie,
+					renewalOf
 				})
 			: null
 	);
@@ -87,6 +108,7 @@
 		parseError = '';
 		utworzPojazd = false;
 		wnioskujPojazd = false;
+		potwierdzOdnowienie = false;
 	}
 
 	function insurerLabel(i: Insurer): string {
@@ -282,12 +304,27 @@
 			<ArrowLeft size={18} />
 		</button>
 		<div>
-			<h1 class="text-2xl font-semibold text-slate-900">Import polisy</h1>
+			<h1 class="text-2xl font-semibold text-slate-900">
+				{renewalSource ? 'Odnowienie polisy z pliku' : 'Import polisy'}
+			</h1>
 			<p class="text-sm text-slate-500 mt-0.5">
-				Wskaż towarzystwo, produkt i klienta, a następnie wgraj plik PDF polisy
+				{renewalSource
+					? `Nowa polisa zostanie powiązana jako odnowienie ${renewalSource.nr_polisy}`
+					: 'Wskaż towarzystwo, produkt i klienta, a następnie wgraj plik PDF polisy'}
 			</p>
 		</div>
 	</div>
+
+	{#if renewalSource}
+		<div class="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
+			<RefreshCw size={15} class="text-amber-600 mt-0.5 shrink-0" />
+			<p class="text-sm text-amber-900">
+				Odnawiasz polisę <strong>{renewalSource.nr_polisy}</strong>
+				({renewalSource.data_od} — {renewalSource.data_do}). Klient i towarzystwo zostały
+				podstawione; jeśli odnowienie idzie do innego TU, zmień je poniżej.
+			</p>
+		</div>
+	{/if}
 
 	<!-- Krok 1-3: wybór kontekstu -->
 	<div class="bg-white border border-line rounded-xl p-5 shadow-sm mb-4">
@@ -438,6 +475,32 @@
 			</div>
 
 			<div class="p-5 space-y-5">
+				<!-- Rozpoznane odnowienie: pojazd ma polisę kończącą się tuż przed nową -->
+				{#if draft.kandydatOdnowienia}
+					{@const k = draft.kandydatOdnowienia}
+					<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+						<div class="flex items-start gap-2">
+							<RefreshCw size={15} class="text-amber-600 mt-0.5 shrink-0" />
+							<div class="flex-1">
+								<p class="text-sm font-medium text-amber-900">
+									Czy to odnowienie polisy {k.nr_polisy}?
+								</p>
+								<p class="text-xs text-amber-800 mt-0.5">
+									Ten sam pojazd ma polisę na okres {k.data_od} — {k.data_do}, a importowana
+									zaczyna się {e.data_od}. Powiązanie ustawi ją jako odnowienie i zamknie
+									poprzednią w Odnowieniach.
+								</p>
+								<label class="flex items-center gap-2 mt-2 cursor-pointer">
+									<input type="checkbox" bind:checked={potwierdzOdnowienie} />
+									<span class="text-sm text-amber-900">
+										Tak, to odnowienie polisy {k.nr_polisy}
+									</span>
+								</label>
+							</div>
+						</div>
+					</div>
+				{/if}
+
 				<!-- Walidacja -->
 				<div class="space-y-2">
 					{#each draft.issues as issue}

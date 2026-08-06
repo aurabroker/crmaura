@@ -7,7 +7,7 @@
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList,
 		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
-		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield, CalendarCheck, Upload
+		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield, CalendarCheck, Upload, Car
 	} from 'lucide-svelte';
 
 	import { logAudit } from '$lib/utils/audit';
@@ -54,7 +54,7 @@
 	const currentPath = $derived($page.url.pathname);
 
 	const insuranceActive = $derived(
-		['/policies', '/claims', '/bonds', '/apk', '/renewals'].some(p => currentPath.startsWith(p))
+		['/policies', '/claims', '/bonds', '/apk', '/renewals', '/vehicles'].some(p => currentPath.startsWith(p))
 	);
 
 	async function loadData() {
@@ -210,6 +210,10 @@
 										<a href="/policies?typ=generalna" onclick={() => insuranceMenuOpen = false}
 											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
 											<ClipboardList size={14} /> Umowy Generalne
+										</a>
+										<a href="/vehicles" onclick={() => insuranceMenuOpen = false}
+											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath === '/vehicles' ? 'font-semibold text-blue-700' : ''}">
+											<Car size={14} /> Pojazdy
 										</a>
 										<a href="/renewals" onclick={() => insuranceMenuOpen = false}
 											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/renewals') ? 'font-semibold text-blue-700' : ''}">

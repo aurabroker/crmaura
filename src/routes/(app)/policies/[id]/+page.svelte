@@ -6,7 +6,7 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle, FileText, ChevronDown } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle, FileText, ChevronDown, Upload } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
@@ -34,6 +34,14 @@
 	// Parametry odczytane z pliku polisy — rozwinięte domyślnie, bo to główny
 	// powód, dla którego import jest wart zachodu.
 	let importOpen = $state(true);
+
+	// Menu odnowienia (ręcznie / z pliku) — zamykane kliknięciem poza nim.
+	let renewMenuOpen = $state(false);
+	$effect(() => {
+		if (!renewMenuOpen) return;
+		const close = () => (renewMenuOpen = false);
+		window.addEventListener('click', close, { once: true });
+	});
 	let showBrokers = $state(false);
 	let pbBrokerId = $state('');
 	let pbRola = $state<'akwizycja' | 'obsługa' | 'opiekun'>('akwizycja');
@@ -328,10 +336,46 @@
 			</div>
 		</div>
 		<div class="flex gap-2">
-			{#if canRenew}
-				<a href={renewalUrl} class="flex items-center gap-1.5 text-sm border border-amber-300 bg-amber-50 text-amber-700 rounded-lg px-3 py-2 hover:bg-amber-100 transition-colors">
-					<RefreshCw size={14} /> Odnów polisę
-				</a>
+			{#if !renewalPolicy && policy.typ_umowy !== 'generalna'}
+				<!-- Odnowienie: ręcznie albo z pliku polisy. Podświetlone, gdy termin blisko. -->
+				<div class="relative">
+					<button
+						onclick={(e) => { e.stopPropagation(); renewMenuOpen = !renewMenuOpen; }}
+						class="flex items-center gap-1.5 text-sm rounded-lg px-3 py-2 border transition-colors
+							{canRenew
+								? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
+								: 'border-line text-slate-600 hover:bg-slate-50'}"
+					>
+						<RefreshCw size={14} /> Odnów polisę
+						<ChevronDown size={12} />
+					</button>
+					{#if renewMenuOpen}
+						<div class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-60 overflow-hidden z-50">
+							<a
+								href={renewalUrl}
+								onclick={() => (renewMenuOpen = false)}
+								class="flex items-start gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft"
+							>
+								<Pencil size={14} class="mt-0.5 shrink-0 text-slate-400" />
+								<span>
+									Ręcznie
+									<span class="block text-[11px] text-slate-400">formularz z przeniesionymi danymi</span>
+								</span>
+							</a>
+							<a
+								href="/policies/import?renewal_of={policy.id}"
+								onclick={() => (renewMenuOpen = false)}
+								class="flex items-start gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50"
+							>
+								<Upload size={14} class="mt-0.5 shrink-0 text-slate-400" />
+								<span>
+									Z pliku polisy
+									<span class="block text-[11px] text-slate-400">wgraj PDF nowej polisy</span>
+								</span>
+							</a>
+						</div>
+					{/if}
+				</div>
 			{/if}
 			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-line rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<Users size={14} /> Podział prowizji {#if polisaBrokers.length > 0}<span class="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-semibold">{polisaBrokers.length}</span>{/if}

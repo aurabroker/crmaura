@@ -20,6 +20,8 @@ export interface Draft {
 	ug: Policy | null;
 	/** Polisa, której to jest wznowienie. */
 	poprzednia: Policy | null;
+	/** Propozycja odnowienia rozpoznana po pojeździe — czeka na potwierdzenie. */
+	kandydatOdnowienia: Policy | null;
 	raty: { nr: number; data: string; kwota: number }[];
 	/** Pojazd dopasowany w kartotece klienta. */
 	pojazd: Vehicle | null;
@@ -53,6 +55,10 @@ export interface BuildInput {
 	utworzPojazd?: boolean;
 	/** Operator zdecydował się złożyć wniosek o pojazd bez numeru rejestracyjnego. */
 	wnioskujPojazd?: boolean;
+	/** Operator potwierdził, że polisa jest odnowieniem znalezionego poprzednika. */
+	potwierdzOdnowienie?: boolean;
+	/** Odnowienie wskazane wprost (wejście z karty polisy). */
+	renewalOf?: string | null;
 }
 
 export function buildDraft(input: BuildInput): Draft {
@@ -94,9 +100,19 @@ export function buildDraft(input: BuildInput): Draft {
 			});
 	}
 
-	// Wznowienie — Warta drukuje numer polisy poprzedniej.
+	// Odnowienie wskazane wprost — broker wszedł do importu z karty polisy.
 	let poprzednia: Policy | null = null;
-	if (extracted.wznowienie_nr) {
+	if (input.renewalOf) {
+		poprzednia = policies.find((p) => p.id === input.renewalOf) ?? null;
+		if (poprzednia)
+			issues.push({
+				level: 'info',
+				text: `Import jako odnowienie polisy ${poprzednia.nr_polisy} (${poprzednia.data_od} — ${poprzednia.data_do}).`
+			});
+	}
+
+	// Wznowienie — Warta drukuje numer polisy poprzedniej.
+	if (!poprzednia && extracted.wznowienie_nr) {
 		poprzednia =
 			policies.find((p) => normNr(p.nr_polisy) === normNr(extracted.wznowienie_nr)) ?? null;
 		if (poprzednia)
@@ -130,6 +146,27 @@ export function buildDraft(input: BuildInput): Draft {
 	const { pojazd, nowyPojazd, wniosekPojazd } = dopasujPojazd(input, issues);
 	const { leasing, nowyLeasing } = dopasujLeasing(input, issues);
 	const ubezpieczony = dopasujUbezpieczonego(input, issues);
+
+	// Polisa komunikacyjna rzadko podaje numer poprzedniej. Gdy pojazd jest już
+	// w kartotece, poprzednika szukamy po ciągłości okresów na tym pojeździe.
+	let kandydatOdnowienia: Policy | null = null;
+	if (!poprzednia && pojazd && extracted.data_od) {
+		kandydatOdnowienia = znajdzPoprzedniaPoPojezdzie(pojazd, extracted.data_od, policies);
+		if (kandydatOdnowienia) {
+			if (input.potwierdzOdnowienie) {
+				poprzednia = kandydatOdnowienia;
+				issues.push({
+					level: 'info',
+					text: `Polisa zostanie powiązana jako odnowienie ${kandydatOdnowienia.nr_polisy} (${kandydatOdnowienia.data_od} — ${kandydatOdnowienia.data_do}).`
+				});
+			} else {
+				issues.push({
+					level: 'warn',
+					text: `Ten pojazd ma polisę ${kandydatOdnowienia.nr_polisy} kończącą się ${kandydatOdnowienia.data_do}, a nowa zaczyna się ${extracted.data_od}. Potwierdź, czy to jej odnowienie.`
+				});
+			}
+		}
+	}
 
 	const skladka = extracted.skladka ?? 0;
 	const payload: Record<string, unknown> = {
@@ -171,6 +208,7 @@ export function buildDraft(input: BuildInput): Draft {
 		issues,
 		ug,
 		poprzednia,
+		kandydatOdnowienia,
 		raty,
 		pojazd,
 		nowyPojazd,
@@ -235,9 +273,12 @@ function dopasujPojazd(
 	const vin = dane.vin?.toUpperCase() ?? null;
 	const rej = normRej(dane.nr_rejestracyjny);
 
-	const kandydaci = vehicles.filter(
-		(v) => (vin && v.vin?.toUpperCase() === vin) || (rej && normRej(v.nr_rejestracyjny) === rej)
-	);
+	// VIN jest stały przez całe życie pojazdu, numer rejestracyjny bywa zmieniany
+	// (przerejestrowanie, zmiana właściciela), więc dopasowanie po VIN ma
+	// pierwszeństwo — inaczej ten sam pojazd zdublowałby się po zmianie tablic.
+	const poVin = vin ? vehicles.filter((v) => v.vin?.toUpperCase() === vin) : [];
+	const poRej = rej ? vehicles.filter((v) => normRej(v.nr_rejestracyjny) === rej) : [];
+	const kandydaci = poVin.length ? poVin : poRej;
 	const wlasny = kandydaci.find((v) => v.klient_id === client.id) ?? null;
 
 	if (wlasny) {
@@ -245,13 +286,25 @@ function dopasujPojazd(
 			level: 'info',
 			text: `Pojazd ${wlasny.nr_rejestracyjny} znaleziony w kartotece klienta — polisa zostanie z nim powiązana.`
 		});
+
+		// Rozpoznany po VIN, ale z inną rejestracją — pojazd przerejestrowano.
+		if (poVin.length && rej && normRej(wlasny.nr_rejestracyjny) !== rej)
+			issues.push({
+				level: 'warn',
+				text: `Pojazd rozpoznany po VIN, ale ma inny numer rejestracyjny: w kartotece ${wlasny.nr_rejestracyjny}, na polisie ${dane.nr_rejestracyjny}. Potwierdź aktualizację numeru w kartotece.`
+			});
+
 		const zajety = policies.find(
-			(p) => p.pojazd_id === wlasny.id && !p.deleted_at && p.data_do >= (extracted.data_od ?? '')
+			(p) =>
+				p.pojazd_id === wlasny.id &&
+				!p.deleted_at &&
+				p.data_do >= (extracted.data_od ?? '') &&
+				p.data_od <= (extracted.data_do ?? '')
 		);
 		if (zajety)
 			issues.push({
 				level: 'warn',
-				text: `Pojazd jest już przypisany do polisy ${zajety.nr_polisy} obejmującej ten okres.`
+				text: `Pojazd ma już polisę ${zajety.nr_polisy} obejmującą ten sam okres (${zajety.data_od} — ${zajety.data_do}).`
 			});
 		return { pojazd: wlasny, nowyPojazd: null, wniosekPojazd: null };
 	}
@@ -368,6 +421,37 @@ function dopasujLeasing(
 			adres: dane.adres
 		}
 	};
+}
+
+/** Ile dni przerwy między polisami wciąż uznajemy za ciągłość ochrony. */
+const TOLERANCJA_ODNOWIENIA_DNI = 45;
+
+/**
+ * Poprzednia polisa tego samego pojazdu: taka, która kończy się tuż przed
+ * początkiem nowej. Dopuszczamy krótką przerwę i niewielkie nachodzenie okresów
+ * (polisa bywa wystawiana z wyprzedzeniem), ale odrzucamy polisy nachodzące
+ * na cały nowy okres — to nie odnowienie, tylko druga równoległa ochrona.
+ */
+function znajdzPoprzedniaPoPojezdzie(
+	pojazd: Vehicle,
+	dataOd: string,
+	policies: Policy[]
+): Policy | null {
+	const kandydaci = policies
+		.filter((p) => p.pojazd_id === pojazd.id && !p.deleted_at && p.data_do && p.data_od < dataOd)
+		.filter((p) => {
+			const przerwa = dniMiedzy(p.data_do, dataOd);
+			return przerwa >= -TOLERANCJA_ODNOWIENIA_DNI && przerwa <= TOLERANCJA_ODNOWIENIA_DNI;
+		})
+		.sort((a, b) => b.data_do.localeCompare(a.data_do));
+	return kandydaci[0] ?? null;
+}
+
+function dniMiedzy(od: string, do_: string): number {
+	const a = Date.parse(od);
+	const b = Date.parse(do_);
+	if (Number.isNaN(a) || Number.isNaN(b)) return Number.POSITIVE_INFINITY;
+	return Math.round((b - a) / 86_400_000);
 }
 
 function normRej(raw: string | null | undefined): string {

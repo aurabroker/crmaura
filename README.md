@@ -288,7 +288,15 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
   aktywności.
 - **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
   z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
-- **Wznowienie.** Numer polisy poprzedniej ustawia `renewal_of`.
+- **Wznowienie.** Numer polisy poprzedniej ustawia `renewal_of`. Gdy polisa go
+  nie podaje (typowe dla komunikacji), poprzednika szukamy po **pojeździe
+  i ciągłości okresów**: polisa tego samego pojazdu kończąca się w promieniu
+  45 dni od początku nowej jest proponowana jako odnowienie do potwierdzenia
+  przez operatora. Wejście z karty polisy
+  (`/policies/import?renewal_of=<id>`) wiąże odnowienie wprost.
+- **Rozpoznanie pojazdu.** Dopasowanie po **VIN ma pierwszeństwo** — VIN jest
+  stały przez całe życie pojazdu, a numer rejestracyjny bywa zmieniany.
+  Rozpoznanie po VIN przy innej rejestracji sygnalizuje przerejestrowanie.
 - **Prowizja.** Żadna polisa jej nie zawiera — to dana brokerska. Pochodzi
   z UG albo jest wpisywana ręcznie; jej brak nie jest sygnalizowany.
 - Duplikat numeru polisy blokuje import.
@@ -300,6 +308,20 @@ ubezpieczenia, numer OWU, konto do wpłat i dane agenta trafiają do kolumny
 `crm_policies.dane_importu` (jsonb) i są pokazywane na karcie polisy
 w sekcji „Dane z polisy". Pole `przedmiot` pozostaje krótką etykietą
 widoczną na liście polis — nie jest zrzutem wszystkich parametrów.
+
+### Pojazdy (`/vehicles`)
+
+Kartoteka pojazdów z pełnym zestawem pól (rejestracja, VIN, marka i model,
+rok, rodzaj, pojemność, moc, ładowność).
+
+- Wyszukiwarka po rejestracji, VIN, marce i kliencie
+- Filtry: wszystkie / z czynną ochroną / bez ochrony
+- **Historia ochrony** — rozwijany wiersz z listą wszystkich polis pojazdu
+  (okres, TU, składka, oznaczenie odnowień), z linkiem do karty polisy
+- Skrót „Wgraj odnowienie" dla pojazdu bez czynnej polisy
+- Zmiana numeru rejestracyjnego nie zrywa historii — pojazd wiąże VIN
+- Usunięcie zablokowane, gdy pojazd ma polisy w historii
+- VIN jest sprawdzany pod kątem duplikatu w kartotece
 
 ### Szkody (`/claims`)
 

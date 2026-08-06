@@ -369,11 +369,20 @@
 		<div class="bg-white border border-line rounded-xl shadow-sm p-6">
 			<div class="flex items-center justify-between mb-5">
 				<h2 class="text-lg font-semibold text-slate-800">Pojazdy</h2>
-				<button onclick={openNewVehicle} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
-					<Plus size={16} />
-					Dodaj pojazd
-				</button>
+				<div class="flex items-center gap-2">
+					<a href="/vehicles" class="flex items-center gap-1.5 px-3 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
+						<Car size={15} /> Panel pojazdów
+					</a>
+					<button onclick={openNewVehicle} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
+						<Plus size={16} />
+						Dodaj pojazd
+					</button>
+				</div>
 			</div>
+			<p class="text-sm text-slate-500 -mt-3 mb-4">
+				Pełna kartoteka z historią polis, filtrami i obsługą przerejestrowania jest
+				w <a href="/vehicles" class="text-blue-600 hover:underline">panelu pojazdów</a>.
+			</p>
 
 			<!-- Search -->
 			<div class="relative mb-4">
