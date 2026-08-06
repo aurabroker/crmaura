@@ -64,6 +64,7 @@
 					extracted,
 					product,
 					client,
+					clients: appState.clients,
 					insurerId,
 					policies: appState.policies,
 					vehicles: appState.vehicles,
@@ -469,6 +470,29 @@
 							<dt class="text-slate-500">Wybrany klient CRM</dt>
 							<dd class="font-medium text-slate-900 text-right">{client?.nazwa}</dd>
 						</div>
+						{#if e.ubezpieczony_nazwa && (e.ubezpieczony_regon || e.ubezpieczony_nip)}
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">Ubezpieczony</dt>
+								<dd class="font-medium text-slate-900 text-right">
+									{e.ubezpieczony_nazwa}
+									<span class="block text-[11px] text-slate-400">
+										{e.ubezpieczony_nip ?? e.ubezpieczony_regon} —
+										{draft.ubezpieczony ? 'powiązany z kartoteką' : 'poza kartoteką'}
+									</span>
+								</dd>
+							</div>
+						{/if}
+						{#if draft.leasing || e.leasing}
+							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+								<dt class="text-slate-500">Finansujący</dt>
+								<dd class="font-medium text-slate-900 text-right">
+									{draft.leasing?.nazwa ?? e.leasing?.nazwa}
+									<span class="block text-[11px] text-slate-400">
+										{draft.leasing ? 'ze słownika leasingów' : 'brak w słowniku'}
+									</span>
+								</dd>
+							</div>
+						{/if}
 					</dl>
 				</div>
 

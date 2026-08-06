@@ -26,12 +26,16 @@ export interface Draft {
 	/** Rekord pojazdu do założenia, gdy operator się na to zgodzi. */
 	nowyPojazd: Record<string, unknown> | null;
 	leasing: Leasing | null;
+	/** Ubezpieczony, gdy jest innym podmiotem niż ubezpieczający. */
+	ubezpieczony: Client | null;
 }
 
 export interface BuildInput {
 	extracted: ExtractedPolicy;
 	product: ProductTemplate;
 	client: Client;
+	/** Pełna kartoteka — do dowiązania ubezpieczonego będącego innym podmiotem. */
+	clients: Client[];
 	insurerId: string;
 	policies: Policy[];
 	vehicles: Vehicle[];
@@ -118,6 +122,7 @@ export function buildDraft(input: BuildInput): Draft {
 
 	const { pojazd, nowyPojazd } = dopasujPojazd(input, issues);
 	const leasing = dopasujLeasing(input, issues);
+	const ubezpieczony = dopasujUbezpieczonego(input, issues);
 
 	const skladka = extracted.skladka ?? 0;
 	const payload: Record<string, unknown> = {
@@ -131,7 +136,7 @@ export function buildDraft(input: BuildInput): Draft {
 		ug_default_prowizja_pct: null,
 		parent_id: ug?.id ?? null,
 		renewal_of: poprzednia?.id ?? null,
-		ubezpieczony_id: null,
+		ubezpieczony_id: ubezpieczony?.id ?? null,
 		przedmiot: extracted.przedmiot,
 		// Pojazd zakładany w tej samej operacji nie ma jeszcze id — uzupełnia je zapis.
 		pojazd_id: pojazd?.id ?? null,
@@ -152,7 +157,44 @@ export function buildDraft(input: BuildInput): Draft {
 		rozliczaj_platnosci: null
 	};
 
-	return { payload, issues, ug, poprzednia, raty, pojazd, nowyPojazd, leasing };
+	return { payload, issues, ug, poprzednia, raty, pojazd, nowyPojazd, leasing, ubezpieczony };
+}
+
+/**
+ * Ubezpieczony bywa innym podmiotem niż ubezpieczający (spółka z grupy,
+ * właściciel pojazdu). Wiążemy go z istniejącą kartoteką — nowego klienta
+ * nie zakładamy nigdy.
+ */
+function dopasujUbezpieczonego(input: BuildInput, issues: Issue[]): Client | null {
+	const { extracted, client, clients } = input;
+	const nip = digits(extracted.ubezpieczony_nip);
+	const regon = digits(extracted.ubezpieczony_regon);
+	if (!nip && !regon) return null;
+
+	// Ten sam podmiot co ubezpieczający — pole "ubezpieczony" zostaje puste.
+	const jakKlient =
+		(nip && nip === digits(client.nip)) || (regon && regon === digits(client.regon));
+	if (jakKlient) return null;
+
+	// Finansującego obsługuje słownik leasingów, nie kartoteka klientów.
+	if (extracted.leasing) return null;
+
+	const hit =
+		clients.find((c) => nip && digits(c.nip) === nip) ??
+		clients.find((c) => regon && digits(c.regon) === regon) ??
+		null;
+
+	if (hit)
+		issues.push({
+			level: 'info',
+			text: `Ubezpieczonym jest inny podmiot — „${hit.nazwa}” z kartoteki, zostanie wpisany w pole Ubezpieczony.`
+		});
+	else
+		issues.push({
+			level: 'warn',
+			text: `Ubezpieczonym jest inny podmiot („${extracted.ubezpieczony_nazwa ?? nip ?? regon}”), którego nie ma w kartotece — pole Ubezpieczony zostanie puste.`
+		});
+	return hit;
 }
 
 // Pojazd wiążemy po VIN, a gdy go brak — po numerze rejestracyjnym.

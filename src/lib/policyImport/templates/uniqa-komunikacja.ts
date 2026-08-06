@@ -7,6 +7,7 @@ import type { ExtractedPolicy, LeasingData, RiskItem, VehicleData } from '../typ
 import { emptyExtraction } from '../types';
 import type { PdfDoc } from '../pdfDoc';
 import { collapse, digits, grab, toAmount, toDate } from '../parse';
+import { czyNowyUklad, parse as parseNowyUklad } from './uniqa-flota-2026';
 
 const X_WARTOSCI = 140;
 
@@ -26,12 +27,22 @@ const RYZYKA: Record<string, string> = {
 export function detect(doc: PdfDoc): string | null {
 	if (!/UNIQA/i.test(doc.text))
 		return 'W dokumencie nie znaleziono oznaczeń UNIQA — to nie jest polisa tego towarzystwa.';
-	if (!/Ubezpieczenia komunikacyjne|POJAZD/i.test(doc.text))
+	if (!/Ubezpieczenia komunikacyjne|POJAZD|Wykaz pojazdów/i.test(doc.text))
 		return 'To nie jest polisa komunikacyjna UNIQA — brak sekcji pojazdu.';
 	return null;
 }
 
+/**
+ * UNIQA wystawia polisy komunikacyjne w dwóch układach: starszym
+ * „Auto & Przestrzeń" (etykieta z lewej, wartość z prawej) i nowszym,
+ * kartowym z wykazem pojazdów. Broker wybiera jeden produkt, a układ
+ * rozpoznajemy z treści dokumentu.
+ */
 export function parse(doc: PdfDoc): ExtractedPolicy {
+	return czyNowyUklad(doc) ? parseNowyUklad(doc) : parseAutoPrzestrzen(doc);
+}
+
+function parseAutoPrzestrzen(doc: PdfDoc): ExtractedPolicy {
 	const out = emptyExtraction();
 	const text = doc.text;
 

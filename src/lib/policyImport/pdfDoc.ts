@@ -61,16 +61,38 @@ export class PdfDoc {
 	}
 }
 
+/** Maksymalna różnica linii bazowych uznawana jeszcze za ten sam wiersz (pt). */
+const TOLERANCJA_WIERSZA = 2.5;
+
+/**
+ * Grupuje słowa w wiersze po bliskości linii bazowej. Zaokrąglanie do stałych
+ * kubełków tu nie wystarcza: fragmenty tego samego wiersza bywają przesunięte
+ * o ułamki punktu i przy granicy kubełka rozpadałyby się na dwa wiersze.
+ */
 function groupIntoLines(words: Word[]): Line[] {
-	const buckets = new Map<string, Word[]>();
-	for (const w of words) {
-		// Tolerancja 2pt — fragmenty jednego wiersza bywają przesunięte o ułamki punktu.
-		const key = `${w.page}|${Math.round(w.y / 2)}`;
-		const bucket = buckets.get(key);
-		if (bucket) bucket.push(w);
-		else buckets.set(key, [w]);
+	const posortowane = [...words].sort((a, b) => a.page - b.page || b.y - a.y);
+	const grupy: Word[][] = [];
+	let biezaca: Word[] = [];
+	let kotwica = 0;
+
+	for (const w of posortowane) {
+		const pasuje =
+			biezaca.length > 0 &&
+			biezaca[0].page === w.page &&
+			Math.abs(kotwica - w.y) <= TOLERANCJA_WIERSZA;
+		if (pasuje) {
+			biezaca.push(w);
+		} else {
+			if (biezaca.length) grupy.push(biezaca);
+			biezaca = [w];
+			// Kotwicą jest pierwsze słowo wiersza — inaczej długi wiersz mógłby
+			// "dryfować" i wciągać kolejny.
+			kotwica = w.y;
+		}
 	}
-	return [...buckets.values()]
+	if (biezaca.length) grupy.push(biezaca);
+
+	return grupy
 		.map((ws) => {
 			const sorted = [...ws].sort((a, b) => a.x - b.x);
 			return {
@@ -84,6 +106,5 @@ function groupIntoLines(words: Word[]): Line[] {
 					.trim()
 			};
 		})
-		.filter((l) => l.text)
-		.sort((a, b) => a.page - b.page || b.y - a.y);
+		.filter((l) => l.text);
 }
