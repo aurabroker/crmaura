@@ -2,7 +2,7 @@
 // Zasada: nic nie trafia do bazy bez zgodności identyfikatora klienta —
 // dopasowanie do złego podmiotu oznaczałoby udostępnienie polisy obcej firmie.
 
-import type { Client, Leasing, Policy, Vehicle } from '$lib/types/database';
+import type { Client, Leasing, Policy, PolicyImportData, Vehicle } from '$lib/types/database';
 import type { ExtractedPolicy, ProductTemplate } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
 
@@ -39,6 +39,10 @@ export interface BuildInput {
 	/** Pełna kartoteka — do dowiązania ubezpieczonego będącego innym podmiotem. */
 	clients: Client[];
 	insurerId: string;
+	/** Nazwa towarzystwa — zapisywana przy odczytanych parametrach jako źródło. */
+	insurerNazwa?: string | null;
+	/** Nazwa wgranego pliku — trafia do metryki importu. */
+	fileName?: string | null;
 	policies: Policy[];
 	vehicles: Vehicle[];
 	leasings: Leasing[];
@@ -103,16 +107,13 @@ export function buildDraft(input: BuildInput): Draft {
 			});
 	}
 
+	// Prowizji nie ma na żadnej polisie — to dana brokerska. Pochodzi z UG albo
+	// jest wpisywana ręcznie, więc jej brak nie jest niczym, o czym trzeba mówić.
 	const prowizjaPct = ug?.ug_default_prowizja_pct ?? 0;
 	if (prowizjaPct > 0)
 		issues.push({
 			level: 'info',
 			text: `Prowizja ${prowizjaPct}% przejęta z Umowy Generalnej.`
-		});
-	else
-		issues.push({
-			level: 'warn',
-			text: 'Polisa nie zawiera prowizji — uzupełnij ją po imporcie w karcie polisy.'
 		});
 
 	const raty = buildRaty(extracted);
@@ -156,7 +157,9 @@ export function buildDraft(input: BuildInput): Draft {
 		prowizja_pct: prowizjaPct,
 		prowizja_przypisana: (skladka * prowizjaPct) / 100,
 		prowizja_zainkasowana: 0,
-		rozliczaj_platnosci: null
+		rozliczaj_platnosci: null,
+		// Parametry bez własnych kolumn — pokazywane na karcie polisy.
+		dane_importu: buildDaneImportu(input)
 	};
 
 	return {
@@ -409,6 +412,30 @@ function sprawdzKlienta(extracted: ExtractedPolicy, client: Client): Issue[] {
 	}
 
 	return issues;
+}
+
+/**
+ * Wszystko, co polisa niesie poza kolumnami crm_policies: pozycje ryzyk z sumami,
+ * klauzule, franszyzy, miejsca ubezpieczenia, konto do wpłat, numer OWU.
+ * Bez tego dane odczytane z pliku ginęłyby zaraz po imporcie.
+ */
+function buildDaneImportu(input: BuildInput): PolicyImportData | null {
+	const { extracted, product, insurerNazwa, fileName } = input;
+	const dane: PolicyImportData = {
+		zrodlo: {
+			ubezpieczyciel: insurerNazwa ?? undefined,
+			produkt: product.label,
+			plik: fileName ?? undefined,
+			data: new Date().toISOString().slice(0, 10)
+		},
+		ryzyka: extracted.ryzyka.length ? extracted.ryzyka : undefined,
+		konto_do_wplat: extracted.konto_do_wplat,
+		owu: extracted.produkt_owu,
+		dodatkowe: Object.keys(extracted.dodatkowe).length ? extracted.dodatkowe : undefined
+	};
+	const maTresc =
+		dane.ryzyka?.length || dane.konto_do_wplat || dane.owu || dane.dodatkowe;
+	return maTresc ? dane : null;
 }
 
 function buildRaty(extracted: ExtractedPolicy): { nr: number; data: string; kwota: number }[] {

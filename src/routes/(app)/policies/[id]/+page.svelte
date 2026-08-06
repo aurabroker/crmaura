@@ -6,7 +6,7 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle, FileText, ChevronDown } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
@@ -31,6 +31,9 @@
 	};
 
 	// Policy brokers management
+	// Parametry odczytane z pliku polisy — rozwinięte domyślnie, bo to główny
+	// powód, dla którego import jest wart zachodu.
+	let importOpen = $state(true);
 	let showBrokers = $state(false);
 	let pbBrokerId = $state('');
 	let pbRola = $state<'akwizycja' | 'obsługa' | 'opiekun'>('akwizycja');
@@ -426,6 +429,96 @@
 			<span class="text-sm font-semibold text-slate-900">{linkedVehicle.nr_rejestracyjny}{linkedVehicle.vin ? ' / ' + linkedVehicle.vin : ''} — {linkedVehicle.marka_model}</span>
 		</div>
 		{/if}
+	{/if}
+
+	<!-- Parametry odczytane z pliku polisy (import z PDF) -->
+	{#if policy.dane_importu}
+		{@const di = policy.dane_importu}
+		{@const ryzyka = di.ryzyka ?? []}
+		{@const dodatkowe = Object.entries(di.dodatkowe ?? {})}
+		<div class="bg-white border border-line rounded-xl overflow-hidden shadow-sm mb-5">
+			<button
+				onclick={() => (importOpen = !importOpen)}
+				class="w-full flex items-center gap-2 px-4 py-3 bg-slate-50 border-b border-line text-left hover:bg-slate-100 transition-colors"
+			>
+				<FileText size={14} class="text-slate-400" />
+				<span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+					Dane z polisy
+				</span>
+				{#if di.zrodlo?.produkt}
+					<span class="text-xs text-slate-400">— {di.zrodlo.produkt}</span>
+				{/if}
+				<ChevronDown
+					size={14}
+					class="ml-auto text-slate-400 transition-transform {importOpen ? 'rotate-180' : ''}"
+				/>
+			</button>
+
+			{#if importOpen}
+				<div class="p-4 space-y-4">
+					{#if ryzyka.length}
+						<div class="border border-line rounded-lg overflow-x-auto">
+							<table class="w-full text-sm min-w-[520px]">
+								<thead class="bg-slate-50 text-xs text-slate-500">
+									<tr>
+										<th class="text-left px-3 py-2 font-semibold">Sekcja</th>
+										<th class="text-left px-3 py-2 font-semibold">Przedmiot</th>
+										<th class="text-right px-3 py-2 font-semibold">Suma ubezp.</th>
+										<th class="text-right px-3 py-2 font-semibold">Składka</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each ryzyka as r}
+										<tr class="border-t border-line-soft">
+											<td class="px-3 py-2 text-slate-500 text-xs">{r.sekcja}</td>
+											<td class="px-3 py-2 text-slate-800">{r.przedmiot}</td>
+											<td class="px-3 py-2 text-right text-slate-900 whitespace-nowrap">
+												{r.suma != null ? `${fmtPln(r.suma)} zł` : '—'}
+											</td>
+											<td class="px-3 py-2 text-right text-slate-600 whitespace-nowrap">
+												{r.skladka != null ? `${fmtPln(r.skladka)} zł` : '—'}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					{/if}
+
+					{#if dodatkowe.length || di.owu || di.konto_do_wplat}
+						<dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-sm">
+							{#each dodatkowe as [klucz, wartosc]}
+								<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+									<dt class="text-slate-500 shrink-0">{klucz}</dt>
+									<dd class="text-slate-800 text-right">{wartosc}</dd>
+								</div>
+							{/each}
+							{#if di.owu}
+								<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+									<dt class="text-slate-500 shrink-0">OWU</dt>
+									<dd class="text-slate-800 text-right">{di.owu}</dd>
+								</div>
+							{/if}
+							{#if di.konto_do_wplat}
+								<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+									<dt class="text-slate-500 shrink-0">Konto do wpłat</dt>
+									<dd class="text-slate-800 text-right font-mono text-xs">{di.konto_do_wplat}</dd>
+								</div>
+							{/if}
+						</dl>
+					{/if}
+
+					{#if di.zrodlo}
+						<p class="text-[11px] text-slate-400">
+							Odczytane z pliku{di.zrodlo.plik ? ` ${di.zrodlo.plik}` : ''}{di.zrodlo
+								.ubezpieczyciel
+								? ` — ${di.zrodlo.ubezpieczyciel}`
+								: ''}{di.zrodlo.data ? `, ${di.zrodlo.data}` : ''}.
+						</p>
+					{/if}
+				</div>
+			{/if}
+		</div>
 	{/if}
 
 	<!-- UG: parametry (podtyp, limit, domyślna prowizja) -->

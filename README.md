@@ -279,9 +279,17 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
 - **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
   z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
 - **Wznowienie.** Numer polisy poprzedniej ustawia `renewal_of`.
-- **Prowizja.** Polisy jej nie zawierają — pochodzi z UG albo zostaje
-  do uzupełnienia ręcznie.
+- **Prowizja.** Żadna polisa jej nie zawiera — to dana brokerska. Pochodzi
+  z UG albo jest wpisywana ręcznie; jej brak nie jest sygnalizowany.
 - Duplikat numeru polisy blokuje import.
+
+**Odczytane parametry**
+
+Pozycje ryzyk z sumami ubezpieczenia, klauzule, franszyzy, miejsca
+ubezpieczenia, numer OWU, konto do wpłat i dane agenta trafiają do kolumny
+`crm_policies.dane_importu` (jsonb) i są pokazywane na karcie polisy
+w sekcji „Dane z polisy". Pole `przedmiot` pozostaje krótką etykietą
+widoczną na liście polis — nie jest zrzutem wszystkich parametrów.
 
 ### Szkody (`/claims`)
 

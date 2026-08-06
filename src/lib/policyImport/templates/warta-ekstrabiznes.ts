@@ -196,13 +196,16 @@ function parseRyzyka(text: string): RyzykaResult {
 	return { ryzyka, skladkiSekcji };
 }
 
+/**
+ * Przedmiot ubezpieczenia to krótka etykieta widoczna na liście polis, więc
+ * wypisujemy same nazwy sekcji. Pozycje z sumami trafiają do danych importu
+ * i są pokazywane na karcie polisy.
+ */
 function buildPrzedmiot(ryzyka: RiskItem[]): string | null {
 	if (!ryzyka.length) return null;
-	const wgSekcji = new Map<string, string[]>();
-	for (const r of ryzyka) {
-		const lista = wgSekcji.get(r.sekcja) ?? [];
-		lista.push(r.suma != null ? `${r.przedmiot}: ${r.suma.toLocaleString('pl-PL')} zł` : r.przedmiot);
-		wgSekcji.set(r.sekcja, lista);
-	}
-	return [...wgSekcji.entries()].map(([sekcja, poz]) => `${sekcja} — ${poz.join('; ')}`).join(' | ');
+	const sekcje = [...new Set(ryzyka.map((r) => r.sekcja))].map((s) =>
+		s.replace(/^UBEZPIECZENIE\s+/i, '').toLowerCase()
+	);
+	const opis = sekcje.join(', ');
+	return opis.charAt(0).toUpperCase() + opis.slice(1);
 }

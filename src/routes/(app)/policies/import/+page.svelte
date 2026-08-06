@@ -66,6 +66,8 @@
 					client,
 					clients: appState.clients,
 					insurerId,
+					insurerNazwa: insurer?.nazwa ?? null,
+					fileName: file?.name ?? null,
 					policies: appState.policies,
 					vehicles: appState.vehicles,
 					leasings: appState.leasings,

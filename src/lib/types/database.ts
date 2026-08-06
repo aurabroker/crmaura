@@ -87,6 +87,24 @@ export interface InsurerContact {
 	crm_insurer_branches?: { nazwa: string } | null;
 }
 
+/** Pozycja ryzyka odczytana z polisy (suma ubezpieczenia i składka cząstkowa). */
+export interface PolicyRisk {
+	sekcja: string;
+	przedmiot: string;
+	suma: number | null;
+	skladka?: number | null;
+}
+
+/** Parametry z pliku polisy bez własnych kolumn w crm_policies. */
+export interface PolicyImportData {
+	zrodlo?: { ubezpieczyciel?: string; produkt?: string; plik?: string; data?: string };
+	ryzyka?: PolicyRisk[];
+	konto_do_wplat?: string | null;
+	owu?: string | null;
+	/** Pozostałe pola: klauzule, franszyzy, miejsca ubezpieczenia, agent… */
+	dodatkowe?: Record<string, string>;
+}
+
 export type TypUmowy = 'jednostkowa' | 'generalna';
 export type UgPodtyp = 'flota' | 'gwarancje' | 'cpm' | 'car_ear' | 'oc_beauty';
 
@@ -132,6 +150,8 @@ export interface Policy {
 	gwarancja_stawka_pct: number | null;
 	leasing_id: string | null;
 	nr_umowy_leasingowej: string | null;
+	/** Parametry odczytane z pliku polisy — wypełniane tylko przez import z PDF. */
+	dane_importu: PolicyImportData | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	ubezpieczony?: { nazwa: string } | null;
