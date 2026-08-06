@@ -26,6 +26,8 @@ export interface Draft {
 	/** Rekord pojazdu do założenia, gdy operator się na to zgodzi. */
 	nowyPojazd: Record<string, unknown> | null;
 	leasing: Leasing | null;
+	/** Finansujący do dopisania do słownika leasingów, gdy jeszcze go nie ma. */
+	nowyLeasing: Record<string, unknown> | null;
 	/** Ubezpieczony, gdy jest innym podmiotem niż ubezpieczający. */
 	ubezpieczony: Client | null;
 }
@@ -121,7 +123,7 @@ export function buildDraft(input: BuildInput): Draft {
 		});
 
 	const { pojazd, nowyPojazd } = dopasujPojazd(input, issues);
-	const leasing = dopasujLeasing(input, issues);
+	const { leasing, nowyLeasing } = dopasujLeasing(input, issues);
 	const ubezpieczony = dopasujUbezpieczonego(input, issues);
 
 	const skladka = extracted.skladka ?? 0;
@@ -157,7 +159,18 @@ export function buildDraft(input: BuildInput): Draft {
 		rozliczaj_platnosci: null
 	};
 
-	return { payload, issues, ug, poprzednia, raty, pojazd, nowyPojazd, leasing, ubezpieczony };
+	return {
+		payload,
+		issues,
+		ug,
+		poprzednia,
+		raty,
+		pojazd,
+		nowyPojazd,
+		leasing,
+		nowyLeasing,
+		ubezpieczony
+	};
 }
 
 /**
@@ -269,10 +282,18 @@ function dopasujPojazd(
 	};
 }
 
-// Finansujący musi już istnieć w słowniku leasingów — nie zakładamy go z polisy.
-function dopasujLeasing(input: BuildInput, issues: Issue[]): Leasing | null {
+/**
+ * Polityka leasingu: gdy ubezpieczonym jest finansujący, polisa i tak należy
+ * do ubezpieczającego — to on jest klientem w CRM (pole "ubezpieczony" zostaje
+ * puste, bo leasing nie jest klientem kancelarii). Finansującego wskazujemy ze
+ * słownika leasingów, a gdy go tam nie ma — dopisujemy go na podstawie polisy.
+ */
+function dopasujLeasing(
+	input: BuildInput,
+	issues: Issue[]
+): { leasing: Leasing | null; nowyLeasing: Record<string, unknown> | null } {
 	const dane = input.extracted.leasing;
-	if (!dane?.nazwa) return null;
+	if (!dane?.nazwa) return { leasing: null, nowyLeasing: null };
 
 	const nip = digits(dane.nip);
 	const szukana = uprosc(dane.nazwa);
@@ -280,18 +301,31 @@ function dopasujLeasing(input: BuildInput, issues: Issue[]): Leasing | null {
 		input.leasings.find((l) => nip && digits(l.nip) === nip) ??
 		input.leasings.find((l) => {
 			const n = uprosc(l.nazwa);
-			return n === szukana || szukana.startsWith(n) || n.startsWith(szukana);
+			return !!n && !!szukana && (n === szukana || szukana.startsWith(n) || n.startsWith(szukana));
 		}) ??
 		null;
 
-	if (hit)
-		issues.push({ level: 'info', text: `Finansujący rozpoznany jako „${hit.nazwa}” w słowniku leasingów.` });
-	else
+	if (hit) {
 		issues.push({
-			level: 'warn',
-			text: `Na polisie wskazano finansującego „${dane.nazwa}”, którego nie ma w słowniku leasingów — powiązanie zostanie pominięte.`
+			level: 'info',
+			text: `Ubezpieczonym jest finansujący „${hit.nazwa}” ze słownika leasingów — polisa pozostaje przy ubezpieczającym.`
 		});
-	return hit;
+		return { leasing: hit, nowyLeasing: null };
+	}
+
+	issues.push({
+		level: 'info',
+		text: `Finansujący „${dane.nazwa}” zostanie dopisany do słownika leasingów i powiązany z polisą.`
+	});
+	return {
+		leasing: null,
+		nowyLeasing: {
+			tenant_id: input.tenantId,
+			nazwa: dane.nazwa,
+			nip: nip,
+			adres: dane.adres
+		}
+	};
 }
 
 function normRej(raw: string | null | undefined): string {

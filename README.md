@@ -242,6 +242,47 @@ Zakładki:
 - Typy aneksów: korekta (nadpisuje dane polisy), zmiana, rozszerzenie, wypowiedzenie
 - Pola polis: nr polisy, TU, klient, produkt, daty, składka przypisana / zaliczkowa, ilość rat, broker opiekun
 
+### Import polis (`/policies/import`)
+
+Odczyt polisy z pliku PDF i zapis do CRM. Broker wskazuje ubezpieczyciela,
+produkt i klienta, a następnie wgrywa plik. PDF jest czytany lokalnie
+w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
+
+**Obsługiwane produkty** (`src/lib/policyImport/templates/`):
+
+| Towarzystwo | Produkt | Uwagi |
+|-------------|---------|-------|
+| WARTA | Ekstrabiznes Plus | sekcje ryzyk, składki sekcyjne, wiele lokalizacji |
+| ERGO Hestia | OC zawodowe | certyfikat pod Programem Ubezpieczenia |
+| UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
+
+Produkt bez parsera jest widoczny na liście, ale import jest zablokowany.
+Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
+
+**Zasady mapowania**
+
+- **Tożsamość klienta.** Zapis wymaga zgodności NIP lub REGON z polisy
+  z kartoteką wybranego klienta (sumy kontrolne NIP oraz REGON 9- i
+  14-znakowego). Nowy klient nigdy nie powstaje z danych z polisy.
+- **Ubezpieczony ≠ ubezpieczający.** Gdy ubezpieczonym jest inny podmiot,
+  wiążemy go z istniejącą kartoteką po NIP/REGON (`ubezpieczony_id`).
+  Brak w kartotece daje ostrzeżenie, nie blokadę.
+- **Leasing.** Gdy ubezpieczonym jest finansujący, polisa należy do
+  **ubezpieczającego** — to on jest klientem polisy, a pole „ubezpieczony"
+  zostaje puste. Finansujący jest wskazywany ze słownika leasingów
+  (`crm_leasings`), a jeśli go tam nie ma — **zostaje do niego dopisany**
+  i powiązany z polisą.
+- **Pojazd.** Wiązany po VIN, a przy jego braku po numerze rejestracyjnym.
+  Pojazd należący do innego klienta blokuje import. Brak pojazdu
+  w kartotece blokuje import do czasu zgody operatora na założenie go
+  z danych polisy.
+- **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
+  z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
+- **Wznowienie.** Numer polisy poprzedniej ustawia `renewal_of`.
+- **Prowizja.** Polisy jej nie zawierają — pochodzi z UG albo zostaje
+  do uzupełnienia ręcznie.
+- Duplikat numeru polisy blokuje import.
+
 ### Szkody (`/claims`)
 
 - Rejestr wszystkich szkód w portfelu

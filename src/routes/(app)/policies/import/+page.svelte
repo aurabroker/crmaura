@@ -137,8 +137,27 @@
 		if (!draft || !mozliweZapisanie()) return;
 		saving = true;
 
-		// Pojazd zakładamy przed polisą — bez jego id polisa nie miałaby powiązania.
+		// Pojazd i finansujący muszą istnieć przed polisą — bez ich id nie byłoby powiązania.
 		const payload = { ...draft.payload };
+
+		if (draft.nowyLeasing) {
+			const { data: leasing, error: lErr } = await sb
+				.from('crm_leasings')
+				.insert([draft.nowyLeasing])
+				.select('id')
+				.single();
+			if (lErr) {
+				saving = false;
+				parseError = `Nie udało się dopisać finansującego: ${lErr.message}`;
+				return;
+			}
+			payload.leasing_id = leasing!.id;
+			await logAudit('leasing_created', 'leasing', leasing!.id, draft.nowyLeasing.nazwa as string, {
+				zrodlo: 'import polisy',
+				plik: file?.name
+			});
+		}
+
 		if (draft.nowyPojazd) {
 			const { data: pojazd, error: vErr } = await sb
 				.from('crm_vehicles')
@@ -187,10 +206,11 @@
 			ubezpieczyciel: insurer?.nazwa,
 			plik: file?.name,
 			ug: draft.ug?.nr_polisy ?? null,
-			pojazd: (payload.pojazd_id as string | null) ?? null
+			pojazd: (payload.pojazd_id as string | null) ?? null,
+			leasing: (payload.leasing_id as string | null) ?? null
 		});
 
-		const [rP, rPay, rV] = await Promise.all([
+		const [rP, rPay, rV, rL] = await Promise.all([
 			sb
 				.from('crm_policies')
 				.select(
@@ -201,11 +221,13 @@
 				.from('crm_policy_payments')
 				.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))')
 				.order('data_platnosci'),
-			sb.from('crm_vehicles').select('*')
+			sb.from('crm_vehicles').select('*'),
+			sb.from('crm_leasings').select('*')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
+		appState.leasings = (rL.data ?? []) as typeof appState.leasings;
 		saving = false;
 		goto(`/policies/${inserted!.id}`);
 	}
@@ -488,7 +510,9 @@
 								<dd class="font-medium text-slate-900 text-right">
 									{draft.leasing?.nazwa ?? e.leasing?.nazwa}
 									<span class="block text-[11px] text-slate-400">
-										{draft.leasing ? 'ze słownika leasingów' : 'brak w słowniku'}
+										{draft.leasing
+											? 'ze słownika leasingów'
+											: 'zostanie dopisany do słownika leasingów'}
 									</span>
 								</dd>
 							</div>
