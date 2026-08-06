@@ -65,11 +65,22 @@ export const INSURER_TEMPLATES: InsurerTemplate[] = [
 	}
 ];
 
-/** Szablony towarzystwa dopasowane po skrócie lub nazwie z crm_insurers. */
+/**
+ * Szablony towarzystwa dopasowane po skrócie lub nazwie z crm_insurers.
+ *
+ * Kancelarie wpisują towarzystwa własnymi skrótami ("Hestia" zamiast "ERGO"),
+ * dlatego dopasowujemy też po nazwie. Spółki życiowe wykluczamy: wszystkie
+ * szablony dotyczą ubezpieczeń majątkowych i komunikacyjnych, a nazwy spółek
+ * życiowych z tej samej grupy zawierają ten sam człon ("STU na Życie Ergo
+ * Hestia S.A." trafiałaby w szablony ERGO).
+ */
 export function templatesFor(insurer: {
 	skrot?: string | null;
 	nazwa: string;
+	dzial?: string | null;
 }): ProductTemplate[] {
+	if ((insurer.dzial ?? '').trim().toLowerCase() === 'życiowy') return [];
+
 	const skrot = (insurer.skrot ?? '').trim().toUpperCase();
 	const nazwa = insurer.nazwa.trim().toUpperCase();
 	const hit = INSURER_TEMPLATES.find(
