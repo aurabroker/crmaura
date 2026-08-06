@@ -129,47 +129,109 @@ function parseAutoPrzestrzen(doc: PdfDoc): ExtractedPolicy {
 // UBEZPIECZAJĄCY to klient; UBEZPIECZONY przy leasingu to finansujący,
 // więc zgodność z kartoteką sprawdzamy zawsze po ubezpieczającym.
 function parseStrony(doc: PdfDoc, out: ExtractedPolicy) {
-	const blokUbezpieczajacy = blokPoEtykiecie(doc, 'UBEZPIECZAJĄCY', 24);
+	const blokUbezpieczajacy = blokPoEtykiecie(doc, 'UBEZPIECZAJĄCY');
 	if (blokUbezpieczajacy) {
-		out.klient_regon = digits(grab(blokUbezpieczajacy, /REGON\s*([\d\s]{9,17})/i));
-		out.klient_nip = digits(grab(blokUbezpieczajacy, /NIP\s*([\d\s-]{10,13})/i));
-		const [pierwszy, ...reszta] = blokUbezpieczajacy.split('\n');
-		out.klient_nazwa = collapse(pierwszy.replace(/\s*(REGON|NIP)\s*[\d\s-]+$/i, ''));
-		out.klient_adres = collapse(reszta.join(', '));
+		const strona = parsePodmiot(blokUbezpieczajacy.wartosci);
+		out.klient_nazwa = strona.nazwa;
+		out.klient_adres = strona.adres;
+		out.klient_regon = strona.regon;
+		out.klient_nip = strona.nip;
+		out.klient_email = strona.email;
+
+		// Polisa bez leasingu łączy obie role w jedną etykietę
+		// ("UBEZPIECZAJĄCY / UBEZPIECZONY") — to ten sam podmiot.
+		if (/\/\s*UBEZPIECZONY/i.test(blokUbezpieczajacy.etykieta)) {
+			out.ubezpieczony_nazwa = strona.nazwa;
+			out.ubezpieczony_regon = strona.regon;
+			out.ubezpieczony_nip = strona.nip;
+			return;
+		}
 	}
 
-	const blokUbezpieczony = blokPoEtykiecie(doc, 'UBEZPIECZONY', 24);
+	const blokUbezpieczony = blokPoEtykiecie(doc, 'UBEZPIECZONY');
 	if (blokUbezpieczony) {
-		const [pierwszy, ...reszta] = blokUbezpieczony.split('\n');
-		out.ubezpieczony_nazwa = collapse(pierwszy.replace(/\s*(REGON|NIP)\s*[\d\s-]+$/i, ''));
-		out.ubezpieczony_regon = digits(grab(blokUbezpieczony, /REGON\s*([\d\s]{9,17})/i));
-		out.ubezpieczony_nip = digits(grab(blokUbezpieczony, /NIP\s*([\d\s-]{10,13})/i));
+		const strona = parsePodmiot(blokUbezpieczony.wartosci);
+		out.ubezpieczony_nazwa = strona.nazwa;
+		out.ubezpieczony_regon = strona.regon;
+		out.ubezpieczony_nip = strona.nip;
 
-		const leasing: LeasingData = {
-			nazwa: out.ubezpieczony_nazwa,
-			nip: out.ubezpieczony_nip,
-			regon: out.ubezpieczony_regon,
-			adres: collapse(reszta.join(', '))
-		};
 		// Finansującego rozpoznajemy po formie prawnej w nazwie — przy polisie
 		// bez leasingu ubezpieczonym jest po prostu właściciel pojazdu.
-		if (leasing.nazwa && /leasing|bank|fleet|finance/i.test(leasing.nazwa)) out.leasing = leasing;
+		if (strona.nazwa && /leasing|bank|fleet|finance/i.test(strona.nazwa)) {
+			const leasing: LeasingData = {
+				nazwa: strona.nazwa,
+				nip: strona.nip,
+				regon: strona.regon,
+				adres: strona.adres
+			};
+			out.leasing = leasing;
+		}
 	}
+}
+
+/**
+ * Blok danych strony umowy: nazwa bywa łamana na kilka wierszy, a identyfikator
+ * dopisany na końcu któregoś z nich. Adres poznajemy po kodzie pocztowym —
+ * wszystko przed nim należy do nazwy, wszystko po nim to dane kontaktowe.
+ */
+function parsePodmiot(blok: string): {
+	nazwa: string | null;
+	adres: string | null;
+	regon: string | null;
+	nip: string | null;
+	email: string | null;
+} {
+	const linie = blok
+		.split('\n')
+		.map((l) => l.trim())
+		.filter(Boolean);
+	const adresIdx = linie.findIndex((l) => /\d{2}-\d{3}/.test(l) || /^(UL\.|AL\.|OS\.|PL\.)/i.test(l));
+
+	const czesciNazwy = adresIdx === -1 ? linie.slice(0, 1) : linie.slice(0, adresIdx);
+	const nazwa = collapse(
+		czesciNazwy.join(' ').replace(/\b(REGON|NIP)\s*[\d\s-]+/gi, '')
+	);
+
+	return {
+		nazwa,
+		adres: adresIdx === -1 ? null : collapse(linie[adresIdx]),
+		regon: digits(grab(blok, /REGON\s*([\d\s]{9,17})/i)),
+		nip: digits(grab(blok, /NIP\s*([\d\s-]{10,13})/i)),
+		email: grab(blok, /(\S+@\S+\.\S+)/)
+	};
 }
 
 /**
  * Wartości należące do etykiety z lewej kolumny: wszystko na prawo od niej,
  * od jej wiersza w dół, aż do wiersza kolejnej etykiety.
+ *
+ * Etykieta bywa łamana na dwa wiersze („UBEZPIECZAJĄCY" + „/UBEZPIECZONY").
+ * Fragment zaczynający się od ukośnika jest ciągiem dalszym etykiety, a nie
+ * początkiem nowej sekcji — inaczej blok wartości urwałby się przed danymi,
+ * które stoją w tym samym wierszu co kontynuacja (np. REGON).
  */
-function blokPoEtykiecie(doc: PdfDoc, etykieta: string, wysokosc: number): string | null {
+function blokPoEtykiecie(
+	doc: PdfDoc,
+	etykieta: string
+): { etykieta: string; wartosci: string } | null {
 	const lbl = doc.words.find((w) => w.page === 1 && w.text === etykieta && w.x < X_WARTOSCI);
 	if (!lbl) return null;
-	const nastepna = doc.words
+
+	const ponizej = doc.words
 		.filter((w) => w.page === 1 && w.x < X_WARTOSCI && w.y < lbl.y - 1)
-		.sort((a, b) => b.y - a.y)[0];
-	const dol = nastepna ? Math.max(nastepna.y + 1, lbl.y - wysokosc) : lbl.y - wysokosc;
-	const blok = doc.region(1, { yFrom: dol, yTo: lbl.y + 1, xFrom: X_WARTOSCI });
-	return blok || null;
+		.sort((a, b) => b.y - a.y);
+
+	let etykietaPelna = lbl.text;
+	let i = 0;
+	while (i < ponizej.length && ponizej[i].text.startsWith('/')) {
+		etykietaPelna += ` ${ponizej[i].text}`;
+		i++;
+	}
+
+	const nastepna = ponizej[i];
+	const dol = nastepna ? nastepna.y + 1 : lbl.y - 60;
+	const wartosci = doc.region(1, { yFrom: dol, yTo: lbl.y + 1, xFrom: X_WARTOSCI });
+	return wartosci ? { etykieta: etykietaPelna, wartosci } : null;
 }
 
 function parsePojazd(doc: PdfDoc): VehicleData | null {
@@ -198,7 +260,12 @@ function blokPojazdu(doc: PdfDoc): string | null {
 	const lbl = doc.words.find((w) => w.page === 1 && w.text === 'POJAZD' && w.x < X_WARTOSCI);
 	if (!lbl) return null;
 	const yTo = lbl.y + 1;
-	const yFrom = lbl.y - 50;
+	// Sekcja kończy się na kolejnej etykiecie z lewej kolumny — stała wysokość
+	// ucinałaby przełamane wartości (np. długi rodzaj pojazdu).
+	const nastepna = doc.words
+		.filter((w) => w.page === 1 && w.x < X_WARTOSCI && w.y < lbl.y - 1)
+		.sort((a, b) => b.y - a.y)[0];
+	const yFrom = nastepna ? nastepna.y + 1 : lbl.y - 60;
 
 	const xDrugiejKolumny = Math.min(
 		...doc.words
@@ -210,8 +277,29 @@ function blokPojazdu(doc: PdfDoc): string | null {
 
 	const lewa = doc.region(1, { yFrom, yTo, xFrom: X_WARTOSCI, xTo: granica });
 	const prawa = Number.isFinite(granica) ? doc.region(1, { yFrom, yTo, xFrom: granica }) : '';
-	const blok = [lewa, prawa].filter(Boolean).join('\n');
+	const blok = [sklejPrzelamane(lewa), sklejPrzelamane(prawa)].filter(Boolean).join('\n');
 	return blok || null;
+}
+
+/**
+ * Wartość długiej etykiety potrafi się przełamać na kolejny wiersz
+ * ("Rodzaj pojazdu: Sam.ciężarowo-" / "osob.,ciężarowe do 3,5t").
+ * Wiersz bez własnej etykiety dołączamy do poprzedniego — bez spacji,
+ * gdy poprzedni kończy się dywizem.
+ */
+function sklejPrzelamane(blok: string): string {
+	const wynik: string[] = [];
+	for (const linia of blok.split('\n')) {
+		const t = linia.trim();
+		if (!t) continue;
+		if (/^[^:]{1,40}:/.test(t) || !wynik.length) {
+			wynik.push(t);
+		} else {
+			const poprzedni = wynik[wynik.length - 1];
+			wynik[wynik.length - 1] = poprzedni.endsWith('-') ? poprzedni + t : `${poprzedni} ${t}`;
+		}
+	}
+	return wynik.join('\n');
 }
 
 /**
