@@ -1,4 +1,4 @@
-import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, InsurerBranch, InsurerContact, PolicyBroker, ApkForm, CrmAlert, CrmTask, Leasing, Prospect } from '$lib/types/database';
+import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, InsurerBranch, InsurerContact, PolicyBroker, ApkForm, CrmAlert, CrmTask, Leasing, Prospect, VehicleRequest } from '$lib/types/database';
 
 export const appState = $state({
 	profile: null as Profile | null,
@@ -25,7 +25,9 @@ export const appState = $state({
 	tasks: [] as CrmTask[],
 	loading: false,
 	apkForms: [] as ApkForm[],
-	leasings: [] as Leasing[]
+	leasings: [] as Leasing[],
+	// Wnioski o dodanie pojazdu czekające na decyzję administratora.
+	vehicleRequests: [] as VehicleRequest[]
 });
 
 export function isBroker(): boolean {

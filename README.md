@@ -276,6 +276,16 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
   Pojazd należący do innego klienta blokuje import. Brak pojazdu
   w kartotece blokuje import do czasu zgody operatora na założenie go
   z danych polisy.
+- **Pojazd bez numeru rejestracyjnego → wniosek do administratora.**
+  Kartoteka pojazdów wymaga rejestracji, a polisa nie zawsze ją niesie
+  (bywa sam VIN). Takiego pojazdu broker nie zakłada sam: potwierdza
+  złożenie wniosku, polisa zapisuje się bez powiązania z pojazdem,
+  a wniosek trafia do `crm_vehicle_requests` ze statusem `oczekuje`.
+  Administrator widzi licznik przy ikonie Ustawień i rozpatruje wniosek
+  w zakładce **Ustawienia → Wnioski o pojazdy**: uzupełnia numer
+  rejestracyjny i akceptuje (pojazd powstaje i zostaje podpięty do polisy)
+  albo odrzuca z podaniem powodu. Obie decyzje trafiają do dziennika
+  aktywności.
 - **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
   z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
 - **Wznowienie.** Numer polisy poprzedniej ustawia `renewal_of`.

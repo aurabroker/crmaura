@@ -30,6 +30,7 @@
 	let parseError = $state('');
 	let extracted = $state<ExtractedPolicy | null>(null);
 	let utworzPojazd = $state(false);
+	let wnioskujPojazd = $state(false);
 
 	const insurer = $derived(appState.insurers.find((i) => i.id === insurerId) ?? null);
 	const produkty = $derived<ProductTemplate[]>(insurer ? templatesFor(insurer) : []);
@@ -72,7 +73,8 @@
 					vehicles: appState.vehicles,
 					leasings: appState.leasings,
 					tenantId: appState.profile.tenant_id,
-					utworzPojazd
+					utworzPojazd,
+					wnioskujPojazd
 				})
 			: null
 	);
@@ -84,6 +86,7 @@
 		extracted = null;
 		parseError = '';
 		utworzPojazd = false;
+		wnioskujPojazd = false;
 	}
 
 	function insurerLabel(i: Insurer): string {
@@ -203,6 +206,29 @@
 			);
 		}
 
+		// Wniosek o pojazd składamy po zapisie polisy, żeby administrator widział,
+		// której polisy dotyczy.
+		if (draft.wniosekPojazd && inserted?.id) {
+			const { data: wniosek } = await sb
+				.from('crm_vehicle_requests')
+				.insert([
+					{
+						...draft.wniosekPojazd,
+						polisa_id: inserted.id,
+						created_by: appState.profile!.id
+					}
+				])
+				.select('id')
+				.single();
+			await logAudit(
+				'vehicle_request_created',
+				'vehicle_request',
+				wniosek?.id ?? null,
+				(draft.wniosekPojazd.vin as string) ?? null,
+				{ polisa: payload.nr_polisy, plik: file?.name }
+			);
+		}
+
 		await logAudit('policy_imported', 'policy', inserted?.id, payload.nr_polisy as string, {
 			produkt: product?.label,
 			ubezpieczyciel: insurer?.nazwa,
@@ -212,7 +238,7 @@
 			leasing: (payload.leasing_id as string | null) ?? null
 		});
 
-		const [rP, rPay, rV, rL] = await Promise.all([
+		const [rP, rPay, rV, rL, rVR] = await Promise.all([
 			sb
 				.from('crm_policies')
 				.select(
@@ -224,12 +250,14 @@
 				.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))')
 				.order('data_platnosci'),
 			sb.from('crm_vehicles').select('*'),
-			sb.from('crm_leasings').select('*')
+			sb.from('crm_leasings').select('*'),
+			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje')
 		]);
 		appState.policies = (rP.data ?? []) as typeof appState.policies;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.leasings = (rL.data ?? []) as typeof appState.leasings;
+		appState.vehicleRequests = (rVR.data ?? []) as typeof appState.vehicleRequests;
 		saving = false;
 		goto(`/policies/${inserted!.id}`);
 	}
@@ -558,7 +586,7 @@
 							</div>
 						</dl>
 
-						{#if !draft.pojazd}
+						{#if !draft.pojazd && v.nr_rejestracyjny}
 							<label
 								class="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer"
 							>
@@ -567,6 +595,21 @@
 									Załóż ten pojazd w kartotece klienta na podstawie danych z polisy.
 									<span class="block text-xs text-amber-700 mt-0.5">
 										Bez tego import jest zablokowany — polisa komunikacyjna musi wskazywać pojazd.
+									</span>
+								</span>
+							</label>
+						{:else if !draft.pojazd}
+							<!-- Brak rejestracji: pojazdu nie da się zapisać, decyduje administrator. -->
+							<label
+								class="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer"
+							>
+								<input type="checkbox" bind:checked={wnioskujPojazd} class="mt-0.5" />
+								<span class="text-sm text-amber-900">
+									Złóż wniosek do administratora o dodanie tego pojazdu.
+									<span class="block text-xs text-amber-700 mt-0.5">
+										Polisa nie zawiera numeru rejestracyjnego, a kartoteka pojazdów go wymaga.
+										Administrator uzupełni numer i zaakceptuje albo odrzuci wniosek. Polisa zostanie
+										zapisana bez powiązania z pojazdem.
 									</span>
 								</span>
 							</label>

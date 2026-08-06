@@ -4,11 +4,12 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import type { Insurer, Profile, InsurerBranch, InsurerContact, Leasing } from '$lib/types/database';
+	import type { Insurer, Profile, InsurerBranch, InsurerContact, Leasing, VehicleRequest } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users, ScrollText, Landmark } from 'lucide-svelte';
+	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users, ScrollText, Landmark, Car } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
+	import { logAudit } from '$lib/utils/audit';
 
 	// activeTab sterowany przez rodzica (/settings)
 	let { activeTab = 'system' }: { activeTab?: string } = $props();
@@ -51,6 +52,91 @@
 		login: 'Logowanie', client_created: 'Nowy klient', client_updated: 'Edycja klienta',
 		policy_created: 'Nowa polisa', policy_renewed: 'Odnowienie polisy', policy_deleted: 'Usunięcie polisy',
 	};
+
+	// --- Wnioski o dodanie pojazdu (import polis) ---
+	// Polisa potrafi nie zawierać numeru rejestracyjnego, a kartoteka pojazdów go
+	// wymaga. Broker składa wniosek, administrator uzupełnia numer i decyduje.
+	let vrRej = $state<Record<string, string>>({});
+	let vrPowod = $state<Record<string, string>>({});
+	let vrBusy = $state<string | null>(null);
+	let vrError = $state('');
+
+	async function reloadVehicleRequests() {
+		const [{ data: wnioski }, { data: pojazdy }, { data: polisy }] = await Promise.all([
+			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje').order('created_at', { ascending: false }),
+			sb.from('crm_vehicles').select('*'),
+			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null)
+		]);
+		appState.vehicleRequests = (wnioski ?? []) as typeof appState.vehicleRequests;
+		appState.vehicles = (pojazdy ?? []) as typeof appState.vehicles;
+		appState.policies = (polisy ?? []) as typeof appState.policies;
+	}
+
+	async function acceptVehicleRequest(w: VehicleRequest) {
+		const rej = (vrRej[w.id] ?? w.nr_rejestracyjny ?? '').trim().toUpperCase();
+		vrError = '';
+		if (!rej) {
+			vrError = 'Podaj numer rejestracyjny — bez niego pojazdu nie da się zapisać w kartotece.';
+			return;
+		}
+		vrBusy = w.id;
+
+		const { data: pojazd, error: vErr } = await sb
+			.from('crm_vehicles')
+			.insert([{
+				tenant_id: w.tenant_id,
+				klient_id: w.klient_id,
+				nr_rejestracyjny: rej,
+				marka_model: w.marka_model,
+				vin: w.vin,
+				rok_produkcji: w.rok_produkcji,
+				rodzaj_pojazdu: w.rodzaj_pojazdu,
+				moc: w.moc,
+				pojemnosc_silnika: w.pojemnosc_silnika,
+				ladownosc: w.ladownosc
+			}])
+			.select('id')
+			.single();
+
+		if (vErr) { vrBusy = null; vrError = vErr.message; return; }
+
+		// Polisa, dla której złożono wniosek, dostaje powiązanie z pojazdem.
+		if (w.polisa_id) {
+			await sb.from('crm_policies').update({ pojazd_id: pojazd!.id }).eq('id', w.polisa_id);
+		}
+
+		await sb.from('crm_vehicle_requests').update({
+			status: 'zaakceptowany',
+			nr_rejestracyjny: rej,
+			pojazd_id: pojazd!.id,
+			rozpatrzony_przez: appState.profile!.id,
+			rozpatrzony_at: new Date().toISOString()
+		}).eq('id', w.id);
+
+		await logAudit('vehicle_request_accepted', 'vehicle', pojazd!.id, rej, { wniosek: w.id });
+		await reloadVehicleRequests();
+		vrBusy = null;
+	}
+
+	async function rejectVehicleRequest(w: VehicleRequest) {
+		const powod = (vrPowod[w.id] ?? '').trim();
+		vrError = '';
+		if (!powod) {
+			vrError = 'Podaj powód odrzucenia — trafi do dziennika i będzie wskazówką dla zgłaszającego.';
+			return;
+		}
+		vrBusy = w.id;
+		await sb.from('crm_vehicle_requests').update({
+			status: 'odrzucony',
+			powod,
+			rozpatrzony_przez: appState.profile!.id,
+			rozpatrzony_at: new Date().toISOString()
+		}).eq('id', w.id);
+
+		await logAudit('vehicle_request_rejected', 'vehicle_request', w.id, w.vin ?? w.marka_model, { powod });
+		await reloadVehicleRequests();
+		vrBusy = null;
+	}
 
 	async function authHeaders(): Promise<Record<string, string>> {
 		const { data: { session } } = await sb.auth.getSession();
@@ -532,6 +618,97 @@
 				{/each}
 			</tbody>
 		</table>
+	</div>
+</div>
+
+{:else if activeTab === 'pojazdy'}
+<!-- ===================== WNIOSKI O POJAZDY ===================== -->
+<div class="space-y-4">
+	<p class="text-sm text-slate-500">
+		Pojazdy z importu polis, których nie dało się zapisać automatycznie — polisa nie zawierała
+		numeru rejestracyjnego. Uzupełnij numer i zaakceptuj, albo odrzuć wniosek.
+	</p>
+
+	{#if vrError}
+		<div class="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800">{vrError}</div>
+	{/if}
+
+	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+		<div class="px-5 py-4 border-b border-line flex items-center justify-between">
+			<h2 class="font-semibold text-slate-900">
+				Wnioski oczekujące
+				<span class="text-xs font-normal text-slate-400">({appState.vehicleRequests.length})</span>
+			</h2>
+		</div>
+
+		{#each appState.vehicleRequests as w (w.id)}
+			{@const klient = appState.clients.find((c) => c.id === w.klient_id)}
+			{@const polisa = appState.policies.find((p) => p.id === w.polisa_id)}
+			{@const autor = appState.brokers.find((b) => b.id === w.created_by)}
+			<div class="border-t border-line-soft px-5 py-4">
+				<div class="flex flex-wrap items-start justify-between gap-3 mb-3">
+					<div>
+						<p class="font-medium text-slate-900">
+							{w.marka_model ?? 'Pojazd bez nazwy'}
+							{#if w.vin}<span class="ml-2 text-xs font-mono text-slate-500">VIN {w.vin}</span>{/if}
+						</p>
+						<p class="text-xs text-slate-500 mt-0.5">
+							{klient?.nazwa ?? 'klient nieznany'}
+							{#if polisa}· polisa {polisa.nr_polisy}{/if}
+							{#if autor}· zgłosił {autor.imie_nazwisko ?? autor.email}{/if}
+							{#if w.zrodlo}· {w.zrodlo}{/if}
+						</p>
+					</div>
+					<div class="text-xs text-slate-400">
+						{w.rok_produkcji ? `rok ${w.rok_produkcji}` : ''}
+						{w.rodzaj_pojazdu ? `· ${w.rodzaj_pojazdu}` : ''}
+						{w.pojemnosc_silnika ? `· ${w.pojemnosc_silnika} ccm` : ''}
+					</div>
+				</div>
+
+				<div class="flex flex-wrap items-end gap-3">
+					<div>
+						<label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vr-{w.id}">
+							Numer rejestracyjny *
+						</label>
+						<input
+							id="vr-{w.id}"
+							value={vrRej[w.id] ?? w.nr_rejestracyjny ?? ''}
+							oninput={(e) => (vrRej[w.id] = e.currentTarget.value.toUpperCase())}
+							placeholder="np. PO12345"
+							class="border border-line rounded-lg px-3 py-2 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-blue-500"
+						/>
+					</div>
+					<div class="flex-1 min-w-[200px]">
+						<label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vp-{w.id}">
+							Powód odrzucenia
+						</label>
+						<input
+							id="vp-{w.id}"
+							bind:value={vrPowod[w.id]}
+							placeholder="wymagany przy odrzuceniu"
+							class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+						/>
+					</div>
+					<button
+						onclick={() => acceptVehicleRequest(w)}
+						disabled={vrBusy === w.id}
+						class="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40"
+					>
+						{vrBusy === w.id ? '…' : 'Akceptuj'}
+					</button>
+					<button
+						onclick={() => rejectVehicleRequest(w)}
+						disabled={vrBusy === w.id}
+						class="px-4 py-2 rounded-lg text-sm font-semibold border border-line text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+					>
+						Odrzuć
+					</button>
+				</div>
+			</div>
+		{:else}
+			<div class="px-5 py-8 text-center text-slate-400 text-sm">Brak wniosków do rozpatrzenia</div>
+		{/each}
 	</div>
 </div>
 

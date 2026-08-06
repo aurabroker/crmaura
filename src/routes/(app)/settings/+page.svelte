@@ -13,13 +13,13 @@
 	import { page } from '$app/stores';
 
 	const admin = $derived(isAdmin(appState.profile));
-	const ADMIN_TABS = ['system', 'kancelaria', 'leasingi', 'logi'];
+	const ADMIN_TABS = ['system', 'kancelaria', 'leasingi', 'pojazdy', 'logi'];
 
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// --- Tabs ---
-	type SettingsTab = 'vehicles' | 'profile' | 'rodo' | 'dokumenty' | 'kalendarz' | 'system' | 'kancelaria' | 'leasingi' | 'logi';
+	type SettingsTab = 'vehicles' | 'profile' | 'rodo' | 'dokumenty' | 'kalendarz' | 'system' | 'kancelaria' | 'leasingi' | 'pojazdy' | 'logi';
 	let activeTab = $state<SettingsTab>('vehicles');
 
 	// Deep-link z /admin?tab=... (zachowuje stare linki po scaleniu)
@@ -339,6 +339,17 @@
 				class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'leasingi' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
 			>
 				<Landmark size={16} /> Leasingi
+			</button>
+			<button
+				onclick={() => activeTab = 'pojazdy'}
+				class="relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'pojazdy' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+			>
+				<Car size={16} /> Wnioski o pojazdy
+				{#if appState.vehicleRequests.length > 0}
+					<span class="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+						{appState.vehicleRequests.length}
+					</span>
+				{/if}
 			</button>
 			<button
 				onclick={() => activeTab = 'logi'}

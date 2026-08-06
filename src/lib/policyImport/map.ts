@@ -25,6 +25,8 @@ export interface Draft {
 	pojazd: Vehicle | null;
 	/** Rekord pojazdu do założenia, gdy operator się na to zgodzi. */
 	nowyPojazd: Record<string, unknown> | null;
+	/** Wniosek do administratora o dodanie pojazdu, którego nie da się zapisać wprost. */
+	wniosekPojazd: Record<string, unknown> | null;
 	leasing: Leasing | null;
 	/** Finansujący do dopisania do słownika leasingów, gdy jeszcze go nie ma. */
 	nowyLeasing: Record<string, unknown> | null;
@@ -49,6 +51,8 @@ export interface BuildInput {
 	tenantId: string;
 	/** Operator wyraził zgodę na założenie pojazdu z danych polisy. */
 	utworzPojazd?: boolean;
+	/** Operator zdecydował się złożyć wniosek o pojazd bez numeru rejestracyjnego. */
+	wnioskujPojazd?: boolean;
 }
 
 export function buildDraft(input: BuildInput): Draft {
@@ -123,7 +127,7 @@ export function buildDraft(input: BuildInput): Draft {
 			text: 'Nie odczytano harmonogramu rat — nie powstaną pozycje w Płatnościach.'
 		});
 
-	const { pojazd, nowyPojazd } = dopasujPojazd(input, issues);
+	const { pojazd, nowyPojazd, wniosekPojazd } = dopasujPojazd(input, issues);
 	const { leasing, nowyLeasing } = dopasujLeasing(input, issues);
 	const ubezpieczony = dopasujUbezpieczonego(input, issues);
 
@@ -170,6 +174,7 @@ export function buildDraft(input: BuildInput): Draft {
 		raty,
 		pojazd,
 		nowyPojazd,
+		wniosekPojazd,
 		leasing,
 		nowyLeasing,
 		ubezpieczony
@@ -218,10 +223,14 @@ function dopasujUbezpieczonego(input: BuildInput, issues: Issue[]): Client | nul
 function dopasujPojazd(
 	input: BuildInput,
 	issues: Issue[]
-): { pojazd: Vehicle | null; nowyPojazd: Record<string, unknown> | null } {
-	const { extracted, client, vehicles, policies, tenantId, utworzPojazd } = input;
+): {
+	pojazd: Vehicle | null;
+	nowyPojazd: Record<string, unknown> | null;
+	wniosekPojazd: Record<string, unknown> | null;
+} {
+	const { extracted, client, vehicles, policies, tenantId, utworzPojazd, wnioskujPojazd } = input;
 	const dane = extracted.pojazd;
-	if (!dane) return { pojazd: null, nowyPojazd: null };
+	if (!dane) return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
 
 	const vin = dane.vin?.toUpperCase() ?? null;
 	const rej = normRej(dane.nr_rejestracyjny);
@@ -244,7 +253,7 @@ function dopasujPojazd(
 				level: 'warn',
 				text: `Pojazd jest już przypisany do polisy ${zajety.nr_polisy} obejmującej ten okres.`
 			});
-		return { pojazd: wlasny, nowyPojazd: null };
+		return { pojazd: wlasny, nowyPojazd: null, wniosekPojazd: null };
 	}
 
 	if (kandydaci.length) {
@@ -252,16 +261,56 @@ function dopasujPojazd(
 			level: 'error',
 			text: `Pojazd ${dane.nr_rejestracyjny ?? dane.vin} istnieje w bazie, ale jest przypisany do innego klienta.`
 		});
-		return { pojazd: null, nowyPojazd: null };
+		return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
 	}
 
-	const opis = [dane.nr_rejestracyjny, dane.marka_model].filter(Boolean).join(' — ');
+	const opis = [dane.nr_rejestracyjny, dane.vin, dane.marka_model].filter(Boolean).join(' — ');
+
+	const wspolne = {
+		nr_rejestracyjny: dane.nr_rejestracyjny,
+		marka_model: dane.marka_model,
+		vin: dane.vin,
+		rok_produkcji: dane.rok_produkcji,
+		rodzaj_pojazdu: dane.rodzaj_pojazdu,
+		moc: dane.moc,
+		pojemnosc_silnika: dane.pojemnosc_silnika,
+		ladownosc: dane.ladownosc
+	};
+
+	// Kartoteka pojazdów wymaga numeru rejestracyjnego, a polisa nie zawsze go
+	// niesie (bywa sam VIN). Takiego pojazdu broker nie zakłada sam — składa
+	// wniosek, który administrator uzupełnia i akceptuje albo odrzuca.
+	if (!dane.nr_rejestracyjny) {
+		if (!wnioskujPojazd) {
+			issues.push({
+				level: 'error',
+				text: `Polisa nie zawiera numeru rejestracyjnego pojazdu (${opis}), więc nie da się go zapisać w kartotece. Złóż wniosek do administratora albo dodaj pojazd wcześniej ręcznie.`
+			});
+			return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
+		}
+		issues.push({
+			level: 'warn',
+			text: `Pojazd ${opis} nie ma numeru rejestracyjnego — powstanie wniosek do administratora. Polisa zostanie zapisana bez powiązania z pojazdem.`
+		});
+		return {
+			pojazd: null,
+			nowyPojazd: null,
+			wniosekPojazd: {
+				tenant_id: tenantId,
+				klient_id: client.id,
+				...wspolne,
+				zrodlo: input.fileName ?? null,
+				status: 'oczekuje'
+			}
+		};
+	}
+
 	if (!utworzPojazd) {
 		issues.push({
 			level: 'error',
 			text: `Pojazd ${opis} nie występuje w kartotece klienta. Potwierdź założenie go z danych polisy albo dodaj go wcześniej ręcznie.`
 		});
-		return { pojazd: null, nowyPojazd: null };
+		return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
 	}
 
 	issues.push({
@@ -270,18 +319,8 @@ function dopasujPojazd(
 	});
 	return {
 		pojazd: null,
-		nowyPojazd: {
-			tenant_id: tenantId,
-			klient_id: client.id,
-			nr_rejestracyjny: dane.nr_rejestracyjny,
-			marka_model: dane.marka_model,
-			vin: dane.vin,
-			rok_produkcji: dane.rok_produkcji,
-			rodzaj_pojazdu: dane.rodzaj_pojazdu,
-			moc: dane.moc,
-			pojemnosc_silnika: dane.pojemnosc_silnika,
-			ladownosc: dane.ladownosc
-		}
+		nowyPojazd: { tenant_id: tenantId, klient_id: client.id, ...wspolne },
+		wniosekPojazd: null
 	};
 }
 

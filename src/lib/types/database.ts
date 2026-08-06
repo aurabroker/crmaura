@@ -161,6 +161,33 @@ export interface Policy {
 	crm_leasings?: { nazwa: string } | null;
 }
 
+/**
+ * Wniosek o dodanie pojazdu z importu polisy. Powstaje, gdy dokument nie niesie
+ * numeru rejestracyjnego — bez niego pojazdu nie da się zapisać w kartotece.
+ */
+export interface VehicleRequest {
+	id: string;
+	tenant_id: string;
+	klient_id: string;
+	polisa_id: string | null;
+	nr_rejestracyjny: string | null;
+	vin: string | null;
+	marka_model: string | null;
+	rok_produkcji: number | null;
+	rodzaj_pojazdu: string | null;
+	pojemnosc_silnika: number | null;
+	moc: number | null;
+	ladownosc: number | null;
+	zrodlo: string | null;
+	status: 'oczekuje' | 'zaakceptowany' | 'odrzucony';
+	powod: string | null;
+	pojazd_id: string | null;
+	created_by: string | null;
+	created_at?: string;
+	rozpatrzony_przez: string | null;
+	rozpatrzony_at: string | null;
+}
+
 export interface Leasing {
 	id: string;
 	tenant_id: string;
