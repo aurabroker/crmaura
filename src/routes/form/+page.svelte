@@ -109,11 +109,13 @@
 		if (rpcErr) { saveError = rpcErr.message; return; }
 
 		switch (result as string) {
-			case 'submitted': status = 'submitted'; break;   // złożony teraz albo już wcześniej
+			// Przy wysyłce „submitted” znaczy sukces. Przy zapisie szkicu oznacza, że formularz był już
+			// złożony wcześniej i nic się nie zapisało — wtedy nie dziękujemy za wypełnienie.
+			case 'submitted': status = asDraft ? 'used' : 'submitted'; break;
 			case 'used': status = 'used'; break;
 			case 'expired': status = 'expired'; break;
 			case 'draft': break;                             // szkic zapisany, zostajemy na formularzu
-			default: saveError = 'Nie udało się zapisać formularza. Odśwież stronę lub poproś doradcę o nowy link.';
+			default: saveError = 'Nie udało się zapisać formularza. Sprawdź, czy odpowiedzi nie są zbyt długie, albo poproś doradcę o nowy link. Twoje odpowiedzi zostały na ekranie.';
 		}
 	}
 
@@ -263,7 +265,7 @@
 					<!-- Sekcja 5: Dodatkowe -->
 					<section>
 						<h2 class="text-base font-semibold text-slate-900 border-b border-line-soft pb-2 mb-4">5. Informacje dodatkowe</h2>
-						<textarea bind:value={dodatkowe} rows="4" class={inp}
+						<textarea bind:value={dodatkowe} rows="4" maxlength="5000" class={inp}
 							placeholder="Wpisz wszelkie dodatkowe informacje, pytania lub uwagi dla doradcy…"></textarea>
 					</section>
 

@@ -11,6 +11,7 @@
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 	import { page } from '$app/stores';
 	import { logAudit } from '$lib/utils/audit';
+	import { APK_FORMS_SELECT } from '$lib/utils/apkLink';
 
 	function clientMenu(c: Client): CtxItem[] {
 		return [
@@ -174,7 +175,7 @@
 			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
 			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
 			sb.from('crm_vehicles').select('*'),
-			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false }),
+			sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false }),
 			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false }),
 			sb.from('crm_client_contacts').select('*')
 		]);

@@ -7,7 +7,7 @@
 	import { todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
-	import { apkTokenLink, apkOpenLink } from '$lib/utils/apkLink';
+	import { apkTokenLink, apkOpenLink, APK_FORMS_SELECT } from '$lib/utils/apkLink';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -109,7 +109,7 @@
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: clientDeclined ? 'client_declined' : 'created', actor: fAdvisor || 'system' }]);
 
 		// refresh
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').order('created_at', { ascending: false });
+		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 
 		// Jeśli zebrano RODO — zapisz na kliencie

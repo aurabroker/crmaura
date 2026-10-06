@@ -1,6 +1,8 @@
 -- ============================================================
 -- crm_clients.auth_user_id: zmienia wyłącznie serwer.
 -- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA — czeka na potwierdzenie.
+-- Plik leży w supabase/pending/, a nie w migrations/, żeby żadne narzędzie nie zastosowało go samo.
+-- Po potwierdzeniu przenieść do supabase/migrations/ i zastosować.
 --
 -- Powód: polityka tenant_isolation (ALL) pozwala każdemu użytkownikowi najemcy,
 -- także BROKER, zapisać w tej kolumnie dowolny UUID konta Auth. Endpoint

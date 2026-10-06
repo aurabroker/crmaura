@@ -12,7 +12,7 @@
 	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
-	import { apkTokenLink, apkOpenLink } from '$lib/utils/apkLink';
+	import { apkTokenLink, apkOpenLink, apkCopyLink, APK_FORMS_SELECT } from '$lib/utils/apkLink';
 	import type { ApkForm } from '$lib/types/database';
 
 	let pdfSaving = $state<string | null>(null);
@@ -293,14 +293,15 @@
 		}]).select('id').single();
 		if (e1) { savingApk = false; apkErr = e1.message; return; }
 		const expires = new Date(); expires.setDate(expires.getDate() + 30);
-		await sb.from('apk_tokens').insert([{
+		const { error: e2 } = await sb.from('apk_tokens').insert([{
 			tenant_id: appState.profile!.tenant_id,
 			token, form_id: form!.id,
 			advisor_name: apkAdvisor || null,
 			status: 'pending', expires_at: expires.toISOString()
 		}]);
+		if (e2) { savingApk = false; apkErr = e2.message; return; }
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: 'created', actor: apkAdvisor || 'system' }]);
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').order('created_at', { ascending: false });
+		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 		savingApk = false; apkToken = token;
 	}
@@ -315,11 +316,10 @@
 		apkAdvisor = appState.profile?.imie_nazwisko ?? ''; apkMode = 'client';
 	}
 
-	// Link z karty klienta: pierwszy token formularza (także użyty — strona pokaże wtedy
-	// komunikat „Formularz już wypełniony”). Brak tokenu = brak linku.
+	// Link do skopiowania: token, który jeszcze działa, a w razie braku — pierwszy znany
+	// (strona formularza wyjaśni wtedy klientowi, co się stało). Brak tokenu = brak linku.
 	function apkFormLink(f: typeof clientApk[0]): string {
-		const token = f.apk_tokens?.[0]?.token;
-		return token ? apkTokenLink(token) : '';
+		return apkCopyLink(f) ?? '';
 	}
 
 	async function deleteApk(id: string) {
@@ -328,7 +328,7 @@
 		await sb.from('apk_tokens').delete().eq('form_id', id);
 		await sb.from('apk_audit').delete().eq('form_id', id);
 		await sb.from('apk_forms').delete().eq('id', id);
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').order('created_at', { ascending: false });
+		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 		deletingApk = null;
 	}
@@ -1072,7 +1072,7 @@
 												</button>
 											</div>
 										{:else}
-											<p class="mt-2 text-xs text-slate-400">Brak linku — ten formularz nie ma tokenu (np. klient odmówił APK).</p>
+											<p class="mt-2 text-xs text-slate-400">Brak linku — ten formularz nie ma tokenu (np. klient odmówił APK albo token nie został utworzony).</p>
 										{/if}
 									{/if}
 								</td>
