@@ -5,9 +5,11 @@
 	interface Props {
 		onToken: (token: string) => void;
 		onError?: () => void;
+		// Token wygasł (po ok. 5 minutach) — rodzic powinien go wyczyścić.
+		onExpire?: () => void;
 		theme?: 'light' | 'dark' | 'auto';
 	}
-	let { onToken, onError, theme = 'light' }: Props = $props();
+	let { onToken, onError, onExpire, theme = 'light' }: Props = $props();
 
 	// PUBLIC_TURNSTILE_SITE_KEY must be set in .env as VITE_TURNSTILE_SITE_KEY
 	const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '';
@@ -15,25 +17,21 @@
 	let container: HTMLDivElement;
 	let widgetId: string | undefined;
 
-	declare global {
-		interface Window {
-			turnstile: {
-				render: (el: HTMLElement, opts: Record<string, unknown>) => string;
-				reset: (id: string) => void;
-				remove: (id: string) => void;
-			};
-			onTurnstileLoad?: () => void;
-		}
-	}
-
 	function renderWidget() {
 		if (!container || !window.turnstile) return;
 		widgetId = window.turnstile.render(container, {
 			sitekey: siteKey,
 			theme,
 			callback: (token: string) => onToken(token),
-			'error-callback': () => { if (onError) onError(); }
+			'error-callback': () => { if (onError) onError(); },
+			'expired-callback': () => { if (onExpire) onExpire(); }
 		});
+	}
+
+	// Token Turnstile jest jednorazowy: serwer zużywa go przy weryfikacji, niezależnie od tego,
+	// czy logowanie się udało. Po każdej próbie rodzic woła reset(), żeby dostać nowy token.
+	export function reset() {
+		if (browser && widgetId !== undefined && window.turnstile) window.turnstile.reset(widgetId);
 	}
 
 	onMount(() => {
