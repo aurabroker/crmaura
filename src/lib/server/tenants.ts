@@ -55,10 +55,30 @@ export function parseTenantPatch(body: unknown): { tenantId: string; patch: Tena
 	return { tenantId: tenant_id, patch };
 }
 
+const GENERIC_CREATE_ERROR = 'Nie udało się utworzyć konta. Jeśli masz już konto, zaloguj się; w przeciwnym razie sprawdź dane lub skontaktuj się z nami.';
+
+// Cofa to, co zdążyło powstać. Błędy cofania są logowane (a nie połykane), żeby operator mógł
+// posprzątać: osierocone konto Auth blokuje ten e-mail przy kolejnych próbach.
+async function rollback(admin: SupabaseClient, userId: string, tenantId?: string) {
+	const { error: dErr } = await admin.auth.admin.deleteUser(userId);
+	if (dErr) console.error(`tenants: ROLLBACK nieudany — usuń ręcznie konto Auth ${userId}: ${dErr.message}`);
+	if (tenantId) {
+		const { error: tErr } = await admin.from('crm_tenants').delete().eq('id', tenantId);
+		if (tErr) console.error(`tenants: ROLLBACK nieudany — usuń ręcznie firmę ${tenantId}: ${tErr.message}`);
+	}
+}
+
 // Zakłada firmę razem z kontem pierwszego administratora (ADMIN BROKER).
 // Wspólne dla publicznej rejestracji (/api/register, za Turnstile) i panelu SaaS
 // (/api/saas-admin/tenants, za rolą ADMIN GOD). Przy błędzie cofa to, co już powstało.
-export async function createTenantWithAdmin(admin: SupabaseClient, input: NewTenantInput) {
+// verbose=false (rejestracja publiczna): szczegóły błędów bazy i Auth trafiają tylko do logu,
+// a użytkownik dostaje komunikat ogólny — bez ujawniania nazw ograniczeń ani tego, czy e-mail jest zajęty.
+export async function createTenantWithAdmin(
+	admin: SupabaseClient,
+	input: NewTenantInput,
+	opts: { verbose?: boolean } = {}
+) {
+	const verbose = opts.verbose === true;
 	const nazwa_firmy = (input.nazwa_firmy ?? '').trim();
 	const email = (input.email ?? '').trim();
 	const imie_nazwisko = (input.imie_nazwisko ?? '').trim();
@@ -80,7 +100,8 @@ export async function createTenantWithAdmin(admin: SupabaseClient, input: NewTen
 	});
 
 	if (authErr || !authData.user) {
-		throw error(400, { message: authErr?.message ?? 'Nie można utworzyć użytkownika.' });
+		console.error('tenants: createUser nie powiódł się:', authErr?.message);
+		throw error(400, { message: verbose ? (authErr?.message ?? GENERIC_CREATE_ERROR) : GENERIC_CREATE_ERROR });
 	}
 
 	const userId = authData.user.id;
@@ -92,8 +113,9 @@ export async function createTenantWithAdmin(admin: SupabaseClient, input: NewTen
 		.single();
 
 	if (tenantErr || !tenant) {
-		await admin.auth.admin.deleteUser(userId);
-		throw error(500, { message: tenantErr?.message ?? 'Nie można utworzyć firmy.' });
+		console.error('tenants: zapis firmy nie powiódł się:', tenantErr?.message);
+		await rollback(admin, userId);
+		throw error(500, { message: verbose ? (tenantErr?.message ?? 'Nie można utworzyć firmy.') : GENERIC_CREATE_ERROR });
 	}
 
 	const { error: profileErr } = await admin.from('crm_profiles').insert([{
@@ -105,9 +127,9 @@ export async function createTenantWithAdmin(admin: SupabaseClient, input: NewTen
 	}]);
 
 	if (profileErr) {
-		await admin.auth.admin.deleteUser(userId);
-		await admin.from('crm_tenants').delete().eq('id', tenant.id);
-		throw error(500, { message: profileErr.message });
+		console.error('tenants: zapis profilu nie powiódł się:', profileErr.message);
+		await rollback(admin, userId, tenant.id);
+		throw error(500, { message: verbose ? profileErr.message : GENERIC_CREATE_ERROR });
 	}
 
 	return { tenantId: tenant.id as string, userId };

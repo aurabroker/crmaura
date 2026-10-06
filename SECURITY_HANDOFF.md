@@ -5,8 +5,22 @@
 > w tym repo (`portal.beautypolisa.eu/form?token=…`) i używa wyłącznie RPC `get_apk_by_token` / `submit_apk`.
 > Migracja `supabase/migrations/20261006000000_security_apk_storage_bp.sql` (zastosowana na produkcji) zdjęła
 > szerokie polityki anon/authenticated z `apk_forms`, `apk_tokens`, `apk_audit` oraz storage, a w `bp_profiles`
-> zablokowała samonadawanie `is_admin`. Niezastosowana (czeka na potwierdzenie): `supabase/pending/20261006000001_crm_clients_auth_user_guard.sql`.
+> zablokowała samonadawanie `is_admin`.
 > Kroki 3–4 dotyczące `ud_clients` (udapp/ud) są poza zakresem tej pracy.
+>
+> **Migracje przygotowane, ale NIEZASTOSOWANE** (`supabase/pending/` — celowo poza `migrations/`, żeby żadne
+> narzędzie nie zastosowało ich samo). **Kolejność ma znaczenie:**
+> 1. najpierw wdrożyć kod z gałęzi/PR (nowe endpointy `/api/saas-admin/tenants`, `/api/portal/access`),
+> 2. potem po kolei, po jednej, sprawdzając działanie CRM po każdej:
+>    - `20261006000003_stamp_portal_accounts.sql` — oznacza istniejące konta portalu klienta znacznikiem
+>      `app_metadata.portal_klient_id` (bezpieczna, idempotentna),
+>    - `20261006000002_crm_tenants_secret_hardening.sql` — trigger chroniący `features`, klucz Resend, `nazwa`, `typ`
+>      oraz zawężenie odczytu kolumn; **zastosowana przed wdrożeniem kodu zepsułaby stary panel SaaS**,
+>    - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` zmienia tylko serwer
+>      (po potwierdzeniu, że kod w przeglądarce nie zapisuje tej kolumny).
+>
+> **Konfiguracja Cloudflare:** `TURNSTILE_SECRET_KEY` musi być ustawiony (Pages → Settings → Environment variables),
+> inaczej publiczna rejestracja `/api/register` odmawia (503) — to zamierzone zachowanie fail-closed.
 
 > Dokument przeznaczony do **nowej sesji Claude Code** uruchomionej z dostępem do
 > repozytoriów `aurabroker/APK` i `aurabroker/udapp` (oraz najlepiej `aurabroker/crmaura`).

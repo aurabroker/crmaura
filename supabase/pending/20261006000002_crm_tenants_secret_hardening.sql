@@ -1,15 +1,18 @@
 -- ============================================================
--- crm_tenants: klucz Resend i moduły (features) tylko dla serwera.
+-- crm_tenants: dane firmy, moduły i klucz Resend zmienia tylko serwer.
 -- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
 --
 -- KOLEJNOŚĆ: najpierw wdrożyć kod, w którym panel SaaS czyta i zapisuje firmy przez
 -- /api/saas-admin/tenants (service_role). Ta migracja odbiera przeglądarce odczyt
--- resend_api_key oraz zapis features/resend_api_key — stary panel przestałby działać.
+-- resend_api_key oraz zapis chronionych pól — stary panel SaaS przestałby działać.
 --
 -- Powód: polityka tenant_isolation (ALL) pozwala każdemu użytkownikowi firmy, także BROKER,
--- odczytać jawny klucz Resend swojej firmy i samodzielnie włączać sobie moduły.
--- Sprawdzone w pg_stat_statements: poza panelem SaaS żadne zapytanie roli authenticated nie
--- czyta tej kolumny ani nie robi select * na tej tabeli (wszystkie wybierają jawne kolumny).
+--  * odczytać jawny klucz Resend swojej firmy,
+--  * samodzielnie włączać sobie moduły (features) i zmieniać typ firmy,
+--  * zmienić nazwę firmy — a nazwa służy jako atrybut autoryzacji: funkcja
+--    getresponse-client-activities wpuszcza każdą firmę, której nazwa zawiera „aura”.
+-- Sprawdzone w pg_stat_statements: jedynym zapisem do crm_tenants z roli authenticated jest
+-- panel SaaS (features); nikt poza nim nie czyta resend_api_key ani nie robi select * na tej tabeli.
 -- ============================================================
 
 -- 1) Zapis chronionych pól tylko przez service_role (wzorzec jak w crm_profiles_guard).
@@ -26,6 +29,12 @@ begin
   end if;
   if new.features is distinct from old.features then
     raise exception 'Moduły firmy zmienia wyłącznie administrator systemu (service_role)';
+  end if;
+  if new.nazwa is distinct from old.nazwa
+     or new.typ is distinct from old.typ
+     or new.nip is distinct from old.nip
+     or new.bond_module_enabled is distinct from old.bond_module_enabled then
+    raise exception 'Dane firmy zmienia wyłącznie administrator systemu (service_role)';
   end if;
   return new;
 end; $$;
@@ -45,10 +54,16 @@ revoke select on public.crm_tenants from authenticated;
 grant select (id, nazwa, created_at, typ, bond_module_enabled, nip, features)
   on public.crm_tenants to authenticated;
 
+-- 3) Rola anon nie ma tu żadnej polityki RLS, a mimo to miała pełne uprawnienia tabeli
+--    (w tym do kolumny z kluczem). Jedyna ścieżka anon dotykająca tej tabeli to funkcja
+--    get_apk_by_token (SECURITY DEFINER, wykonuje się z uprawnieniami właściciela).
+revoke all on public.crm_tenants from anon;
+
 -- Weryfikacja po zastosowaniu (oba wyniki powinny być false):
 --   select has_column_privilege('authenticated', 'public.crm_tenants', 'resend_api_key', 'select');
---   select has_column_privilege('anon',          'public.crm_tenants', 'resend_api_key', 'select') and false;
+--   select has_column_privilege('anon',          'public.crm_tenants', 'resend_api_key', 'select');
 --
 -- ROLLBACK:
 --   drop trigger if exists crm_tenants_guard_trg on public.crm_tenants;
 --   grant select on public.crm_tenants to authenticated;
+--   grant all on public.crm_tenants to anon;

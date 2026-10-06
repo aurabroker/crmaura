@@ -3,9 +3,11 @@ import { requireSaasAdmin } from '$lib/server/auth';
 import { createTenantWithAdmin, parseTenantPatch } from '$lib/server/tenants';
 import type { RequestHandler } from './$types';
 
-// Klucz Resend nigdy nie wraca do przeglądarki — pokazujemy tylko końcówkę.
+// Klucz Resend nigdy nie wraca do przeglądarki — pokazujemy tylko końcówkę. Krótki klucz
+// (zapisany dawniej bez walidacji) nie jest pokazywany nawet częściowo.
 function keyHint(key: unknown): string | null {
-	return typeof key === 'string' && key.length > 0 ? `…${key.slice(-4)}` : null;
+	if (typeof key !== 'string' || key.length === 0) return null;
+	return key.length >= 10 ? `…${key.slice(-4)}` : '…';
 }
 
 export const GET: RequestHandler = async ({ request }) => {
@@ -32,13 +34,14 @@ export const POST: RequestHandler = async ({ request }) => {
 	if (!body || typeof body !== 'object') throw error(400, { message: 'Nieprawidłowe dane.' });
 
 	const input = body as Record<string, unknown>;
+	// Administrator SaaS dostaje pełne komunikaty błędów (np. „e-mail już zarejestrowany”).
 	const { tenantId } = await createTenantWithAdmin(admin, {
 		nazwa_firmy: String(input.nazwa_firmy ?? ''),
 		typ: String(input.typ ?? ''),
 		email: String(input.email ?? ''),
 		imie_nazwisko: String(input.imie_nazwisko ?? ''),
 		password: String(input.password ?? '')
-	});
+	}, { verbose: true });
 
 	return json({ success: true, tenant_id: tenantId });
 };

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
@@ -42,20 +42,18 @@
 	}
 
 	async function loadTenants(): Promise<boolean> {
-		const res = await fetch('/api/saas-admin/tenants', { headers: await authHeaders() });
-		if (!res.ok) return false;
-		const d = await res.json();
-		tenants = d.tenants as Tenant[];
-		allProfiles = d.profiles as ProfileRow[];
-		return true;
-	}
-
-	async function toggleFeature(tenant: Tenant, key: string) {
-		const current = tenant.features ?? {};
-		const r = await patchTenant(tenant.id, { features: { ...current, [key]: !current[key] } });
-		if (!r.ok) { featureError = r.message; return; }
-		tenant.features = r.features;
-		tenants = [...tenants]; // trigger reactivity
+		try {
+			const res = await fetch('/api/saas-admin/tenants', { headers: await authHeaders() });
+			if (!res.ok) return false;
+			const d = await res.json();
+			tenants = d.tenants as Tenant[];
+			allProfiles = d.profiles as ProfileRow[];
+			// Panel szczegółów trzyma obiekt ze starej listy — wskazujemy go ponownie po id.
+			if (selectedTenant) selectedTenant = tenants.find((t) => t.id === selectedTenant!.id) ?? null;
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	let tenants = $state<Tenant[]>([]);
@@ -118,7 +116,7 @@
 				ntError = err.message ?? 'Błąd serwera';
 			} else {
 				ntSuccess = 'Firma i konto admina zostały utworzone.';
-				await loadTenants();
+				if (!(await loadTenants())) ntSuccess += ' Nie udało się odświeżyć listy — odśwież stronę.';
 			}
 		} catch {
 			ntError = 'Błąd połączenia';
@@ -129,40 +127,43 @@
 
 	// Selected tenant detail panel
 	let selectedTenant = $state<Tenant | null>(null);
-	let savingFeature = $state<string | null>(null);
 	let localFeatures = $state<Record<string, boolean>>({});
 	let savingFeatures = $state(false);
 	let featureError = $state('');
 	let featureSaved = $state(false);
 
+	// Pola formularza odświeżamy tylko przy zmianie WYBRANEJ FIRMY (po id). Samo podmienienie obiektu
+	// po zapisie nie może ich zerować — inaczej znika komunikat „Zapisano” i wpisane zmiany.
+	let syncedTenantId: string | null = null;
 	$effect(() => {
-		if (selectedTenant) {
-			localFeatures = { ...(selectedTenant.features ?? {}) };
+		const t = selectedTenant;
+		const id = t?.id ?? null;
+		if (id === syncedTenantId) return;
+		syncedTenantId = id;
+		untrack(() => {
+			localFeatures = { ...(t?.features ?? {}) };
 			featureError = '';
 			featureSaved = false;
-		}
+		});
 	});
 
-	async function saveFeatures() {
-		if (!selectedTenant) return;
-		savingFeatures = true; featureError = '';
-		const r = await patchTenant(selectedTenant.id, { features: localFeatures });
-		savingFeatures = false;
-		if (!r.ok) { featureError = r.message; return; }
-		selectedTenant = { ...selectedTenant, features: { ...r.features } };
-		tenants = tenants.map(t => t.id === selectedTenant!.id ? { ...t, features: { ...r.features } } : t);
-		featureSaved = true;
-		setTimeout(() => featureSaved = false, 2000);
+	// Wynik zapisu przypisujemy firmie, którą zapisywaliśmy, a nie tej, która jest wybrana w chwili
+	// odpowiedzi — użytkownik mógł w międzyczasie przełączyć panel na inną firmę.
+	function applyToTenant(id: string, patch: Partial<Tenant>) {
+		tenants = tenants.map((t) => (t.id === id ? { ...t, ...patch } : t));
+		if (selectedTenant?.id === id) selectedTenant = tenants.find((t) => t.id === id) ?? null;
 	}
 
-	async function setFeature(tenant: Tenant, key: string, value: boolean) {
-		savingFeature = key;
-		const r = await patchTenant(tenant.id, { features: { ...(tenant.features ?? {}), [key]: value } });
-		savingFeature = null;
+	async function saveFeatures() {
+		const t = selectedTenant;
+		if (!t) return;
+		savingFeatures = true; featureError = '';
+		const r = await patchTenant(t.id, { features: { ...localFeatures } });
+		savingFeatures = false;
 		if (!r.ok) { featureError = r.message; return; }
-		tenant.features = r.features;
-		tenants = [...tenants];
-		if (selectedTenant?.id === tenant.id) selectedTenant = { ...tenant, features: r.features };
+		applyToTenant(t.id, { features: { ...r.features } });
+		featureSaved = true;
+		setTimeout(() => featureSaved = false, 2000);
 	}
 
 	// Resend API key state
@@ -171,15 +172,22 @@
 	let savingResend = $state(false);
 	let resendError = $state('');
 
-	async function saveResendKey(tenant: Tenant) {
+	// Usunięcie klucza wymaga osobnej, potwierdzonej akcji — puste pole nie kasuje klucza.
+	async function saveResendKey(tenant: Tenant, remove = false) {
+		const key = resendInput.trim();
+		if (!remove && !key) { resendError = 'Wpisz klucz albo użyj „Usuń klucz”.'; return; }
 		savingResend = true; resendError = '';
-		const r = await patchTenant(tenant.id, { resend_api_key: resendInput.trim() || null });
+		const r = await patchTenant(tenant.id, { resend_api_key: remove ? null : key });
 		savingResend = false;
 		if (!r.ok) { resendError = r.message; return; }
-		tenant.resend_key_hint = r.resend_key_hint;
-		tenants = [...tenants];
+		applyToTenant(tenant.id, { resend_key_hint: r.resend_key_hint });
 		resendInput = '';
 		editingResend = null;
+	}
+
+	function removeResendKey(tenant: Tenant) {
+		if (!confirm(`Usunąć klucz Resend firmy „${tenant.nazwa}”? Przypomnienia e-mail dla tej firmy przestaną być wysyłane.`)) return;
+		saveResendKey(tenant, true);
 	}
 
 	// Sync state
@@ -392,9 +400,12 @@
 					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Resend API (email)</p>
 					{#if editingResend === st.id}
 						<div class="flex items-center gap-2">
-							<input type="password" autocomplete="off" bind:value={resendInput} placeholder={st.resend_key_hint ? 'Nowy klucz (puste = usuń)' : 're_...'} class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-							<button onclick={() => saveResendKey(st)} disabled={savingResend} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingResend ? '…' : 'Zapisz'}</button>
+							<input type="password" autocomplete="off" bind:value={resendInput} placeholder={st.resend_key_hint ? 'Nowy klucz (zastąpi obecny)' : 're_...'} class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<button onclick={() => saveResendKey(st)} disabled={savingResend || !resendInput.trim()} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingResend ? '…' : 'Zapisz'}</button>
 							<button onclick={() => { editingResend = null; resendError = ''; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+							{#if st.resend_key_hint}
+								<button onclick={() => removeResendKey(st)} disabled={savingResend} class="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50">Usuń klucz</button>
+							{/if}
 						</div>
 						{#if resendError}<p class="mt-2 text-sm text-red-600">{resendError}</p>{/if}
 					{:else}
