@@ -12,6 +12,22 @@ export const APK_FORMS_SELECT =
 type TokenRow = { token?: string; status: string; expires_at?: string | null };
 type FormWithTokens = { apk_tokens?: TokenRow[] | null };
 
+// Token otwiera klientowi formularz APK z jego danymi, więc musi być nie do odgadnięcia:
+// 12 znaków A–Z0–9 z kryptograficznego generatora (bez przesunięcia rozkładu).
+const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+
+export function newApkToken(length = 12): string {
+	const out: string[] = [];
+	const buf = new Uint8Array(32);
+	while (out.length < length) {
+		crypto.getRandomValues(buf);
+		for (const b of buf) {
+			if (b < 252 && out.length < length) out.push(TOKEN_ALPHABET[b % 36]);
+		}
+	}
+	return out.join('');
+}
+
 export function apkTokenLink(token: string): string {
 	return `${APK_FORM_URL}?token=${encodeURIComponent(token)}`;
 }

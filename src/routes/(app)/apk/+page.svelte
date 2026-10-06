@@ -7,7 +7,8 @@
 	import { todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
-	import { apkTokenLink, apkOpenLink, APK_FORMS_SELECT } from '$lib/utils/apkLink';
+	import { apkTokenLink, apkOpenLink, newApkToken, APK_FORMS_SELECT } from '$lib/utils/apkLink';
+	import { openStoredFile, copyStoredFileLink } from '$lib/utils/storageLink';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -25,6 +26,15 @@
 			pdfError = 'Nie udało się zapisać PDF na serwerze: ' + ((e as { message?: string })?.message ?? String(e));
 		} finally {
 			pdfSaving = null;
+		}
+	}
+
+	async function openPdf(f: ApkForm) {
+		pdfError = '';
+		try {
+			await openStoredFile('apk-pdfs', f.pdf_url);
+		} catch (e) {
+			pdfError = 'Nie udało się otworzyć PDF: ' + ((e as { message?: string })?.message ?? String(e));
 		}
 	}
 
@@ -65,9 +75,6 @@
 	function genRef(): string {
 		return 'APK-' + Math.random().toString(36).slice(2, 10).toUpperCase();
 	}
-	function genToken(): string {
-		return Math.random().toString(36).slice(2, 8).toUpperCase() + Math.random().toString(36).slice(2, 8).toUpperCase();
-	}
 
 	async function createApk() {
 		if (!fKlient) { err = 'Wybierz klienta'; return; }
@@ -75,7 +82,7 @@
 		saving = true; err = '';
 		const client = appState.clients.find(c => c.id === fKlient)!;
 		const ref = genRef();
-		const token = genToken();
+		const token = newApkToken();
 		const today = todayStr();
 
 		const { data: form, error: e1 } = await sb.from('apk_forms').insert([{
@@ -155,7 +162,7 @@
 				label: 'Otwórz zapisany PDF',
 				icon: Download,
 				disabled: !f.pdf_url,
-				onSelect: () => window.open(f.pdf_url!, '_blank', 'noopener')
+				onSelect: () => openPdf(f)
 			},
 			{ separator: true },
 			{
@@ -170,7 +177,7 @@
 				label: 'Kopiuj link do PDF',
 				icon: Copy,
 				disabled: !f.pdf_url,
-				onSelect: () => ctxCopy(f.pdf_url, 'link do PDF')
+				onSelect: () => copyStoredFileLink('apk-pdfs', f.pdf_url, 'link do PDF')
 			}
 		];
 	}
@@ -316,10 +323,10 @@
 									<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
 								</button>
 								{#if f.pdf_url}
-									<a href={f.pdf_url} target="_blank" title="Ostatni zapisany PDF"
+									<button onclick={() => openPdf(f)} title="Ostatni zapisany PDF"
 										class="text-blue-500 hover:text-blue-700 flex items-center">
 										<Download size={12} />
-									</a>
+									</button>
 								{/if}
 							</div>
 						</td>

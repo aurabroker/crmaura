@@ -97,7 +97,8 @@ export async function downloadApkPdf(form: ApkForm) {
 	doc.save(`APK_${form.ref_number}_${form.form_date}.pdf`);
 }
 
-// Generuje PDF, zapisuje go w storage i zapisuje adres w formularzu. Zwraca publiczny adres PDF.
+// Generuje PDF, zapisuje go w storage i zapisuje w formularzu ścieżkę pliku (bucket jest
+// prywatny — plik otwiera się podpisanym linkiem, zob. storageLink.ts). Zwraca tę ścieżkę.
 // Z opcją `download` plik jest dodatkowo od razu pobierany przez przeglądarkę — dzięki temu
 // użytkownik dostaje efekt kliknięcia także wtedy, gdy zapis na serwerze się nie powiedzie.
 export async function saveApkPdf(form: ApkForm, opts: { download?: boolean } = {}): Promise<string | null> {
@@ -117,11 +118,8 @@ export async function saveApkPdf(form: ApkForm, opts: { download?: boolean } = {
 	});
 	if (uploadErr) throw uploadErr;
 
-	const { data: urlData } = sb.storage.from('apk-pdfs').getPublicUrl(fileName);
-	const pdfUrl = urlData?.publicUrl ?? null;
-
-	const { error: updErr } = await sb.from('apk_forms').update({ pdf_url: pdfUrl }).eq('id', form.id);
+	const { error: updErr } = await sb.from('apk_forms').update({ pdf_url: fileName }).eq('id', form.id);
 	if (updErr) throw updErr;
 
-	return pdfUrl;
+	return fileName;
 }

@@ -12,7 +12,8 @@
 	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
-	import { apkTokenLink, apkOpenLink, apkCopyLink, APK_FORMS_SELECT } from '$lib/utils/apkLink';
+	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken, APK_FORMS_SELECT } from '$lib/utils/apkLink';
+	import { openStoredFile } from '$lib/utils/storageLink';
 	import type { ApkForm } from '$lib/types/database';
 
 	let pdfSaving = $state<string | null>(null);
@@ -28,6 +29,15 @@
 			pdfError = 'Nie udało się zapisać PDF na serwerze: ' + ((e as { message?: string })?.message ?? String(e));
 		} finally {
 			pdfSaving = null;
+		}
+	}
+
+	async function openPdf(f: ApkForm) {
+		pdfError = '';
+		try {
+			await openStoredFile('apk-pdfs', f.pdf_url);
+		} catch (e) {
+			pdfError = 'Nie udało się otworzyć PDF: ' + ((e as { message?: string })?.message ?? String(e));
 		}
 	}
 
@@ -285,11 +295,10 @@
 	let deletingApk = $state<string | null>(null);
 
 	function genRef() { return 'APK-' + Math.random().toString(36).slice(2,10).toUpperCase(); }
-	function genToken() { return Math.random().toString(36).slice(2,8).toUpperCase() + Math.random().toString(36).slice(2,8).toUpperCase(); }
 
 	async function createApk() {
 		savingApk = true; apkErr = '';
-		const ref = genRef(); const token = genToken();
+		const ref = genRef(); const token = newApkToken();
 		const { data: form, error: e1 } = await sb.from('apk_forms').insert([{
 			tenant_id: appState.profile!.tenant_id,
 			klient_id: clientId,
@@ -1063,10 +1072,10 @@
 											<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
 										</button>
 										{#if f.pdf_url}
-											<a href={f.pdf_url} target="_blank" title="Ostatni zapisany PDF"
+											<button onclick={() => openPdf(f)} title="Ostatni zapisany PDF"
 												class="text-blue-500 hover:text-blue-700">
 												<Download size={12} />
-											</a>
+											</button>
 										{/if}
 										{#if appState.profile?.rola === 'ADMIN GOD'}
 											<button onclick={() => deleteApk(f.id)} disabled={deletingApk === f.id}
