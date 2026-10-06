@@ -3,7 +3,22 @@
 | Plik | Zawartość |
 |------|-----------|
 | `crm-schema.json` | Pełna konstrukcja tabel SQL obsługujących CRM w formacie JSON |
+| `crm-audit.json` | Audyt SQL bazy (bezpieczeństwo, integralność, jakość danych, wydajność) z dowodami i gotowymi poprawkami |
 | `introspect.sql` | Zapytania introspekcyjne, którymi plik JSON został wygenerowany |
+
+## Co jest w `crm-audit.json`
+
+Stan na 2026-10-06. Każde ustalenie w `ustalenia` ma: `id`, `waga`
+(krytyczna → informacyjna), `kategoria`, `obiekty`, `dowod` (zapytanie i jego
+wynik — wyłącznie liczniki, bez danych osobowych), `skutek` i `naprawa` (opis,
+ewentualny `warunek` do sprawdzenia przed wdrożeniem oraz `sql`). Sekcja
+`kolejnosc_napraw` układa poprawki w kroki z uzasadnieniem kolejności.
+
+Dowody pochodzą z introspekcji, Supabase Database Advisors oraz symulacji ról
+(anon, konto spoza CRM, ADMIN GOD) w transakcjach wycofywanych. Wszystkie
+fragmenty SQL przeszły parser PostgreSQL 17, a nazwy usuwanych polityk
+sprawdzono z bazą. **Żadna poprawka nie została zastosowana** — to decyzja do
+podjęcia, część z nich ma warunki zależne od aplikacji APK.
 
 ## Co jest w `crm-schema.json`
 

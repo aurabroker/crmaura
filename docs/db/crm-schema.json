@@ -6066,7 +6066,7 @@
       ],
       "definicja": "SELECT i.bond_id AS bond_insurer_id, i.bond_tenant_id, i.bond_nazwa AS bond_insurer_nazwa, i.bond_limit, COALESCE(sum(CASE WHEN b.bond_data_do >= CURRENT_DATE AND b.bond_bez_limitu IS NOT TRUE THEN b.bond_suma ELSE 0 END), 0) AS bond_zaangazowane, i.bond_limit - COALESCE(sum(CASE WHEN b.bond_data_do >= CURRENT_DATE AND b.bond_bez_limitu IS NOT TRUE THEN b.bond_suma ELSE 0 END), 0) AS bond_wolny_limit FROM bond_insurers i LEFT JOIN bond_bonds b ON b.bond_insurer_id = i.bond_id GROUP BY i.bond_id, i.bond_tenant_id, i.bond_nazwa, i.bond_limit",
       "uwagi": [
-        "Widok bez security_invoker — czytany z uprawnieniami właściciela, czyli z pominięciem RLS tabel bazowych. Filtrowanie po najemcy musi zrobić zapytanie aplikacji (WHERE bond_tenant_id = …)."
+        "Widok ma security_invoker = on — czytany z uprawnieniami wywołującego, więc obowiązują go polityki RLS tabel bond_insurers i bond_bonds."
       ]
     }
   },

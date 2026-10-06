@@ -1,0 +1,973 @@
+{
+  "meta": {
+    "nazwa": "AuraCRM — audyt SQL bazy danych",
+    "data_audytu": "2026-10-06",
+    "baza": "PostgreSQL 17 (Supabase), projekt aurabroker (ref: kukvgsjrmrqtzhkszzum)",
+    "zakres": "49 tabel i 1 widok z prefiksami crm_, bond_, apk_ oraz kubełki storage apk-pdfs i settlement-files. Baza i Supabase Auth są współdzielone z innymi aplikacjami (MEDICALAURA, BEAUTY, izba, udochodu) — tabele tych aplikacji są poza zakresem, ale ich użytkownicy są dla RLS rolą 'authenticated', co ma znaczenie dla kilku ustaleń.",
+    "metoda": [
+      "Introspekcja katalogu systemowego: kolumny, ograniczenia, indeksy, polityki RLS, wyzwalacze, funkcje, uprawnienia (GRANT), opcje widoków.",
+      "Supabase Database Advisors (security + performance) — wyniki zawężone do tabel w zakresie.",
+      "Symulacja ról w transakcjach wycofywanych (BEGIN … ROLLBACK): anon, konto 'authenticated' spoza CRM (bez profilu i bez powiązania z klientem), ADMIN GOD. Testy zapisu wyłącznie jako no-op UPDATE (SET x = x), wycofane.",
+      "Zapytania kontrolne jakości danych (duplikaty, sieroty, spójność między tabelami, wartości spoza słowników).",
+      "Przegląd ścieżek dostępu do danych w kodzie src/ (wywołania supabase.from / storage / rpc)."
+    ],
+    "ograniczenia": [
+      "Brak dostępu do repozytorium aplikacji APK (apk.aurabroker.pl) i pozostałych aplikacji współdzielących bazę — nie da się potwierdzić, z których polityk anon one korzystają. Naprawy oznaczone 'warunek' wymagają tego sprawdzenia.",
+      "Ustawień Supabase Auth (np. czy rejestracja jest otwarta) nie da się odczytać przez SQL. Istnienie wyzwalacza med_on_auth_user_created na auth.users wskazuje, że co najmniej jedna aplikacja zakłada konta.",
+      "Liczby wierszy i przykłady to stan z dnia audytu; dane osobowe nie zostały wypisane — wyłącznie liczniki."
+    ],
+    "poprzedni_przeglad": "docs/db/crm-schema.json (stan na 2026-08-17). Kolumny wszystkich 49 tabel są identyczne (sygnatury md5 nazw kolumn zgodne). Ustalenia z sekcji niespojnosci tamtego pliku zostały zweryfikowane ponownie i oznaczone polem poprzednio.",
+    "skala_wag": {
+      "krytyczna": "Aktywnie wykorzystywalna luka z dużym wyciekiem lub utratą danych — naprawa natychmiast.",
+      "wysoka": "Potwierdzony wyciek/zapis między najemcami albo błędne dane w raportach regulacyjnych lub zepsuty proces biznesowy.",
+      "srednia": "Realne ryzyko lub błąd, ale z ograniczonym zasięgiem albo wymagający dodatkowego warunku.",
+      "niska": "Higiena, utwardzenie, wydajność przy wzroście danych.",
+      "informacyjna": "Stan do odnotowania, bez pilnej akcji."
+    }
+  },
+  "podsumowanie": {
+    "liczba_ustalen": 27,
+    "wg_wagi": {
+      "krytyczna": 0,
+      "wysoka": 5,
+      "srednia": 6,
+      "niska": 10,
+      "informacyjna": 6
+    },
+    "wg_kategorii": {
+      "bezpieczenstwo": 7,
+      "funkcjonalnosc": 2,
+      "integralnosc": 6,
+      "jakosc_danych": 5,
+      "wydajnosc": 4,
+      "utrzymanie": 3
+    },
+    "potwierdzone_ponownie_z_poprzedniego_przegladu": [
+      "SEC-01",
+      "INT-03",
+      "INT-04",
+      "INT-05",
+      "INT-06",
+      "PERF-01",
+      "PERF-03",
+      "UTR-01",
+      "UTR-02"
+    ],
+    "najpilniejsze": [
+      {
+        "id": "SEC-01",
+        "tytul": "Formularze APK i ich log czytelne dla każdego zalogowanego konta — także spoza CRM"
+      },
+      {
+        "id": "SEC-02",
+        "tytul": "Zapis do APK bez kontroli najemcy: obce konto nadpisze cudzy formularz, wstawi formularz lub token do dowolnego najemcy"
+      },
+      {
+        "id": "SEC-03",
+        "tytul": "Storage: pliki rozliczeń i PDF-y APK wszystkich najemców dostępne dla każdego zalogowanego konta"
+      },
+      {
+        "id": "FUN-01",
+        "tytul": "Link APK wysyłany z karty klienta nie działa dla klienta — formularz zawsze pokazuje „nieprawidłowy link”"
+      },
+      {
+        "id": "INT-01",
+        "tytul": "Składka zainkasowana zawyżona o 72 589,50 zł w 56 polisach — raport KNF i saldo klienta pokazują wpłaty, których nie ma w ratach"
+      }
+    ],
+    "wniosek": "Tabele CRM właściwe (klienci, polisy, płatności) są szczelnie odizolowane między najemcami. Wszystkie wycieki i zapisy między najemcami dotyczą modułu APK (tabele apk_* i kubełki storage) — przez to, że baza i Auth są współdzielone z innymi aplikacjami, każde konto w projekcie ma do nich dostęp. Drugi obszar to integralność kwot: składka zainkasowana w ponad połowie polis nie zgadza się z ratami."
+  },
+  "ustalenia": [
+    {
+      "id": "SEC-01",
+      "tytul": "Formularze APK i ich log czytelne dla każdego zalogowanego konta — także spoza CRM",
+      "waga": "wysoka",
+      "kategoria": "bezpieczenstwo",
+      "poprzednio": "niespojnosci[2] w crm-schema.json — nadal aktualne, zasięg szerszy niż wtedy opisano",
+      "obiekty": [
+        "public.apk_forms — polityka apk_forms_select_auth",
+        "public.apk_audit — polityka apk_audit_select_auth"
+      ],
+      "opis": "Obie polityki mają USING true dla roli authenticated. Polityki permisywne sumują się przez OR, więc filtrująca apk_tenant_select nic nie ogranicza. Ponieważ Supabase Auth jest współdzielony z innymi aplikacjami, 'authenticated' to nie tylko pracownicy najemców CRM, ale każde konto w projekcie.",
+      "dowod": {
+        "metoda": "Symulacja roli: konto authenticated bez wiersza w crm_profiles i bez powiązania crm_clients.auth_user_id.",
+        "zapytanie": "SET LOCAL ROLE authenticated; -- request.jwt.claims.sub = konto spoza CRM\nSELECT count(*) FROM apk_forms; SELECT count(*) FROM apk_audit;",
+        "wynik": {
+          "apk_forms_widoczne": "4 z 4",
+          "apk_audit_widoczne": "4 z 4",
+          "crm_clients_widoczne": 0,
+          "crm_policies_widoczne": 0
+        },
+        "kontekst": "auth.users: 12 kont, z czego 4 mają profil CRM i 1 jest kontem klienta — co najmniej 7 kont należy do innych aplikacji.",
+        "kod": "src/routes/(app)/apk/+page.svelte:113 odświeża listę APK bez filtra tenant_id — po utworzeniu formularza użytkownik widzi w interfejsie formularze wszystkich najemców."
+      },
+      "skutek": "Wyciek danych osobowych z formularzy APK (client_name, advisor_name, ref_number, pdf_url, a po wypełnieniu — cały form_data z analizą potrzeb klienta) do użytkowników innych najemców i innych aplikacji. Naruszenie RODO i tajemnicy brokerskiej. Dziś form_data jest puste we wszystkich 4 formularzach, więc wyciek obejmuje metadane i linki do PDF.",
+      "naprawa": {
+        "opis": "Usunąć polityki USING true; odczyt logu ograniczyć do formularzy własnego najemcy; zawęzić apk_tenant_select do roli authenticated bez furtki tenant_id IS NULL (0 takich wierszy w bazie).",
+        "warunek": "Potwierdzić, że aplikacja APK (apk.aurabroker.pl) czyta formularze wyłącznie przez RPC get_apk_by_token / apk_form_by_token. Symulacja pokazuje, że anon już dziś widzi 0 wierszy, więc bezpośredni odczyt i tak by nie działał.",
+        "sql": "DROP POLICY apk_forms_select_auth ON public.apk_forms;\nDROP POLICY apk_tenant_select ON public.apk_forms;\nCREATE POLICY apk_forms_select_tenant ON public.apk_forms\n  FOR SELECT TO authenticated\n  USING (tenant_id = (SELECT public.get_my_tenant_id()));\n\nDROP POLICY apk_audit_select_auth ON public.apk_audit;\nCREATE POLICY apk_audit_select_tenant ON public.apk_audit\n  FOR SELECT TO authenticated\n  USING (form_id IN (SELECT id FROM public.apk_forms\n                     WHERE tenant_id = (SELECT public.get_my_tenant_id())));"
+      },
+      "zrodlo": "symulacja roli + pg_policies + Supabase advisor 0006 multiple_permissive_policies"
+    },
+    {
+      "id": "SEC-02",
+      "tytul": "Zapis do APK bez kontroli najemcy: obce konto nadpisze cudzy formularz, wstawi formularz lub token do dowolnego najemcy",
+      "waga": "wysoka",
+      "kategoria": "bezpieczenstwo",
+      "poprzednio": null,
+      "obiekty": [
+        "public.apk_forms — apk_forms_update_anon (UPDATE, anon+authenticated, USING status = 'draft')",
+        "public.apk_forms — apk_forms_insert_anon (INSERT, anon+authenticated, WITH CHECK true)",
+        "public.apk_tokens — apk_tokens_insert_auth (INSERT, authenticated, WITH CHECK true)",
+        "public.apk_audit — apk_audit_insert_auth (INSERT, authenticated, WITH CHECK true)"
+      ],
+      "opis": "Polityka apk_forms_update_anon miała obsłużyć anonimowego klienta wypełniającego formularz, ale obejmuje też rolę authenticated i nie sprawdza najemcy. W połączeniu z SEC-01 (każdy widzi każdy formularz) dowolne konto może zmienić form_data i status każdego roboczego formularza. Wyzwalacz apk_forms_anon_guard chroni pola identyfikacyjne tylko dla roli anon. Polityki INSERT z WITH CHECK true pozwalają wstrzyknąć formularz z cudzym tenant_id (anon) oraz utworzyć token wskazujący na cudzy form_id (authenticated) — a token otwiera dane formularza przez RPC get_apk_by_token z pominięciem RLS, więc sama naprawa SEC-01 nie wystarczy.",
+      "dowod": {
+        "metoda": "No-op UPDATE w transakcji wycofanej, jako konto authenticated spoza CRM.",
+        "zapytanie": "UPDATE apk_forms SET form_data = form_data WHERE status = 'draft' RETURNING 1; -- następnie ROLLBACK",
+        "wynik": {
+          "wiersze_ktore_konto_spoza_CRM_moze_zmienic": "4 z 4 (wszystkie formularze są w statusie draft)"
+        }
+      },
+      "skutek": "Fałszowanie analizy potrzeb klienta (dokument wymagany przy dystrybucji ubezpieczeń — IDD), zaśmiecanie list APK cudzych najemców, zatruwanie apk_audit oraz obejście naprawy SEC-01 przez wygenerowanie własnego tokenu do cudzego formularza.",
+      "naprawa": {
+        "opis": "Zapis klienta realizuje już RPC submit_apk (SECURITY DEFINER, waliduje token, status i ważność) — bezpośrednie polityki anon nie są potrzebne. Zapis pracowników ograniczyć do własnego najemcy; token tylko do formularza własnego najemcy.",
+        "warunek": "Jak w SEC-01 — aplikacja APK musi zapisywać przez submit_apk. Trasa /form w crmaura zapisuje bezpośrednio, ale i tak nie działa (FUN-01) i powinna przejść na RPC.",
+        "sql": "DROP POLICY apk_forms_update_anon ON public.apk_forms;\nDROP POLICY apk_tenant_update ON public.apk_forms;\nCREATE POLICY apk_forms_update_tenant ON public.apk_forms\n  FOR UPDATE TO authenticated\n  USING (tenant_id = (SELECT public.get_my_tenant_id()))\n  WITH CHECK (tenant_id = (SELECT public.get_my_tenant_id()));\n\nDROP POLICY apk_forms_insert_anon ON public.apk_forms;\nDROP POLICY apk_tenant_insert ON public.apk_forms;\nCREATE POLICY apk_forms_insert_tenant ON public.apk_forms\n  FOR INSERT TO authenticated\n  WITH CHECK (tenant_id = (SELECT public.get_my_tenant_id()));\n\nDROP POLICY apk_tokens_insert_auth ON public.apk_tokens;\nDROP POLICY apk_tokens_insert ON public.apk_tokens;\nCREATE POLICY apk_tokens_insert_tenant ON public.apk_tokens\n  FOR INSERT TO authenticated\n  WITH CHECK (\n    tenant_id = (SELECT public.get_my_tenant_id())\n    AND (form_id IS NULL OR EXISTS (\n      SELECT 1 FROM public.apk_forms f\n      WHERE f.id = form_id AND f.tenant_id = (SELECT public.get_my_tenant_id())))\n  );\n\nDROP POLICY apk_audit_insert_auth ON public.apk_audit;\nCREATE POLICY apk_audit_insert_tenant ON public.apk_audit\n  FOR INSERT TO authenticated\n  WITH CHECK (form_id IN (SELECT id FROM public.apk_forms\n                          WHERE tenant_id = (SELECT public.get_my_tenant_id())));"
+      },
+      "zrodlo": "symulacja roli + pg_policies + definicja apk_forms_anon_guard()"
+    },
+    {
+      "id": "SEC-03",
+      "tytul": "Storage: pliki rozliczeń i PDF-y APK wszystkich najemców dostępne dla każdego zalogowanego konta",
+      "waga": "wysoka",
+      "kategoria": "bezpieczenstwo",
+      "poprzednio": null,
+      "obiekty": [
+        "storage.objects — settlement_read (SELECT), settlement_upload (INSERT): warunek tylko bucket_id = 'settlement-files'",
+        "storage.objects — apk_pdfs_select (SELECT), apk_pdfs_insert / 'Authenticated upload apk-pdfs' (INSERT), 'Authenticated update apk-pdfs' (UPDATE): warunek tylko bucket_id = 'apk-pdfs'",
+        "storage.buckets — apk-pdfs ma public = true"
+      ],
+      "opis": "Aplikacja zapisuje pliki w folderze <tenant_id>/…, ale żadna polityka storage nie sprawdza, czy pierwszy segment ścieżki to najemca użytkownika. Kubełek apk-pdfs jest publiczny, więc PDF z analizą potrzeb klienta pobierze każdy, kto zna URL (ścieżka: <tenant_id>/<ref_number>_<form_date>.pdf). Noty prowizyjne dostają podpisany URL ważny 365 dni, zapisywany w crm_noty.file_url.",
+      "dowod": {
+        "metoda": "Symulacja roli authenticated spoza CRM + odczyt pg_policies dla storage.objects.",
+        "zapytanie": "SELECT count(*) FROM storage.objects WHERE bucket_id IN ('apk-pdfs','settlement-files');",
+        "wynik": {
+          "apk_pdfs_widoczne": "2 z 2",
+          "settlement_files_widoczne": "2 z 2",
+          "anon_widzi": 0
+        },
+        "kod": [
+          "src/lib/utils/apkPdf.ts:107 — ścieżka ${tenant_id}/${ref_number}_${form_date}.pdf, :115 getPublicUrl",
+          "src/routes/(app)/payments/+page.svelte:259 — getPublicUrl na prywatnym kubełku (zwraca URL, który nie działa), :262 — createSignedUrl na 365 dni"
+        ]
+      },
+      "skutek": "Wyciek dokumentów finansowych (noty prowizyjne TU z kwotami prowizji; noty Leadenhall identyfikują brokerów po PESEL-u) i PDF-ów APK między najemcami i aplikacjami. Polityka UPDATE pozwala obcemu kontu podmienić PDF APK innego najemcy — dokument zgodności traci wiarygodność.",
+      "naprawa": {
+        "opis": "Zastąpić polityki wersjami z kontrolą folderu najemcy. Rozważyć apk-pdfs jako kubełek prywatny z krótkimi podpisanymi URL-ami oraz skrócenie ważności podpisanych URL-i not (generować na żądanie zamiast trzymać w crm_noty.file_url).",
+        "warunek": "Sprawdzić, czy aplikacja APK (apk.aurabroker.pl) zapisuje do apk-pdfs i w jakiej strukturze ścieżek.",
+        "sql": "DROP POLICY \"settlement_read\" ON storage.objects;\nDROP POLICY \"settlement_upload\" ON storage.objects;\nDROP POLICY \"apk_pdfs_select\" ON storage.objects;\nDROP POLICY \"apk_pdfs_insert\" ON storage.objects;\nDROP POLICY \"Authenticated upload apk-pdfs\" ON storage.objects;\nDROP POLICY \"Authenticated update apk-pdfs\" ON storage.objects;\n\nCREATE POLICY crm_storage_tenant_folder ON storage.objects\n  FOR ALL TO authenticated\n  USING (bucket_id IN ('apk-pdfs', 'settlement-files')\n         AND (storage.foldername(name))[1] = (SELECT public.get_my_tenant_id())::text)\n  WITH CHECK (bucket_id IN ('apk-pdfs', 'settlement-files')\n              AND (storage.foldername(name))[1] = (SELECT public.get_my_tenant_id())::text);\n\n-- opcjonalnie, po przejściu aplikacji na createSignedUrl:\n-- UPDATE storage.buckets SET public = false WHERE id = 'apk-pdfs';"
+      },
+      "zrodlo": "symulacja roli + pg_policies(storage.objects) + storage.buckets + kod"
+    },
+    {
+      "id": "FUN-01",
+      "tytul": "Link APK wysyłany z karty klienta nie działa dla klienta — formularz zawsze pokazuje „nieprawidłowy link”",
+      "waga": "wysoka",
+      "kategoria": "funkcjonalnosc",
+      "poprzednio": null,
+      "obiekty": [
+        "src/routes/(app)/clients/[id]/+page.svelte:265",
+        "src/routes/+page.svelte:9",
+        "src/routes/form/+page.svelte:42-60, :100, :109"
+      ],
+      "opis": "Karta klienta buduje link https://crmaura.pages.dev?token=… (strona /apk używa innego adresu — https://apk.aurabroker.pl). Strona główna przekierowuje na /form, który czyta apk_tokens i apk_forms bezpośrednio kluczem anon. Po utwardzeniu z 2026-06-18 rola anon nie widzi żadnego wiersza tych tabel, więc zapytanie o token zwraca pusty wynik. Nawet gdyby odczyt przeszedł, oznaczenie tokenu jako 'used' blokuje WITH CHECK (status <> 'used') polityki apk_tokens_update_anon.",
+      "dowod": {
+        "metoda": "Symulacja roli anon.",
+        "zapytanie": "SET LOCAL ROLE anon; SELECT count(*) FROM apk_tokens; SELECT count(*) FROM apk_forms;",
+        "wynik": {
+          "anon_apk_tokens": 0,
+          "anon_apk_forms": 0
+        }
+      },
+      "skutek": "Klient, który dostał link z karty klienta, nie wypełni APK. Proces zbierania analizy potrzeb (wymóg IDD) działa tylko przez stronę /apk kierującą do apk.aurabroker.pl.",
+      "naprawa": {
+        "opis": "Przepiąć /form na istniejące RPC: get_apk_by_token(token) do odczytu i submit_apk(token, form_data, final) do zapisu (obie funkcje sprawdzają token po stronie bazy i są dostępne dla anon). Ujednolicić APK_APP_URL w obu miejscach albo przenieść go do zmiennej środowiskowej.",
+        "sql": null
+      },
+      "zrodlo": "kod + symulacja roli"
+    },
+    {
+      "id": "INT-01",
+      "tytul": "Składka zainkasowana zawyżona o 72 589,50 zł w 56 polisach — raport KNF i saldo klienta pokazują wpłaty, których nie ma w ratach",
+      "waga": "wysoka",
+      "kategoria": "integralnosc",
+      "poprzednio": null,
+      "obiekty": [
+        "public.crm_policies.skladka_zainkasowana",
+        "wyzwalacz trg_recalc_zainkasowane na crm_policy_payments"
+      ],
+      "opis": "W 56 aktywnych polisach (52% wszystkich, utworzonych 2026-06-03 – 2026-08-28) skladka_zainkasowana równa się skladka_przypisana, mimo że żadna rata nie ma statusu 'Opłacona' ani 'Częściowo opłacona'. Wyzwalacz przelicza kolumnę tylko przy zmianie raty, więc wartość wpisana inną drogą zostaje do pierwszej zmiany raty. Kod crmaura nie jest źródłem tych wartości (przy tworzeniu wpisuje 0, przy edycji zachowuje dotychczasową) — zapis pochodzi spoza tego repozytorium (import, inna aplikacja albo ręczny SQL).",
+      "dowod": {
+        "zapytanie": "SELECT count(*), sum(p.skladka_zainkasowana - paid)\nFROM crm_policies p\nCROSS JOIN LATERAL (SELECT coalesce(sum(kwota),0) paid FROM crm_policy_payments x\n  WHERE x.polisa_id = p.id AND x.status IN ('Opłacona','Częściowo opłacona')) s\nWHERE p.skladka_zainkasowana <> paid;",
+        "wynik": {
+          "polis": 56,
+          "roznica_zl": 72589.5,
+          "w_tym_bez_zadnej_oplaconej_raty": 56,
+          "w_tym_zainkasowana_rowna_przypisanej": 56
+        },
+        "kod": "src/routes/(app)/knf-report/+page.svelte:27,47 i src/routes/(app)/clients/[id]/+page.svelte:96 sumują skladka_zainkasowana."
+      },
+      "skutek": "Raport KNF i panel 360° pokazują premię jako zainkasowaną, podczas gdy kalendarz płatności pokazuje te same raty jako nieopłacone. Pierwsza zmiana dowolnej raty takiej polisy (np. masowe oznaczenie zaległych — patrz DQ-02) po cichu wyzeruje kwotę.",
+      "naprawa": {
+        "opis": "Najpierw decyzja biznesowa: czy te składki faktycznie wpłynęły? Jeśli tak — oznaczyć raty jako opłacone (wyzwalacz sam przeliczy polisę). Jeśli nie — przeliczyć kolumnę z rat. Ustalić, który proces zapisał skladka_zainkasowana = skladka_przypisana, i go wyłączyć.",
+        "sql": "-- wariant „nie wpłynęły”: przeliczenie z rat (jak w recalc_policy_zainkasowane)\nUPDATE public.crm_policies p\nSET skladka_zainkasowana = coalesce((\n  SELECT sum(x.kwota) FROM public.crm_policy_payments x\n  WHERE x.polisa_id = p.id AND x.status IN ('Opłacona','Częściowo opłacona')), 0)\nWHERE EXISTS (SELECT 1 FROM public.crm_policy_payments x WHERE x.polisa_id = p.id);"
+      },
+      "zrodlo": "zapytanie kontrolne + kod"
+    },
+    {
+      "id": "SEC-04",
+      "tytul": "get_apk_by_token zwraca dane formularza dla tokenu wygasłego lub zużytego",
+      "waga": "srednia",
+      "kategoria": "bezpieczenstwo",
+      "poprzednio": null,
+      "obiekty": [
+        "public.get_apk_by_token(text) — SECURITY DEFINER, EXECUTE dla anon"
+      ],
+      "opis": "Funkcja zwraca form_data, nazwę klienta i nazwę najemcy dla każdego istniejącego tokenu, bez sprawdzenia expires_at ani status. Bliźniacza apk_form_by_token sprawdza ważność, submit_apk sprawdza i ważność, i status. Link APK krąży w e-mailach i SMS-ach, więc jego żywotność ma znaczenie.",
+      "dowod": {
+        "zapytanie": "SELECT pg_get_functiondef('public.get_apk_by_token(text)'::regprocedure);\nSELECT count(*) FROM apk_tokens WHERE status = 'pending' AND expires_at < now();",
+        "wynik": {
+          "warunek_WHERE_funkcji": "t.token = p_token (bez expires_at i status)",
+          "tokeny_wygasle_nadal_otwierajace_dane": "4 z 4"
+        }
+      },
+      "skutek": "Dostęp do pełnej analizy potrzeb klienta po upływie 30-dniowej ważności i po złożeniu formularza — dla każdego, kto ma stary link.",
+      "naprawa": {
+        "opis": "Zachować zwracanie statusu (aplikacja może pokazać „link wygasł”), ale ukryć dane, gdy token jest nieważny.",
+        "sql": "CREATE OR REPLACE FUNCTION public.get_apk_by_token(p_token text)\nRETURNS TABLE(token_id uuid, token_status text, expires_at timestamptz, token_advisor_name text,\n              form_id uuid, form_status text, client_name text, form_advisor_name text,\n              form_data jsonb, tenant_id uuid, tenant_nazwa text)\nLANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$\n  SELECT t.id, t.status, t.expires_at, t.advisor_name,\n         f.id, f.status,\n         CASE WHEN t.status <> 'used' AND t.expires_at > now() THEN f.client_name END,\n         f.advisor_name,\n         CASE WHEN t.status <> 'used' AND t.expires_at > now() THEN f.form_data END,\n         f.tenant_id,\n         (SELECT ct.nazwa FROM crm_tenants ct WHERE ct.id = f.tenant_id)\n  FROM apk_tokens t JOIN apk_forms f ON f.id = t.form_id\n  WHERE t.token = p_token\n$$;"
+      },
+      "zrodlo": "pg_get_functiondef + Supabase advisor 0028 anon_security_definer_function_executable"
+    },
+    {
+      "id": "SEC-05",
+      "tytul": "RLS nie rozróżnia ról — każdy członek najemcy ma pełny zapis na ustawieniach firmy, kluczu Resend i profilach współpracowników",
+      "waga": "srednia",
+      "kategoria": "bezpieczenstwo",
+      "poprzednio": null,
+      "obiekty": [
+        "public.crm_tenants — tenant_isolation (ALL, authenticated): odczyt resend_api_key, zapis features / bond_module_enabled / resend_api_key",
+        "public.crm_profiles — tenant_isolation (ALL, authenticated): UPDATE i DELETE profili innych użytkowników"
+      ],
+      "opis": "Wszystkie polityki CRM filtrują wyłącznie po tenant_id. Ograniczenia ról (BROKER vs ADMIN BROKER) istnieją tylko w interfejsie. Wyzwalacz crm_profiles_guard blokuje jedynie zmianę rola i tenant_id — BROKER może z poziomu API odczytać klucz Resend, przełączyć moduły płatne, zmienić e-mail lub PESEL kolegi albo usunąć profil administratora (co odcina mu dostęp do danych).",
+      "dowod": {
+        "zapytanie": "SELECT policyname, cmd, roles, qual FROM pg_policies WHERE tablename IN ('crm_tenants','crm_profiles');",
+        "wynik": {
+          "polityki": "po jednej polityce ALL z warunkiem tylko na tenant",
+          "profile_dzis": "4, wszystkie z rolą administracyjną (ADMIN BROKER / ADMIN GOD)",
+          "najemcy_z_kluczem_resend": 0
+        },
+        "uwaga": "Dziś ryzyko jest uśpione (brak kont BROKER i kluczy Resend), zmaterializuje się przy pierwszym zaproszonym brokerze."
+      },
+      "skutek": "Eskalacja w obrębie najemcy: dostęp do sekretu wysyłki e-mail, samowolne włączanie modułów, sabotaż kont.",
+      "naprawa": {
+        "opis": "Dodać funkcję crm_is_admin() i rozdzielić polityki na SELECT (wszyscy w najemcy) oraz zapis (admin). Klucz Resend przenieść do osobnej tabeli z dostępem wyłącznie dla service_role (lub Supabase Vault) i obsługiwać przez endpoint serwerowy. Tworzenie profili już idzie przez service_role (src/routes/api/register/+server.ts:62, api/admin/invite/+server.ts:36), więc INSERT dla authenticated nie jest potrzebny.",
+        "sql": "CREATE OR REPLACE FUNCTION public.crm_is_admin() RETURNS boolean\nLANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$\n  SELECT EXISTS (SELECT 1 FROM crm_profiles WHERE id = auth.uid()\n    AND rola IN ('ADMIN GOD','ADMIN BROKER','BOARD','ADMINISTRACJA'))\n$$;\n\nDROP POLICY tenant_isolation ON public.crm_tenants;\nCREATE POLICY crm_tenants_select ON public.crm_tenants FOR SELECT TO authenticated\n  USING (id = (SELECT public.get_my_tenant_id()));\nCREATE POLICY crm_tenants_update_admin ON public.crm_tenants FOR UPDATE TO authenticated\n  USING (id = (SELECT public.get_my_tenant_id()) AND (SELECT public.crm_is_admin()))\n  WITH CHECK (id = (SELECT public.get_my_tenant_id()));\n\nDROP POLICY tenant_isolation ON public.crm_profiles;\nCREATE POLICY crm_profiles_select ON public.crm_profiles FOR SELECT TO authenticated\n  USING (tenant_id = (SELECT public.get_my_tenant_id()));\nCREATE POLICY crm_profiles_update ON public.crm_profiles FOR UPDATE TO authenticated\n  USING (tenant_id = (SELECT public.get_my_tenant_id())\n         AND (id = (SELECT auth.uid()) OR (SELECT public.crm_is_admin())))\n  WITH CHECK (tenant_id = (SELECT public.get_my_tenant_id()));\nCREATE POLICY crm_profiles_delete_admin ON public.crm_profiles FOR DELETE TO authenticated\n  USING (tenant_id = (SELECT public.get_my_tenant_id())\n         AND (SELECT public.crm_is_admin()) AND id <> (SELECT auth.uid()));"
+      },
+      "zrodlo": "pg_policies + kod"
+    },
+    {
+      "id": "FUN-02",
+      "tytul": "Panel SaaS: przełączniki modułów i klucz Resend dla innych najemców po cichu nic nie zapisują",
+      "waga": "srednia",
+      "kategoria": "funkcjonalnosc",
+      "poprzednio": null,
+      "obiekty": [
+        "src/routes/(app)/saas-admin/+page.svelte:24, :142, :157 (update), :96, :189 (select)",
+        "public.crm_tenants — polityka tenant_isolation"
+      ],
+      "opis": "Lista najemców przychodzi z endpointu serwerowego, ale odczyt features / resend_api_key i ich zapis idą przez klienta z JWT użytkownika. RLS ogranicza crm_tenants do własnego najemcy, więc dla pozostałych firm SELECT zwraca puste ustawienia, a UPDATE dotyka 0 wierszy bez błędu. Interfejs optymistycznie pokazuje zmianę.",
+      "dowod": {
+        "metoda": "Symulacja jako ADMIN GOD, no-op UPDATE w transakcji wycofanej.",
+        "zapytanie": "SELECT count(*) FROM crm_tenants;\nUPDATE crm_tenants SET features = features WHERE id <> get_my_tenant_id() RETURNING 1;",
+        "wynik": {
+          "najemcy_widoczni_dla_ADMIN_GOD": "1 z 4",
+          "inni_najemcy_mozliwi_do_zmiany": 0
+        }
+      },
+      "skutek": "Administrator SaaS jest przekonany, że włączył lub wyłączył moduł (gwarancje, kalendarz) albo ustawił klucz e-mail innej firmie — zmiana nie zachodzi i znika po odświeżeniu.",
+      "naprawa": {
+        "opis": "Przenieść odczyt i zapis ustawień najemców do endpointu /api/saas-admin/* działającego na service_role, z weryfikacją roli ADMIN GOD (jak istniejący /api/saas-admin/tenants). Nie poszerzać RLS dla ADMIN GOD — to otworzyłoby dane wszystkich najemców w przeglądarce.",
+        "sql": null
+      },
+      "zrodlo": "symulacja roli + kod"
+    },
+    {
+      "id": "INT-02",
+      "tytul": "Edycja polisy zeruje prowizja_zainkasowana wyliczaną przez wyzwalacz",
+      "waga": "srednia",
+      "kategoria": "integralnosc",
+      "poprzednio": null,
+      "obiekty": [
+        "src/lib/components/PolicyForm.svelte:194",
+        "src/lib/components/UgForm.svelte:141",
+        "src/routes/(app)/policies/[id]/edit/+page.svelte:31"
+      ],
+      "opis": "getValues() obu formularzy zwraca prowizja_zainkasowana: 0, a strona edycji wysyła ten obiekt w UPDATE crm_policies. Kolumna jest utrzymywana przez trg_recalc_zainkasowane, ale wyzwalacz działa tylko na zmianach rat — po zapisie formularza wartość pozostaje 0 do następnej zmiany dowolnej raty.",
+      "dowod": {
+        "zapytanie": "Kod + kontrola: polisy, w których prowizja_zainkasowana różni się od sumy z opłaconych rat.",
+        "wynik": {
+          "polisy_z_rozjazdem_prowizji": 1,
+          "roznica_zl": -592.32
+        }
+      },
+      "skutek": "Raport KNF, moduł prowizji i finanse pokazują zaniżoną prowizję zainkasowaną po każdej edycji polisy z opłaconymi ratami.",
+      "naprawa": {
+        "opis": "Usunąć skladka_zainkasowana i prowizja_zainkasowana z obiektu wysyłanego przy edycji (to kolumny wyliczane). Przy tworzeniu zostawić 0. Jednorazowo przeliczyć prowizję jak w recalc_policy_zainkasowane().",
+        "sql": "UPDATE public.crm_policies p\nSET prowizja_zainkasowana = coalesce((\n  SELECT sum(coalesce(x.prowizja_z_noty, x.kwota * p.prowizja_pct / 100.0))\n  FROM public.crm_policy_payments x\n  WHERE x.polisa_id = p.id AND x.status IN ('Opłacona','Częściowo opłacona')), 0)\nWHERE EXISTS (SELECT 1 FROM public.crm_policy_payments x WHERE x.polisa_id = p.id);"
+      },
+      "zrodlo": "kod + zapytanie kontrolne"
+    },
+    {
+      "id": "INT-03",
+      "tytul": "crm_policies.rodzaj bez ograniczenia CHECK",
+      "waga": "srednia",
+      "kategoria": "integralnosc",
+      "poprzednio": "niespojnosci[0] w crm-schema.json — nadal aktualne",
+      "obiekty": [
+        "public.crm_policies.rodzaj"
+      ],
+      "opis": "Migracja 20260605000001_update_ug_podtyp_check.sql definiuje crm_policies_rodzaj_check, ale ograniczenia nie ma w bazie (ug_podtyp z tej samej migracji jest). Wszystkie obecne wartości mieszczą się w dozwolonym zbiorze.",
+      "dowod": {
+        "zapytanie": "SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'crm_policies_rodzaj_check');",
+        "wynik": {
+          "istnieje": false,
+          "wartosci_spoza_zbioru": 0
+        }
+      },
+      "skutek": "Literówka w rodzaju polisy wypada z filtrów, raportu KNF i reguł importu.",
+      "naprawa": {
+        "opis": "Nałożyć ograniczenie — dane są czyste.",
+        "sql": "ALTER TABLE public.crm_policies ADD CONSTRAINT crm_policies_rodzaj_check CHECK (rodzaj IN (\n  'majątkowa','życie','grupowe_medyczne','grupowe_życie','utrata_dochodu',\n  'komunikacja','flota','finansowa','OC','techniczna','karno_skarbowa','polisa_obca',\n  'umowa_generalna_flota','umowa_generalna_gwarancje','umowa_generalna_cpm',\n  'umowa_generalna_car_ear','umowa_generalna_oc_beauty','umowa_generalna_beauty_tax'));"
+      },
+      "zrodlo": "pg_constraint"
+    },
+    {
+      "id": "DQ-01",
+      "tytul": "51 par zdublowanych klientów — synchronizacja z BEAUTY nie rozpoznaje klientów wprowadzonych ręcznie",
+      "waga": "srednia",
+      "kategoria": "jakosc_danych",
+      "poprzednio": null,
+      "obiekty": [
+        "public.crm_clients",
+        "pg_cron: sync-beauty-companies-daily (0 7 * * *)",
+        "public.crm_sync_log"
+      ],
+      "opis": "102 rekordy klientów tworzą 51 par z tym samym NIP-em w jednym najemcy; w każdej parze jeden rekord ma beauty_id (przyszedł z synchronizacji), drugi nie. Synchronizacja dopasowuje po (beauty_id, tenant_id), więc klient założony wcześniej ręcznie dostaje drugi rekord. Tabela crm_dismissed_duplicates jest pusta — nikt nie przejrzał podpowiedzi scalania.",
+      "dowod": {
+        "zapytanie": "SELECT count(*) FROM (SELECT tenant_id, regexp_replace(nip,'\\D','','g')\n  FROM crm_clients WHERE nip <> '' GROUP BY 1,2 HAVING count(*) > 1) s;",
+        "wynik": {
+          "par": 51,
+          "rekordow": 102,
+          "w_kazdej_parze_rekord_z_beauty_id": true,
+          "duplikaty_po_nazwie": 44,
+          "odrzucone_podpowiedzi": 0,
+          "klientow_z_beauty": 1378
+        }
+      },
+      "skutek": "Polisy, zadania i APK jednego klienta rozkładają się na dwa rekordy; panel 360° pokazuje niepełny obraz; ryzyko podwójnej korespondencji RODO.",
+      "naprawa": {
+        "opis": "Scalić pary istniejącą funkcją scalania klientów (w crm_audit_log jest akcja clients_merged). W synchronizacji przed wstawieniem szukać istniejącego klienta po NIP i uzupełniać mu beauty_id zamiast tworzyć nowy rekord.",
+        "sql": "-- lista par do scalenia\nSELECT tenant_id, regexp_replace(nip,'\\D','','g') AS nip,\n       array_agg(id ORDER BY beauty_id NULLS FIRST) AS ids\nFROM public.crm_clients WHERE nip IS NOT NULL AND nip <> ''\nGROUP BY 1, 2 HAVING count(*) > 1;"
+      },
+      "zrodlo": "zapytanie kontrolne + cron.job + crm_sync_log"
+    },
+    {
+      "id": "SEC-06",
+      "tytul": "Funkcje SECURITY DEFINER bez search_path i z EXECUTE dla anon",
+      "waga": "niska",
+      "kategoria": "bezpieczenstwo",
+      "poprzednio": null,
+      "obiekty": [
+        "bez search_path: bp_get_role(), bp_get_tenant(), bond_handle_new_user() (SECURITY DEFINER); bond_my_tenant_id(), recalc_policy_zainkasowane(), fn_bond_calc_skladka(), apk_set_updated_at() (INVOKER)",
+        "EXECUTE dla anon: get_my_tenant_id(), bp_get_role(), bp_get_tenant(), fn_audit_log(), bond_handle_new_user(), is_bond_admin()"
+      ],
+      "opis": "bp_get_role i bp_get_tenant decydują o dostępie do całego modułu bond_* i działają z prawami właściciela bez ustalonej ścieżki wyszukiwania. Funkcje pomocnicze RLS są wywoływalne przez /rest/v1/rpc — dla anon zwracają NULL, więc nie ujawniają danych. bond_handle_new_user nie jest podpięta pod żaden wyzwalacz (na auth.users są tylko fix_null_tokens_on_insert i med_on_auth_user_created) — to martwy kod.",
+      "dowod": {
+        "zapytanie": "Supabase advisors: 0011 function_search_path_mutable, 0028/0029 *_security_definer_function_executable; pg_trigger dla auth.users.",
+        "wynik": {
+          "funkcje_CRM_bez_search_path": 7,
+          "funkcje_CRM_SECURITY_DEFINER_dla_anon": 6
+        }
+      },
+      "skutek": "Niskie ryzyko przejęcia ścieżki (wymaga prawa CREATE w schemacie, którego role API nie mają). Zbędna powierzchnia API.",
+      "naprawa": {
+        "opis": "Ustawić search_path; usunąć bond_handle_new_user. Odebranie EXECUTE od anon dopiero po przepięciu polityk z roli public na authenticated — inaczej zapytania anon na tych tabelach zaczną zwracać błąd uprawnień zamiast pustego wyniku.",
+        "sql": "ALTER FUNCTION public.bp_get_role() SET search_path = public;\nALTER FUNCTION public.bp_get_tenant() SET search_path = public;\nALTER FUNCTION public.recalc_policy_zainkasowane() SET search_path = public;\nALTER FUNCTION public.fn_bond_calc_skladka() SET search_path = public;\nALTER FUNCTION public.apk_set_updated_at() SET search_path = public;\nALTER FUNCTION public.bond_my_tenant_id() SET search_path = public;\nDROP FUNCTION public.bond_handle_new_user();"
+      },
+      "zrodlo": "Supabase advisors + pg_proc + pg_trigger"
+    },
+    {
+      "id": "SEC-07",
+      "tytul": "Ochrona przed wyciekniętymi hasłami wyłączona w Supabase Auth",
+      "waga": "niska",
+      "kategoria": "bezpieczenstwo",
+      "poprzednio": null,
+      "obiekty": [
+        "Supabase Auth (cały projekt)"
+      ],
+      "opis": "Auth nie sprawdza haseł z bazą HaveIBeenPwned. Dotyczy wszystkich aplikacji współdzielących projekt.",
+      "dowod": {
+        "zapytanie": "Supabase advisor auth_leaked_password_protection",
+        "wynik": {
+          "status": "wyłączone"
+        }
+      },
+      "skutek": "Konta brokerów z hasłami z publicznych wycieków są podatne na credential stuffing.",
+      "naprawa": {
+        "opis": "Włączyć w Dashboard → Authentication → Password security (wymaga planu Pro).",
+        "sql": null
+      },
+      "zrodlo": "Supabase advisor"
+    },
+    {
+      "id": "INT-04",
+      "tytul": "crm_tasks.status: DEFAULT 'Oczekujące' spoza słownika aplikacji, brak CHECK",
+      "waga": "niska",
+      "kategoria": "integralnosc",
+      "poprzednio": "niespojnosci[1] w crm-schema.json — nadal aktualne; waga obniżona, bo żadne zadanie nie ma dziś złej wartości",
+      "obiekty": [
+        "public.crm_tasks.status"
+      ],
+      "opis": "Aplikacja zawsze podaje status jawnie, więc DEFAULT nie zadziałał ani razu. Pozostaje pułapką dla importu lub innej aplikacji.",
+      "dowod": {
+        "zapytanie": "SELECT status, count(*) FROM crm_tasks GROUP BY 1;",
+        "wynik": {
+          "otwarte": 35,
+          "w_toku": 2,
+          "zakonczone": 12,
+          "spoza_slownika": 0
+        }
+      },
+      "skutek": "Zadanie z wartością domyślną znika z filtrów i liczników.",
+      "naprawa": {
+        "opis": "Dane są czyste — można od razu.",
+        "sql": "ALTER TABLE public.crm_tasks ALTER COLUMN status SET DEFAULT 'otwarte';\nALTER TABLE public.crm_tasks ADD CONSTRAINT crm_tasks_status_check\n  CHECK (status IN ('otwarte','w_toku','zakonczone','anulowane'));"
+      },
+      "zrodlo": "pg_attrdef + pg_constraint + dane"
+    },
+    {
+      "id": "INT-05",
+      "tytul": "tenant_id bez klucza obcego w 7 tabelach",
+      "waga": "niska",
+      "kategoria": "integralnosc",
+      "poprzednio": "niespojnosci[3] w crm-schema.json — nadal aktualne",
+      "obiekty": [
+        "crm_leasings",
+        "crm_noty",
+        "crm_policy_brokers",
+        "crm_complaints (+ klient_id)",
+        "crm_idd_trainings (+ broker_id)",
+        "crm_audit_log",
+        "crm_sync_log"
+      ],
+      "opis": "Kolumny tenant_id (a w dwóch tabelach także klient_id / broker_id) nie mają FK. Kontrola nie wykazała żadnych sierot, więc ograniczenia da się nałożyć bez czyszczenia.",
+      "dowod": {
+        "zapytanie": "SELECT count(*) FROM crm_leasings l WHERE NOT EXISTS (SELECT 1 FROM crm_tenants t WHERE t.id = l.tenant_id); -- analogicznie dla pozostałych",
+        "wynik": {
+          "sieroty": 0
+        }
+      },
+      "skutek": "Po usunięciu najemcy, klienta lub brokera zostają osierocone rekordy; brak kaskad.",
+      "naprawa": {
+        "sql": "ALTER TABLE public.crm_leasings ADD FOREIGN KEY (tenant_id) REFERENCES public.crm_tenants(id) ON DELETE CASCADE;\nALTER TABLE public.crm_noty ADD FOREIGN KEY (tenant_id) REFERENCES public.crm_tenants(id) ON DELETE CASCADE;\nALTER TABLE public.crm_policy_brokers ADD FOREIGN KEY (tenant_id) REFERENCES public.crm_tenants(id) ON DELETE CASCADE;\nALTER TABLE public.crm_complaints ADD FOREIGN KEY (tenant_id) REFERENCES public.crm_tenants(id) ON DELETE CASCADE;\nALTER TABLE public.crm_complaints ADD FOREIGN KEY (klient_id) REFERENCES public.crm_clients(id) ON DELETE CASCADE;\nALTER TABLE public.crm_idd_trainings ADD FOREIGN KEY (tenant_id) REFERENCES public.crm_tenants(id) ON DELETE CASCADE;\nALTER TABLE public.crm_idd_trainings ADD FOREIGN KEY (broker_id) REFERENCES public.crm_profiles(id) ON DELETE CASCADE;\nALTER TABLE public.crm_audit_log ADD FOREIGN KEY (tenant_id) REFERENCES public.crm_tenants(id) ON DELETE SET NULL;\nALTER TABLE public.crm_sync_log ADD FOREIGN KEY (tenant_id) REFERENCES public.crm_tenants(id) ON DELETE SET NULL;"
+      },
+      "zrodlo": "pg_constraint + zapytania kontrolne"
+    },
+    {
+      "id": "INT-06",
+      "tytul": "Brak ograniczeń unikalności na ratach, rozliczeniach prowizji i udziałach brokerów",
+      "waga": "niska",
+      "kategoria": "integralnosc",
+      "poprzednio": "niespojnosci[5] w crm-schema.json — nadal aktualne",
+      "obiekty": [
+        "crm_policy_payments (polisa_id, nr_raty)",
+        "crm_commission_settlements (broker_id, miesiac)",
+        "crm_policy_brokers (polisa_id, broker_id, rola)"
+      ],
+      "opis": "Dziś nie ma duplikatów, więc ograniczenia można nałożyć od ręki.",
+      "dowod": {
+        "zapytanie": "SELECT count(*) FROM (SELECT polisa_id, nr_raty FROM crm_policy_payments GROUP BY 1,2 HAVING count(*) > 1) s;",
+        "wynik": {
+          "duplikaty_rat": 0,
+          "duplikaty_rozliczen": 0
+        }
+      },
+      "skutek": "Podwójna rata zawyża należności; podwójne rozliczenie miesiąca podwaja wypłatę prowizji.",
+      "naprawa": {
+        "warunek": "Sprawdzić, czy raty dodawane ręcznie (kolumna powod) dostają kolejny numer, a nie powtórzony.",
+        "sql": "ALTER TABLE public.crm_policy_payments ADD CONSTRAINT crm_policy_payments_polisa_rata_key UNIQUE (polisa_id, nr_raty);\nALTER TABLE public.crm_commission_settlements ADD CONSTRAINT crm_commission_settlements_broker_miesiac_key UNIQUE (broker_id, miesiac);\nALTER TABLE public.crm_policy_brokers ADD CONSTRAINT crm_policy_brokers_polisa_broker_rola_key UNIQUE (polisa_id, broker_id, rola);"
+      },
+      "zrodlo": "pg_constraint + zapytania kontrolne"
+    },
+    {
+      "id": "DQ-02",
+      "tytul": "91 rat po terminie wciąż ma status 'Oczekująca' — 'Zaległa' ustawiana jest tylko ręcznie",
+      "waga": "niska",
+      "kategoria": "jakosc_danych",
+      "poprzednio": null,
+      "obiekty": [
+        "public.crm_policy_payments.status"
+      ],
+      "opis": "Nic w bazie nie przestawia statusu po terminie. Pulpit liczy zaległe w locie (status 'Zaległa' LUB 'Oczekująca' z datą w przeszłości), ale filtr „Zaległe” na stronie płatności patrzy tylko na status — te same raty są zaległe na jednym ekranie, a na drugim nie.",
+      "dowod": {
+        "zapytanie": "SELECT count(*) FROM crm_policy_payments WHERE status = 'Oczekująca' AND data_platnosci < current_date;",
+        "wynik": {
+          "oczekujace_po_terminie": 91,
+          "oznaczone_recznie_jako_zalegla": 87
+        },
+        "kod": "src/routes/(app)/dashboard/+page.svelte:74 (liczy w locie) vs src/routes/(app)/payments/+page.svelte:599 (filtr po statusie)"
+      },
+      "skutek": "Niespójne liczby zaległości między ekranami; przypomnienia oparte na statusie pomijają 91 rat.",
+      "naprawa": {
+        "opis": "Codzienne zadanie pg_cron (rozszerzenie działa już w projekcie). UWAGA na kolejność: zmiana statusu uruchamia trg_recalc_zainkasowane i przeliczy składkę zainkasowaną dotkniętych polis — najpierw rozstrzygnąć INT-01, inaczej kwoty zmienią się po cichu.",
+        "sql": "SELECT cron.schedule('crm-payments-overdue', '15 1 * * *', $$\n  UPDATE public.crm_policy_payments SET status = 'Zaległa'\n  WHERE status = 'Oczekująca' AND data_platnosci < current_date\n$$);"
+      },
+      "zrodlo": "zapytanie kontrolne + kod + cron.job"
+    },
+    {
+      "id": "DQ-03",
+      "tytul": "Rata z terminem płatności w roku 0002",
+      "waga": "niska",
+      "kategoria": "jakosc_danych",
+      "poprzednio": null,
+      "obiekty": [
+        "public.crm_policy_payments.data_platnosci"
+      ],
+      "opis": "Jedna rata ma datę z roku 2 n.e. (literówka przy wpisywaniu roku). Jest „najstarszą zaległością” i psuje sortowanie oraz statystyki.",
+      "dowod": {
+        "zapytanie": "SELECT count(*) FROM crm_policy_payments WHERE data_platnosci < '2000-01-01' OR data_platnosci > '2100-01-01';",
+        "wynik": {
+          "rat_poza_zakresem": 1,
+          "rok": 2,
+          "polis_poza_zakresem": 0
+        }
+      },
+      "skutek": "Błędne raporty zaległości.",
+      "naprawa": {
+        "opis": "Poprawić rekord, potem nałożyć ograniczenie zakresu dat (NOT VALID pozwala dodać je przed poprawką).",
+        "sql": "SELECT id, polisa_id, nr_raty, data_platnosci FROM public.crm_policy_payments WHERE data_platnosci < '2000-01-01';\nALTER TABLE public.crm_policy_payments ADD CONSTRAINT crm_policy_payments_data_chk\n  CHECK (data_platnosci BETWEEN '2000-01-01' AND '2100-12-31') NOT VALID;\n-- po poprawce rekordu:\nALTER TABLE public.crm_policy_payments VALIDATE CONSTRAINT crm_policy_payments_data_chk;"
+      },
+      "zrodlo": "zapytanie kontrolne"
+    },
+    {
+      "id": "PERF-01",
+      "tytul": "63 klucze obce bez indeksu",
+      "waga": "niska",
+      "kategoria": "wydajnosc",
+      "poprzednio": "niespojnosci[6] w crm-schema.json — rozszerzone o pełną listę z advisora",
+      "obiekty": [
+        "m.in. crm_policies (klient_id, tenant_id, tu_id, renewal_of, …), crm_clients (tenant_id, opiekun_id), crm_tasks (tenant_id, klient_id, polisa_id, …), crm_vehicles (klient_id, tenant_id), crm_task_history (task_id, …), crm_policy_payments (tenant_id, nota_id)"
+      ],
+      "opis": "Przy obecnej skali (największe tabele: crm_prospects ~6 tys., crm_clients ~1,4 tys. wierszy) nieodczuwalne, ale każde zapytanie RLS filtruje po tenant_id, a listy i panel 360° po klient_id.",
+      "dowod": {
+        "zapytanie": "Supabase advisor 0001 unindexed_foreign_keys",
+        "wynik": {
+          "w_calej_bazie": 117,
+          "w_tabelach_CRM": 63
+        }
+      },
+      "skutek": "Sekwencyjne skanowanie przy wzroście danych; wolne kasowanie kaskadowe.",
+      "naprawa": {
+        "opis": "Zacząć od indeksów na ścieżkach gorących. Przy tej skali CREATE INDEX bez CONCURRENTLY trwa ułamki sekundy.",
+        "sql": "CREATE INDEX IF NOT EXISTS idx_crm_policies_tenant_data_do ON public.crm_policies (tenant_id, data_do) WHERE deleted_at IS NULL;\nCREATE INDEX IF NOT EXISTS idx_crm_policies_klient ON public.crm_policies (klient_id);\nCREATE INDEX IF NOT EXISTS idx_crm_clients_tenant ON public.crm_clients (tenant_id);\nCREATE INDEX IF NOT EXISTS idx_crm_tasks_tenant ON public.crm_tasks (tenant_id);\nCREATE INDEX IF NOT EXISTS idx_crm_vehicles_klient ON public.crm_vehicles (klient_id);\nCREATE INDEX IF NOT EXISTS idx_crm_policy_payments_tenant ON public.crm_policy_payments (tenant_id);\nCREATE INDEX IF NOT EXISTS idx_crm_task_history_task ON public.crm_task_history (task_id);"
+      },
+      "zrodlo": "Supabase advisor"
+    },
+    {
+      "id": "PERF-02",
+      "tytul": "19 polityk RLS wylicza auth.uid() dla każdego wiersza",
+      "waga": "niska",
+      "kategoria": "wydajnosc",
+      "poprzednio": null,
+      "obiekty": [
+        "crm_dashboard_prefs.self_only",
+        "crm_clients.crm_clients_self_select",
+        "crm_policies / crm_claims / crm_vehicles / crm_policy_payments / crm_policy_annexes — *_client_select",
+        "crm_policy_brokers / crm_rodo_texts / crm_prospect_activities / crm_leasings / crm_audit_log — podzapytanie do crm_profiles",
+        "crm_users, crm_companies, crm_contacts, crm_events, crm_history, crm_reminders, bond_profiles"
+      ],
+      "opis": "Wywołanie auth.uid() bez otoczenia (SELECT …) jest liczone dla każdego wiersza zamiast raz na zapytanie. Polityki z podzapytaniem do crm_profiles warto zamienić na get_my_tenant_id(), jak w pozostałych tabelach.",
+      "dowod": {
+        "zapytanie": "Supabase advisor 0003 auth_rls_initplan",
+        "wynik": {
+          "w_calej_bazie": 92,
+          "w_tabelach_CRM": 19
+        }
+      },
+      "skutek": "Liniowo rosnący koszt zapytań przy dużych tabelach (crm_prospects ~6 tys. wierszy).",
+      "naprawa": {
+        "opis": "Wzorzec przepisania (przykład):",
+        "sql": "DROP POLICY \"tenant isolation\" ON public.crm_prospect_activities;\nCREATE POLICY tenant_isolation ON public.crm_prospect_activities FOR ALL TO authenticated\n  USING (tenant_id = (SELECT public.get_my_tenant_id()))\n  WITH CHECK (tenant_id = (SELECT public.get_my_tenant_id()));"
+      },
+      "zrodlo": "Supabase advisor"
+    },
+    {
+      "id": "PERF-03",
+      "tytul": "22 przypadki wielu permisywnych polityk dla tej samej roli i akcji",
+      "waga": "niska",
+      "kategoria": "wydajnosc",
+      "poprzednio": "niespojnosci[7] w crm-schema.json (zdublowana polityka crm_tasks) — nadal aktualne",
+      "obiekty": [
+        "crm_tasks: tenant_isolation + tenant_isolation_tasks (identyczny warunek)",
+        "crm_clients / crm_policies / crm_claims / crm_vehicles / crm_policy_payments / crm_policy_annexes: tenant_isolation + *_client_select",
+        "crm_noty: tenant_isolation + tenant_insert",
+        "apk_forms, apk_tokens — patrz SEC-01, SEC-02"
+      ],
+      "opis": "Polityki *_client_select (portal klienta) są nadane roli public, więc każde zapytanie pracownika wykonuje dodatkowo podzapytanie do crm_clients po auth_user_id. Wystarczy nadać je roli authenticated z warunkiem, który dla pracownika jest tani, albo przenieść portal na osobne RPC.",
+      "dowod": {
+        "zapytanie": "Supabase advisor 0006 multiple_permissive_policies",
+        "wynik": {
+          "w_calej_bazie": 174,
+          "w_tabelach_CRM": 22
+        }
+      },
+      "skutek": "Podwójna ewaluacja RLS na każdym zapytaniu; trudniejszy audyt uprawnień.",
+      "naprawa": {
+        "sql": "DROP POLICY tenant_isolation_tasks ON public.crm_tasks;\nDROP POLICY tenant_insert ON public.crm_noty; -- tenant_isolation (ALL) już obejmuje INSERT"
+      },
+      "zrodlo": "Supabase advisor"
+    },
+    {
+      "id": "DQ-04",
+      "tytul": "Drobne błędy formatów: 23 NIP-y o złej długości, 1 TU z pustym działem",
+      "waga": "informacyjna",
+      "kategoria": "jakosc_danych",
+      "poprzednio": null,
+      "obiekty": [
+        "public.crm_clients.nip",
+        "public.crm_insurers.dzial"
+      ],
+      "opis": "23 klientów ma NIP, który po usunięciu separatorów nie ma 10 cyfr. Jedno towarzystwo ma dzial = '' (oczekiwane 'Majątkowy' / 'Życiowy'). PESEL-e klientów (2) mają poprawną długość.",
+      "dowod": {
+        "zapytanie": "SELECT count(*) FROM crm_clients WHERE nip <> '' AND length(regexp_replace(nip,'\\D','','g')) <> 10;",
+        "wynik": {
+          "nip_zla_dlugosc": 23,
+          "tu_pusty_dzial": 1,
+          "pesel_zla_dlugosc": 0
+        }
+      },
+      "skutek": "Nieudane wyszukiwanie w GUS/REGON i deduplikacja po NIP (DQ-01) pomija te rekordy.",
+      "naprawa": {
+        "opis": "Poprawić ręcznie; walidować NIP (suma kontrolna) w formularzu i imporcie.",
+        "sql": null
+      },
+      "zrodlo": "zapytanie kontrolne"
+    },
+    {
+      "id": "DQ-05",
+      "tytul": "1 143 leady o NIP-ie istniejącego klienta nadal w otwartym lejku",
+      "waga": "informacyjna",
+      "kategoria": "jakosc_danych",
+      "poprzednio": null,
+      "obiekty": [
+        "public.crm_prospects"
+      ],
+      "opis": "Leady w statusie innym niż wygrany / przegrany, których NIP pokrywa się z klientem tego samego najemcy. Najpewniej import listy firm zawierał obecnych klientów.",
+      "dowod": {
+        "zapytanie": "SELECT count(*) FROM crm_prospects p WHERE p.status NOT IN ('wygrany','przegrany')\n  AND EXISTS (SELECT 1 FROM crm_clients c WHERE c.tenant_id = p.tenant_id\n    AND regexp_replace(c.nip,'\\D','','g') = regexp_replace(p.nip,'\\D','','g'));",
+        "wynik": {
+          "leady": 1143,
+          "leady_ogolem": 6148
+        }
+      },
+      "skutek": "Handlowcy mogą „pozyskiwać” firmy, które już są klientami.",
+      "naprawa": {
+        "opis": "Oznaczyć te leady (np. status 'wygrany' albo osobna flaga) i dodać kontrolę NIP-u przy imporcie leadów.",
+        "sql": null
+      },
+      "zrodlo": "zapytanie kontrolne"
+    },
+    {
+      "id": "PERF-04",
+      "tytul": "10 nieużywanych indeksów",
+      "waga": "informacyjna",
+      "kategoria": "wydajnosc",
+      "poprzednio": null,
+      "obiekty": [
+        "apk_forms_status_idx, apk_forms_form_date_idx, apk_forms_client_idx",
+        "apk_tokens_status_idx",
+        "apk_audit_form_id_idx",
+        "bond_audit_log: idx_audit_log_time, idx_audit_log_record",
+        "idx_crm_insurer_branches_tu, idx_crm_insurer_contacts_branch, idx_crm_insurer_contacts_tu"
+      ],
+      "opis": "Tabele są małe, więc planista wybiera skan sekwencyjny. To nie powód do kasowania — indeksy przydadzą się przy wzroście danych.",
+      "dowod": {
+        "zapytanie": "Supabase advisor 0005 unused_index",
+        "wynik": {
+          "w_calej_bazie": 66,
+          "w_tabelach_CRM": 10
+        }
+      },
+      "skutek": "Pomijalny koszt zapisu.",
+      "naprawa": {
+        "opis": "Bez akcji.",
+        "sql": null
+      },
+      "zrodlo": "Supabase advisor"
+    },
+    {
+      "id": "UTR-01",
+      "tytul": "Historia migracji w bazie coraz bardziej odbiega od repozytorium",
+      "waga": "informacyjna",
+      "kategoria": "utrzymanie",
+      "poprzednio": "niespojnosci[9] w crm-schema.json — rozjazd się powiększył",
+      "obiekty": [
+        "supabase_migrations.schema_migrations",
+        "supabase/migrations/"
+      ],
+      "opis": "Baza ma 147 wersji migracji (ostatnia 20261005140000; w sierpniu było 130), repozytorium — 26 plików bez zmian. Zmiany wchodzą do bazy z innych repozytoriów lub prosto z panelu.",
+      "dowod": {
+        "zapytanie": "SELECT count(*), max(version) FROM supabase_migrations.schema_migrations;",
+        "wynik": {
+          "baza": 147,
+          "repo": 26,
+          "ostatnia_wersja": "20261005140000"
+        }
+      },
+      "skutek": "Nie da się odtworzyć bazy CRM z repozytorium ani zrobić przeglądu zmian w PR-ach.",
+      "naprawa": {
+        "opis": "Zrzucić bieżący schemat CRM jako migrację bazową (supabase db dump --schema public z filtrem tabel) i prowadzić dalsze zmiany wyłącznie przez pliki w repo.",
+        "sql": null
+      },
+      "zrodlo": "schema_migrations"
+    },
+    {
+      "id": "UTR-02",
+      "tytul": "updated_at bez wyzwalacza w crm_tasks i crm_getresponse_links",
+      "waga": "informacyjna",
+      "kategoria": "utrzymanie",
+      "poprzednio": "niespojnosci[8] w crm-schema.json — nadal aktualne",
+      "obiekty": [
+        "public.crm_tasks.updated_at",
+        "public.crm_getresponse_links.updated_at"
+      ],
+      "opis": "Kolumny mają DEFAULT now(), ale nic ich nie odświeża przy UPDATE.",
+      "dowod": {
+        "zapytanie": "SELECT tgname FROM pg_trigger WHERE tgrelid IN ('crm_tasks'::regclass, 'crm_getresponse_links'::regclass) AND NOT tgisinternal;",
+        "wynik": {
+          "wyzwalacze": 0
+        }
+      },
+      "skutek": "„Ostatnia zmiana” pokazuje moment utworzenia.",
+      "naprawa": {
+        "sql": "CREATE TRIGGER crm_tasks_updated_at BEFORE UPDATE ON public.crm_tasks\n  FOR EACH ROW EXECUTE FUNCTION public.apk_set_updated_at();\nCREATE TRIGGER crm_getresponse_links_updated_at BEFORE UPDATE ON public.crm_getresponse_links\n  FOR EACH ROW EXECUTE FUNCTION public.apk_set_updated_at();"
+      },
+      "zrodlo": "pg_trigger"
+    },
+    {
+      "id": "UTR-03",
+      "tytul": "Tabele legacy i martwe obiekty",
+      "waga": "informacyjna",
+      "kategoria": "utrzymanie",
+      "poprzednio": null,
+      "obiekty": [
+        "crm_companies, crm_contacts, crm_events, crm_history, crm_reminders (0 wierszy)",
+        "crm_users (1 wiersz)",
+        "bond_profiles, bond_analytics (nieużywane przez crmaura)",
+        "funkcja bond_handle_new_user()"
+      ],
+      "opis": "Tabele po starszym CRM sprzedażowym są puste i nie występują w kodzie crmaura. Synchronizacja z BEAUTY korzysta z beauty.crm_companies w innym projekcie, nie z tej tabeli.",
+      "dowod": {
+        "zapytanie": "grep supabase.from w src/ + liczby wierszy",
+        "wynik": {
+          "puste_tabele_legacy": 5
+        }
+      },
+      "skutek": "Szum w schemacie i w wynikach advisorów (6 z 19 ustaleń PERF-02 dotyczy tabel legacy).",
+      "naprawa": {
+        "warunek": "Upewnić się, że żadna inna aplikacja współdzieląca bazę ich nie używa.",
+        "sql": "-- po potwierdzeniu:\n-- DROP TABLE public.crm_reminders, public.crm_history, public.crm_events, public.crm_contacts, public.crm_companies;"
+      },
+      "zrodlo": "kod + dane"
+    }
+  ],
+  "kolejnosc_napraw": [
+    {
+      "krok": 1,
+      "ustalenia": [
+        "SEC-01",
+        "SEC-02"
+      ],
+      "uzasadnienie": "Jedna migracja na tabelach apk_*. Najpierw potwierdzić, że apk.aurabroker.pl korzysta wyłącznie z RPC."
+    },
+    {
+      "krok": 2,
+      "ustalenia": [
+        "SEC-03"
+      ],
+      "uzasadnienie": "Polityki storage — niezależne od kroku 1, ten sam warunek dla apk-pdfs."
+    },
+    {
+      "krok": 3,
+      "ustalenia": [
+        "FUN-01",
+        "SEC-04"
+      ],
+      "uzasadnienie": "/form na RPC + poprawka get_apk_by_token; po kroku 1 to jedyna ścieżka klienta do formularza."
+    },
+    {
+      "krok": 4,
+      "ustalenia": [
+        "INT-01"
+      ],
+      "uzasadnienie": "Decyzja biznesowa o 72 589,50 zł — musi zapaść przed DQ-02 i przed jakąkolwiek masową zmianą rat."
+    },
+    {
+      "krok": 5,
+      "ustalenia": [
+        "INT-02",
+        "FUN-02",
+        "SEC-05"
+      ],
+      "uzasadnienie": "Zmiany w kodzie aplikacji i politykach ról; SEC-05 przed zaproszeniem pierwszego konta BROKER."
+    },
+    {
+      "krok": 6,
+      "ustalenia": [
+        "INT-03",
+        "INT-04",
+        "INT-05",
+        "INT-06",
+        "DQ-03"
+      ],
+      "uzasadnienie": "Ograniczenia — dane są czyste (poza jedną datą z DQ-03), więc migracja przejdzie bez czyszczenia."
+    },
+    {
+      "krok": 7,
+      "ustalenia": [
+        "DQ-01",
+        "DQ-02",
+        "DQ-04",
+        "DQ-05"
+      ],
+      "uzasadnienie": "Porządki w danych i poprawka synchronizacji BEAUTY."
+    },
+    {
+      "krok": 8,
+      "ustalenia": [
+        "SEC-06",
+        "SEC-07",
+        "PERF-01",
+        "PERF-02",
+        "PERF-03",
+        "PERF-04",
+        "UTR-01",
+        "UTR-02",
+        "UTR-03"
+      ],
+      "uzasadnienie": "Utwardzenie i higiena (PERF-04 — bez akcji, do obserwacji)."
+    }
+  ],
+  "co_dziala_dobrze": [
+    "Wszystkie 49 tabel w zakresie mają włączone RLS.",
+    "Rola anon nie widzi ani jednego wiersza w tabelach CRM, APK, bond_* ani w obu kubełkach storage (symulacja).",
+    "Konto spoza CRM nie widzi żadnych danych w tabelach crm_* — wycieki dotyczą wyłącznie apk_* i storage.",
+    "Spójność między najemcami: 0 polis wskazujących klienta lub TU innego najemcy, 0 rat innego najemcy niż polisa.",
+    "0 sierot w tabelach pozbawionych kluczy obcych.",
+    "crm_profiles_guard skutecznie blokuje zmianę roli i najemcy z poziomu klienta; konta zakładane są wyłącznie przez service_role.",
+    "get_my_tenant_id() jest SECURITY DEFINER z ustalonym search_path.",
+    "bond_limits_view ma security_invoker = on — szanuje RLS tabel bazowych.",
+    "Składka wszystkich 11 gwarancji jest wyliczona przez wyzwalacz (0 wartości NULL)."
+  ],
+  "korekta_poprzedniego_dokumentu": {
+    "plik": "docs/db/crm-schema.json",
+    "opis": "Uwaga przy bond_limits_view twierdziła, że widok nie ma security_invoker i pomija RLS. To było błędne — widok ma reloptions security_invoker=on. Uwaga została poprawiona w tym samym commicie."
+  },
+  "advisory_supabase": {
+    "_uwaga": "Liczby 'crm' to ustalenia dotyczące tabel / funkcji w zakresie audytu; 'ogolem' — cała współdzielona baza.",
+    "security": {
+      "rls_enabled_no_policy": {
+        "ogolem": 39,
+        "crm": 2,
+        "obiekty_crm": [
+          "crm_settings",
+          "crm_sync_log"
+        ],
+        "ocena": "Zamierzone dla crm_sync_log (tylko service_role). crm_settings — patrz niespojnosci[4] w crm-schema.json."
+      },
+      "function_search_path_mutable": {
+        "ogolem": 15,
+        "crm": 7,
+        "ustalenie": "SEC-06"
+      },
+      "anon_security_definer_function_executable": {
+        "ogolem": 20,
+        "crm": 9,
+        "ocena": "get_apk_by_token, apk_form_by_token, submit_apk — zamierzone (formularz publiczny); pozostałe — SEC-06."
+      },
+      "authenticated_security_definer_function_executable": {
+        "ogolem": 29,
+        "crm": 9
+      },
+      "extension_in_public": {
+        "ogolem": 1,
+        "crm": 0,
+        "obiekt": "unaccent"
+      },
+      "auth_leaked_password_protection": {
+        "ogolem": 1,
+        "ustalenie": "SEC-07"
+      }
+    },
+    "performance": {
+      "unindexed_foreign_keys": {
+        "ogolem": 117,
+        "crm": 63,
+        "ustalenie": "PERF-01"
+      },
+      "auth_rls_initplan": {
+        "ogolem": 92,
+        "crm": 19,
+        "ustalenie": "PERF-02"
+      },
+      "multiple_permissive_policies": {
+        "ogolem": 174,
+        "crm": 22,
+        "ustalenie": "PERF-03"
+      },
+      "unused_index": {
+        "ogolem": 66,
+        "crm": 10,
+        "ustalenie": "PERF-04"
+      }
+    }
+  },
+  "migawka_danych": {
+    "auth_users": 12,
+    "auth_users_z_profilem_crm": 4,
+    "konta_klientow_portalu": 1,
+    "najemcy": 4,
+    "klienci": 1453,
+    "klienci_z_beauty": 1378,
+    "polisy": 107,
+    "polisy_w_koszu": 1,
+    "raty": 209,
+    "zadania": 49,
+    "leady": 6148,
+    "formularze_apk": 4,
+    "tokeny_apk": 4,
+    "gwarancje": 11,
+    "pliki_storage": {
+      "apk-pdfs": 2,
+      "settlement-files": 2
+    },
+    "synchronizacja_beauty": {
+      "harmonogram": "0 7 * * * (sync-beauty-companies-daily)",
+      "przebiegi_ok": 87,
+      "bledy": 3,
+      "ostatni_blad": "2026-06-07 — naruszenie unikalności (beauty_id, tenant_id)",
+      "ostatni_przebieg": "2026-10-06 07:00 UTC"
+    }
+  }
+}
