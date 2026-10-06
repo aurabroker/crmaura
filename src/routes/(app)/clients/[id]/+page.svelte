@@ -12,6 +12,7 @@
 	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
+	import { apkTokenLink, apkOpenLink, apkCopyLink, APK_FORMS_SELECT } from '$lib/utils/apkLink';
 	import type { ApkForm } from '$lib/types/database';
 
 	let pdfSaving = $state<string | null>(null);
@@ -262,7 +263,6 @@
 	});
 
 	// APK
-	const APK_APP_URL = 'https://crmaura.pages.dev';
 	let showNewApk = $state(false);
 	let savingApk = $state(false);
 	let apkErr = $state('');
@@ -270,7 +270,7 @@
 	let apkMode = $state<'client'|'advisor'>('client');
 	let apkToken = $state('');
 	let apkCopied = $state(false);
-	const apkLink = $derived(apkToken ? `${APK_APP_URL}?token=${apkToken}` : '');
+	const apkLink = $derived(apkToken ? apkTokenLink(apkToken) : '');
 	let apkLinkPopover = $state<string | null>(null);
 	let deletingApk = $state<string | null>(null);
 
@@ -293,14 +293,15 @@
 		}]).select('id').single();
 		if (e1) { savingApk = false; apkErr = e1.message; return; }
 		const expires = new Date(); expires.setDate(expires.getDate() + 30);
-		await sb.from('apk_tokens').insert([{
+		const { error: e2 } = await sb.from('apk_tokens').insert([{
 			tenant_id: appState.profile!.tenant_id,
 			token, form_id: form!.id,
 			advisor_name: apkAdvisor || null,
 			status: 'pending', expires_at: expires.toISOString()
 		}]);
+		if (e2) { savingApk = false; apkErr = e2.message; return; }
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: 'created', actor: apkAdvisor || 'system' }]);
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').order('created_at', { ascending: false });
+		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 		savingApk = false; apkToken = token;
 	}
@@ -315,9 +316,10 @@
 		apkAdvisor = appState.profile?.imie_nazwisko ?? ''; apkMode = 'client';
 	}
 
-	function apkTokenLink(f: typeof clientApk[0]): string {
-		const token = f.apk_tokens?.[0]?.token;
-		return token ? `${APK_APP_URL}?token=${token}` : `${APK_APP_URL}?form_id=${f.id}`;
+	// Link do skopiowania: token, który jeszcze działa, a w razie braku — pierwszy znany
+	// (strona formularza wyjaśni wtedy klientowi, co się stało). Brak tokenu = brak linku.
+	function apkFormLink(f: typeof clientApk[0]): string {
+		return apkCopyLink(f) ?? '';
 	}
 
 	async function deleteApk(id: string) {
@@ -326,7 +328,7 @@
 		await sb.from('apk_tokens').delete().eq('form_id', id);
 		await sb.from('apk_audit').delete().eq('form_id', id);
 		await sb.from('apk_forms').delete().eq('id', id);
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').order('created_at', { ascending: false });
+		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 		deletingApk = null;
 	}
@@ -1030,10 +1032,12 @@
 								<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
 								<td class="px-5 py-3">
 									<div class="flex items-center gap-2 flex-wrap">
-										<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
-											class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-											<ClipboardList size={12} /> Otwórz
-										</a>
+										{#if apkOpenLink(f)}
+											<a href={apkOpenLink(f)} target="_blank" rel="noopener"
+												class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+												<ClipboardList size={12} /> Otwórz
+											</a>
+										{/if}
 										<button
 											onclick={() => apkLinkPopover = apkLinkPopover === f.id ? null : f.id}
 											title="Pokaż link dla klienta"
@@ -1058,14 +1062,18 @@
 										{/if}
 									</div>
 									{#if apkLinkPopover === f.id}
-										{@const link = apkTokenLink(f)}
-										<div class="mt-2 flex gap-1.5 items-center">
-											<input readonly value={link} class="text-xs font-mono bg-slate-50 border border-line rounded px-2 py-1 flex-1 min-w-0" />
-											<button onclick={async () => { await navigator.clipboard.writeText(link); }}
-												class="shrink-0 px-2 py-1 text-xs border border-line rounded hover:bg-slate-50 text-slate-600">
-												<Copy size={11} />
-											</button>
-										</div>
+										{@const link = apkFormLink(f)}
+										{#if link}
+											<div class="mt-2 flex gap-1.5 items-center">
+												<input readonly value={link} class="text-xs font-mono bg-slate-50 border border-line rounded px-2 py-1 flex-1 min-w-0" />
+												<button onclick={async () => { await navigator.clipboard.writeText(link); }}
+													class="shrink-0 px-2 py-1 text-xs border border-line rounded hover:bg-slate-50 text-slate-600">
+													<Copy size={11} />
+												</button>
+											</div>
+										{:else}
+											<p class="mt-2 text-xs text-slate-400">Brak linku — ten formularz nie ma tokenu (np. klient odmówił APK albo token nie został utworzony).</p>
+										{/if}
 									{/if}
 								</td>
 							</tr>

@@ -7,6 +7,7 @@
 	import { todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
+	import { apkTokenLink, apkOpenLink, APK_FORMS_SELECT } from '$lib/utils/apkLink';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -23,8 +24,6 @@
 			pdfSaving = null;
 		}
 	}
-
-	const APK_APP_URL = 'https://apk.aurabroker.pl'; // adres React app
 
 	let showNew = $state(false);
 	let saving = $state(false);
@@ -58,7 +57,7 @@
 	let createdFormId = $state('');
 	let copied = $state(false);
 
-	const tokenLink = $derived(createdToken ? `${APK_APP_URL}?token=${createdToken}` : '');
+	const tokenLink = $derived(createdToken ? apkTokenLink(createdToken) : '');
 
 	function genRef(): string {
 		return 'APK-' + Math.random().toString(36).slice(2, 10).toUpperCase();
@@ -110,7 +109,7 @@
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: clientDeclined ? 'client_declined' : 'created', actor: fAdvisor || 'system' }]);
 
 		// refresh
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false });
+		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 
 		// Jeśli zebrano RODO — zapisz na kliencie
@@ -140,7 +139,8 @@
 			{
 				label: 'Otwórz formularz APK',
 				icon: ExternalLink,
-				onSelect: () => window.open(`${APK_APP_URL}?form_id=${f.id}`, '_blank', 'noopener')
+				disabled: !apkOpenLink(f),
+				onSelect: () => { const u = apkOpenLink(f); if (u) window.open(u, '_blank', 'noopener'); }
 			},
 			{
 				label: 'Generuj PDF',
@@ -298,10 +298,12 @@
 						<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
 						<td class="px-5 py-3">
 							<div class="flex items-center gap-2">
-								<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
-									class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
-									<ExternalLink size={12} /> Otwórz
-								</a>
+								{#if apkOpenLink(f)}
+									<a href={apkOpenLink(f)} target="_blank" rel="noopener"
+										class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
+										<ExternalLink size={12} /> Otwórz
+									</a>
+								{/if}
 								<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
 									class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
 									<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}

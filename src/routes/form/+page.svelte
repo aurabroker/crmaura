@@ -5,9 +5,27 @@
 
 	type Status = 'loading' | 'invalid' | 'expired' | 'used' | 'ready' | 'submitted';
 
+	// Klient Supabase nie ma jeszcze wygenerowanych typów bazy (por. SECURITY_HANDOFF.md),
+	// więc wywołania funkcji typujemy tutaj, zamiast zostawiać je jako `never`.
+	const rpc = sb.rpc.bind(sb) as unknown as (
+		fn: string,
+		args: Record<string, unknown>
+	) => Promise<{ data: unknown; error: { message: string } | null }>;
+
+	// Wiersz zwracany przez funkcję get_apk_by_token.
+	type ApkTokenRow = {
+		token_status: string;
+		expires_at: string | null;
+		token_advisor_name: string | null;
+		form_status: string;
+		client_name: string;
+		form_advisor_name: string | null;
+		form_data: Record<string, unknown> | null;
+		tenant_nazwa: string | null;
+	};
+
 	let status = $state<Status>('loading');
-	let formId = $state('');
-	let tokenId = $state('');
+	let token = $state('');
 	let clientName = $state('');
 	let advisorName = $state('');
 	let tenantNazwa = $state('');
@@ -36,42 +54,25 @@
 	}
 
 	onMount(async () => {
-		const token = $page.url.searchParams.get('token');
+		token = $page.url.searchParams.get('token') ?? '';
 		if (!token) { status = 'invalid'; return; }
 
-		const { data: tok, error } = await sb
-			.from('apk_tokens')
-			.select('id, status, expires_at, form_id, advisor_name')
-			.eq('token', token)
-			.single();
+		// Dostęp po tokenie wyłącznie przez funkcję w bazie — tabele apk_* nie są
+		// publicznie czytelne. Funkcja nie zwraca danych formularza po wygaśnięciu ani po złożeniu.
+		const { data, error } = await rpc('get_apk_by_token', { p_token: token });
+		const row = (Array.isArray(data) ? data[0] : data) as ApkTokenRow | null | undefined;
 
-		if (error || !tok) { status = 'invalid'; return; }
-		if (tok.status === 'used') { status = 'used'; return; }
-		if (new Date(tok.expires_at) < new Date()) { status = 'expired'; return; }
+		if (error || !row) { status = 'invalid'; return; }
+		if (row.token_status === 'used') { status = 'used'; return; }
+		if (row.expires_at && new Date(row.expires_at) < new Date()) { status = 'expired'; return; }
+		if (row.form_status === 'submitted') { status = 'submitted'; return; }
 
-		tokenId = tok.id;
-		advisorName = tok.advisor_name ?? '';
-
-		const { data: form } = await sb
-			.from('apk_forms')
-			.select('id, client_name, advisor_name, form_data, status, tenant_id')
-			.eq('id', tok.form_id)
-			.single();
-
-		if (!form) { status = 'invalid'; return; }
-		if (form.status === 'submitted') { status = 'submitted'; return; }
-
-		formId = form.id;
-		clientName = form.client_name;
-		advisorName = advisorName || form.advisor_name || '';
-
-		if (form.tenant_id) {
-			const { data: tenant } = await sb.from('crm_tenants').select('nazwa').eq('id', form.tenant_id).single();
-			tenantNazwa = tenant?.nazwa ?? '';
-		}
+		clientName = row.client_name;
+		advisorName = row.token_advisor_name || row.form_advisor_name || '';
+		tenantNazwa = row.tenant_nazwa ?? '';
 
 		// Restore draft if exists
-		const fd = (form.form_data ?? {}) as Record<string, unknown>;
+		const fd = (row.form_data ?? {}) as Record<string, unknown>;
 		stanCywilny = (fd.stan_cywilny as string) ?? '';
 		liczbaDzieci = (fd.liczba_dzieci as string) ?? '';
 		zatrudnienie = (fd.zatrudnienie as string) ?? '';
@@ -97,19 +98,25 @@
 			dodatkowe
 		};
 
-		const { error: formErr } = await sb.from('apk_forms').update({
-			form_data,
-			status: asDraft ? 'draft' : 'submitted',
-			submitted_at: asDraft ? null : new Date().toISOString()
-		}).eq('id', formId);
-
-		if (formErr) { saving = false; saveError = formErr.message; return; }
-
-		if (!asDraft) {
-			await sb.from('apk_tokens').update({ status: 'used', used_at: new Date().toISOString() }).eq('id', tokenId);
-			status = 'submitted';
-		}
+		// Zapis i oznaczenie tokenu jako użytego robi jedna funkcja w bazie.
+		const { data: result, error: rpcErr } = await rpc('submit_apk', {
+			p_token: token,
+			p_form_data: form_data,
+			p_final: !asDraft
+		});
 		saving = false;
+
+		if (rpcErr) { saveError = rpcErr.message; return; }
+
+		switch (result as string) {
+			// Przy wysyłce „submitted” znaczy sukces. Przy zapisie szkicu oznacza, że formularz był już
+			// złożony wcześniej i nic się nie zapisało — wtedy nie dziękujemy za wypełnienie.
+			case 'submitted': status = asDraft ? 'used' : 'submitted'; break;
+			case 'used': status = 'used'; break;
+			case 'expired': status = 'expired'; break;
+			case 'draft': break;                             // szkic zapisany, zostajemy na formularzu
+			default: saveError = 'Nie udało się zapisać formularza. Sprawdź, czy odpowiedzi nie są zbyt długie, albo poproś doradcę o nowy link. Twoje odpowiedzi zostały na ekranie.';
+		}
 	}
 
 	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -258,7 +265,7 @@
 					<!-- Sekcja 5: Dodatkowe -->
 					<section>
 						<h2 class="text-base font-semibold text-slate-900 border-b border-line-soft pb-2 mb-4">5. Informacje dodatkowe</h2>
-						<textarea bind:value={dodatkowe} rows="4" class={inp}
+						<textarea bind:value={dodatkowe} rows="4" maxlength="5000" class={inp}
 							placeholder="Wpisz wszelkie dodatkowe informacje, pytania lub uwagi dla doradcy…"></textarea>
 					</section>
 

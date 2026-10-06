@@ -200,14 +200,18 @@ Supabase Edge Function `send-payment-reminders` wysyła przypomnienia przez Rese
 
 ## APK — Analiza Potrzeb Klienta
 
-System APK działa na dwóch poziomach:
-- **React app** (zewnętrzna, `https://apk.aurabroker.pl`) — klient wypełnia formularz przez link z tokenem
-- **FRANK67 CRM** — zarządzanie formularzami, generowanie linków, PDF
+Cały system APK mieszka w CRM (domena `portal.beautypolisa.eu`):
+- **Publiczny formularz** — trasa `/form?token=…` (`src/routes/form/+page.svelte`); czyta i zapisuje
+  wyłącznie przez funkcje bazy `get_apk_by_token` i `submit_apk`, tabele `apk_*` nie są publicznie dostępne
+- **CRM** — zarządzanie formularzami, generowanie linków, PDF
+
+Adres linków jest w jednym miejscu: `src/lib/utils/apkLink.ts` (`APK_FORM_URL`, nadpisywany zmienną
+`VITE_APK_FORM_URL`). Dawna aplikacja `apk.aurabroker.pl` nie istnieje.
 
 ### Przepływ
 1. Doradca tworzy APK w CRM (`/apk` lub zakładka APK w profilu klienta)
-2. CRM generuje token (`apk_tokens`) i link `https://apk.aurabroker.pl?token=XXXXX`
-3. Klient wypełnia formularz w React app → dane zapisują się w `apk_forms.form_data`
+2. CRM generuje token (`apk_tokens`) i link `https://portal.beautypolisa.eu/form?token=XXXXX`
+3. Klient wypełnia formularz → dane zapisują się w `apk_forms.form_data` (funkcja `submit_apk`)
 4. Status zmienia się na `submitted`
 5. Doradca może wygenerować PDF → uploadowany do `apk-pdfs` bucket, URL zapisany w `apk_forms.pdf_url`
 
