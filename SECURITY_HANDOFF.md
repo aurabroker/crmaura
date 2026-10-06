@@ -17,6 +17,15 @@
 >   - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` ustawia i zmienia tylko serwer
 >     (edycja i dodanie klienta oraz nadanie/odebranie dostępu do portalu sprawdzone po zastosowaniu).
 >
+> **2026-10-07:**
+> - Edge function `div-send-email` (formularze stron kancelarii, nie CRM) wdrożona jako v13: potwierdzenia tylko
+>   dla zgłoszeń z listy stron kancelarii, limity wysyłki, bez powtarzania treści wiadomości. Kod źródłowy v12 i v13
+>   nie jest w żadnym repozytorium.
+> - PDF-y APK i pliki zestawień otwierane podpisanym linkiem (`src/lib/utils/storageLink.ts`); po wdrożeniu kodu
+>   zastosować `supabase/pending/20261007000000_apk_private_files_legacy_rpc.sql`.
+> - beautypolisa: poprawka panelu admina na gałęzi `claude/epic-cerf-1eyfeo` w `aurabroker/beautypolisa`; po jej
+>   wdrożeniu zastosować `supabase/pending/20261007000001_bp_public_inserts.sql`.
+>
 > **Konfiguracja Cloudflare:** `TURNSTILE_SECRET_KEY` musi być ustawiony (Pages → Settings → Environment variables),
 > inaczej publiczna rejestracja `/api/register` odmawia (503) — to zamierzone zachowanie fail-closed.
 
