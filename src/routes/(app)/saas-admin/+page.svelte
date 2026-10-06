@@ -6,7 +6,8 @@
 	import { KeyRound, RefreshCw, Plus } from 'lucide-svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 
-	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_api_key?: string | null };
+	// Klucz Resend nie trafia do przeglądarki — serwer zwraca tylko jego końcówkę (resend_key_hint).
+	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
 
 	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
@@ -18,11 +19,42 @@
 		return !!(tenant.features?.[key]);
 	}
 
+	// Wszystkie odczyty i zapisy firm idą przez serwer (/api/saas-admin/tenants) po sprawdzeniu roli
+	// ADMIN GOD — z przeglądarki RLS dopuszcza zapis tylko do własnej firmy, więc zmiany cudzych
+	// firm wcześniej po cichu się nie zapisywały.
+	async function authHeaders() {
+		const { data: { session } } = await sb.auth.getSession();
+		return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` };
+	}
+
+	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null }) {
+		try {
+			const res = await fetch('/api/saas-admin/tenants', {
+				method: 'PATCH', headers: await authHeaders(),
+				body: JSON.stringify({ tenant_id: tenantId, ...patch })
+			});
+			const d = await res.json().catch(() => ({}));
+			if (!res.ok) return { ok: false as const, message: (d.message as string) ?? 'Błąd serwera' };
+			return { ok: true as const, features: (d.features ?? {}) as Record<string, boolean>, resend_key_hint: (d.resend_key_hint ?? null) as string | null };
+		} catch {
+			return { ok: false as const, message: 'Błąd połączenia' };
+		}
+	}
+
+	async function loadTenants(): Promise<boolean> {
+		const res = await fetch('/api/saas-admin/tenants', { headers: await authHeaders() });
+		if (!res.ok) return false;
+		const d = await res.json();
+		tenants = d.tenants as Tenant[];
+		allProfiles = d.profiles as ProfileRow[];
+		return true;
+	}
+
 	async function toggleFeature(tenant: Tenant, key: string) {
 		const current = tenant.features ?? {};
-		const next = { ...current, [key]: !current[key] };
-		await sb.from('crm_tenants').update({ features: next }).eq('id', tenant.id);
-		tenant.features = next;
+		const r = await patchTenant(tenant.id, { features: { ...current, [key]: !current[key] } });
+		if (!r.ok) { featureError = r.message; return; }
+		tenant.features = r.features;
 		tenants = [...tenants]; // trigger reactivity
 	}
 
@@ -70,9 +102,9 @@
 		}
 		ntLoading = true;
 		try {
-			const res = await fetch('/api/register', {
+			const res = await fetch('/api/saas-admin/tenants', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: await authHeaders(),
 				body: JSON.stringify({
 					nazwa_firmy: ntNazwa.trim(),
 					typ: ntTyp,
@@ -86,18 +118,7 @@
 				ntError = err.message ?? 'Błąd serwera';
 			} else {
 				ntSuccess = 'Firma i konto admina zostały utworzone.';
-				// Reload tenants list
-				const { data: { session } } = await sb.auth.getSession();
-				const r = await fetch('/api/saas-admin/tenants', {
-					headers: { 'Authorization': `Bearer ${session?.access_token}` }
-				});
-				if (r.ok) {
-					const d = await r.json();
-					const { data: tenantData } = await sb.from('crm_tenants').select('id, features, resend_api_key');
-					const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean>; resend_api_key?: string | null }) => [t.id, { features: t.features ?? {}, resend_api_key: t.resend_api_key ?? null }]));
-					tenants = d.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id)?.features ?? {}, resend_api_key: featuresMap.get(t.id)?.resend_api_key ?? null }));
-					allProfiles = d.profiles;
-				}
+				await loadTenants();
 			}
 		} catch {
 			ntError = 'Błąd połączenia';
@@ -125,40 +146,40 @@
 	async function saveFeatures() {
 		if (!selectedTenant) return;
 		savingFeatures = true; featureError = '';
-		const { error } = await sb.from('crm_tenants')
-			.update({ features: localFeatures })
-			.eq('id', selectedTenant.id);
+		const r = await patchTenant(selectedTenant.id, { features: localFeatures });
 		savingFeatures = false;
-		if (error) { featureError = error.message; return; }
-		selectedTenant = { ...selectedTenant, features: { ...localFeatures } };
-		tenants = tenants.map(t => t.id === selectedTenant!.id ? { ...t, features: { ...localFeatures } } : t);
+		if (!r.ok) { featureError = r.message; return; }
+		selectedTenant = { ...selectedTenant, features: { ...r.features } };
+		tenants = tenants.map(t => t.id === selectedTenant!.id ? { ...t, features: { ...r.features } } : t);
 		featureSaved = true;
 		setTimeout(() => featureSaved = false, 2000);
 	}
 
 	async function setFeature(tenant: Tenant, key: string, value: boolean) {
 		savingFeature = key;
-		const next = { ...(tenant.features ?? {}), [key]: value };
-		await sb.from('crm_tenants').update({ features: next }).eq('id', tenant.id);
-		tenant.features = next;
-		tenants = [...tenants];
-		if (selectedTenant?.id === tenant.id) selectedTenant = { ...tenant, features: next };
+		const r = await patchTenant(tenant.id, { features: { ...(tenant.features ?? {}), [key]: value } });
 		savingFeature = null;
+		if (!r.ok) { featureError = r.message; return; }
+		tenant.features = r.features;
+		tenants = [...tenants];
+		if (selectedTenant?.id === tenant.id) selectedTenant = { ...tenant, features: r.features };
 	}
 
 	// Resend API key state
 	let editingResend = $state<string | null>(null);
 	let resendInput = $state('');
 	let savingResend = $state(false);
+	let resendError = $state('');
 
 	async function saveResendKey(tenant: Tenant) {
-		savingResend = true;
-		const val = resendInput.trim() || null;
-		await sb.from('crm_tenants').update({ resend_api_key: val }).eq('id', tenant.id);
-		tenant.resend_api_key = val;
-		tenants = [...tenants];
-		editingResend = null;
+		savingResend = true; resendError = '';
+		const r = await patchTenant(tenant.id, { resend_api_key: resendInput.trim() || null });
 		savingResend = false;
+		if (!r.ok) { resendError = r.message; return; }
+		tenant.resend_key_hint = r.resend_key_hint;
+		tenants = [...tenants];
+		resendInput = '';
+		editingResend = null;
 	}
 
 	// Sync state
@@ -174,22 +195,11 @@
 		const { data: { session } } = await sb.auth.getSession();
 		if (!session) { goto('/login'); return; }
 
-		const res = await fetch('/api/saas-admin/tenants', {
-			headers: { 'Authorization': `Bearer ${session.access_token}` }
-		});
-
-		if (!res.ok) {
+		if (!(await loadTenants())) {
 			loadError = 'Brak uprawnień lub błąd serwera';
 			loading = false;
 			return;
 		}
-
-		const data = await res.json();
-		// Enrich with features from crm_tenants (direct query since ADMIN GOD)
-		const { data: tenantData } = await sb.from('crm_tenants').select('id, features, resend_api_key');
-		const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean>; resend_api_key?: string | null }) => [t.id, { features: t.features ?? {}, resend_api_key: t.resend_api_key ?? null }]));
-		tenants = data.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id)?.features ?? {}, resend_api_key: featuresMap.get(t.id)?.resend_api_key ?? null }));
-		allProfiles = data.profiles;
 		loading = false;
 		loadSyncLog();
 	});
@@ -382,15 +392,16 @@
 					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Resend API (email)</p>
 					{#if editingResend === st.id}
 						<div class="flex items-center gap-2">
-							<input type="text" bind:value={resendInput} placeholder="re_..." class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<input type="password" autocomplete="off" bind:value={resendInput} placeholder={st.resend_key_hint ? 'Nowy klucz (puste = usuń)' : 're_...'} class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
 							<button onclick={() => saveResendKey(st)} disabled={savingResend} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingResend ? '…' : 'Zapisz'}</button>
-							<button onclick={() => { editingResend = null; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+							<button onclick={() => { editingResend = null; resendError = ''; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
 						</div>
+						{#if resendError}<p class="mt-2 text-sm text-red-600">{resendError}</p>{/if}
 					{:else}
 						<div class="flex items-center gap-3">
-							<span class="text-sm text-slate-600 font-mono">{st.resend_api_key ? `re_****…${st.resend_api_key.slice(-4)}` : '— nie ustawiony —'}</span>
-							<button onclick={() => { editingResend = st.id; resendInput = st.resend_api_key ?? ''; }} class="text-xs text-blue-600 hover:underline">
-								{st.resend_api_key ? 'Zmień' : 'Dodaj'}
+							<span class="text-sm text-slate-600 font-mono">{st.resend_key_hint ? `re_****${st.resend_key_hint}` : '— nie ustawiony —'}</span>
+							<button onclick={() => { editingResend = st.id; resendInput = ''; resendError = ''; }} class="text-xs text-blue-600 hover:underline">
+								{st.resend_key_hint ? 'Zmień' : 'Dodaj'}
 							</button>
 						</div>
 					{/if}

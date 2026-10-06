@@ -1,8 +1,8 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth';
+import { assertOwnClientAccount } from '$lib/server/portal';
 import type { RequestHandler } from './$types';
 
-// Zarządzanie dostępem klienta do Panelu Klienta (logowanie e-mail + hasło).
 // Konta klienckie powstają w Supabase Auth i są wiązane z crm_clients.auth_user_id.
 // Dostęp do polis/płatności/szkód ogranicza RLS (polityki *_client_select).
 
@@ -30,6 +30,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	// Istniejące konto → tylko zmiana hasła / e-maila
 	if (client.auth_user_id) {
+		await assertOwnClientAccount(admin, client.auth_user_id, klient_id);
 		const { error: upErr } = await admin.auth.admin.updateUserById(client.auth_user_id, {
 			email,
 			password,
@@ -76,6 +77,8 @@ export const DELETE: RequestHandler = async ({ request }) => {
 	if (cErr || !client) throw error(404, 'Nie znaleziono klienta');
 	if (client.tenant_id !== profile.tenant_id) throw error(403, 'Klient spoza Twojej organizacji');
 	if (!client.auth_user_id) return json({ success: true, mode: 'noop' });
+
+	await assertOwnClientAccount(admin, client.auth_user_id, klient_id);
 
 	await admin.from('crm_clients').update({ auth_user_id: null }).eq('id', klient_id);
 	await admin.auth.admin.deleteUser(client.auth_user_id);

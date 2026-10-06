@@ -435,7 +435,7 @@ import adapter from '@sveltejs/adapter-cloudflare';
 | `VITE_SUPABASE_URL` | TAK | URL projektu Supabase (publiczny) |
 | `VITE_SUPABASE_ANON_KEY` | TAK | Klucz publiczny (anon) Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | TAK* | Klucz service_role — **tylko serwer, bez `VITE_`** |
-| `TURNSTILE_SECRET_KEY` | zalecana | Sekret Cloudflare Turnstile — **tylko serwer, bez `VITE_`** |
+| `TURNSTILE_SECRET_KEY` | **wymagana dla rejestracji** | Sekret Cloudflare Turnstile — **tylko serwer, bez `VITE_`**. Bez niego `/api/register` odmawia (503); lokalnie użyj kluczy testowych Cloudflare |
 | `VITE_TURNSTILE_SITE_KEY` | zalecana | Klucz publiczny (site) Turnstile |
 | `GUS_API_KEY` | opcjonalna | Klucz GUS BIR — **tylko serwer, bez `VITE_`** |
 
