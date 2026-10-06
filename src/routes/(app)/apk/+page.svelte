@@ -13,13 +13,16 @@
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
 	let pdfSaving = $state<string | null>(null); // form.id currently saving
+	let pdfError = $state('');
 
+	// Generuje PDF: pobiera go przeglądarką, zapisuje na serwerze i pokazuje link do zapisanego pliku.
 	async function handlePdf(f: ApkForm) {
-		pdfSaving = f.id;
+		pdfSaving = f.id; pdfError = '';
 		try {
-			await saveApkPdf(f);
-			// refresh pdf_url in local state
-			appState.apkForms = appState.apkForms.map(x => x.id === f.id ? { ...x, pdf_url: f.pdf_url } : x);
+			const url = await saveApkPdf(f, { download: true });
+			appState.apkForms = appState.apkForms.map(x => x.id === f.id ? { ...x, pdf_url: url } : x);
+		} catch (e) {
+			pdfError = 'Nie udało się zapisać PDF na serwerze: ' + ((e as { message?: string })?.message ?? String(e));
 		} finally {
 			pdfSaving = null;
 		}
@@ -250,6 +253,10 @@
 		<p class="text-2xl font-bold text-amber-700">{appState.apkForms.filter(f => f.status === 'draft').length}</p>
 	</div>
 </div>
+
+{#if pdfError}
+	<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{pdfError}</div>
+{/if}
 
 <!-- Lista -->
 {#if filtered.length === 0}
