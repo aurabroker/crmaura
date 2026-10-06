@@ -14,9 +14,8 @@
 >   - `20261006000002_crm_tenants_secret_hardening.sql` — trigger chroniący `features`, klucz Resend, `nazwa`, `typ`,
 >     zawężenie odczytu kolumn, odebranie roli `anon` dostępu, a roli `authenticated` INSERT/DELETE.
 >     Nowa kolumna w `crm_tenants` wymaga osobnego `grant select (…) to authenticated`.
-> - NIEZASTOSOWANA (`supabase/pending/`, celowo poza `migrations/`):
->   - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` zmienia tylko serwer
->     (po potwierdzeniu, że kod w przeglądarce nie zapisuje tej kolumny).
+>   - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` ustawia i zmienia tylko serwer
+>     (edycja i dodanie klienta oraz nadanie/odebranie dostępu do portalu sprawdzone po zastosowaniu).
 >
 > **Konfiguracja Cloudflare:** `TURNSTILE_SECRET_KEY` musi być ustawiony (Pages → Settings → Environment variables),
 > inaczej publiczna rejestracja `/api/register` odmawia (503) — to zamierzone zachowanie fail-closed.
