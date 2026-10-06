@@ -97,7 +97,7 @@
 			sb.from('crm_profiles').select('*').eq('tenant_id', profile.tenant_id),
 			sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)'),
 			sb.from('crm_client_contacts').select('*'),
-			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(status, used_at)').eq('tenant_id', profile.tenant_id).order('created_at', { ascending: false }),
+			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(token, status, used_at)').eq('tenant_id', profile.tenant_id).order('created_at', { ascending: false }),
 			sb.from('crm_insurer_branches').select('*').order('nazwa'),
 			sb.from('crm_insurer_contacts').select('*, crm_insurer_branches(nazwa)').order('imie_nazwisko'),
 			sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),

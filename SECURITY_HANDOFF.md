@@ -1,5 +1,13 @@
 # 🔐 SECURITY HANDOFF — domknięcie audytu (punkty 1–3)
 
+> **STATUS 2026-10-06 — poniższe kroki dotyczące APK są wykonane, a opis aplikacji APK jest nieaktualny.**
+> Aplikacja `apk.aurabroker.pl` / repo `aurabroker/APK` nie istnieje; publiczny formularz to trasa `/form`
+> w tym repo (`portal.beautypolisa.eu/form?token=…`) i używa wyłącznie RPC `get_apk_by_token` / `submit_apk`.
+> Migracja `supabase/migrations/20261006000000_security_apk_storage_bp.sql` (zastosowana na produkcji) zdjęła
+> szerokie polityki anon/authenticated z `apk_forms`, `apk_tokens`, `apk_audit` oraz storage, a w `bp_profiles`
+> zablokowała samonadawanie `is_admin`. Niezastosowana: `20261006000001_crm_clients_auth_user_guard.sql`.
+> Kroki 3–4 dotyczące `ud_clients` (udapp/ud) są poza zakresem tej pracy.
+
 > Dokument przeznaczony do **nowej sesji Claude Code** uruchomionej z dostępem do
 > repozytoriów `aurabroker/APK` i `aurabroker/udapp` (oraz najlepiej `aurabroker/crmaura`).
 > Świeża sesja nie pamięta poprzedniej rozmowy — **cała wiedza o zadaniu jest tutaj.**
