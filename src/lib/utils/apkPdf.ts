@@ -97,11 +97,16 @@ export async function downloadApkPdf(form: ApkForm) {
 	doc.save(`APK_${form.ref_number}_${form.form_date}.pdf`);
 }
 
-export async function saveApkPdf(form: ApkForm): Promise<string | null> {
+// Generuje PDF, zapisuje go w storage i zapisuje adres w formularzu. Zwraca publiczny adres PDF.
+// Z opcją `download` plik jest dodatkowo od razu pobierany przez przeglądarkę — dzięki temu
+// użytkownik dostaje efekt kliknięcia także wtedy, gdy zapis na serwerze się nie powiedzie.
+export async function saveApkPdf(form: ApkForm, opts: { download?: boolean } = {}): Promise<string | null> {
 	const { jsPDF } = await import('jspdf');
 	const { default: autoTable } = await import('jspdf-autotable');
 	const tenantNazwa = await getTenantNazwa(form.tenant_id);
 	const doc = buildPdfDoc(form, jsPDF, autoTable, tenantNazwa);
+
+	if (opts.download) doc.save(`APK_${form.ref_number}_${form.form_date}.pdf`);
 
 	const blob = doc.output('blob');
 	const fileName = `${form.tenant_id}/${form.ref_number}_${form.form_date}.pdf`;
@@ -115,7 +120,8 @@ export async function saveApkPdf(form: ApkForm): Promise<string | null> {
 	const { data: urlData } = sb.storage.from('apk-pdfs').getPublicUrl(fileName);
 	const pdfUrl = urlData?.publicUrl ?? null;
 
-	await sb.from('apk_forms').update({ pdf_url: pdfUrl }).eq('id', form.id);
+	const { error: updErr } = await sb.from('apk_forms').update({ pdf_url: pdfUrl }).eq('id', form.id);
+	if (updErr) throw updErr;
 
 	return pdfUrl;
 }

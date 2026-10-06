@@ -16,9 +16,19 @@
 	import type { ApkForm } from '$lib/types/database';
 
 	let pdfSaving = $state<string | null>(null);
+	let pdfError = $state('');
+
+	// Generuje PDF: pobiera go przeglądarką, zapisuje na serwerze i aktualizuje adres w liście.
 	async function handlePdf(f: ApkForm) {
-		pdfSaving = f.id;
-		try { await saveApkPdf(f); } finally { pdfSaving = null; }
+		pdfSaving = f.id; pdfError = '';
+		try {
+			const url = await saveApkPdf(f, { download: true });
+			appState.apkForms = appState.apkForms.map(x => x.id === f.id ? { ...x, pdf_url: url } : x);
+		} catch (e) {
+			pdfError = 'Nie udało się zapisać PDF na serwerze: ' + ((e as { message?: string })?.message ?? String(e));
+		} finally {
+			pdfSaving = null;
+		}
 	}
 
 	// --- Panel Klienta: dostęp (logowanie e-mail + hasło) ---
@@ -999,6 +1009,10 @@
 				<Plus size={14} /> Nowy APK
 			</button>
 		</div>
+
+		{#if pdfError}
+			<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{pdfError}</div>
+		{/if}
 
 		{#if clientApk.length === 0}
 			<div class="bg-white border border-line rounded-xl p-8 text-center text-slate-400">
