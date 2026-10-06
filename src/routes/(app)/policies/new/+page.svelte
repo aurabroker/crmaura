@@ -138,6 +138,7 @@
 				presetPrzedmiot={przedmiotParam}
 				presetPojazdId={pojazdIdParam}
 				presetParentId={parentIdParam}
+				renewalOf={renewalOfParam}
 			/>
 		{/if}
 	</div>

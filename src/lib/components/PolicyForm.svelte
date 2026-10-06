@@ -11,9 +11,10 @@
 		presetPrzedmiot?: string;
 		presetPojazdId?: string;
 		presetParentId?: string;
+		renewalOf?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', renewalOf = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpUbezpieczony = $state(policy?.ubezpieczony_id ?? '');
@@ -163,6 +164,25 @@
 			}
 		}
 	}
+
+	// Odnowienie polisy podpiętej pod UG: nowy okres obsługuje następczyni tej UG
+	// (ten sam klient, TU i podtyp, okres zaczyna się po końcu starej). Polisy doczytują
+	// się w tle, więc czekamy, aż będą w pamięci; ustawiamy raz, by nie nadpisać ręcznej zmiany.
+	let renewalUgApplied = false;
+	$effect(() => {
+		if (!renewalOf || renewalUgApplied || untrack(() => fpParentId)) return;
+		const prev = appState.policies.find(p => p.id === renewalOf);
+		const oldUg = prev?.parent_id ? appState.policies.find(p => p.id === prev.parent_id) : undefined;
+		if (!oldUg || oldUg.typ_umowy !== 'generalna') return;
+		const next = appState.policies
+			.filter(p => p.typ_umowy === 'generalna' && p.id !== oldUg.id
+				&& p.klient_id === oldUg.klient_id && p.tu_id === oldUg.tu_id && p.ug_podtyp === oldUg.ug_podtyp
+				&& p.data_od > oldUg.data_do)
+			.sort((a, b) => a.data_od.localeCompare(b.data_od))[0];
+		if (!next) return;
+		renewalUgApplied = true;
+		untrack(() => { fpParentId = next.id; onParentUgChange(); });
+	});
 
 	export function getValues() {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
