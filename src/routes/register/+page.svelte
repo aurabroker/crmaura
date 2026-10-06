@@ -13,6 +13,7 @@
 	let password = $state('');
 	let confirmPassword = $state('');
 	let turnstileToken = $state('');
+	let turnstile = $state<{ reset: () => void } | null>(null);
 
 	let loading = $state(false);
 	let success = $state(false);
@@ -46,9 +47,12 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ nazwa_firmy, typ, email, imie_nazwisko, password, turnstileToken })
 			});
-			const data = await res.json();
+			const data = await res.json().catch(() => ({}));
 			if (!res.ok) {
 				errorMsg = data.message ?? 'Wystąpił błąd. Spróbuj ponownie.';
+				// Token Turnstile został zużyty przez serwer — kolejna próba potrzebuje nowego.
+				turnstileToken = '';
+				turnstile?.reset();
 			} else {
 				success = true;
 			}
@@ -121,7 +125,7 @@
 						<input id="confirmPassword" class={inputCls} type="password" bind:value={confirmPassword} required />
 					</div>
 
-					<Turnstile onToken={(t) => (turnstileToken = t)} onError={() => (turnstileToken = '')} />
+					<Turnstile bind:this={turnstile} onToken={(t) => (turnstileToken = t)} onError={() => (turnstileToken = '')} onExpire={() => (turnstileToken = '')} />
 
 					{#if errorMsg}
 						<p class="text-sm text-red-600">{errorMsg}</p>

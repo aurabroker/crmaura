@@ -3,11 +3,15 @@
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { ShieldCheck } from 'lucide-svelte';
+	import Turnstile from '$lib/components/Turnstile.svelte';
+	import { turnstileEnabled, isCaptchaError, captchaErrorMessage } from '$lib/utils/turnstile';
 
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
 	let loading = $state(false);
+	let turnstileToken = $state('');
+	let turnstile = $state<{ reset: () => void } | null>(null);
 
 	onMount(async () => {
 		// Jeśli już zalogowany jako klient — przejdź dalej
@@ -23,11 +27,19 @@
 	async function login(e: SubmitEvent) {
 		e.preventDefault();
 		error = '';
+		if (turnstileEnabled && !turnstileToken) { error = 'Potwierdź, że nie jesteś robotem.'; return; }
 		loading = true;
-		const { data, error: err } = await sb.auth.signInWithPassword({ email, password });
+		// Token Turnstile trafia do Supabase Auth (weryfikacja po stronie serwera, gdy CAPTCHA jest
+		// włączona w Supabase). Jest jednorazowy, więc po każdej próbie widżet dostaje nowy.
+		const { data, error: err } = await sb.auth.signInWithPassword({
+			email,
+			password,
+			options: turnstileEnabled ? { captchaToken: turnstileToken } : undefined
+		});
+		if (turnstileEnabled) { turnstileToken = ''; turnstile?.reset(); }
 		if (err) {
 			loading = false;
-			error = 'Nieprawidłowy e-mail lub hasło.';
+			error = isCaptchaError(err) ? captchaErrorMessage(err) : 'Nieprawidłowy e-mail lub hasło.';
 			return;
 		}
 		// Weryfikacja, że to konto klienta
@@ -80,9 +92,12 @@
 					class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
 				/>
 			</div>
+			{#if turnstileEnabled}
+				<Turnstile bind:this={turnstile} onToken={(t) => (turnstileToken = t)} onError={() => (turnstileToken = '')} onExpire={() => (turnstileToken = '')} />
+			{/if}
 			<button
 				type="submit"
-				disabled={loading}
+				disabled={loading || (turnstileEnabled && !turnstileToken)}
 				class="w-full bg-slate-900 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60"
 			>
 				{loading ? 'Logowanie…' : 'Zaloguj się'}

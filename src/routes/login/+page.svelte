@@ -3,28 +3,31 @@
 	import { sb } from '$lib/supabase';
 	import { ShieldCheck } from 'lucide-svelte';
 	import Turnstile from '$lib/components/Turnstile.svelte';
-
-	const useTurnstile = !!import.meta.env.VITE_TURNSTILE_SITE_KEY;
+	import { turnstileEnabled as useTurnstile, isCaptchaError, captchaErrorMessage } from '$lib/utils/turnstile';
 
 	let email = $state('');
 	let password = $state('');
 	let error = $state('');
 	let loading = $state(false);
 	let turnstileToken = $state('');
+	let turnstile = $state<{ reset: () => void } | null>(null);
 
+	// Token Turnstile trafia do Supabase Auth (options.captchaToken), które weryfikuje go po stronie
+	// serwera, gdy ochrona CAPTCHA jest włączona w Supabase. Token jest jednorazowy — po każdej
+	// próbie (udanej czy nie) prosimy widżet o nowy.
 	async function login(e: SubmitEvent) {
 		e.preventDefault();
 		error = '';
 		if (useTurnstile && !turnstileToken) { error = 'Potwierdź, że nie jesteś robotem.'; return; }
-		if (useTurnstile) {
-			const r = await fetch('/api/turnstile-verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: turnstileToken }) });
-			const d = await r.json();
-			if (!d.success) { error = 'Weryfikacja CAPTCHA nieudana. Spróbuj ponownie.'; turnstileToken = ''; return; }
-		}
 		loading = true;
-		const { error: err } = await sb.auth.signInWithPassword({ email, password });
+		const { error: err } = await sb.auth.signInWithPassword({
+			email,
+			password,
+			options: useTurnstile ? { captchaToken: turnstileToken } : undefined
+		});
 		loading = false;
-		if (err) error = err.message;
+		if (useTurnstile) { turnstileToken = ''; turnstile?.reset(); }
+		if (err) error = isCaptchaError(err) ? captchaErrorMessage(err) : err.message;
 		else goto('/dashboard');
 	}
 </script>
@@ -71,7 +74,7 @@
 				/>
 			</div>
 			{#if useTurnstile}
-				<Turnstile onToken={(t) => turnstileToken = t} onError={() => turnstileToken = ''} />
+				<Turnstile bind:this={turnstile} onToken={(t) => turnstileToken = t} onError={() => turnstileToken = ''} onExpire={() => turnstileToken = ''} />
 			{/if}
 			<button
 				type="submit"
