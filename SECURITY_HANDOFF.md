@@ -8,16 +8,15 @@
 > zablokowała samonadawanie `is_admin`.
 > Kroki 3–4 dotyczące `ud_clients` (udapp/ud) są poza zakresem tej pracy.
 >
-> **Migracje przygotowane, ale NIEZASTOSOWANE** (`supabase/pending/` — celowo poza `migrations/`, żeby żadne
-> narzędzie nie zastosowało ich samo). **Kolejność ma znaczenie:**
-> 1. najpierw wdrożyć kod z gałęzi/PR (nowe endpointy `/api/saas-admin/tenants`, `/api/portal/access`),
-> 2. potem po kolei, po jednej, sprawdzając działanie CRM po każdej:
->    - `20261006000003_stamp_portal_accounts.sql` — oznacza istniejące konta portalu klienta znacznikiem
->      `app_metadata.portal_klient_id` (bezpieczna, idempotentna),
->    - `20261006000002_crm_tenants_secret_hardening.sql` — trigger chroniący `features`, klucz Resend, `nazwa`, `typ`
->      oraz zawężenie odczytu kolumn; **zastosowana przed wdrożeniem kodu zepsułaby stary panel SaaS**,
->    - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` zmienia tylko serwer
->      (po potwierdzeniu, że kod w przeglądarce nie zapisuje tej kolumny).
+> **Migracje z 2026-10-06** (kod z PR #26 i #27 wdrożony wcześniej):
+> - ZASTOSOWANE na produkcji i przeniesione do `supabase/migrations/`:
+>   - `20261006000003_stamp_portal_accounts.sql` — znacznik `app_metadata.portal_klient_id` na kontach portalu,
+>   - `20261006000002_crm_tenants_secret_hardening.sql` — trigger chroniący `features`, klucz Resend, `nazwa`, `typ`,
+>     zawężenie odczytu kolumn, odebranie roli `anon` dostępu, a roli `authenticated` INSERT/DELETE.
+>     Nowa kolumna w `crm_tenants` wymaga osobnego `grant select (…) to authenticated`.
+> - NIEZASTOSOWANA (`supabase/pending/`, celowo poza `migrations/`):
+>   - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` zmienia tylko serwer
+>     (po potwierdzeniu, że kod w przeglądarce nie zapisuje tej kolumny).
 >
 > **Konfiguracja Cloudflare:** `TURNSTILE_SECRET_KEY` musi być ustawiony (Pages → Settings → Environment variables),
 > inaczej publiczna rejestracja `/api/register` odmawia (503) — to zamierzone zachowanie fail-closed.

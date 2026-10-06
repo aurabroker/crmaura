@@ -1,6 +1,6 @@
 -- ============================================================
 -- crm_tenants: dane firmy, moduły i klucz Resend zmienia tylko serwer.
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-06 (po wdrożeniu kodu z PR #26 i #27); uprawnienia zweryfikowane.
 --
 -- KOLEJNOŚĆ: najpierw wdrożyć kod, w którym panel SaaS czyta i zapisuje firmy przez
 -- /api/saas-admin/tenants (service_role). Ta migracja odbiera przeglądarce odczyt
