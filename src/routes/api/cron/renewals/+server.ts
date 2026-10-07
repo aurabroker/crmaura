@@ -100,12 +100,26 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		.lt('wyslano_at', new Date(Date.now() - DNI_DO_PRZYPOMNIENIA * 86_400_000).toISOString())
 		.gt('wazny_do', teraz)
 		.limit(MAKS_PRZYPOMNIEN);
+	// Firma, której Resend odmówił (zły klucz, niezweryfikowana domena), jest pomijana do końca uruchomienia.
+	const zablokowane = new Set<string>();
 	for (const r of (doPrzypomnienia ?? []) as RenewalRow[]) {
+		if (zablokowane.has(r.tenant_id)) continue;
+		// Zajęcie przed wysyłką: nakładające się uruchomienia nie wyślą przypomnienia dwa razy.
+		const { data: zajete } = await admin
+			.from('crm_renewals')
+			.update({ przypomniano_at: new Date().toISOString() })
+			.eq('id', r.id)
+			.is('przypomniano_at', null)
+			.select('id')
+			.maybeSingle();
+		if (!zajete) continue;
 		const w = await wyslijZaproszenie(admin, r, url.origin, { przypomnienie: true });
 		if (w.ok) wynik.przypomnienia++;
 		else {
+			// Nieudana wysyłka zwalnia wniosek — następne uruchomienie spróbuje ponownie.
+			await admin.from('crm_renewals').update({ przypomniano_at: null }).eq('id', r.id);
 			wynik.bledy.push(`przypomnienie ${r.id}: ${w.status}`);
-			if ([401, 403, 422].includes(w.status)) break;
+			if ([401, 403, 422].includes(w.status)) zablokowane.add(r.tenant_id);
 		}
 	}
 

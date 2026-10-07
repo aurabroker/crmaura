@@ -98,7 +98,7 @@ export const POST: RequestHandler = async (event) => {
 			const nazwa = typeof body.nazwa === 'string' ? body.nazwa.trim().slice(0, 150) : '';
 			const rozmiar = Number(body.rozmiar);
 			const mime = typeof body.mime === 'string' ? body.mime.toLowerCase() : '';
-			if (!(typ in TYPY_ZALACZNIKOW)) return blad(400, 'Nieprawidłowy rodzaj załącznika.');
+			if (typeof typ !== 'string' || !Object.hasOwn(TYPY_ZALACZNIKOW, typ)) return blad(400, 'Nieprawidłowy rodzaj załącznika.');
 			if (!nazwa) return blad(400, 'Brak nazwy pliku.');
 			if (!Number.isFinite(rozmiar) || rozmiar <= 0 || rozmiar > ZALACZNIK_MAX_BAJTOW) return blad(400, 'Plik może mieć najwyżej 10 MB.');
 			if (!ZALACZNIK_TYPY_MIME.includes(mime)) return blad(400, 'Dozwolone są pliki PDF i zdjęcia (JPG, PNG, WEBP, HEIC).');
@@ -149,6 +149,11 @@ export const POST: RequestHandler = async (event) => {
 			const w = waliduj_wniosek(body.wniosek, apk);
 			if (!w.ok) return blad(400, 'Popraw wniosek.', w.bledy);
 			const wniosek = w.value;
+			// Wyższa suma musi być wyższa od obecnej (strona pokazuje tylko takie, serwer sprawdza sam).
+			const nowaSuma = wniosek.zmiany?.wyzsza_suma;
+			if (nowaSuma != null && r.suma != null && nowaSuma <= Number(r.suma)) {
+				return blad(400, 'Popraw wniosek.', ['Nowa suma gwarancyjna musi być wyższa od obecnej.']);
+			}
 
 			// Pliki, które naprawdę są w magazynie (nieudane wysyłki odpadają).
 			const { data: pliki } = await admin.storage.from(BUCKET).list(`${r.tenant_id}/${r.id}`, { limit: 100 });
