@@ -46,7 +46,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	return json({ success: true, tenant_id: tenantId });
 };
 
-// Moduły firmy (features) i klucz Resend — zapis wyłącznie przez serwer po sprawdzeniu roli
+// Moduły firmy (features), klucz Resend i adres nadawcy e-maili — zapis wyłącznie przez serwer po sprawdzeniu roli
 // ADMIN GOD. Wcześniej panel pisał do crm_tenants z przeglądarki, a RLS dopuszczał to tylko
 // dla własnej firmy, więc zmiany cudzych firm po cichu nie zapisywały się.
 export const PATCH: RequestHandler = async ({ request }) => {
@@ -57,11 +57,16 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		.from('crm_tenants')
 		.update(patch)
 		.eq('id', tenantId)
-		.select('id, features, resend_api_key')
+		.select('*')
 		.maybeSingle();
 
 	if (upErr) throw error(500, { message: upErr.message });
 	if (!data) throw error(404, { message: 'Nie znaleziono firmy.' });
 
-	return json({ success: true, features: data.features ?? {}, resend_key_hint: keyHint(data.resend_api_key) });
+	return json({
+		success: true,
+		features: data.features ?? {},
+		resend_key_hint: keyHint(data.resend_api_key),
+		email_from: data.email_from ?? null
+	});
 };

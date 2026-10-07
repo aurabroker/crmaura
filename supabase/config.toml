@@ -1,2 +1,2 @@
-[functions.send-payment-reminders]
-schedule = "0 8 * * *"
+# Harmonogram send-payment-reminders ustawia pg_cron (zadanie crm-payment-reminders,
+# migracja supabase/pending/20261007000002_payment_reminders.sql), nie ten plik.

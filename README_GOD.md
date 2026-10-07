@@ -188,13 +188,17 @@ Strona `/payments` obsługuje import rozliczenia prowizyjnego z TU ERGO:
 
 Supabase Edge Function `send-payment-reminders` wysyła przypomnienia przez Resend API.
 
-- Uruchamiana automatycznie **codziennie o 8:00** (cron w `supabase/config.toml`)
-- Dla każdego tenanta z ustawionym `resend_api_key`:
-  - Szuka płatności `status = 'Oczekująca'` z `data_platnosci` w ciągu najbliższych 7 dni
-  - Grupuje po kliencie (email z `crm_clients.email`)
-  - Wysyła jeden zbiorczy mail na klienta z listą rat
-- Klucz Resend ustawiany przez ADMIN GOD w panelu SaaS Admin per tenant
-- `from`: `onboarding@resend.dev` (działa bez własnej domeny)
+- Uruchamia ją pg_cron codziennie o 6:05 UTC (8:05 latem, 7:05 zimą) przez funkcję SQL
+  `public.crm_send_payment_reminders()` z nagłówkiem `x-cron-token` (sekret `edge_cron_token` w Vault,
+  sprawdzany przez `edge_cron_token_matches`). Bez poprawnego tokenu funkcja nic nie czyta.
+- Wysyła tylko firma, która ma w SAAS Admin **klucz Resend** i **adres nadawcy** (`crm_tenants.email_from`,
+  domena zweryfikowana w Resend tej firmy).
+- Bierze raty `status = 'Oczekująca'` z terminem od dziś do +7 dni (czas polski), z nieusuniętych polis,
+  bez `przypomnienie_wyslane_at`. Jedna wiadomość na adres klienta, z listą jego rat.
+- Każda rata dostaje przypomnienie raz: znacznik `przypomnienie_wyslane_at` ustawiany przed wysyłką,
+  zdejmowany, gdy Resend odmówi. Zaległych rat automat nie przypomina.
+- Próba bez wysyłki: `select public.crm_send_payment_reminders(true);`, wynik w `net._http_response`.
+- Migracja: `supabase/pending/20261007000002_payment_reminders.sql`.
 
 ---
 
