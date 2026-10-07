@@ -93,7 +93,7 @@
 	<div class="flex items-center justify-between gap-3">
 		<dt class="text-sm font-semibold uppercase tracking-wide text-slate-500">{etykieta}</dt>
 		{#if krok}
-			<button type="button" class={BTN_LINK} onclick={() => onidz(krok)}>Zmień<span class="sr-only">: {etykieta}</span></button>
+			<button type="button" class={BTN_LINK} aria-label="Zmień: {etykieta}" onclick={() => onidz(krok)}>Zmień</button>
 		{/if}
 	</div>
 {/snippet}
