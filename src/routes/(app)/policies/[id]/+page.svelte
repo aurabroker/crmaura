@@ -10,6 +10,7 @@
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
+	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
@@ -95,8 +96,23 @@
 	const daysLeft = $derived(policy?.data_do ? dateDiffDays(today, policy.data_do) : 999);
 	const canRenew = $derived(!!policy && !renewalPolicy && daysLeft >= 0 && daysLeft <= 45);
 	const isPendingRenewal = $derived(!!policy?.renewal_of && policy.data_od > today);
+	// Odnowienie polisy z programu idzie pod umowę programu obowiązującą w dniu startu odnowienia
+	// (program przedłużany z tym samym numerem ma w CRM kolejną Umowę Generalną). Gdy żadna umowa
+	// programu wtedy nie obowiązuje, odnowienie startuje bez UG — broker wybiera ją sam.
+	const ugOdnowienia = $derived.by(() => {
+		const ug = policy?.parent_id ? appState.policies.find(p => p.id === policy!.parent_id) : null;
+		if (!ug || !policy?.data_do) return null;
+		const startOdnowienia = dodajDzien(policy.data_do);
+		return umowaObowiazujaca(umowyProgramu(appState.policies, ug.nr_polisy), startOdnowienia > today ? startOdnowienia : today);
+	});
+	function dodajDzien(data: string): string {
+		const d = new Date(`${data}T12:00:00Z`);
+		d.setUTCDate(d.getUTCDate() + 1);
+		return d.toISOString().slice(0, 10);
+	}
+
 	const renewalUrl = $derived(policy
-		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}${policy.pojazd_id ? `&pojazd_id=${policy.pojazd_id}` : ''}`
+		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}${policy.pojazd_id ? `&pojazd_id=${policy.pojazd_id}` : ''}${ugOdnowienia ? `&parent_id=${ugOdnowienia.id}` : ''}`
 		: '');
 
 	// UG default commission inline edit

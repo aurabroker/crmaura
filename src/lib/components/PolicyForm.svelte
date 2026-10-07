@@ -164,6 +164,16 @@
 		}
 	}
 
+	// Nowa polisa z UG podaną w adresie (dodanie do UG, odnowienie certyfikatu): TU jest wtedy
+	// zablokowane, więc TU i domyślną prowizję bierzemy z umowy raz, gdy dane się wczytają.
+	let presetUgUstawiona = false;
+	$effect(() => {
+		if (presetUgUstawiona || !presetParentId || policy?.tu_id) return;
+		if (!appState.policies.some(p => p.id === presetParentId)) return;
+		presetUgUstawiona = true;
+		untrack(onParentUgChange);
+	});
+
 	export function getValues() {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const prowPct = parseFloat(fpProwPct) || 0;
