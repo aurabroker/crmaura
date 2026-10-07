@@ -13,6 +13,7 @@
 	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
 		{ key: 'gwarancje', label: 'Gwarancje ubezpieczeniowe' },
 		{ key: 'kalendarz', label: 'Kalendarz / Zadania' },
+		{ key: 'odnowienia_auto', label: 'Odnowienia OC beauty — automatyczna wysyłka 45 dni przed końcem' },
 	];
 
 	function hasFeature(tenant: Tenant, key: string): boolean {

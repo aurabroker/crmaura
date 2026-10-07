@@ -1,3 +1,6 @@
+import type { Apk, Ankieta, Decyzja, TypZalacznika, Wniosek } from '$lib/renewals/program';
+import type { StatusOdnowienia } from '$lib/renewals/api';
+
 export type Role = 'ADMIN GOD' | 'ADMIN BROKER' | 'BOARD' | 'ADMINISTRACJA' | 'BROKER';
 
 export interface Profile {
@@ -152,6 +155,8 @@ export interface Policy {
 	nr_umowy_leasingowej: string | null;
 	/** Parametry odczytane z pliku polisy — wypełniane tylko przez import z PDF. */
 	dane_importu: PolicyImportData | null;
+	/** Suma gwarancyjna (zł). Kolumna z migracji odnowień — przed nią klucza nie ma w wierszu. */
+	suma_gwarancyjna: number | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	ubezpieczony?: { nazwa: string } | null;
@@ -159,6 +164,67 @@ export interface Policy {
 	crm_insurer_contacts?: { imie_nazwisko: string; stanowisko: string | null; crm_insurer_branches?: { nazwa: string } | null } | null;
 	crm_vehicles?: { nr_rejestracyjny: string; marka_model: string; vin: string | null } | null;
 	crm_leasings?: { nazwa: string } | null;
+}
+
+/** Plik od klienta dołączony do wniosku o odnowienie (bucket renewal-files). */
+export interface RenewalAttachment {
+	id: string;
+	path: string;
+	typ: TypZalacznika;
+	nazwa: string;
+	rozmiar: number;
+	mime: string;
+	at: string;
+}
+
+/**
+ * Wniosek o odnowienie certyfikatu OC beauty (crm_renewals). Pola polisy to stan z chwili
+ * utworzenia linku; zapisuje wyłącznie serwer, panel tylko czyta.
+ */
+export interface RenewalRow {
+	id: string;
+	tenant_id: string;
+	polisa_id: string;
+	klient_id: string;
+	status: StatusOdnowienia;
+	decyzja: Decyzja | null;
+	email: string | null;
+	nr_polisy: string | null;
+	tu_nazwa: string | null;
+	program: string | null;
+	klient_nazwa: string | null;
+	suma: number | null;
+	skladka: number | null;
+	okres_od: string | null;
+	okres_do: string | null;
+	apk: Apk | null;
+	apk_odmowa: boolean;
+	wniosek: Wniosek | null;
+	ankieta: Ankieta | null;
+	zalaczniki: RenewalAttachment[];
+	skladka_nowa: number | null;
+	pdf_path: string | null;
+	wyslano_at: string | null;
+	otwarto_at: string | null;
+	apk_at: string | null;
+	zlozono_at: string | null;
+	przypomniano_at: string | null;
+	wazny_do: string;
+	created_by: string | null;
+	created_at: string;
+	updated_at: string;
+}
+
+/** Wpis dziennika wniosku (crm_renewal_events): otwarcie, APK, decyzja — z IP i przeglądarką. */
+export interface RenewalEvent {
+	id: number;
+	renewal_id: string;
+	tenant_id: string;
+	zdarzenie: string;
+	at: string;
+	ip: string | null;
+	user_agent: string | null;
+	szczegoly: Record<string, unknown> | null;
 }
 
 /**
