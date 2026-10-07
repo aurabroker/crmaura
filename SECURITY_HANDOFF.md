@@ -8,16 +8,23 @@
 > zablokowała samonadawanie `is_admin`.
 > Kroki 3–4 dotyczące `ud_clients` (udapp/ud) są poza zakresem tej pracy.
 >
-> **Migracje przygotowane, ale NIEZASTOSOWANE** (`supabase/pending/` — celowo poza `migrations/`, żeby żadne
-> narzędzie nie zastosowało ich samo). **Kolejność ma znaczenie:**
-> 1. najpierw wdrożyć kod z gałęzi/PR (nowe endpointy `/api/saas-admin/tenants`, `/api/portal/access`),
-> 2. potem po kolei, po jednej, sprawdzając działanie CRM po każdej:
->    - `20261006000003_stamp_portal_accounts.sql` — oznacza istniejące konta portalu klienta znacznikiem
->      `app_metadata.portal_klient_id` (bezpieczna, idempotentna),
->    - `20261006000002_crm_tenants_secret_hardening.sql` — trigger chroniący `features`, klucz Resend, `nazwa`, `typ`
->      oraz zawężenie odczytu kolumn; **zastosowana przed wdrożeniem kodu zepsułaby stary panel SaaS**,
->    - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` zmienia tylko serwer
->      (po potwierdzeniu, że kod w przeglądarce nie zapisuje tej kolumny).
+> **Migracje z 2026-10-06** (kod z PR #26 i #27 wdrożony wcześniej):
+> - ZASTOSOWANE na produkcji i przeniesione do `supabase/migrations/`:
+>   - `20261006000003_stamp_portal_accounts.sql` — znacznik `app_metadata.portal_klient_id` na kontach portalu,
+>   - `20261006000002_crm_tenants_secret_hardening.sql` — trigger chroniący `features`, klucz Resend, `nazwa`, `typ`,
+>     zawężenie odczytu kolumn, odebranie roli `anon` dostępu, a roli `authenticated` INSERT/DELETE.
+>     Nowa kolumna w `crm_tenants` wymaga osobnego `grant select (…) to authenticated`.
+>   - `20261006000001_crm_clients_auth_user_guard.sql` — `crm_clients.auth_user_id` ustawia i zmienia tylko serwer
+>     (edycja i dodanie klienta oraz nadanie/odebranie dostępu do portalu sprawdzone po zastosowaniu).
+>
+> **2026-10-07:**
+> - Edge function `div-send-email` (formularze stron kancelarii, nie CRM) wdrożona jako v13: potwierdzenia tylko
+>   dla zgłoszeń z listy stron kancelarii, limity wysyłki, bez powtarzania treści wiadomości. Kod źródłowy v12 i v13
+>   nie jest w żadnym repozytorium.
+> - PDF-y APK i pliki zestawień otwierane podpisanym linkiem (`src/lib/utils/storageLink.ts`); po wdrożeniu kodu
+>   zastosować `supabase/pending/20261007000000_apk_private_files_legacy_rpc.sql`.
+> - beautypolisa: poprawka panelu admina na gałęzi `claude/epic-cerf-1eyfeo` w `aurabroker/beautypolisa`; po jej
+>   wdrożeniu zastosować `supabase/pending/20261007000001_bp_public_inserts.sql`.
 >
 > **Konfiguracja Cloudflare:** `TURNSTILE_SECRET_KEY` musi być ustawiony (Pages → Settings → Environment variables),
 > inaczej publiczna rejestracja `/api/register` odmawia (503) — to zamierzone zachowanie fail-closed.

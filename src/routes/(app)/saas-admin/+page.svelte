@@ -7,7 +7,7 @@
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 
 	// Klucz Resend nie trafia do przeglądarki — serwer zwraca tylko jego końcówkę (resend_key_hint).
-	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null };
+	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null; email_from?: string | null };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
 
 	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
@@ -27,7 +27,7 @@
 		return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` };
 	}
 
-	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null }) {
+	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null }) {
 		try {
 			const res = await fetch('/api/saas-admin/tenants', {
 				method: 'PATCH', headers: await authHeaders(),
@@ -35,7 +35,12 @@
 			});
 			const d = await res.json().catch(() => ({}));
 			if (!res.ok) return { ok: false as const, message: (d.message as string) ?? 'Błąd serwera' };
-			return { ok: true as const, features: (d.features ?? {}) as Record<string, boolean>, resend_key_hint: (d.resend_key_hint ?? null) as string | null };
+			return {
+				ok: true as const,
+				features: (d.features ?? {}) as Record<string, boolean>,
+				resend_key_hint: (d.resend_key_hint ?? null) as string | null,
+				email_from: (d.email_from ?? null) as string | null
+			};
 		} catch {
 			return { ok: false as const, message: 'Błąd połączenia' };
 		}
@@ -183,6 +188,21 @@
 		applyToTenant(tenant.id, { resend_key_hint: r.resend_key_hint });
 		resendInput = '';
 		editingResend = null;
+	}
+
+	// Adres nadawcy e-maili firmy (np. „Aura Expert <platnosci@auraexpert.pl>”).
+	let editingFrom = $state<string | null>(null);
+	let fromInput = $state('');
+	let savingFrom = $state(false);
+	let fromError = $state('');
+
+	async function saveEmailFrom(tenant: Tenant) {
+		savingFrom = true; fromError = '';
+		const r = await patchTenant(tenant.id, { email_from: fromInput.trim() || null });
+		savingFrom = false;
+		if (!r.ok) { fromError = r.message; return; }
+		applyToTenant(tenant.id, { email_from: r.email_from });
+		editingFrom = null;
 	}
 
 	function removeResendKey(tenant: Tenant) {
@@ -413,6 +433,28 @@
 							<span class="text-sm text-slate-600 font-mono">{st.resend_key_hint ? `re_****${st.resend_key_hint}` : '— nie ustawiony —'}</span>
 							<button onclick={() => { editingResend = st.id; resendInput = ''; resendError = ''; }} class="text-xs text-blue-600 hover:underline">
 								{st.resend_key_hint ? 'Zmień' : 'Dodaj'}
+							</button>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Nadawca e-maili -->
+				<div class="mb-5 border-t border-line-soft pt-4">
+					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Nadawca e-maili do klientów</p>
+					<p class="text-xs text-slate-500 mb-3">Przypomnienia o płatnościach wychodzą tylko, gdy firma ma klucz Resend i adres nadawcy w domenie zweryfikowanej w Resend.</p>
+					{#if editingFrom === st.id}
+						<div class="flex items-center gap-2">
+							<input bind:value={fromInput} placeholder="Aura Expert <platnosci@auraexpert.pl>" class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<button onclick={() => saveEmailFrom(st)} disabled={savingFrom} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingFrom ? '…' : 'Zapisz'}</button>
+							<button onclick={() => { editingFrom = null; fromError = ''; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+						</div>
+						<p class="mt-1 text-xs text-slate-400">Puste pole i „Zapisz” usuwa adres — e-maile tej firmy przestaną wychodzić.</p>
+						{#if fromError}<p class="mt-2 text-sm text-red-600">{fromError}</p>{/if}
+					{:else}
+						<div class="flex items-center gap-3">
+							<span class="text-sm text-slate-600 font-mono">{st.email_from ?? '— nie ustawiony —'}</span>
+							<button onclick={() => { editingFrom = st.id; fromInput = st.email_from ?? ''; fromError = ''; }} class="text-xs text-blue-600 hover:underline">
+								{st.email_from ? 'Zmień' : 'Dodaj'}
 							</button>
 						</div>
 					{/if}

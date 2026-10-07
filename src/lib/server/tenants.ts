@@ -13,12 +13,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const RESERVED_FEATURE_KEYS = new Set(['constructor', 'prototype', 'hasownproperty', 'tostring', 'valueof']);
 
-export type TenantPatch ={ features?: Record<string, boolean>; resend_api_key?: string | null };
+export type TenantPatch = { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null };
+
+// Nadawca e-maili firmy (przypomnienia o płatnościach, odnowienia): „adres@domena” albo
+// „Nazwa <adres@domena>”. Domena musi być zweryfikowana w Resend tej firmy.
+const EMAIL_FROM_RE = /^(?:[^<>\r\n"@]{1,100} <[^\s@<>"]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+>|[^\s@<>"]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+)$/i;
 
 // Waliduje ciało PATCH /api/saas-admin/tenants. Zwraca identyfikator firmy i czyste pola do zapisu.
 export function parseTenantPatch(body: unknown): { tenantId: string; patch: TenantPatch } {
 	if (!body || typeof body !== 'object') throw error(400, { message: 'Nieprawidłowe dane.' });
-	const { tenant_id, features, resend_api_key } = body as Record<string, unknown>;
+	const { tenant_id, features, resend_api_key, email_from } = body as Record<string, unknown>;
 
 	if (typeof tenant_id !== 'string' || !UUID.test(tenant_id)) {
 		throw error(400, { message: 'Nieprawidłowy identyfikator firmy.' });
@@ -48,6 +52,16 @@ export function parseTenantPatch(body: unknown): { tenantId: string; patch: Tena
 			patch.resend_api_key = resend_api_key.trim();
 		} else {
 			throw error(400, { message: 'Nieprawidłowy klucz Resend.' });
+		}
+	}
+
+	if (email_from !== undefined) {
+		if (email_from === null || email_from === '') {
+			patch.email_from = null;
+		} else if (typeof email_from === 'string' && email_from.trim().length <= 200 && EMAIL_FROM_RE.test(email_from.trim())) {
+			patch.email_from = email_from.trim();
+		} else {
+			throw error(400, { message: 'Nieprawidłowy adres nadawcy. Wpisz np. „Aura Expert <platnosci@auraexpert.pl>”.' });
 		}
 	}
 

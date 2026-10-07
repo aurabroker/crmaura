@@ -1,15 +1,13 @@
 -- ============================================================
 -- crm_clients.auth_user_id: zmienia wyłącznie serwer.
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA — czeka na potwierdzenie.
--- Plik leży w supabase/pending/, a nie w migrations/, żeby żadne narzędzie nie zastosowało go samo.
--- Po potwierdzeniu przenieść do supabase/migrations/ i zastosować.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-06; edycja, dodanie klienta i dostęp do portalu sprawdzone.
 --
--- Powód: polityka tenant_isolation (ALL) pozwala każdemu użytkownikowi najemcy,
+-- Powód: polityka tenant_isolation (ALL) pozwalała każdemu użytkownikowi najemcy,
 -- także BROKER, zapisać w tej kolumnie dowolny UUID konta Auth. Endpoint
--- /api/portal/access, działając kluczem service_role, zmienia potem hasło albo
--- usuwa wskazane konto — a Auth jest wspólny dla wielu aplikacji.
+-- /api/portal/access, działając kluczem service_role, mógł potem zmienić hasło albo
+-- usunąć wskazane konto (dziś odrzuca konta bez znacznika app_metadata) — a Auth jest wspólny dla wielu aplikacji.
 --
--- Do potwierdzenia przed zastosowaniem: żaden kod przeglądarkowy w src/ nie
+-- Założenie (potwierdzone testem po zastosowaniu): żaden kod przeglądarkowy w src/ nie
 -- zapisuje auth_user_id wprost (zapis idzie tylko przez /api/portal/access,
 -- który ma service_role i przechodzi przez ten wyzwalacz bez zmian).
 -- ============================================================

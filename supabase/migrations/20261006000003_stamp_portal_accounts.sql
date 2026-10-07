@@ -1,6 +1,6 @@
 -- ============================================================
 -- Znacznik konta portalu klienta (app_metadata.portal_klient_id).
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA. Idempotentna, bezpieczna do wielokrotnego uruchomienia.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-06 (1 konto oznaczone, weryfikacja ok = true). Idempotentna.
 --
 -- /api/portal/access rozpoznaje konto portalu po znaczniku w app_metadata, który zapisuje tylko
 -- serwer. Konta założone przed wprowadzeniem znacznika są oznaczane przy pierwszym użyciu endpointu,

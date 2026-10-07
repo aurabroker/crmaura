@@ -1,17 +1,19 @@
 import type { ApkForm } from '$lib/types/database';
 import { sb } from '$lib/supabase';
+import { applyPdfFont, PDF_FONT } from '$lib/utils/pdfFonts';
 
-function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any, tenantNazwa: string | null) {
+async function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any, tenantNazwa: string | null) {
 	const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+	await applyPdfFont(doc);
 	const now = new Date();
 	const generated = now.toLocaleString('pl-PL', { dateStyle: 'short', timeStyle: 'short' });
 
 	doc.setFontSize(18);
-	doc.setFont('helvetica', 'bold');
+	doc.setFont(PDF_FONT, 'bold');
 	doc.text('Analiza Potrzeb Klienta (APK)', 14, 20);
 
 	doc.setFontSize(9);
-	doc.setFont('helvetica', 'normal');
+	doc.setFont(PDF_FONT, 'normal');
 	doc.setTextColor(120);
 	if (tenantNazwa) doc.text(`Doradca: ${tenantNazwa}`, 14, 27);
 	doc.text(`Wygenerowano: ${generated}`, 196, 27, { align: 'right' });
@@ -35,7 +37,7 @@ function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any, tenantNazwa: str
 			2: { fontStyle: 'bold', cellWidth: 28, fillColor: [248, 249, 250] },
 			3: { cellWidth: 66 },
 		},
-		styles: { fontSize: 9, cellPadding: 3 },
+		styles: { font: PDF_FONT, fontSize: 9, cellPadding: 3 },
 		theme: 'plain',
 	});
 
@@ -45,7 +47,7 @@ function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any, tenantNazwa: str
 
 	if (entries.length > 0) {
 		doc.setFontSize(11);
-		doc.setFont('helvetica', 'bold');
+		doc.setFont(PDF_FONT, 'bold');
 		doc.text('Dane z formularza', 14, afterMeta);
 
 		autoTable(doc, {
@@ -59,13 +61,13 @@ function buildPdfDoc(form: ApkForm, jsPDF: any, autoTable: any, tenantNazwa: str
 				0: { cellWidth: 80, fontStyle: 'bold', fillColor: [248, 249, 250] },
 				1: { cellWidth: 108 },
 			},
-			styles: { fontSize: 9, cellPadding: 3, overflow: 'linebreak' },
+			styles: { font: PDF_FONT, fontSize: 9, cellPadding: 3, overflow: 'linebreak' },
 			headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 9 },
 			theme: 'striped',
 		});
 	} else {
 		doc.setFontSize(10);
-		doc.setFont('helvetica', 'italic');
+		doc.setFont(PDF_FONT, 'italic');
 		doc.setTextColor(150);
 		doc.text('Formularz nie zawiera jeszcze wypełnionych danych.', 14, afterMeta + 8);
 		doc.setTextColor(0);
@@ -93,18 +95,19 @@ export async function downloadApkPdf(form: ApkForm) {
 	const { jsPDF } = await import('jspdf');
 	const { default: autoTable } = await import('jspdf-autotable');
 	const tenantNazwa = await getTenantNazwa(form.tenant_id);
-	const doc = buildPdfDoc(form, jsPDF, autoTable, tenantNazwa);
+	const doc = await buildPdfDoc(form, jsPDF, autoTable, tenantNazwa);
 	doc.save(`APK_${form.ref_number}_${form.form_date}.pdf`);
 }
 
-// Generuje PDF, zapisuje go w storage i zapisuje adres w formularzu. Zwraca publiczny adres PDF.
+// Generuje PDF, zapisuje go w storage i zapisuje w formularzu ścieżkę pliku (bucket jest
+// prywatny — plik otwiera się podpisanym linkiem, zob. storageLink.ts). Zwraca tę ścieżkę.
 // Z opcją `download` plik jest dodatkowo od razu pobierany przez przeglądarkę — dzięki temu
 // użytkownik dostaje efekt kliknięcia także wtedy, gdy zapis na serwerze się nie powiedzie.
 export async function saveApkPdf(form: ApkForm, opts: { download?: boolean } = {}): Promise<string | null> {
 	const { jsPDF } = await import('jspdf');
 	const { default: autoTable } = await import('jspdf-autotable');
 	const tenantNazwa = await getTenantNazwa(form.tenant_id);
-	const doc = buildPdfDoc(form, jsPDF, autoTable, tenantNazwa);
+	const doc = await buildPdfDoc(form, jsPDF, autoTable, tenantNazwa);
 
 	if (opts.download) doc.save(`APK_${form.ref_number}_${form.form_date}.pdf`);
 
@@ -117,11 +120,8 @@ export async function saveApkPdf(form: ApkForm, opts: { download?: boolean } = {
 	});
 	if (uploadErr) throw uploadErr;
 
-	const { data: urlData } = sb.storage.from('apk-pdfs').getPublicUrl(fileName);
-	const pdfUrl = urlData?.publicUrl ?? null;
-
-	const { error: updErr } = await sb.from('apk_forms').update({ pdf_url: pdfUrl }).eq('id', form.id);
+	const { error: updErr } = await sb.from('apk_forms').update({ pdf_url: fileName }).eq('id', form.id);
 	if (updErr) throw updErr;
 
-	return pdfUrl;
+	return fileName;
 }

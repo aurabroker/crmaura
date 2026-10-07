@@ -1,6 +1,6 @@
 -- ============================================================
 -- crm_tenants: dane firmy, moduły i klucz Resend zmienia tylko serwer.
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-06 (po wdrożeniu kodu z PR #26 i #27); uprawnienia zweryfikowane.
 --
 -- KOLEJNOŚĆ: najpierw wdrożyć kod, w którym panel SaaS czyta i zapisuje firmy przez
 -- /api/saas-admin/tenants (service_role). Ta migracja odbiera przeglądarce odczyt
@@ -59,11 +59,16 @@ grant select (id, nazwa, created_at, typ, bond_module_enabled, nip, features)
 --    get_apk_by_token (SECURITY DEFINER, wykonuje się z uprawnieniami właściciela).
 revoke all on public.crm_tenants from anon;
 
--- Weryfikacja po zastosowaniu (oba wyniki powinny być false):
---   select has_column_privilege('authenticated', 'public.crm_tenants', 'resend_api_key', 'select');
---   select has_column_privilege('anon',          'public.crm_tenants', 'resend_api_key', 'select');
+-- 4) Firmy tworzy i usuwa wyłącznie serwer (rejestracja i panel SaaS używają service_role).
+--    Rola authenticated zachowuje tylko UPDATE, chroniony wyzwalaczem z punktu 1.
+revoke insert, delete, truncate, references, trigger on public.crm_tenants from authenticated;
+
+-- Weryfikacja po zastosowaniu (wszystkie wyniki powinny być false):
+--   select has_column_privilege('authenticated', 'public.crm_tenants', 'resend_api_key', 'select'),
+--          has_column_privilege('anon',          'public.crm_tenants', 'resend_api_key', 'select'),
+--          has_table_privilege('authenticated',  'public.crm_tenants', 'delete');
 --
 -- ROLLBACK:
 --   drop trigger if exists crm_tenants_guard_trg on public.crm_tenants;
---   grant select on public.crm_tenants to authenticated;
+--   grant select, insert, delete, truncate, references, trigger on public.crm_tenants to authenticated;
 --   grant all on public.crm_tenants to anon;
