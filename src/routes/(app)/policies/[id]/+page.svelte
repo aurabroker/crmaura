@@ -10,6 +10,7 @@
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
+	import { umowyProgramu, wybierzUmowe } from '$lib/policyImport/umowaGeneralna';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
@@ -95,8 +96,15 @@
 	const daysLeft = $derived(policy?.data_do ? dateDiffDays(today, policy.data_do) : 999);
 	const canRenew = $derived(!!policy && !renewalPolicy && daysLeft >= 0 && daysLeft <= 45);
 	const isPendingRenewal = $derived(!!policy?.renewal_of && policy.data_od > today);
+	// Odnowienie polisy z programu idzie pod umowę programu obowiązującą dziś
+	// (program przedłużany z tym samym numerem ma w CRM kolejną Umowę Generalną).
+	const ugOdnowienia = $derived.by(() => {
+		const ug = policy?.parent_id ? appState.policies.find(p => p.id === policy!.parent_id) : null;
+		return ug ? wybierzUmowe(umowyProgramu(appState.policies, ug.nr_polisy), today) : null;
+	});
+
 	const renewalUrl = $derived(policy
-		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}${policy.pojazd_id ? `&pojazd_id=${policy.pojazd_id}` : ''}`
+		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}${policy.pojazd_id ? `&pojazd_id=${policy.pojazd_id}` : ''}${ugOdnowienia ? `&parent_id=${ugOdnowienia.id}` : ''}`
 		: '');
 
 	// UG default commission inline edit
