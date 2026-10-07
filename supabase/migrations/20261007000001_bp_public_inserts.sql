@@ -1,6 +1,6 @@
 -- ============================================================
 -- beautypolisa: publiczne wpisy do bp_quotes i bp_analytics z ograniczeniami.
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-07 (polityki INSERT zweryfikowane w pg_policy).
 --
 -- Formularze beautypolisa (bp-app.js) zapisują wnioski, kontakty i wizyty kluczem anon,
 -- więc wstawianie zostaje otwarte. Polityki „Anyone can insert …” miały jednak WITH CHECK (true):
