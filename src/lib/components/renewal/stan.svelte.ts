@@ -154,7 +154,7 @@ export class Odnowienie {
 	pytajODaneWyceny = $derived(this.decyzja === 'zmiany' && this.zm.suma && this.apkOdmowa);
 	potrzebnaAnkieta = $derived(this.decyzja === 'zmiany' && this.zm.ankieta && this.zm.zabiegi_ankieta.length > 0);
 	wniosek = $derived.by((): Wniosek => this.zbudujWniosek());
-	wycena = $derived(wycenaWniosku(this.wniosek, this.apkDoWyceny, this.widok.skladka));
+	wycena = $derived.by(() => wycenaWniosku(this.wniosek, this.apkDoWyceny, this.widok.skladka));
 	kroki = $derived<Krok[]>(this.potrzebnaAnkieta ? ['apk', 'wniosek', 'ankieta', 'podsumowanie'] : ['apk', 'wniosek', 'podsumowanie']);
 
 	constructor(klucz: string, widok: WidokAktywny) {

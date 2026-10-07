@@ -387,6 +387,9 @@
 			<p class="text-sm font-semibold text-slate-700">Wniosek o odnowienie — program OC beauty</p>
 			{#if latest}
 				<CrmRenewalBadge status={latest.status} />
+				{#if pracuje === 'email' || pracuje === 'link'}
+					<span class="text-xs text-slate-400">{pracuje === 'email' ? 'Wysyłanie nowego wniosku…' : 'Tworzenie nowego linku…'}</span>
+				{/if}
 				<div class="ml-auto flex flex-wrap items-center gap-2">
 					{#if czyLinkDziala(latest.status)}
 						<button type="button" onclick={() => kopiujLink(latest!)} disabled={!!pracuje} class={przyciskCls}>
