@@ -12,13 +12,26 @@ export function numerProgramu(nr: string | null | undefined): string {
 
 type Umowa = Pick<Policy, 'id' | 'nr_polisy' | 'typ_umowy' | 'data_od' | 'data_do' | 'data_zawarcia' | 'deleted_at'>;
 
-/** Początek umowy: wcześniejsza z dat zawarcia i początku okresu. */
+const DNI_ZAWARCIA_PRZED_OKRESEM = 92;
+
+/**
+ * Początek umowy: data zawarcia, gdy umowę zawarto krótko przed początkiem okresu (nowy rok programu
+ * zawarty przed startem — certyfikaty idą już pod nią), w innym razie początek okresu. Dawna data
+ * zawarcia umowy-matki (np. 2023 przy okresie 2026/27) nie przesuwa początku.
+ */
 export function poczatekUmowy(u: Umowa): string | null {
-	const daty = [u.data_zawarcia, u.data_od].filter((d): d is string => !!d).sort();
-	return daty[0] ?? null;
+	if (!u.data_od) return u.data_zawarcia ?? null;
+	if (!u.data_zawarcia || u.data_zawarcia >= u.data_od) return u.data_od;
+	const dni = (Date.parse(u.data_od) - Date.parse(u.data_zawarcia)) / 86_400_000;
+	return dni <= DNI_ZAWARCIA_PRZED_OKRESEM ? u.data_zawarcia : u.data_od;
 }
 
-const odNajnowszej = (a: Umowa, b: Umowa) => (poczatekUmowy(b) ?? '').localeCompare(poczatekUmowy(a) ?? '');
+// Od najnowszej; przy równym początku decyduje późniejszy okres, potem numer (kolejność stała).
+const odNajnowszej = (a: Umowa, b: Umowa) =>
+	(poczatekUmowy(b) ?? '').localeCompare(poczatekUmowy(a) ?? '') ||
+	(b.data_od ?? '').localeCompare(a.data_od ?? '') ||
+	(b.data_do ?? '').localeCompare(a.data_do ?? '') ||
+	(b.nr_polisy ?? '').localeCompare(a.nr_polisy ?? '');
 
 /** Umowy Generalne danego programu, od najnowszej. */
 export function umowyProgramu<T extends Umowa>(policies: T[], program: string | null | undefined): T[] {
@@ -47,4 +60,14 @@ export function wybierzUmowe<T extends Umowa>(umowy: T[], dzien: string | null |
 	const nastepne = odNowej.filter((u) => (poczatekUmowy(u) ?? '') > dzien);
 	if (nastepne.length) return nastepne[nastepne.length - 1];
 	return odNowej[0];
+}
+
+/** Umowa programu obowiązująca w dniu `dzien` (najnowsza przy nakładaniu się okresów) albo null. */
+export function umowaObowiazujaca<T extends Umowa>(umowy: T[], dzien: string): T | null {
+	return (
+		[...umowy].sort(odNajnowszej).find((u) => {
+			const od = poczatekUmowy(u);
+			return !!od && od <= dzien && (!u.data_do || dzien <= u.data_do);
+		}) ?? null
+	);
 }

@@ -143,6 +143,7 @@
 		parsing = true;
 		parseError = '';
 		extracted = null;
+		ugId = null;
 		try {
 			const doc: PdfDoc = await readPdf(file);
 			if (product.detect) {
@@ -516,11 +517,14 @@
 							onchange={(ev) => (ugId = (ev.currentTarget as HTMLSelectElement).value || null)}
 						>
 							{#each draft.ugKandydaci as u (u.id)}
-								<option value={u.id}>{u.nr_polisy} ({u.data_od} — {u.data_do})</option>
+								<option value={u.id}>
+									{u.nr_polisy} — zawarta {u.data_zawarcia ?? '—'}, okres {u.data_od} — {u.data_do}
+								</option>
 							{/each}
 						</select>
 						<p class="text-xs text-slate-500 mt-1">
-							Domyślnie umowa obowiązująca w dniu zawarcia polisy. Zmień tylko, gdy polisa należy do innego roku programu.
+							Domyślnie umowa obowiązująca w dniu zawarcia polisy (liczy się od zawarcia umowy do końca jej okresu).
+							Zmień tylko, gdy polisa należy do innego roku programu.
 						</p>
 					</div>
 				{/if}
