@@ -204,7 +204,7 @@ Supabase Edge Function `send-payment-reminders` wysyła przypomnienia przez Rese
 - Każda rata dostaje przypomnienie raz: znacznik `przypomnienie_wyslane_at` ustawiany przed wysyłką,
   zdejmowany, gdy Resend odmówi. Zaległych rat automat nie przypomina.
 - Próba bez wysyłki: `select public.crm_send_payment_reminders(true);`, wynik w `net._http_response`.
-- Migracja: `supabase/pending/20261007000002_payment_reminders.sql`.
+- Migracja: `supabase/migrations/20261007000002_payment_reminders.sql`.
 
 ---
 
