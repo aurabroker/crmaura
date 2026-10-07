@@ -71,3 +71,17 @@ export function umowaObowiazujaca<T extends Umowa>(umowy: T[], dzien: string): T
 		}) ?? null
 	);
 }
+
+/**
+ * Opiekun TU dla nowej polisy w Umowie Generalnej: domyślnie ten sam co na umowie
+ * (o ile umowa jest z tym samym towarzystwem co polisa).
+ */
+export function opiekunZUmowy(
+	policies: Pick<Policy, 'id' | 'tu_id' | 'tu_contact_id'>[],
+	parentId: string | null | undefined,
+	tuId: string | null | undefined
+): string | null {
+	if (!parentId) return null;
+	const ug = policies.find((p) => p.id === parentId);
+	return ug && ug.tu_contact_id && (!tuId || ug.tu_id === tuId) ? ug.tu_contact_id : null;
+}

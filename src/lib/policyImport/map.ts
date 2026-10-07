@@ -194,6 +194,8 @@ export function buildDraft(input: BuildInput): Draft {
 		ug_podtyp: null,
 		ug_default_prowizja_pct: null,
 		parent_id: ug?.id ?? null,
+		// Opiekun TU domyślnie ten sam co na Umowie Generalnej.
+		tu_contact_id: ug && ug.tu_id === insurerId ? (ug.tu_contact_id ?? null) : null,
 		renewal_of: poprzednia?.id ?? null,
 		ubezpieczony_id: ubezpieczony?.id ?? null,
 		przedmiot: extracted.przedmiot,

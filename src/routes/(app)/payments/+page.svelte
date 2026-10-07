@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PAYMENT_SELECT } from '$lib/queries';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { PolicyPayment } from '$lib/types/database';
@@ -322,7 +323,7 @@
 
 		// Refresh
 		const { data: pays } = await sb.from('crm_policy_payments')
-			.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))').order('data_platnosci');
+			.select(PAYMENT_SELECT).order('data_platnosci');
 		appState.payments = (pays ?? []) as typeof appState.payments;
 		const { data: alts } = await sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false });
 		appState.alerts = (alts ?? []) as typeof appState.alerts;
@@ -387,7 +388,7 @@
 	});
 
 	async function reloadPayments() {
-		const { data } = await sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))').order('data_platnosci');
+		const { data } = await sb.from('crm_policy_payments').select(PAYMENT_SELECT).order('data_platnosci');
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
 

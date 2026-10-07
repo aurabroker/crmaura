@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { POLICY_SELECT } from '$lib/queries';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
@@ -449,7 +450,7 @@
 		}
 		linkingSaving = true;
 		await sb.from('crm_policies').update({ pojazd_id: vehicleId }).eq('id', linkPolicyId);
-		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null);
+		const { data } = await sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null);
 		appState.policies = (data ?? []) as typeof appState.policies;
 		linkingSaving = false;
 		linkingVehicleId = null;

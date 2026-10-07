@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { opiekunZUmowy } from '$lib/policyImport/umowaGeneralna';
+	import { POLICY_SELECT } from '$lib/queries';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, rodzajCls, ugPodtypCls } from '$lib/utils';
@@ -7,7 +9,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
 	import {
-		Search, Pencil, FilePlus2, ChevronDown, ChevronRight,
+		Search, Pencil, FilePlus2,
 		Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus
 	} from 'lucide-svelte';
 	import { page } from '$app/stores';
@@ -16,6 +18,8 @@
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { logAudit } from '$lib/utils/audit';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let search = $state('');
 	let filterTyp = $state<'all' | 'jednostkowa' | 'generalna'>('all');
@@ -54,41 +58,43 @@
 	let saving = $state(false);
 	let formError = $state('');
 
-	// Expanded UG rows
-	let expandedUG = $state(new Set<string>());
-	let flatView = $state(false);
-
-	const toplevelPolicies = $derived(
-		appState.policies
-			.filter((p) => !p.parent_id)
+	// Wszystkie polisy w jednej liście — Umowa Generalna jest tylko kolumną porządkową,
+	// polisy podpięte pod UG są widoczne tak samo jak pozostałe.
+	const widoczne = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		return appState.policies
 			.filter((p) => filterTyp === 'all' || p.typ_umowy === filterTyp)
 			.filter((p) =>
-				!search ||
-				p.nr_polisy.toLowerCase().includes(search.toLowerCase()) ||
-				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(search.toLowerCase())
-			)
-	);
-
-	const flatPolicies = $derived(
-		appState.policies
-			.filter((p) => filterTyp === 'all' || p.typ_umowy === filterTyp)
-			.filter((p) =>
-				!search ||
-				p.nr_polisy.toLowerCase().includes(search.toLowerCase()) ||
-				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(search.toLowerCase())
-			)
-			.sort((a, b) => a.nr_polisy.localeCompare(b.nr_polisy))
-	);
+				!q ||
+				p.nr_polisy.toLowerCase().includes(q) ||
+				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) ||
+				(p.parent_id ? parentNr(p.parent_id).toLowerCase().includes(q) : false)
+			);
+	});
 
 	// O(1) lookup map instead of O(n) find per row
 	const parentNrMap = $derived(new Map(appState.policies.map(p => [p.id, p.nr_polisy])));
 	function parentNr(parentId: string | null): string {
 		return parentId ? (parentNrMap.get(parentId) ?? '—') : '—';
 	}
+	const liczbaWUg = $derived.by(() => {
+		const m = new Map<string, number>();
+		for (const p of appState.policies) if (p.parent_id) m.set(p.parent_id, (m.get(p.parent_id) ?? 0) + 1);
+		return m;
+	});
 
-	function childrenOf(id: string) {
-		return appState.policies.filter(p => p.parent_id === id);
-	}
+	const sort = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		tu: (p) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
+		rodzaj: (p) => (p.typ_umowy === 'generalna' ? `UG ${p.ug_podtyp ?? ''}` : p.rodzaj),
+		ug: (p) => (p.parent_id ? parentNr(p.parent_id) : null),
+		od: (p) => p.data_od,
+		do: (p) => p.data_do,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0),
+		status: (p) => p.data_do
+	}, { klucz: 'nr' }, 'polisy');
+	const wiersze = $derived(sort.sortuj(widoczne));
 
 	function annexesOf(id: string) {
 		return appState.annexes.filter((a) => a.polisa_id === id);
@@ -96,11 +102,12 @@
 
 	async function reloadPolicies() {
 		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
+			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
-		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
+		// Przy błędzie zostaje dotychczasowa lista (pusta lista wyglądałaby jak brak polis).
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
+		if (!rA.error && rA.data) appState.annexes = rA.data as typeof appState.annexes;
 	}
 
 	async function saveNewPolicy() {
@@ -108,7 +115,10 @@
 		const err = newPolicyForm.isValid();
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
-		const vals = newPolicyForm.getValues();
+		const vals: Record<string, unknown> = newPolicyForm.getValues();
+		// Polisa w Umowie Generalnej: opiekun TU domyślnie ten sam co na umowie.
+		const opiekun = opiekunZUmowy(appState.policies, vals.parent_id as string | null, vals.tu_id as string | null);
+		if (opiekun && !vals.tu_contact_id) vals.tu_contact_id = opiekun;
 		const { error } = await sb.from('crm_policies').insert([{ tenant_id: appState.profile!.tenant_id, ...vals }]);
 		saving = false;
 		if (error) { formError = error.message; return; }
@@ -121,7 +131,12 @@
 		const err = editPolicyForm.isValid();
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
-		const vals = editPolicyForm.getValues();
+		const vals: Record<string, unknown> = editPolicyForm.getValues();
+		// Polisa bez opiekuna TU podpięta pod Umowę Generalną: opiekun domyślnie z umowy.
+		if (!editingPolicy.tu_contact_id && editingPolicy.typ_umowy !== 'generalna') {
+			const opiekun = opiekunZUmowy(appState.policies, vals.parent_id as string | null, vals.tu_id as string | null);
+			if (opiekun) vals.tu_contact_id = opiekun;
+		}
 		const { error } = await sb.from('crm_policies').update(vals).eq('id', editingPolicy.id);
 		saving = false;
 		if (error) { formError = error.message; return; }
@@ -196,12 +211,6 @@
 		axNr = ''; axTyp = 'korekta'; axData = ''; axOpis = '';
 		axDeltaSkladka = '0'; axDeltaProwizja = '0';
 		axNewDataDo = ''; axNewSkladka = ''; axNewProwizjaPct = '';
-	}
-
-	function toggleUG(id: string) {
-		const s = new Set(expandedUG);
-		if (s.has(id)) s.delete(id); else s.add(id);
-		expandedUG = s;
 	}
 
 	const ugLabel: Record<string, string> = {
@@ -348,100 +357,36 @@
 			</button>
 		{/each}
 	{/if}
-	<button onclick={() => flatView = !flatView}
-		class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
-			{flatView ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
-		{flatView ? '↕ Płaski' : '↕ Drzewo'}
-	</button>
 </div>
 
-<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+<div class="bg-white border border-line rounded-xl shadow-sm overflow-x-auto">
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-				<th class="px-5 py-3">Nr Polisy</th>
-				<th class="px-5 py-3">Klient</th>
-				<th class="px-5 py-3">TU</th>
-				<th class="px-5 py-3">Rodzaj / Typ</th>
-				{#if flatView}<th class="px-5 py-3">UG</th>{/if}
-				<th class="px-5 py-3">OD</th>
-				<th class="px-5 py-3">DO</th>
-				<th class="px-5 py-3 text-right">Składka</th>
-				<th class="px-5 py-3">Status</th>
+				<SortTh s={sort} k="nr">Nr Polisy</SortTh>
+				<SortTh s={sort} k="klient">Klient</SortTh>
+				<SortTh s={sort} k="tu">TU</SortTh>
+				<SortTh s={sort} k="rodzaj">Rodzaj / Typ</SortTh>
+				<SortTh s={sort} k="ug">UG</SortTh>
+				<SortTh s={sort} k="od">OD</SortTh>
+				<SortTh s={sort} k="do">DO</SortTh>
+				<SortTh s={sort} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
+				<SortTh s={sort} k="status">Status</SortTh>
 				<th class="px-5 py-3">Akcje</th>
 			</tr>
 		</thead>
 		<tbody>
-			{#if flatView}
-				{#each flatPolicies as p}
-					{@const st = policyStatus(p.data_do)}
-					{@const isUG = p.typ_umowy === 'generalna'}
-					<tr use:ctxMenu={{ items: () => policyMenu(p), title: p.nr_polisy }}
-						class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
-						<td class="px-5 py-3">
-							<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
-						</td>
-						<td class="px-5 py-3">
-							<a href="/clients/{p.klient_id}" class="hover:text-blue-700 hover:underline">{p.crm_clients?.nazwa ?? '—'}</a>
-						</td>
-						<td class="px-5 py-3">
-							{#if p.crm_insurers?.skrot}
-								<span class="font-mono font-semibold text-blue-700" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
-							{:else}
-								{p.crm_insurers?.nazwa ?? '—'}
-							{/if}
-						</td>
-						<td class="px-5 py-3">
-							{#if isUG}
-								<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {ugPodtypCls(p.ug_podtyp ?? '')}">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</span>
-							{:else}
-								<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {rodzajCls(p.rodzaj)}">{p.rodzaj}</span>
-							{/if}
-						</td>
-						<td class="px-5 py-3 text-xs font-mono text-slate-500">{p.parent_id ? parentNr(p.parent_id) : '—'}</td>
-						<td class="px-5 py-3 text-xs">{p.data_od}</td>
-						<td class="px-5 py-3 text-xs">{p.data_do}</td>
-						<td class="px-5 py-3 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
-						<td class="px-5 py-3">
-							<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
-						</td>
-						<td class="px-5 py-3">
-							<div class="flex items-center gap-1">
-								<a href="/policies/{p.id}/edit" title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-									<Pencil size={14} />
-								</a>
-								<button onclick={() => openAnnex(p)} title="Dodaj aneks" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-									<FilePlus2 size={14} />
-								</button>
-							</div>
-						</td>
-					</tr>
-				{/each}
-			{:else}
-			{#each toplevelPolicies as p}
+			{#each wiersze as p (p.id)}
 				{@const st = policyStatus(p.data_do)}
-				{@const children = childrenOf(p.id)}
-				{@const axs = annexesOf(p.id)}
 				{@const isUG = p.typ_umowy === 'generalna'}
-				{@const expanded = expandedUG.has(p.id)}
-
-				<!-- Główny wiersz -->
+				{@const axs = annexesOf(p.id)}
 				<tr use:ctxMenu={{ items: () => policyMenu(p), title: p.nr_polisy }}
 					class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
 					<td class="px-5 py-3">
-						<div class="flex items-center gap-2">
-							{#if isUG && (children.length > 0)}
-								<button onclick={() => toggleUG(p.id)} class="text-slate-400 hover:text-slate-700">
-									{#if expanded}<ChevronDown size={14} />{:else}<ChevronRight size={14} />{/if}
-								</button>
-							{/if}
-							<div>
-								<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
-								{#if axs.length > 0}
-									<div class="text-[10px] text-blue-500">{axs.length} aneks{axs.length > 1 ? 'ów' : ''}</div>
-								{/if}
-							</div>
-						</div>
+						<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
+						{#if axs.length > 0}
+							<div class="text-[10px] text-blue-500">{axs.length} aneks{axs.length > 1 ? 'ów' : ''}</div>
+						{/if}
 					</td>
 					<td class="px-5 py-3">
 						<a href="/clients/{p.klient_id}" class="hover:text-blue-700 hover:underline">{p.crm_clients?.nazwa ?? '—'}</a>
@@ -455,9 +400,18 @@
 					</td>
 					<td class="px-5 py-3">
 						{#if isUG}
-							<Badge variant="info">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</Badge>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {ugPodtypCls(p.ug_podtyp ?? '')}">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</span>
 						{:else}
-							<Badge variant="neutral">{p.rodzaj}</Badge>
+							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {rodzajCls(p.rodzaj)}">{p.rodzaj}</span>
+						{/if}
+					</td>
+					<td class="px-5 py-3 text-xs font-mono text-slate-500">
+						{#if p.parent_id}
+							<a href="/policies/{p.parent_id}" class="hover:text-blue-700 hover:underline">{parentNr(p.parent_id)}</a>
+						{:else if isUG}
+							<span class="font-sans text-slate-400">{liczbaWUg.get(p.id) ?? 0} polis</span>
+						{:else}
+							—
 						{/if}
 					</td>
 					<td class="px-5 py-3 text-xs">{p.data_od}</td>
@@ -468,67 +422,18 @@
 					</td>
 					<td class="px-5 py-3">
 						<div class="flex items-center gap-1">
-							<button onclick={() => openEdit(p)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+							<a href="/policies/{p.id}/edit" title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
 								<Pencil size={14} />
-							</button>
+							</a>
 							<button onclick={() => openAnnex(p)} title="Dodaj aneks" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
 								<FilePlus2 size={14} />
 							</button>
 						</div>
 					</td>
 				</tr>
-
-				<!-- Aneksy (sub-wiersze) -->
-				{#each axs as ax}
-					<tr class="border-t border-line-soft bg-amber-50/40">
-						<td class="pl-12 pr-5 py-2 text-xs text-amber-700">
-							↳ Aneks {ax.nr_aneksu}
-						</td>
-						<td colspan="2" class="px-5 py-2 text-xs text-slate-500">{ax.data_aneksu} — {ax.typ}</td>
-						<td colspan="2" class="px-5 py-2 text-xs text-slate-500">{ax.opis ?? '—'}</td>
-						<td class="px-5 py-2 text-right text-xs {ax.delta_skladka >= 0 ? 'text-emerald-600' : 'text-red-500'}">
-							{ax.delta_skladka >= 0 ? '+' : ''}{fmtPln(ax.delta_skladka)}
-						</td>
-						<td colspan="2"></td>
-					</tr>
-				{/each}
-
-				<!-- Dzieci UG (pozycje pod UG) -->
-				{#if isUG && expanded}
-					{#each children as ch}
-						{@const chSt = policyStatus(ch.data_do)}
-						<tr use:ctxMenu={{ items: () => policyMenu(ch), title: ch.nr_polisy }}
-							class="border-t border-line-soft bg-slate-50/80">
-							<td class="pl-12 pr-5 py-2.5 text-sm">↳ <a href="/policies/{ch.id}" class="font-medium text-blue-700 hover:underline">{ch.nr_polisy}</a></td>
-							<td class="px-5 py-2.5 text-sm">
-								<a href="/clients/{ch.klient_id}" class="hover:text-blue-700 hover:underline">{ch.crm_clients?.nazwa ?? '—'}</a>
-							</td>
-							<td class="px-5 py-2.5 text-sm">
-							{#if ch.crm_insurers?.skrot}
-								<span class="font-mono font-semibold text-blue-700" title={ch.crm_insurers.nazwa}>{ch.crm_insurers.skrot}</span>
-							{:else}
-								{ch.crm_insurers?.nazwa ?? '—'}
-							{/if}
-						</td>
-							<td class="px-5 py-2.5"><Badge variant="neutral">{ch.rodzaj}</Badge></td>
-							<td class="px-5 py-2.5 text-xs">{ch.data_od}</td>
-							<td class="px-5 py-2.5 text-xs">{ch.data_do}</td>
-							<td class="px-5 py-2.5 text-right">{fmtPln(ch.skladka_przypisana)}</td>
-							<td class="px-5 py-2.5">
-								<Badge variant={chSt.badge === 'badge-error' ? 'error' : chSt.badge === 'badge-warning' ? 'warning' : 'success'}>{chSt.label}</Badge>
-							</td>
-							<td class="px-5 py-2.5">
-								<button onclick={() => openEdit(ch)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
-									<Pencil size={14} />
-								</button>
-							</td>
-						</tr>
-					{/each}
-				{/if}
 			{:else}
-				<tr><td colspan="9" class="px-5 py-8 text-center text-slate-400">Brak polis</td></tr>
+				<tr><td colspan="10" class="px-5 py-8 text-center text-slate-400">Brak polis</td></tr>
 			{/each}
-			{/if}
 		</tbody>
 	</table>
 </div>

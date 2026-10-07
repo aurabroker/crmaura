@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
@@ -229,28 +230,43 @@
 			: appState.insurerContacts.filter(c => c.tu_id === policy?.tu_id && !c.branch_id)
 	);
 
+	// Odświeżenie listy polis po zmianie; przy błędzie zostaje dotychczasowa lista.
+	async function odswiezPolisy() {
+		const { data, error } = await sb.from('crm_policies')
+			.select(POLICY_SELECT)
+			.is('deleted_at', null);
+		if (!error && data) appState.policies = data as typeof appState.policies;
+	}
+
 	async function saveContact() {
 		if (!contactPersonId) { contactError = 'Wybierz osobę.'; return; }
 		savingContact = true; contactError = '';
+		const poprzedni = policy?.tu_contact_id ?? null;
 		const { error } = await sb.from('crm_policies')
 			.update({ tu_contact_id: contactPersonId })
 			.eq('id', policyId);
+		if (!error && policy?.typ_umowy === 'generalna') {
+			// Polisy w UG bez opiekuna albo z dotychczasowym opiekunem UG dostają nowego opiekuna z UG.
+			const q = sb.from('crm_policies')
+				.update({ tu_contact_id: contactPersonId })
+				.eq('parent_id', policyId)
+				.is('deleted_at', null);
+			const { error: eDzieci } = poprzedni
+				? await q.or(`tu_contact_id.is.null,tu_contact_id.eq.${poprzedni}`)
+				: await q.is('tu_contact_id', null);
+			if (eDzieci) contactError = `Opiekun UG zapisany, ale nie przepisany na polisy w UG: ${eDzieci.message}`;
+		}
 		savingContact = false;
 		if (error) { contactError = error.message; return; }
-		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
-			.is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		await odswiezPolisy();
+		if (contactError) return;
 		showContact = false;
 		contactBranchId = ''; contactPersonId = '';
 	}
 
 	async function removeContact() {
 		await sb.from('crm_policies').update({ tu_contact_id: null }).eq('id', policyId);
-		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
-			.is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		await odswiezPolisy();
 	}
 
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -275,7 +291,7 @@
 
 	async function reloadPayments() {
 		const { data } = await sb.from('crm_policy_payments')
-			.select('*, crm_policies(nr_polisy, crm_clients(nazwa))')
+			.select(PAYMENT_SELECT)
 			.order('data_platnosci');
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}

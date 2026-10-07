@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { POLICY_SELECT } from '$lib/queries';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
@@ -172,7 +173,7 @@
 
 		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
+			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null),
 			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
 			sb.from('crm_vehicles').select('*'),
 			sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false }),

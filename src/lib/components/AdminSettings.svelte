@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { POLICY_SELECT } from '$lib/queries';
 	import { sb } from '$lib/supabase';
 	import { appState, isAdmin, teamLabel } from '$lib/stores/app.svelte';
 	import { goto } from '$app/navigation';
@@ -65,7 +66,7 @@
 		const [{ data: wnioski }, { data: pojazdy }, { data: polisy }] = await Promise.all([
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje').order('created_at', { ascending: false }),
 			sb.from('crm_vehicles').select('*'),
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null)
+			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null)
 		]);
 		appState.vehicleRequests = (wnioski ?? []) as typeof appState.vehicleRequests;
 		appState.vehicles = (pojazdy ?? []) as typeof appState.vehicles;
