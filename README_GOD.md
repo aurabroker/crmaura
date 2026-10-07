@@ -227,6 +227,31 @@ Adres linków jest w jednym miejscu: `src/lib/utils/apkLink.ts` (`APK_FORM_URL`,
 
 ---
 
+## Odnowienia polis OC beauty
+
+Program ERGO Hestia WA50/003353/24/A (certyfikaty = polisy z `parent_id` wskazującym umowę generalną
+z `ug_podtyp = 'oc_beauty'`). Klient dostaje link do wniosku, wypełnia APK (albo świadomie jej odmawia),
+wybiera: odnowienie bez zmian / ze zmianami / rezygnacja; przy zabiegach z listy wyłączeń — ankieta ERGO Hestii
+z załącznikami (dyplom, certyfikat szkolenia z ostatnich 12 miesięcy, wzory zgód).
+
+- **Link**: `/odnowienie/<id>.<podpis HMAC>` — podpis liczy serwer (`src/lib/server/renewals.ts`), w bazie go nie ma.
+  Ważny do końca ochrony (min. 14 dni). Anulowanie/zastąpienie wniosku unieważnia link.
+- **Strona klienta**: `src/routes/odnowienie/[klucz]` ↔ `src/routes/api/odnowienie/[klucz]` (kontrakt: `src/lib/renewals/api.ts`).
+  Klient nie ma konta ani dostępu do bazy; pliki wgrywa przez jednorazowe podpisane adresy do bucketu `renewal-files`.
+- **Reguły programu** (taryfa, listy zabiegów, pytania APK, walidacja, wycena): `src/lib/renewals/program.ts` — wspólne
+  dla strony i serwera. Wyższa suma: składka z tabeli programu wg rodzaju gabinetu (z APK) i liczby osób (+25% przy 6–8,
+  powyżej 8 — wycena indywidualna); ochrona prawna +92 zł.
+- **Po złożeniu**: PDF (`renewalDocs.ts`, czcionka Roboto) w `renewal-files/<tenant>/<id>/wniosek-odnowienia.pdf`, e-mail do
+  klienta i do biura (`RENEWAL_OFFICE_EMAIL`, domyślnie odnowienia@auraexpert.pl) z PDF i załącznikami, zadanie w CRM dla
+  opiekuna klienta. Dziennik: `crm_renewal_events` (otwarcie, APK/odmowa z IP i przeglądarką, złożenie, wysyłki, błędy).
+- **CRM**: karta polisy → „Odnów polisę” → wysyłka e-mailem albo link; panel statusu wniosku; kolumna na liście wznowień.
+- **Automat**: pg_cron `crm-renewals` (codziennie 6:20 UTC) → `/api/cron/renewals` z `x-cron-token`: wygaszanie,
+  zaproszenia 45 dni przed końcem (moduł `odnowienia_auto` w SAAS Admin), jedno przypomnienie po 7 dniach.
+- **Wysyłka**: klucz Resend firmy (SAAS Admin), nadawca `RENEWAL_EMAIL_FROM` (domyślnie BeautyPolisa <odnowienia@beautypolisa.eu>).
+- Migracja: `supabase/pending/20261007000003_renewals.sql`.
+
+---
+
 ## DB Trigger — automatyczne przeliczanie składek
 
 ```sql
