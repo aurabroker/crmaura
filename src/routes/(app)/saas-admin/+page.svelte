@@ -14,6 +14,7 @@
 		{ key: 'gwarancje', label: 'Gwarancje ubezpieczeniowe' },
 		{ key: 'kalendarz', label: 'Kalendarz / Zadania' },
 		{ key: 'odnowienia_auto', label: 'Odnowienia OC beauty — automatyczna wysyłka 45 dni przed końcem' },
+		{ key: 'odnowienia_test', label: 'Odnowienia OC beauty — TRYB TESTOWY: wszystkie e-maile odnowień na zarzad@auraexpert.pl (nie do klientów)' },
 	];
 
 	function hasFeature(tenant: Tenant, key: string): boolean {

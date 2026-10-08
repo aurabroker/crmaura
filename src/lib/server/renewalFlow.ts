@@ -2,7 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { base64, wyslijEmail, type WynikWysylki, type Zalacznik } from '$lib/server/mail';
 import {
 	BUCKET,
+	PREFIKS_TESTU,
+	adresTestowy,
 	biuro,
+	czyTest,
 	dodajDni,
 	dzisWarszawa,
 	linkDla,
@@ -21,14 +24,14 @@ const AKTYWNE = ['utworzony', 'wyslany', 'otwarty', 'apk'];
 const BUDZET_ZALACZNIKOW = 10 * 1024 * 1024;
 
 // Historia e-maili klienta (karta klienta → E-maile). Błąd zapisu nie przerywa wysyłki.
-async function zapiszEmailKlienta(admin: SupabaseClient, r: RenewalRow, temat: string, tresc: string, dostawcaId: string | null) {
-	if (!r.email) return;
+// Zapisuje adres, na który e-mail faktycznie poszedł (w trybie testowym — adres testowy).
+async function zapiszEmailKlienta(admin: SupabaseClient, r: RenewalRow, adres: string, temat: string, tresc: string, dostawcaId: string | null) {
 	const { error: e } = await admin.from('crm_client_emails').insert({
 		tenant_id: r.tenant_id,
 		klient_id: r.klient_id,
 		polisa_ids: [r.polisa_id],
 		rodzaj: 'odnowienie',
-		adres: r.email.slice(0, 320),
+		adres: adres.slice(0, 320),
 		temat: temat.slice(0, 500),
 		tresc: tresc.slice(0, 20000),
 		dostawca_id: dostawcaId
@@ -42,18 +45,21 @@ export async function wyslijZaproszenie(
 	r: RenewalRow,
 	origin: string,
 	o: { przypomnienie?: boolean; kto?: string | null } = {}
-): Promise<WynikWysylki> {
+): Promise<Exclude<WynikWysylki, { ok: true }> | { ok: true; id: string | null; adres: string; test: boolean }> {
 	if (!r.email) return { ok: false, status: 400, blad: 'Klient nie ma adresu e-mail.' };
 	const firma = await ustawieniaFirmy(admin, r.tenant_id);
 	if (!firma?.resend_api_key) return { ok: false, status: 400, blad: 'Firma nie ma klucza Resend (SAAS Admin).' };
 
 	const link = await linkDla(r.id, origin);
 	const m = mailZaproszenie(r, link, o.przypomnienie);
+	const test = czyTest(firma, r);
+	const adres = test ? adresTestowy() : r.email;
+	const temat = (test ? PREFIKS_TESTU : '') + m.temat;
 	const wynik = await wyslijEmail(firma.resend_api_key, {
 		from: nadawca(),
-		to: [r.email],
+		to: [adres],
 		replyTo: biuro(),
-		subject: m.temat,
+		subject: temat,
 		html: m.html,
 		text: m.tekst
 	});
@@ -67,10 +73,10 @@ export async function wyslijZaproszenie(
 		: { wyslano_at: teraz, ...(r.status === 'utworzony' ? { status: 'wyslany' } : {}) };
 	// Tylko aktywny wniosek: równoległe anulowanie nie zostanie cofnięte.
 	await admin.from('crm_renewals').update({ ...zmiany, updated_at: teraz }).eq('id', r.id).in('status', AKTYWNE);
-	await zapiszZdarzenie(admin, r, o.przypomnienie ? 'przypomnienie' : 'wyslanie', null, { przez: o.kto ?? 'automat' });
+	await zapiszZdarzenie(admin, r, o.przypomnienie ? 'przypomnienie' : 'wyslanie', null, { przez: o.kto ?? 'automat', ...(test ? { test: adres } : {}) });
 	// Link do wniosku nie trafia do historii — to jedyne uprawnienie klienta do formularza.
-	await zapiszEmailKlienta(admin, r, m.temat, m.tekst.replace(link, '[link do wniosku]'), wynik.id);
-	return wynik;
+	await zapiszEmailKlienta(admin, r, adres, temat, m.tekst.replace(link, '[link do wniosku]'), wynik.id);
+	return { ...wynik, adres, test };
 }
 
 // Typ pliku po pierwszych bajtach — klient deklaruje typ sam, więc sprawdzamy zawartość.
@@ -124,7 +130,11 @@ async function zalacznikiKlienta(admin: SupabaseClient, r: RenewalRow, budzet: n
 // e-mail do klienta i biura (z PDF i plikami klienta). Decyzja jest już zapisana — błędy tutaj trafiają
 // do dziennika, a nie do klienta.
 export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient): Promise<RenewalRow> {
-	await zadanieDlaDoradcy(admin, r);
+	const firma = await ustawieniaFirmy(admin, r.tenant_id);
+	// Tryb testowy: potwierdzenie „dla klienta” i kopia „dla biura” idą na adres testowy.
+	const test = czyTest(firma, r);
+	const pre = test ? PREFIKS_TESTU : '';
+	await zadanieDlaDoradcy(admin, r, test);
 
 	let pdf: Uint8Array | null = null;
 	try {
@@ -139,16 +149,17 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 		await zapiszZdarzenie(admin, r, 'blad_pdf', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
 	}
 
-	const firma = await ustawieniaFirmy(admin, r.tenant_id);
 	const nazwaPdf = `Wniosek-odnowienia-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;
 	const zalPdf: Zalacznik[] = pdf ? [{ filename: nazwaPdf, content: base64(pdf), content_type: 'application/pdf' }] : [];
 
 	if (firma?.resend_api_key) {
 		if (r.email) {
 			const m = mailPotwierdzenie(r);
-			const w = await wyslijEmail(firma.resend_api_key, { from: nadawca(), to: [r.email], replyTo: biuro(), subject: m.temat, html: m.html, text: m.tekst, attachments: zalPdf });
-			await zapiszZdarzenie(admin, r, w.ok ? 'email_klient' : 'blad_email_klient', null, w.ok ? null : { status: w.status, blad: w.blad });
-			if (w.ok) await zapiszEmailKlienta(admin, r, m.temat, m.tekst, w.id);
+			const adres = test ? adresTestowy() : r.email;
+			const temat = pre + m.temat;
+			const w = await wyslijEmail(firma.resend_api_key, { from: nadawca(), to: [adres], replyTo: biuro(), subject: temat, html: m.html, text: m.tekst, attachments: zalPdf });
+			await zapiszZdarzenie(admin, r, w.ok ? 'email_klient' : 'blad_email_klient', null, w.ok ? (test ? { test: adres } : null) : { status: w.status, blad: w.blad });
+			if (w.ok) await zapiszEmailKlienta(admin, r, adres, temat, m.tekst, w.id);
 		}
 
 		// Do biura dołączamy też pliki od klienta (do 10 MB łącznie z PDF); pozostałe zostają w CRM.
@@ -157,9 +168,9 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 		const mb = mailBiuro(r, linkCrm, kto, pominiete);
 		const wb = await wyslijEmail(firma.resend_api_key, {
 			from: nadawca(),
-			to: [biuro()],
+			to: [test ? adresTestowy() : biuro()],
 			...(r.email ? { replyTo: r.email } : {}),
-			subject: mb.temat,
+			subject: pre + mb.temat,
 			html: mb.html,
 			text: mb.tekst,
 			attachments: [...zalPdf, ...pliki]
@@ -171,19 +182,21 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 	return r;
 }
 
-async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow) {
+async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boolean) {
 	const { data: klient } = await admin.from('crm_clients').select('opiekun_id').eq('id', r.klient_id).maybeSingle();
 	const tytul =
-		r.decyzja === 'bez_zmian'
+		(test ? PREFIKS_TESTU : '') +
+		(r.decyzja === 'bez_zmian'
 			? `Odnowienie bez zmian: wystaw certyfikat — ${r.klient_nazwa}`
 			: r.decyzja === 'zmiany'
 				? `Odnowienie ze zmianami: sprawdź i potwierdź składkę — ${r.klient_nazwa}`
-				: `Klient rezygnuje z odnowienia — ${r.klient_nazwa}`;
+				: `Klient rezygnuje z odnowienia — ${r.klient_nazwa}`);
 	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk);
 	const sygnaly = sygnalyApk(r);
 	// Złożony po końcu ochrony (link jest ważny min. 14 dni): ciągłość ochrony do sprawdzenia od razu.
 	const poTerminie = !!r.okres_do && !!r.zlozono_at && dzisWarszawa() > r.okres_do;
 	const opis = [
+		...(test ? [`Wniosek testowy — e-maile z tego wniosku poszły na adres testowy (${adresTestowy()}), nie do klienta.`] : []),
 		`${DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? r.decyzja} (wniosek online, certyfikat ${r.nr_polisy ?? '—'}).`,
 		...(poTerminie ? [`⚠ Wniosek złożony po końcu ochrony (${r.okres_do}) — sprawdź ciągłość ubezpieczenia.`] : []),
 		...zmiany.map((z) => `• ${z}`),

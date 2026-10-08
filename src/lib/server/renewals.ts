@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { env } from '$env/dynamic/private';
 import { EMAIL_RE } from '$lib/server/mail';
 import type { WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
+import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
 import { ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
@@ -216,6 +217,7 @@ export async function utworzOdnowienie(
 	const minWaznosc = Date.now() + 14 * 86_400_000;
 	const koniec = koniecDniaWarszawa(p.data_do);
 	const wazny_do = Date.parse(koniec) > minWaznosc ? koniec : new Date(minWaznosc).toISOString();
+	const test = trybTestowy(await ustawieniaFirmy(admin, p.tenant_id));
 
 	const { data, error: e } = await admin
 		.from('crm_renewals')
@@ -224,7 +226,7 @@ export async function utworzOdnowienie(
 			polisa_id: p.id,
 			klient_id: p.klient_id,
 			status: 'utworzony',
-			email: p.klient.email,
+			email: test ? adresTestowy() : p.klient.email,
 			nr_polisy: p.nr_polisy,
 			tu_nazwa: p.tu_nazwa,
 			program: `Program Ubezpieczenia OC nr ${p.program_nr}`,
@@ -243,6 +245,7 @@ export async function utworzOdnowienie(
 		throw error(500, { message: 'Nie udało się utworzyć wniosku.' });
 	}
 	await zapiszZdarzenie(admin, data, 'utworzenie', null, { przez: o.utworzyl ?? 'automat' });
+	if (test) await zapiszZdarzenie(admin, data, 'tryb_testowy', null, { adres: adresTestowy() });
 	return data as RenewalRow;
 }
 
@@ -386,3 +389,13 @@ export async function ustawieniaFirmy(admin: SupabaseClient, tenantId: string) {
 
 export const nadawca = () => env.RENEWAL_EMAIL_FROM || 'BeautyPolisa <odnowienia@beautypolisa.eu>';
 export const biuro = () => env.RENEWAL_OFFICE_EMAIL || 'odnowienia@auraexpert.pl';
+
+// Tryb testowy (moduł „odnowienia_test” w SAAS Admin): każdy e-mail odnowień — do klienta i do biura —
+// trafia na adres testowy, z dopiskiem [TEST] w temacie. Wniosek utworzony w trybie testowym ma
+// adres testowy zapisany zamiast adresu klienta, więc nie napisze do klienta także po wyłączeniu trybu.
+export const adresTestowy = () => env.RENEWAL_TEST_EMAIL || ADRES_TESTOWY;
+export const trybTestowy = (firma: { features?: Record<string, boolean> | null } | null) => firma?.features?.odnowienia_test === true;
+// Wniosek jest testowy, gdy firma ma włączony tryb albo wniosek powstał w trybie testowym (adres testowy).
+export const czyTest = (firma: { features?: Record<string, boolean> | null } | null, r: Pick<RenewalRow, 'email'>) =>
+	trybTestowy(firma) || (!!r.email && r.email.trim().toLowerCase() === adresTestowy().trim().toLowerCase());
+export const PREFIKS_TESTU = '[TEST] ';

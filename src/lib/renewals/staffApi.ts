@@ -20,7 +20,14 @@ export type OdnowienieUtworzone = {
 	link: string;
 	status: 'utworzony' | 'wyslany';
 	wyslano: boolean;
+	/** Adres, na który poszedł e-mail (w trybie testowym — adres testowy). */
+	adres?: string | null;
+	/** Wniosek testowy: e-maile idą na adres testowy, nie do klienta. */
+	test?: boolean;
 };
+
+/** Domyślny adres trybu testowego odnowień (serwer: RENEWAL_TEST_EMAIL). */
+export const ADRES_TESTOWY = 'zarzad@auraexpert.pl';
 
 export const STATUS_ODNOWIENIA_ETYKIETA: Record<string, string> = {
 	utworzony: 'Link utworzony',
