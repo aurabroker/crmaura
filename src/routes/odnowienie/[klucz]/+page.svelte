@@ -196,9 +196,9 @@
 					<h2 class="mt-8 text-base font-semibold text-[#2a3b69]">Jak to działa</h2>
 					<ol class="mt-3 space-y-3">
 						{#each [
-							['Analiza potrzeb (APK)', 'kilka pytań o gabinet, około 2 minut. Możesz też świadomie odmówić.'],
+							['Analiza potrzeb (APK)', 'kilka pytań o gabinet, około 2 minut. PDF z odpowiedziami przyjdzie od razu e-mailem. Możesz też świadomie odmówić.'],
 							['Wniosek', 'odnawiasz bez zmian, ze zmianami albo rezygnujesz. Przy zmianach od razu zobaczysz orientacyjną składkę.'],
-							['Podsumowanie i wysłanie', 'sprawdzasz odpowiedzi i wysyłasz wniosek. Potwierdzenie w PDF przyjdzie e-mailem.']
+							['Podsumowanie i wysłanie', 'sprawdzasz odpowiedzi i wysyłasz wniosek. PDF wniosku przyjdzie drugim e-mailem.']
 						] as [t, o], i (t)}
 							<li class="flex gap-3">
 								<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#2a3b69] text-sm font-bold text-white">{i + 1}</span>

@@ -15,13 +15,13 @@ import {
 	type Klient,
 	type RenewalRow
 } from '$lib/server/renewals';
-import { mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfWniosku, sygnalyApk, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
+import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfApk, pdfWniosku, sygnalyApk, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
 
 type PdfEvent = Parameters<typeof pdfWniosku>[0];
 
 const AKTYWNE = ['utworzony', 'wyslany', 'otwarty', 'apk'];
-// Łączny rozmiar załączników e-maila do biura (PDF wniosku + pliki klienta, przed base64).
-const BUDZET_ZALACZNIKOW = 10 * 1024 * 1024;
+// Ścieżka PDF analizy potrzeb w magazynie (karta klienta → Załączniki szuka jej pod tą nazwą).
+export const sciezkaPdfApk = (r: Pick<RenewalRow, 'tenant_id' | 'id'>) => `${r.tenant_id}/${r.id}/apk.pdf`;
 
 // Historia e-maili klienta (karta klienta → E-maile). Błąd zapisu nie przerywa wysyłki.
 // Zapisuje adres, na który e-mail faktycznie poszedł (w trybie testowym — adres testowy).
@@ -79,56 +79,48 @@ export async function wyslijZaproszenie(
 	return { ...wynik, adres, test };
 }
 
-// Typ pliku po pierwszych bajtach — klient deklaruje typ sam, więc sprawdzamy zawartość.
-function typZawartosci(b: Uint8Array): string | null {
-	const ascii = (od: number, dl: number) => String.fromCharCode(...b.subarray(od, od + dl));
-	if (ascii(0, 5) === '%PDF-') return 'application/pdf';
-	if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
-	if (b[0] === 0x89 && ascii(1, 3) === 'PNG') return 'image/png';
-	if (ascii(0, 4) === 'RIFF' && ascii(8, 4) === 'WEBP') return 'image/webp';
-	if (ascii(4, 4) === 'ftyp' && /^(heic|heix|hevc|heim|heis|mif1|msf1)$/.test(ascii(8, 4))) return 'image/heic';
-	return null;
-}
-const ROZSZERZENIE: Record<string, string> = {
-	'application/pdf': 'pdf',
-	'image/jpeg': 'jpg',
-	'image/png': 'png',
-	'image/webp': 'webp',
-	'image/heic': 'heic',
-	'image/heif': 'heic'
-};
-
-// Pliki klienta do e-maila biura: nazwa nadana przez serwer (rodzaj + numer + rozszerzenie z typu),
-// typ sprawdzony po zawartości, rozmiar liczony z pobranych bajtów (nie z deklaracji klienta).
-async function zalacznikiKlienta(admin: SupabaseClient, r: RenewalRow, budzet: number): Promise<{ pliki: Zalacznik[]; pominiete: string[] }> {
-	const pliki: Zalacznik[] = [];
-	const pominiete: string[] = [];
-	let rozmiar = 0;
-	let n = 0;
-	for (const z of r.zalaczniki ?? []) {
-		const { data: plik } = await admin.storage.from(BUCKET).download(z.path);
-		if (!plik) continue;
-		const bajty = new Uint8Array(await plik.arrayBuffer());
-		const typ = typZawartosci(bajty);
-		const zgodny = typ && (typ === z.mime || (typ === 'image/heic' && z.mime === 'image/heif'));
-		if (!zgodny) {
-			pominiete.push(`${z.nazwa} (zawartość nie jest plikiem ${z.mime})`);
-			continue;
-		}
-		if (rozmiar + bajty.length > budzet) {
-			pominiete.push(`${z.nazwa} (za duży do e-maila — jest w CRM)`);
-			continue;
-		}
-		rozmiar += bajty.length;
-		n++;
-		pliki.push({ filename: `${z.typ}-${n}.${ROZSZERZENIE[typ!] ?? 'bin'}`, content: base64(bajty), content_type: typ! });
+// Po APK (albo świadomej odmowie): PDF analizy potrzeb do magazynu i od razu e-mailem do klienta.
+// To osobny dokument — wniosek przychodzi drugim e-mailem po złożeniu. Błędy trafiają do dziennika.
+export async function poApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient, o: { aktualizacja?: boolean } = {}) {
+	let pdf: Uint8Array;
+	try {
+		pdf = await pdfApk(event, r, kto);
+		const { error: e } = await admin.storage.from(BUCKET).upload(sciezkaPdfApk(r), pdf, { contentType: 'application/pdf', upsert: true });
+		if (e) throw e;
+	} catch (e) {
+		console.error('renewals: PDF APK nie powstał:', (e as Error)?.message ?? e);
+		await zapiszZdarzenie(admin, r, 'blad_pdf_apk', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
+		return;
 	}
-	return { pliki, pominiete };
+	if (!r.email) return;
+	const firma = await ustawieniaFirmy(admin, r.tenant_id);
+	if (!firma?.resend_api_key) {
+		await zapiszZdarzenie(admin, r, 'blad_email_apk', null, { blad: 'Firma nie ma klucza Resend (SAAS Admin).' });
+		return;
+	}
+	const test = czyTest(firma, r);
+	const adres = test ? adresTestowy() : r.email;
+	const link = await linkDla(r.id, new URL(event.url).origin);
+	const m = mailApk(r, link, o.aktualizacja);
+	const temat = (test ? PREFIKS_TESTU : '') + m.temat;
+	const nazwa = `APK-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;
+	const w = await wyslijEmail(firma.resend_api_key, {
+		from: nadawca(),
+		to: [adres],
+		replyTo: biuro(),
+		subject: temat,
+		html: m.html,
+		text: m.tekst,
+		attachments: [{ filename: nazwa, content: base64(pdf), content_type: 'application/pdf' }]
+	});
+	await zapiszZdarzenie(admin, r, w.ok ? 'email_apk' : 'blad_email_apk', null, w.ok ? (test ? { test: adres } : null) : { status: w.status, blad: w.blad });
+	// Link do wniosku nie trafia do historii — to jedyne uprawnienie klienta do formularza.
+	if (w.ok) await zapiszEmailKlienta(admin, r, adres, temat, m.tekst.replace(link, '[link do wniosku]'), w.id);
 }
 
-// Po złożeniu wniosku: zadanie dla doradcy (najpierw — jest tanie i najważniejsze), PDF do magazynu,
-// e-mail do klienta i biura (z PDF i plikami klienta). Decyzja jest już zapisana — błędy tutaj trafiają
-// do dziennika, a nie do klienta.
+// Po złożeniu wniosku: zadanie dla doradcy (najpierw — jest tanie i najważniejsze), PDF wniosku do magazynu,
+// e-mail do klienta (z PDF wniosku) i do biura (same linki do CRM — bez załączników, żeby nie zapychać skrzynki).
+// Decyzja jest już zapisana — błędy tutaj trafiają do dziennika, a nie do klienta.
 export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient): Promise<RenewalRow> {
 	const firma = await ustawieniaFirmy(admin, r.tenant_id);
 	// Tryb testowy: potwierdzenie „dla klienta” i kopia „dla biura” idą na adres testowy.
@@ -162,20 +154,18 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 			if (w.ok) await zapiszEmailKlienta(admin, r, adres, temat, m.tekst, w.id);
 		}
 
-		// Do biura dołączamy też pliki od klienta (do 10 MB łącznie z PDF); pozostałe zostają w CRM.
-		const { pliki, pominiete } = await zalacznikiKlienta(admin, r, BUDZET_ZALACZNIKOW - (pdf?.length ?? 0));
-		const linkCrm = `${new URL(event.url).origin}/policies/${r.polisa_id}`;
-		const mb = mailBiuro(r, linkCrm, kto, pominiete);
+		// Do biura same linki: pliki (PDF APK, PDF wniosku, załączniki klienta) otwiera się w CRM.
+		const crm = new URL(event.url).origin;
+		const mb = mailBiuro(r, { polisa: `${crm}/policies/${r.polisa_id}`, klient: `${crm}/clients/${r.klient_id}?tab=zalaczniki` }, kto);
 		const wb = await wyslijEmail(firma.resend_api_key, {
 			from: nadawca(),
 			to: [test ? adresTestowy() : biuro()],
 			...(r.email ? { replyTo: r.email } : {}),
 			subject: pre + mb.temat,
 			html: mb.html,
-			text: mb.tekst,
-			attachments: [...zalPdf, ...pliki]
+			text: mb.tekst
 		});
-		await zapiszZdarzenie(admin, r, wb.ok ? 'email_biuro' : 'blad_email_biuro', null, wb.ok ? (pominiete.length ? { pominiete } : null) : { status: wb.status, blad: wb.blad });
+		await zapiszZdarzenie(admin, r, wb.ok ? 'email_biuro' : 'blad_email_biuro', null, wb.ok ? null : { status: wb.status, blad: wb.blad });
 	} else {
 		await zapiszZdarzenie(admin, r, 'blad_email_klient', null, { blad: 'Firma nie ma klucza Resend (SAAS Admin).' });
 	}

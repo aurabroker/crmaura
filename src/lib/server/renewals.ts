@@ -328,7 +328,8 @@ export const czyAktywny = (r: RenewalRow) => (AKTYWNE as readonly string[]).incl
 export async function usunSierotyPlikow(admin: SupabaseClient, r: Pick<RenewalRow, 'id' | 'tenant_id' | 'zalaczniki'>): Promise<number> {
 	const folder = `${r.tenant_id}/${r.id}`;
 	const { data: pliki } = await admin.storage.from(BUCKET).list(folder, { limit: 1000 });
-	const zostaja = new Set([...(r.zalaczniki ?? []).map((z) => z.path.split('/').pop()), 'wniosek-odnowienia.pdf']);
+	// Pliki generowane przez serwer (PDF wniosku i PDF APK) zostają zawsze.
+	const zostaja = new Set([...(r.zalaczniki ?? []).map((z) => z.path.split('/').pop()), 'wniosek-odnowienia.pdf', 'apk.pdf']);
 	const sieroty = (pliki ?? []).filter((p) => p.id && !zostaja.has(p.name)).map((p) => `${folder}/${p.name}`);
 	if (sieroty.length) await admin.storage.from(BUCKET).remove(sieroty);
 	return sieroty.length;

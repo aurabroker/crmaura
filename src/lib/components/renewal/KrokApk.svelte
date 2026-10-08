@@ -162,7 +162,7 @@
 		{#if zapisanoTeraz}
 			<p class="mt-3 flex items-center gap-2 text-sm font-medium text-emerald-700" role="status">
 				<CheckCircle2 size={18} aria-hidden="true" />
-				{s.apkOdmowa ? 'Odmowa wypełnienia APK została zapisana.' : 'Analiza potrzeb została zapisana.'}
+				{s.apkOdmowa ? 'Odmowa wypełnienia APK została zapisana.' : 'Analiza potrzeb została zapisana.'} Potwierdzenie (PDF) wysyłamy na Twój adres e-mail.
 			</p>
 		{/if}
 		{#if s.apkOdmowa}

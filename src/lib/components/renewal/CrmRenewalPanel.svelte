@@ -417,6 +417,12 @@
 							<Copy size={12} /> {pracuje === 'kopiuj' ? 'Kopiowanie…' : 'Kopiuj link'}
 						</button>
 					{/if}
+					{#if latest.apk_at}
+						<!-- PDF APK powstaje od razu po APK (osobny dokument, ten sam folder co wniosek). -->
+						<button type="button" onclick={() => otworzPlik(`${latest!.tenant_id}/${latest!.id}/apk.pdf`, 'PDF APK')} class={przyciskCls}>
+							<FileText size={12} /> PDF APK
+						</button>
+					{/if}
 					{#if latest.pdf_path}
 						<button type="button" onclick={() => otworzPlik(latest!.pdf_path, 'PDF wniosku')} class={przyciskCls}>
 							<FileText size={12} /> PDF wniosku

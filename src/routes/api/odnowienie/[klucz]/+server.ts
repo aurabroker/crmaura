@@ -13,7 +13,7 @@ import {
 	zapiszZdarzenie,
 	type RenewalRow
 } from '$lib/server/renewals';
-import { poZlozeniu } from '$lib/server/renewalFlow';
+import { poApk, poZlozeniu } from '$lib/server/renewalFlow';
 import {
 	APK_ODMOWA_TRESC,
 	TYPY_ZALACZNIKOW,
@@ -56,6 +56,14 @@ export const GET: RequestHandler = async ({ params, request, getClientAddress })
 
 const blad = (status: number, message: string, bledy?: string[]) => json({ message, ...(bledy ? { bledy } : {}) }, { status });
 
+// Praca po odpowiedzi (PDF, e-maile): na Cloudflare przez waitUntil, lokalnie — czekamy.
+async function wTle(event: Parameters<RequestHandler>[0], praca: Promise<unknown>, opis: string) {
+	const dalej = praca.catch((e) => console.error(`renewals: ${opis}:`, (e as Error)?.message ?? e));
+	const ctx = (event.platform as { context?: { waitUntil(p: Promise<unknown>): void } } | undefined)?.context;
+	if (ctx?.waitUntil) ctx.waitUntil(dalej);
+	else await dalej;
+}
+
 export const POST: RequestHandler = async (event) => {
 	const { params, request, getClientAddress } = event;
 	const admin = getAdminClient();
@@ -81,6 +89,8 @@ export const POST: RequestHandler = async (event) => {
 			});
 			if (!zapisany) return blad(409, 'Wniosek zmienił się w międzyczasie — odśwież stronę.');
 			await zapiszZdarzenie(admin, r, 'apk', kto);
+			// PDF APK od razu do klienta (osobny dokument; wniosek przyjdzie drugim e-mailem).
+			await wTle(event, poApk(event, admin, zapisany, kto, { aktualizacja: !!r.apk_at }), 'po APK');
 			return json(widok(zapisany));
 		}
 
@@ -94,6 +104,7 @@ export const POST: RequestHandler = async (event) => {
 			});
 			if (!zapisany) return blad(409, 'Wniosek zmienił się w międzyczasie — odśwież stronę.');
 			await zapiszZdarzenie(admin, r, 'apk_odmowa', kto, { tresc: APK_ODMOWA_TRESC });
+			await wTle(event, poApk(event, admin, zapisany, kto, { aktualizacja: !!r.apk_at }), 'po odmowie APK');
 			return json(widok(zapisany));
 		}
 
@@ -201,13 +212,7 @@ export const POST: RequestHandler = async (event) => {
 			await zapiszZdarzenie(admin, r, 'zlozenie', kto, { decyzja: wniosek.decyzja });
 
 			// PDF, e-maile i zadanie idą w tle (Cloudflare: waitUntil), żeby klient nie czekał na wysyłkę.
-			const dalej = Promise.all([
-				poZlozeniu(event, admin, zlozony as RenewalRow, kto),
-				usunSierotyPlikow(admin, zlozony as RenewalRow)
-			]).catch((e) => console.error('renewals: po złożeniu:', (e as Error)?.message ?? e));
-			const ctx = (event.platform as { context?: { waitUntil(p: Promise<unknown>): void } } | undefined)?.context;
-			if (ctx?.waitUntil) ctx.waitUntil(dalej);
-			else await dalej;
+			await wTle(event, Promise.all([poZlozeniu(event, admin, zlozony as RenewalRow, kto), usunSierotyPlikow(admin, zlozony as RenewalRow)]), 'po złożeniu');
 			const odp: OdpowiedzZloz = { ok: true, decyzja: wniosek.decyzja, skladka_nowa, wycena_indywidualna: wycena?.rodzaj === 'indywidualna' };
 			return json(odp);
 		}
