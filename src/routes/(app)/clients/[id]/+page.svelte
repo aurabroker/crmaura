@@ -1,11 +1,12 @@
 <script lang="ts">
+	import { POLICY_SELECT } from '$lib/queries';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor } from '$lib/utils';
-	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
+	import type { Claim, Vehicle, ClientContact, CrmTask, Policy } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
@@ -15,6 +16,8 @@
 	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken, APK_FORMS_SELECT } from '$lib/utils/apkLink';
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import type { ApkForm } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let pdfSaving = $state<string | null>(null);
 	let pdfError = $state('');
@@ -138,10 +141,45 @@
 	));
 	const showGwarancje = $derived(!!client?.gwarancje || clientGwarancje.length > 0);
 
-	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'mailing';
+	// Zakładka Polisy: aktywne i archiwum — sortowanie po kliknięciu w nagłówek kolumny.
+	const dzisPolisy = new Date().toISOString().slice(0, 10);
+	const activePolicies = $derived(clientPolicies.filter(p => p.data_do === null || p.data_do >= dzisPolisy));
+	const archivedPolicies = $derived(clientPolicies.filter(p => p.data_do !== null && p.data_do < dzisPolisy && p.deleted_at === null));
+	const kolumnyPolis = {
+		nr: (p: Policy) => p.nr_polisy,
+		tu: (p: Policy) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
+		rodzaj: (p: Policy) => p.rodzaj,
+		od: (p: Policy) => p.data_od,
+		do: (p: Policy) => p.data_do,
+		skladka: (p: Policy) => Number(p.skladka_przypisana ?? 0),
+		status: (p: Policy) => p.data_do
+	};
+	const sortAktywne = new Sortowanie<Policy>(kolumnyPolis, { klucz: 'nr' }, 'klient-polisy-aktywne');
+	const sortArchiwum = new Sortowanie<Policy>(kolumnyPolis, { klucz: 'nr' }, 'klient-polisy-archiwum');
+	const aktywneWiersze = $derived(sortAktywne.sortuj(activePolicies));
+	const archiwumWiersze = $derived(sortArchiwum.sortuj(archivedPolicies));
+
+	const sortGwarancje = new Sortowanie<Policy>({
+		nr: (g) => g.nr_polisy,
+		typ: (g) => g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : null),
+		beneficjent: (g) => g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt,
+		od: (g) => g.data_od,
+		do: (g) => g.data_do,
+		limit: (g) => (g.ug_limit != null ? Number(g.ug_limit) : null)
+	}, { klucz: 'nr' }, 'klient-gwarancje');
+	const gwarancjeWiersze = $derived(sortGwarancje.sortuj(clientGwarancje));
+
+	// Okno „Składki klienta" — lista polis ze składką.
+	const sortSkladki = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0)
+	}, { klucz: 'nr' }, 'klient-skladki-polisy');
+	const skladkiWiersze = $derived(sortSkladki.sortuj(clientPolicies));
+
+	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'emaile' | 'mailing';
 	let activeTab = $state<TabKey>('polisy');
 	const tabs = $derived(
-		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
+		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
 	);
 
 	// ── Mailing GetResponse (tylko Aura Expert) ───────────────────────────────
@@ -273,6 +311,51 @@
 			grSaving = false;
 		}
 	}
+
+	// ── E-maile wysłane klientowi z CRM (przypomnienia o płatnościach, odnowienia) ──
+	type EmailKlienta = { id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[] };
+	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', inne: 'Inne' };
+	let emaile = $state<EmailKlienta[]>([]);
+	let emaileLadowanie = $state(false);
+	let emaileBlad = $state('');
+	let emaileDla = '';
+	let emailOtwarty = $state<string | null>(null);
+	const sortEmaile = new Sortowanie<EmailKlienta>({
+		data: (e) => e.wyslano_at,
+		rodzaj: (e) => RODZAJ_EMAILA[e.rodzaj] ?? e.rodzaj,
+		temat: (e) => e.temat,
+		adres: (e) => e.adres
+	}, { klucz: 'data', kierunek: 'desc' }, 'klient-emaile');
+	const emaileWiersze = $derived(sortEmaile.sortuj(emaile));
+	const nrPolisy = $derived(new Map(appState.policies.map(p => [p.id, p.nr_polisy])));
+
+	async function wczytajEmaile() {
+		const dla = clientId ?? '';
+		emaileLadowanie = true; emaileBlad = '';
+		const { data, error } = await sb.from('crm_client_emails')
+			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids')
+			.eq('klient_id', dla)
+			.order('wyslano_at', { ascending: false })
+			.limit(200);
+		if (dla !== clientId) return; // w międzyczasie otwarto innego klienta
+		emaileLadowanie = false;
+		if (error) {
+			emaileBlad = error.code === '42P01' || /crm_client_emails/.test(error.message)
+				? 'Historia e-maili będzie dostępna po aktualizacji bazy danych.'
+				: `Nie udało się wczytać e-maili: ${error.message}`;
+			emaile = [];
+			return;
+		}
+		emaile = (data ?? []) as EmailKlienta[];
+	}
+
+	$effect(() => {
+		if (activeTab === 'emaile' && clientId && emaileDla !== clientId) {
+			emaileDla = clientId;
+			emaile = []; emailOtwarty = null;
+			wczytajEmaile();
+		}
+	});
 
 	// lazy-load przy wejściu w zakładkę (oszczędza limity API)
 	$effect(() => {
@@ -449,8 +532,8 @@
 		}
 		linkingSaving = true;
 		await sb.from('crm_policies').update({ pojazd_id: vehicleId }).eq('id', linkPolicyId);
-		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		const { data, error: bladPolis } = await sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null);
+		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 		linkingSaving = false;
 		linkingVehicleId = null;
 		linkPolicyId = '';
@@ -661,30 +744,28 @@
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
 
 	{#if activeTab === 'polisy'}
 		{@const today = new Date().toISOString().slice(0,10)}
-		{@const activePolicies = clientPolicies.filter(p => p.data_do === null || p.data_do >= today)}
-		{@const archivedPolicies = clientPolicies.filter(p => p.data_do !== null && p.data_do < today && p.deleted_at === null)}
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-						<th class="px-5 py-3">Nr Polisy</th>
-						<th class="px-5 py-3">TU</th>
-						<th class="px-5 py-3">Rodzaj</th>
-						<th class="px-5 py-3">OD</th>
-						<th class="px-5 py-3">DO</th>
-						<th class="px-5 py-3 text-right">Składka</th>
-						<th class="px-5 py-3">Status</th>
+						<SortTh s={sortAktywne} k="nr">Nr Polisy</SortTh>
+						<SortTh s={sortAktywne} k="tu">TU</SortTh>
+						<SortTh s={sortAktywne} k="rodzaj">Rodzaj</SortTh>
+						<SortTh s={sortAktywne} k="od">OD</SortTh>
+						<SortTh s={sortAktywne} k="do">DO</SortTh>
+						<SortTh s={sortAktywne} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
+						<SortTh s={sortAktywne} k="status">Status</SortTh>
 					</tr>
 				</thead>
 				<tbody>
-					{#each activePolicies as p}
+					{#each aktywneWiersze as p}
 						{@const st = policyStatus(p.data_do)}
 						{@const daysLeft = p.data_do ? dateDiffDays(today, p.data_do) : 999}
 						{@const isRenewed = renewedPolicyIds.has(p.id)}
@@ -745,17 +826,17 @@
 					<table class="w-full text-left text-sm">
 						<thead>
 							<tr class="bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-								<th class="px-5 py-3">Nr Polisy</th>
-								<th class="px-5 py-3">TU</th>
-								<th class="px-5 py-3">Rodzaj</th>
-								<th class="px-5 py-3">OD</th>
-								<th class="px-5 py-3">DO</th>
-								<th class="px-5 py-3 text-right">Składka</th>
-								<th class="px-5 py-3">Status</th>
+								<SortTh s={sortArchiwum} k="nr">Nr Polisy</SortTh>
+								<SortTh s={sortArchiwum} k="tu">TU</SortTh>
+								<SortTh s={sortArchiwum} k="rodzaj">Rodzaj</SortTh>
+								<SortTh s={sortArchiwum} k="od">OD</SortTh>
+								<SortTh s={sortArchiwum} k="do">DO</SortTh>
+								<SortTh s={sortArchiwum} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
+								<SortTh s={sortArchiwum} k="status">Status</SortTh>
 							</tr>
 						</thead>
 						<tbody>
-							{#each archivedPolicies as p}
+							{#each archiwumWiersze as p}
 								{@const st = policyStatus(p.data_do)}
 								{@const isRenewed = renewedPolicyIds.has(p.id)}
 								<tr class="border-t border-line-soft hover:bg-slate-50">
@@ -882,16 +963,16 @@
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-						<th class="px-5 py-3">Nr / Umowa</th>
-						<th class="px-5 py-3">Typ</th>
-						<th class="px-5 py-3">Beneficjent / Kontrakt</th>
-						<th class="px-5 py-3">OD</th>
-						<th class="px-5 py-3">DO</th>
-						<th class="px-5 py-3 text-right">Limit / Suma</th>
+						<SortTh s={sortGwarancje} k="nr">Nr / Umowa</SortTh>
+						<SortTh s={sortGwarancje} k="typ">Typ</SortTh>
+						<SortTh s={sortGwarancje} k="beneficjent">Beneficjent / Kontrakt</SortTh>
+						<SortTh s={sortGwarancje} k="od">OD</SortTh>
+						<SortTh s={sortGwarancje} k="do">DO</SortTh>
+						<SortTh s={sortGwarancje} k="limit" class="px-5 py-3 text-right" align="right">Limit / Suma</SortTh>
 					</tr>
 				</thead>
 				<tbody>
-					{#each clientGwarancje as g}
+					{#each gwarancjeWiersze as g}
 						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium text-blue-700"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a></td>
 							<td class="px-5 py-3 text-slate-600">{g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : '—')}</td>
@@ -1162,6 +1243,61 @@
 			{/if}
 		</div>
 
+	{:else if activeTab === 'emaile'}
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
+				<div class="flex items-center gap-2">
+					<Mail size={16} class="text-slate-400" />
+					<span class="text-sm font-semibold text-slate-700">E-maile wysłane z CRM</span>
+					<span class="text-xs text-slate-400">— przypomnienia o płatnościach i odnowienia</span>
+				</div>
+				<button onclick={wczytajEmaile} disabled={emaileLadowanie}
+					class="flex items-center gap-1.5 text-xs text-slate-500 border border-line rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+					<RefreshCw size={12} class={emaileLadowanie ? 'animate-spin' : ''} /> Odśwież
+				</button>
+			</div>
+			{#if emaileBlad}
+				<div class="m-5 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{emaileBlad}</div>
+			{:else if emaileLadowanie && !emaile.length}
+				<p class="text-sm text-slate-400 text-center py-8">Wczytywanie…</p>
+			{:else if !emaile.length}
+				<p class="text-sm text-slate-400 text-center py-8">Do tego klienta nie wysłano jeszcze żadnego e-maila z CRM.</p>
+			{:else}
+				<table class="w-full text-left text-sm">
+					<thead>
+						<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+							<SortTh s={sortEmaile} k="data" class="px-4 py-2">Wysłano</SortTh>
+							<SortTh s={sortEmaile} k="rodzaj" class="px-4 py-2">Rodzaj</SortTh>
+							<SortTh s={sortEmaile} k="temat" class="px-4 py-2">Temat</SortTh>
+							<SortTh s={sortEmaile} k="adres" class="px-4 py-2">Do</SortTh>
+							<th class="px-4 py-2">Polisy</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each emaileWiersze as e (e.id)}
+							<tr class="border-t border-line-soft hover:bg-slate-50 cursor-pointer"
+								onclick={(ev) => { if ((ev.target as Element).closest('a,button')) return; emailOtwarty = emailOtwarty === e.id ? null : e.id; }}>
+								<td class="px-4 py-2.5 text-slate-500 whitespace-nowrap"><span class="inline-flex items-center gap-1"><Send size={12} class="text-slate-300" />{fmtDateTime(e.wyslano_at)}</span></td>
+								<td class="px-4 py-2.5 text-slate-600">{RODZAJ_EMAILA[e.rodzaj] ?? e.rodzaj}</td>
+								<td class="px-4 py-2.5 font-medium text-slate-800">
+									<button type="button" class="text-left hover:text-blue-700" aria-expanded={emailOtwarty === e.id}
+										onclick={() => (emailOtwarty = emailOtwarty === e.id ? null : e.id)}>{e.temat}</button>
+								</td>
+								<td class="px-4 py-2.5 text-slate-500">{e.adres}</td>
+								<td class="px-4 py-2.5 text-xs">
+									{#each e.polisa_ids as pid, i (pid)}{#if i > 0}, {/if}<a href="/policies/{pid}" class="text-blue-700 hover:underline">{nrPolisy.get(pid) ?? 'polisa'}</a>{/each}
+								</td>
+							</tr>
+							{#if emailOtwarty === e.id && e.tresc}
+								<tr class="bg-slate-50/70">
+									<td colspan="5" class="px-4 py-3"><pre class="whitespace-pre-wrap font-sans text-sm text-slate-700">{e.tresc}</pre></td>
+								</tr>
+							{/if}
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</div>
 	{:else if activeTab === 'mailing'}
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
@@ -1305,9 +1441,9 @@
 			</div>
 		</div>
 		<table class="w-full text-sm">
-			<thead><tr class="text-[11px] text-slate-500 uppercase"><th class="py-2 text-left">Polisa</th><th class="py-2 text-right">Składka</th></tr></thead>
+			<thead><tr class="text-[11px] text-slate-500 uppercase"><SortTh s={sortSkladki} k="nr" class="py-2 text-left">Polisa</SortTh><SortTh s={sortSkladki} k="skladka" class="py-2 text-right" align="right">Składka</SortTh></tr></thead>
 			<tbody>
-				{#each clientPolicies as p}
+				{#each skladkiWiersze as p}
 					<tr class="border-t border-line-soft">
 						<td class="py-2"><a href="/policies/{p.id}" class="text-blue-700 hover:underline">{p.nr_polisy}</a></td>
 						<td class="py-2 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>

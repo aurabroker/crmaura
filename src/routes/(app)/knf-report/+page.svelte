@@ -5,6 +5,9 @@
 	import { fmtPln } from '$lib/utils';
 	import KpiCard from '$lib/components/KpiCard.svelte';
 	import { Download } from 'lucide-svelte';
+	import type { Policy } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	onMount(() => {
 		if (!isAdmin(appState.profile)) goto('/dashboard');
@@ -19,6 +22,18 @@
 			(p) => p.rodzaj !== 'polisa_obca' && p.data_od >= dOd && p.data_od <= dDo
 		)
 	);
+
+	// Sortowanie rejestru po kliknięciu w nagłówek kolumny
+	const sort = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		tu: (p) => p.crm_insurers?.nazwa,
+		od: (p) => p.data_od,
+		sPrz: (p) => Number(p.skladka_przypisana ?? 0),
+		sZai: (p) => Number(p.skladka_zainkasowana ?? 0),
+		pPrz: (p) => Number(p.prowizja_przypisana ?? 0),
+		pZai: (p) => Number(p.prowizja_zainkasowana ?? 0)
+	}, { klucz: 'nr' }, 'knf-polisy');
+	const wiersze = $derived(sort.sortuj(knfPolicies));
 
 	const totals = $derived(
 		knfPolicies.reduce(
@@ -39,7 +54,7 @@
 			'Składka Przypisana', 'Składka Zainkasowana',
 			'Prowizja Przypisana', 'Prowizja Zainkasowana'
 		];
-		const rows = knfPolicies.map((p) => [
+		const rows = wiersze.map((p) => [
 			p.nr_polisy ?? '',
 			p.crm_insurers?.nazwa ?? '',
 			p.data_od ?? '',
@@ -99,17 +114,17 @@
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-				<th class="px-5 py-3">Nr Polisy</th>
-				<th class="px-5 py-3">TU</th>
-				<th class="px-5 py-3">Data Od</th>
-				<th class="px-5 py-3 text-right">Składka Przyp.</th>
-				<th class="px-5 py-3 text-right">Składka Zaink.</th>
-				<th class="px-5 py-3 text-right">Prow. Przyp.</th>
-				<th class="px-5 py-3 text-right">Prow. Zaink.</th>
+				<SortTh s={sort} k="nr">Nr Polisy</SortTh>
+				<SortTh s={sort} k="tu">TU</SortTh>
+				<SortTh s={sort} k="od">Data Od</SortTh>
+				<SortTh s={sort} k="sPrz" class="px-5 py-3 text-right" align="right">Składka Przyp.</SortTh>
+				<SortTh s={sort} k="sZai" class="px-5 py-3 text-right" align="right">Składka Zaink.</SortTh>
+				<SortTh s={sort} k="pPrz" class="px-5 py-3 text-right" align="right">Prow. Przyp.</SortTh>
+				<SortTh s={sort} k="pZai" class="px-5 py-3 text-right" align="right">Prow. Zaink.</SortTh>
 			</tr>
 		</thead>
 		<tbody>
-			{#each knfPolicies as p}
+			{#each wiersze as p}
 				<tr class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3 font-medium">{p.nr_polisy}</td>
 					<td class="px-5 py-3">{p.crm_insurers?.nazwa ?? '—'}</td>

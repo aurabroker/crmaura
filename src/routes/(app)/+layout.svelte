@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
@@ -88,12 +89,12 @@
 
 		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL, rVR, rTasks, rLeasings] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
+			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
-			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))').order('data_platnosci'),
+			sb.from('crm_policy_payments').select(PAYMENT_SELECT).order('data_platnosci'),
 			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
 			sb.from('crm_vehicles').select('*'),
-			sb.from('crm_apk_logs').select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))'),
+			sb.from('crm_apk_logs').select(PAYMENT_SELECT),
 			sb.from('crm_insurers').select('*').order('nazwa'),
 			sb.from('crm_profiles').select('*').eq('tenant_id', profile.tenant_id),
 			sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)'),

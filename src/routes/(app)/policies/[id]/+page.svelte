@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
@@ -11,6 +12,8 @@
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
@@ -21,6 +24,17 @@
 	const childPolicies = $derived(appState.policies.filter(p => p.parent_id === policyId));
 	const childSkladka = $derived(childPolicies.reduce((s, p) => s + (p.skladka_przypisana ?? 0), 0));
 	const childProwizja = $derived(childPolicies.reduce((s, p) => s + (p.prowizja_przypisana ?? 0), 0));
+	// Sortowanie tabeli „Polisy w ramach UG” po kliknięciu w nagłówek
+	type PolisaUg = (typeof appState.policies)[number];
+	const sortUg = new Sortowanie<PolisaUg>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		od: (p) => p.data_od,
+		do: (p) => p.data_do,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0),
+		prowizja: (p) => Number(p.prowizja_przypisana ?? 0)
+	}, { klucz: 'nr' }, 'polisa-ug-polisy');
+	const childWiersze = $derived(sortUg.sortuj(childPolicies));
 
 	const ugPodtypLabel: Record<string, string> = {
 		flota: 'Flota',
@@ -145,8 +159,7 @@
 			ugEditUpdatedCount = 0;
 		}
 
-		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)');
-		appState.policies = (data ?? []) as typeof appState.policies;
+		await odswiezPolisy();
 		ugEditOpen = false; ugEditSaving = false;
 	}
 
@@ -185,12 +198,11 @@
 		showAnnex = false;
 		axNr = ''; axTyp = 'korekta'; axData = ''; axOpis = ''; axDeltaSkladka = '0';
 		axNewDataDo = ''; axNewSkladka = ''; axNewProwizjaPct = '';
-		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)'),
+		const [, rA] = await Promise.all([
+			odswiezPolisy(),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
-		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
+		if (!rA.error && rA.data) appState.annexes = rA.data as typeof appState.annexes;
 	}
 
 	// --- Delete (soft) ---
@@ -229,28 +241,48 @@
 			: appState.insurerContacts.filter(c => c.tu_id === policy?.tu_id && !c.branch_id)
 	);
 
+	// Opiekun UG sprzed zmiany — ustalany przy otwarciu okna, żeby ponowna próba po błędzie nadal go znała.
+	let poprzedniOpiekunUg = $state<string | null>(null);
+
+	// Odświeżenie listy polis po zmianie; przy błędzie zostaje dotychczasowa lista.
+	async function odswiezPolisy() {
+		const { data, error } = await sb.from('crm_policies')
+			.select(POLICY_SELECT)
+			.is('deleted_at', null);
+		if (!error && data) appState.policies = data as typeof appState.policies;
+	}
+
 	async function saveContact() {
 		if (!contactPersonId) { contactError = 'Wybierz osobę.'; return; }
 		savingContact = true; contactError = '';
+		const poprzedni = poprzedniOpiekunUg;
 		const { error } = await sb.from('crm_policies')
 			.update({ tu_contact_id: contactPersonId })
 			.eq('id', policyId);
+		if (!error && policy?.typ_umowy === 'generalna') {
+			// Polisy w UG bez opiekuna albo z dotychczasowym opiekunem UG dostają nowego opiekuna z UG.
+			const q = sb.from('crm_policies')
+				.update({ tu_contact_id: contactPersonId })
+				.eq('parent_id', policyId ?? '')
+				.eq('tu_id', policy.tu_id)
+				.is('deleted_at', null);
+			const { error: eDzieci } = poprzedni
+				? await q.or(`tu_contact_id.is.null,tu_contact_id.eq.${poprzedni}`)
+				: await q.is('tu_contact_id', null);
+			if (eDzieci) contactError = `Opiekun UG zapisany, ale nie przepisany na polisy w UG: ${eDzieci.message}`;
+		}
 		savingContact = false;
 		if (error) { contactError = error.message; return; }
-		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
-			.is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		await odswiezPolisy();
+		if (contactError) return;
+		poprzedniOpiekunUg = contactPersonId;
 		showContact = false;
 		contactBranchId = ''; contactPersonId = '';
 	}
 
 	async function removeContact() {
 		await sb.from('crm_policies').update({ tu_contact_id: null }).eq('id', policyId);
-		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
-			.is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		await odswiezPolisy();
 	}
 
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
@@ -275,7 +307,7 @@
 
 	async function reloadPayments() {
 		const { data } = await sb.from('crm_policy_payments')
-			.select('*, crm_policies(nr_polisy, crm_clients(nazwa))')
+			.select(PAYMENT_SELECT)
 			.order('data_platnosci');
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
@@ -451,7 +483,7 @@
 		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5 flex items-center justify-between">
 				<span>Kontakt TU</span>
-				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; }}
+				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; poprzedniOpiekunUg = policy?.tu_contact_id ?? null; }}
 					class="text-[10px] text-slate-400 hover:text-blue-600 transition-colors">
 					{policy.tu_contact_id ? 'Zmień' : '+ Przypisz'}
 				</button>
@@ -661,16 +693,16 @@
 		<table class="w-full text-sm text-left">
 			<thead>
 				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-5 py-2">Nr polisy</th>
-					<th class="px-5 py-2">Klient</th>
-					<th class="px-5 py-2">OD</th>
-					<th class="px-5 py-2">DO</th>
-					<th class="px-5 py-2 text-right">Składka</th>
-					<th class="px-5 py-2 text-right">Prowizja</th>
+					<SortTh s={sortUg} k="nr" class="px-5 py-2">Nr polisy</SortTh>
+					<SortTh s={sortUg} k="klient" class="px-5 py-2">Klient</SortTh>
+					<SortTh s={sortUg} k="od" class="px-5 py-2">OD</SortTh>
+					<SortTh s={sortUg} k="do" class="px-5 py-2">DO</SortTh>
+					<SortTh s={sortUg} k="skladka" class="px-5 py-2 text-right" align="right">Składka</SortTh>
+					<SortTh s={sortUg} k="prowizja" class="px-5 py-2 text-right" align="right">Prowizja</SortTh>
 				</tr>
 			</thead>
 			<tbody>
-				{#each childPolicies as cp}
+				{#each childWiersze as cp}
 					{@const cst = policyStatus(cp.data_do)}
 					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-2">

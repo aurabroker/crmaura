@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { sb } from '$lib/supabase';
@@ -269,18 +270,18 @@
 			sb
 				.from('crm_policies')
 				.select(
-					'*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))'
+					POLICY_SELECT
 				)
 				.is('deleted_at', null),
 			sb
 				.from('crm_policy_payments')
-				.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))')
+				.select(PAYMENT_SELECT)
 				.order('data_platnosci'),
 			sb.from('crm_vehicles').select('*'),
 			sb.from('crm_leasings').select('*'),
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje')
 		]);
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.leasings = (rL.data ?? []) as typeof appState.leasings;

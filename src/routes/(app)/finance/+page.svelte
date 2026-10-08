@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { POLICY_SELECT } from '$lib/queries';
 	import { appState, isFinance } from '$lib/stores/app.svelte';
 	import { sb } from '$lib/supabase';
 	import { goto } from '$app/navigation';
@@ -7,6 +8,9 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { Search, FileUp, CheckCircle } from 'lucide-svelte';
+	import type { Policy } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	onMount(() => {
 		if (!isFinance(appState.profile)) goto('/dashboard');
@@ -25,6 +29,19 @@
 				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(search.toLowerCase())
 			)
 	);
+
+	// Sortowanie po kliknięciu w nagłówek kolumny
+	const sort = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		tu: (p) => p.crm_insurers?.nazwa,
+		skladka: (p) => Number(p.skladka_przypisana),
+		pct: (p) => Number(p.prowizja_pct),
+		przyp: (p) => Number(p.prowizja_przypisana),
+		zaink: (p) => Number(p.prowizja_zainkasowana),
+		rozl: (p) => p.rozliczenie_status ?? 'nierozliczona'
+	}, { klucz: 'nr' }, 'finanse-rozliczenia');
+	const wiersze = $derived(sort.sortuj(rows));
 
 	const totalPrzyp = $derived(rows.reduce((s, p) => s + (p.prowizja_przypisana ?? 0), 0));
 	const totalZaink = $derived(rows.reduce((s, p) => s + (p.prowizja_zainkasowana ?? 0), 0));
@@ -69,8 +86,8 @@
 		settling = false;
 		if (error) { settleError = error.message; return; }
 		showSettle = false;
-		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa)');
-		appState.policies = (data ?? []) as typeof appState.policies;
+		const { data, error: bladPolis } = await sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null);
+		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 	}
 
 	const rozlStatusLabel: Record<string, string> = {
@@ -122,19 +139,19 @@
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-				<th class="px-5 py-3">Nr Polisy</th>
-				<th class="px-5 py-3">Klient</th>
-				<th class="px-5 py-3">TU</th>
-				<th class="px-5 py-3 text-right">Składka Przyp.</th>
-				<th class="px-5 py-3 text-right">% Prow.</th>
-				<th class="px-5 py-3 text-right">Prow. Przyp.</th>
-				<th class="px-5 py-3 text-right">Prow. Zaink.</th>
-				<th class="px-5 py-3">Rozliczenie</th>
+				<SortTh s={sort} k="nr">Nr Polisy</SortTh>
+				<SortTh s={sort} k="klient">Klient</SortTh>
+				<SortTh s={sort} k="tu">TU</SortTh>
+				<SortTh s={sort} k="skladka" class="px-5 py-3 text-right" align="right">Składka Przyp.</SortTh>
+				<SortTh s={sort} k="pct" class="px-5 py-3 text-right" align="right">% Prow.</SortTh>
+				<SortTh s={sort} k="przyp" class="px-5 py-3 text-right" align="right">Prow. Przyp.</SortTh>
+				<SortTh s={sort} k="zaink" class="px-5 py-3 text-right" align="right">Prow. Zaink.</SortTh>
+				<SortTh s={sort} k="rozl">Rozliczenie</SortTh>
 				<th class="px-5 py-3">Akcje</th>
 			</tr>
 		</thead>
 		<tbody>
-			{#each rows as p}
+			{#each wiersze as p}
 				{@const rs = (p as any).rozliczenie_status ?? 'nierozliczona'}
 				<tr class="border-t border-line-soft hover:bg-slate-50">
 					<td class="px-5 py-3 font-medium">{p.nr_polisy}</td>
