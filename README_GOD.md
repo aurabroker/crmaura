@@ -256,7 +256,7 @@ z załącznikami (dyplom, certyfikat szkolenia z ostatnich 12 miesięcy, wzory z
   nowych wniosków (ponawia tylko niewysłane — na adres testowy). Karta CRM otwarta przy włączonym trybie wysyła
   `oczekiwany_test: true`; gdy tryb wyłączono w międzyczasie, serwer odpowiada 409 („odśwież stronę”).
   Po testach: wyłączyć moduł i usunąć wnioski testowe (`email` = adres testowy) — inaczej automat pominie te certyfikaty.
-- Migracja: `supabase/migrations/20261007000003_renewals.sql` (zastosowana 2026-10-08).
+- Migracje: `supabase/migrations/20261007000003_renewals.sql`, `20261008000002_renewals_cron_url.sql` (obie zastosowane 2026-10-08).
 
 ---
 
