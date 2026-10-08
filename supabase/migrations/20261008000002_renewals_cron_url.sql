@@ -1,6 +1,6 @@
 -- ============================================================
 -- Zadanie dzienne odnowień: adres *.pages.dev zamiast portal.beautypolisa.eu.
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-08 (ręczne uruchomienie: HTTP 200, wynik zadania bez błędów).
 --
 -- Domena portalu ma ochronę Cloudflare przed botami: żądanie z bazy (pg_net) dostaje 403 „Just a moment…”
 -- i zadanie /api/cron/renewals nigdy się nie wykonuje (wygaszanie linków, automat 45 dni, przypomnienia).
