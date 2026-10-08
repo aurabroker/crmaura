@@ -8,10 +8,11 @@
 		ZALACZNIKI_MAX,
 		ZALACZNIK_MAX_BAJTOW,
 		ZALACZNIK_TYPY_MIME,
+		terminSzkolenia,
 		type TypZalacznika
 	} from '$lib/renewals/program';
 	import Bledy from './Bledy.svelte';
-	import { fmtRozmiar, mimePliku, wyslij } from './klient';
+	import { fmtData, fmtRozmiar, mimePliku, wyslij } from './klient';
 	import type { Odnowienie } from './stan.svelte';
 
 	// Załączniki do ankiety: plik idzie prosto do magazynu przez jednorazowy podpisany adres od serwera
@@ -102,7 +103,8 @@
 <fieldset class="rounded-2xl border border-slate-200 p-4 sm:p-5">
 	<legend class="px-1 text-base font-semibold text-[#2a3b69]">Załączniki</legend>
 	<p class="text-sm text-slate-600">
-		Dołącz <strong>co najmniej jeden dyplom</strong> i <strong>jeden certyfikat ze szkolenia z ostatnich 12 miesięcy</strong>.
+		Dołącz <strong>dyplom kosmetologa</strong> (tylko po studiach licencjackich lub magisterskich) i <strong>certyfikat ze szkolenia z zabiegu</strong>
+		ukończonego najpóźniej <strong>{fmtData(terminSzkolenia(s.widok.okres_nowy.od))}</strong> (co najmniej 12 miesięcy przed początkiem ochrony).
 		Pliki PDF albo zdjęcia (JPG, PNG, WEBP, HEIC), do {fmtRozmiar(ZALACZNIK_MAX_BAJTOW)} każdy, najwyżej {ZALACZNIKI_MAX} plików.
 	</p>
 

@@ -1,10 +1,11 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { CalendarClock, CheckCircle2, Link2Off, Mail, RefreshCw, ShieldCheck, XCircle } from 'lucide-svelte';
+	import { CalendarClock, CheckCircle2, Link2Off, Mail, RefreshCw, XCircle } from 'lucide-svelte';
 	import type { WidokOdnowienia } from '$lib/renewals/api';
 	import { DECYZJA_ETYKIETA } from '$lib/renewals/staffApi';
-	import { PROGRAM_NAZWA, UBEZPIECZYCIEL, formatSuma, formatZl } from '$lib/renewals/program';
+	import { PROGRAM_NAZWA, formatSuma, formatZl, nazwaUbezpieczyciela } from '$lib/renewals/program';
+	import LogoBeautyPolisa from '$lib/components/renewal/LogoBeautyPolisa.svelte';
 	import KrokAnkieta from '$lib/components/renewal/KrokAnkieta.svelte';
 	import KrokApk from '$lib/components/renewal/KrokApk.svelte';
 	import KrokPodsumowanie from '$lib/components/renewal/KrokPodsumowanie.svelte';
@@ -80,12 +81,9 @@
 <div class="min-h-screen flex flex-col bg-slate-100 text-slate-900">
 	<header class="bg-[#2a3b69] text-white">
 		<div class="mx-auto flex max-w-2xl items-center gap-2.5 px-4 py-4">
-			<ShieldCheck size={24} class="shrink-0 text-rose-300" aria-hidden="true" />
-			<p class="text-base sm:text-lg">
-				<span class="font-bold">BeautyPolisa</span>
-				<span class="text-white/50" aria-hidden="true">·</span>
-				<span class="text-white/90">odnowienie ubezpieczenia OC</span>
-			</p>
+			<LogoBeautyPolisa />
+			<span class="text-white/50" aria-hidden="true">·</span>
+			<p class="text-base text-white/90 sm:text-lg">odnowienie ubezpieczenia OC</p>
 		</div>
 	</header>
 
@@ -161,7 +159,7 @@
 						{#each [
 							['Ubezpieczający', w.klient],
 							['Numer certyfikatu', w.nr_polisy ?? '—'],
-							['Ubezpieczyciel', w.ubezpieczyciel ?? UBEZPIECZYCIEL],
+							['Ubezpieczyciel', nazwaUbezpieczyciela(w.ubezpieczyciel)],
 							['Program', w.program ?? PROGRAM_NAZWA],
 							['Obecny okres', `${fmtData(w.okres_obecny.od)} – ${fmtData(w.okres_obecny.do)}`]
 						] as [k, v] (k)}
@@ -186,7 +184,7 @@
 							<dt class="text-sm text-slate-500 sm:col-span-2">Składka roczna</dt>
 							<dd class="sm:col-span-3" data-testid="skladka">
 								<span class="font-medium text-slate-900">{w.skladka != null ? formatZl(w.skladka) : 'zgodnie z obecnym certyfikatem'}</span>
-								<span class="block text-sm text-slate-500">bez zmian przy odnowieniu bez zmian</span>
+								<span class="block text-sm text-slate-500">Przy odnowieniu bez zmian składka pozostaje taka sama.</span>
 							</dd>
 						</div>
 						<div class="px-4 py-3 sm:grid sm:grid-cols-5 sm:gap-4">
@@ -209,7 +207,7 @@
 						{/each}
 					</ol>
 					<p class="mt-4 text-sm text-slate-500">
-						Jeśli zgłosisz zabiegi wymagające oceny ubezpieczyciela (np. toksyna botulinowa, wypełniacze), dojdzie krótka ankieta ERGO Hestii z
+						Jeśli zgłosisz zabiegi wymagające oceny ubezpieczyciela (np. toksyna botulinowa, wypełniacze), dojdzie krótka ankieta Ergo Hestii z
 						dokumentami kwalifikacji.
 					</p>
 
@@ -258,7 +256,7 @@
 							<div class="mt-5 flex items-start gap-3 rounded-xl border border-[#2a3b69]/20 bg-[#2a3b69]/5 p-4 text-[#2a3b69]">
 								<Mail size={20} class="mt-0.5 shrink-0" aria-hidden="true" />
 								<p>
-									<strong>Ankieta ERGO Hestii:</strong> sprawdź skrzynkę e-mail — wyślemy PDF ankiety. Wydrukuj ją, podpisz i odeślij zgodnie z
+									<strong>Ankieta Ergo Hestii:</strong> sprawdź skrzynkę e-mail — wyślemy PDF ankiety. Wydrukuj ją, podpisz i odeślij zgodnie z
 									instrukcją w wiadomości.
 								</p>
 							</div>
@@ -273,5 +271,8 @@
 		{/if}
 	</main>
 
-	<footer class="py-6 text-center text-xs text-slate-500">BeautyPolisa · Aura Consulting / Aura Expert</footer>
+	<footer class="py-6 text-center text-xs text-slate-500">
+		Beauty<span class="text-rose-600" aria-label="serce">❤️</span>Polisa ·
+		<a href="https://auraexpert.pl/" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-slate-700">Aura Expert sp. z o.o.</a>
+	</footer>
 </div>

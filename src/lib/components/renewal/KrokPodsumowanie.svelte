@@ -144,7 +144,7 @@
 
 		{#if s.potrzebnaAnkieta}
 			<div>
-				{@render wiersz('Ankieta ERGO Hestii', 'ankieta')}
+				{@render wiersz('Ankieta Ergo Hestii', 'ankieta')}
 				<dd class="mt-1 text-slate-900">
 					Osoby wykonujące zabiegi: {s.ankieta.osoby.filter((o) => o.imie_nazwisko.trim()).length}, załączniki: {s.zalaczniki.length}
 					<span class="block text-sm text-slate-600">PDF ankiety przyjdzie e-mailem — wydrukuj go, podpisz i odeślij.</span>

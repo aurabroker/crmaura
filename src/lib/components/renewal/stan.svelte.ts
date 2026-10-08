@@ -22,10 +22,8 @@ export type WidokAktywny = Extract<WidokOdnowienia, { stan: 'aktywny' }>;
 export type Krok = 'start' | 'apk' | 'wniosek' | 'ankieta' | 'podsumowanie' | 'wyslano';
 
 // Pola formularza przed walidacją — puste odpowiedzi to ''.
-export type ApkForm = Omit<Apk, 'osoby' | 'szkody' | 'spoza_listy' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet'> & {
+export type ApkForm = Omit<Apk, 'osoby' | 'szkody' | 'szkody_opis' | 'spoza_listy' | 'spoza_listy_opis' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet'> & {
 	osoby: Apk['osoby'] | '';
-	szkody: Apk['szkody'] | '';
-	spoza_listy: Apk['spoza_listy'] | '';
 	suma_oczekiwana: Apk['suma_oczekiwana'] | '';
 	ochrona_prawna: Apk['ochrona_prawna'] | '';
 	szkolenia: Apk['szkolenia'] | '';
@@ -58,10 +56,6 @@ export type Wgrywany = { tmp: string; typ: TypZalacznika; nazwa: string; rozmiar
 export const pustaApk = (): ApkForm => ({
 	rodzaje: [],
 	osoby: '',
-	szkody: '',
-	szkody_opis: '',
-	spoza_listy: '',
-	spoza_listy_opis: '',
 	suma_oczekiwana: '',
 	ochrona_prawna: '',
 	szkolenia: '',
@@ -139,7 +133,7 @@ export class Odnowienie {
 	niePowod = $state('');
 	potwierdzenieNie = $state(false);
 
-	// Ankieta ERGO Hestii i załączniki (zapisane na serwerze oraz wgrywane teraz)
+	// Ankieta Ergo Hestii i załączniki (zapisane na serwerze oraz wgrywane teraz)
 	ankieta = $state<AnkietaForm>(pustaAnkieta(''));
 	zalaczniki = $state<Zalacznik[]>([]);
 	wgrywane = $state<Wgrywany[]>([]);
@@ -213,7 +207,7 @@ export class Odnowienie {
 		const bledy = w.ok ? [] : [...w.bledy];
 		if (!this.zalaczniki.some((z) => z.typ === 'dyplom')) bledy.push('Załączniki: dodaj co najmniej jeden dyplom.');
 		if (!this.zalaczniki.some((z) => z.typ === 'certyfikat')) {
-			bledy.push('Załączniki: dodaj co najmniej jeden certyfikat ze szkolenia z ostatnich 12 miesięcy.');
+			bledy.push('Załączniki: dodaj certyfikat ze szkolenia z zabiegu (ukończonego co najmniej 12 miesięcy przed początkiem ochrony).');
 		}
 		if (this.wgrywane.some((w) => w.stan === 'wysylanie')) bledy.push('Poczekaj, aż wszystkie pliki zostaną wysłane.');
 		return bledy;

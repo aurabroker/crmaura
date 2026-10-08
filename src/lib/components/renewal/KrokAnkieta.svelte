@@ -6,7 +6,7 @@
 	import { BTN_DRUGI, BTN_GLOWNY, ETYKIETA, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK } from './klient';
 	import { pustaOsoba, type Odnowienie } from './stan.svelte';
 
-	// Krok 3 (tylko przy zabiegach wymagających oceny ryzyka): ankieta ERGO Hestii i dokumenty
+	// Krok 3 (tylko przy zabiegach wymagających oceny ryzyka): ankieta Ergo Hestii i dokumenty
 	// kwalifikacji. PDF ankiety klient dostaje e-mailem do podpisu.
 	interface Props {
 		s: Odnowienie;
@@ -40,7 +40,7 @@
 </script>
 
 <section class={KARTA} aria-labelledby="krok-naglowek">
-	<h2 id="krok-naglowek" tabindex="-1" class={NAGLOWEK}>Ankieta ERGO Hestii</h2>
+	<h2 id="krok-naglowek" tabindex="-1" class={NAGLOWEK}>Ankieta Ergo Hestii</h2>
 	<p class="mt-2 text-slate-600">Wybrane zabiegi wymagają oceny ryzyka przez ubezpieczyciela:</p>
 	<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-800">
 		{#each s.zm.zabiegi_ankieta as z (z)}<li>{z}</li>{/each}

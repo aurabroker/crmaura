@@ -4,7 +4,7 @@ import { env } from '$env/dynamic/private';
 import { EMAIL_RE } from '$lib/server/mail';
 import type { WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
 import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
-import { ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
+import { nazwaUbezpieczyciela, ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
 // panelu CRM (/api/renewals) i zadania dziennego (/api/cron/renewals). Wszystko działa kluczem
@@ -214,9 +214,11 @@ export async function utworzOdnowienie(
 		}
 	}
 
-	const minWaznosc = Date.now() + 14 * 86_400_000;
-	const koniec = koniecDniaWarszawa(p.data_do);
-	const wazny_do = Date.parse(koniec) > minWaznosc ? koniec : new Date(minWaznosc).toISOString();
+	// Link jest ważny do końca obecnej ochrony (dzień przed odnowieniem) — nie dłużej.
+	const wazny_do = koniecDniaWarszawa(p.data_do);
+	if (Date.parse(wazny_do) <= Date.now()) {
+		throw error(400, { message: 'Ochrona z tego certyfikatu już się skończyła — wniosku online nie da się wysłać. Odnów polisę ręcznie.' });
+	}
 	const test = trybTestowy(await ustawieniaFirmy(admin, p.tenant_id));
 
 	const { data, error: e } = await admin
@@ -350,7 +352,7 @@ export function widok(r: RenewalRow): WidokOdnowienia {
 		status: r.status as 'otwarty',
 		klient: r.klient_nazwa ?? '',
 		nr_polisy: r.nr_polisy,
-		ubezpieczyciel: r.tu_nazwa,
+		ubezpieczyciel: nazwaUbezpieczyciela(r.tu_nazwa),
 		program: r.program,
 		suma: sumaObecna(r),
 		skladka: r.skladka,

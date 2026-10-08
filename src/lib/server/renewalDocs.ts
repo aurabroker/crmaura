@@ -7,11 +7,15 @@ import {
 	APK_PYTANIA,
 	KLAUZULA_OCHRONY_PRAWNEJ,
 	LICZBA_OSOB,
+	OCHRONA_PRAWNA_LIMIT,
+	OCHRONA_PRAWNA_SKLADKA,
 	OSWIADCZENIE_ANKIETY,
 	RODZAJE_GABINETU,
 	TYPY_ZALACZNIKOW,
+	UBEZPIECZYCIEL,
 	formatSuma,
 	formatZl,
+	nazwaUbezpieczyciela,
 	type Apk,
 	type Wniosek
 } from '$lib/renewals/program';
@@ -19,7 +23,9 @@ import {
 // Treści e-maili i PDF wniosku o odnowienie. Wszystko, co pochodzi od klienta, przechodzi przez esc()
 // (HTML) albo trafia do PDF jako zwykły tekst.
 
-const STOPKA = 'BeautyPolisa · obsługa ubezpieczeń: Aura Expert sp. z o.o., ul. Bolkowska 2A/28, 01-466 Warszawa';
+const STOPKA = 'Beauty❤️Polisa · Aura Expert sp. z o.o., ul. Bolkowska 2A/28, 01-466 Warszawa · auraexpert.pl';
+const STOPKA_HTML =
+	'Beauty❤️Polisa · <a href="https://auraexpert.pl/" target="_blank" rel="noopener noreferrer" style="color:#64748b;">Aura Expert sp. z o.o.</a>, ul. Bolkowska 2A/28, 01-466 Warszawa';
 const KONTAKT = 'odnowienia@auraexpert.pl';
 
 export const DECYZJA_TEKST = { bez_zmian: 'TAK — odnowienie bez zmian', zmiany: 'TAK — odnowienie ze zmianami', nie: 'NIE — rezygnacja z odnowienia' } as const;
@@ -37,11 +43,11 @@ function ramka(tytul: string, tresc: string) {
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;">
       <tr><td style="background:#2a3b69;padding:20px 28px;border-radius:8px 8px 0 0;">
-        <p style="margin:0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#c7d2fe;">BeautyPolisa · ERGO Hestia</p>
+        <p style="margin:0;font-size:13px;color:#c7d2fe;">Beauty❤️Polisa · ${esc(UBEZPIECZYCIEL)}</p>
         <h1 style="margin:4px 0 0;font-size:20px;color:#fff;">${esc(tytul)}</h1>
       </td></tr>
       <tr><td style="padding:24px 28px;font-size:15px;line-height:1.6;color:#334155;">${tresc}</td></tr>
-      <tr><td style="padding:14px 28px;border-top:1px solid #eef0f3;font-size:12px;color:#94a3b8;">${esc(STOPKA)}</td></tr>
+      <tr><td style="padding:14px 28px;border-top:1px solid #eef0f3;font-size:12px;color:#94a3b8;">${STOPKA_HTML}</td></tr>
     </table>
   </td></tr>
 </table>
@@ -63,7 +69,7 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 	const skladka = r.skladka != null ? formatZl(Number(r.skladka)) : null;
 	const html = ramka(przypomnienie ? 'Przypomnienie o odnowieniu' : 'Odnowienie ubezpieczenia OC', `
     <p style="margin:0 0 14px;">Dzień dobry,</p>
-    <p style="margin:0 0 14px;">${przypomnienie ? 'przypominamy, że ' : ''}ochrona OC w programie BeautyPolisa (ERGO Hestia) dla <strong>${esc(r.klient_nazwa)}</strong>
+    <p style="margin:0 0 14px;">${przypomnienie ? 'przypominamy, że ' : ''}ochrona OC w programie Beauty❤️Polisa (STU Ergo Hestia SA) dla <strong>${esc(r.klient_nazwa)}</strong>
       kończy się <strong>${esc(koniec)}</strong>. Aby przedłużyć ją na okres ${esc(data(nowy.od))}–${esc(data(nowy.do))}, wypełnij krótki wniosek online — zajmie to około 5 minut.</p>
     ${przycisk(link, 'Przejdź do wniosku o odnowienie')}
     <p style="margin:0 0 10px;">We wniosku:</p>
@@ -76,7 +82,7 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 	const tekst = [
 		'Dzień dobry,',
 		'',
-		`${przypomnienie ? 'przypominamy, że ' : ''}ochrona OC w programie BeautyPolisa (ERGO Hestia) dla ${r.klient_nazwa} kończy się ${koniec}.`,
+		`${przypomnienie ? 'przypominamy, że ' : ''}ochrona OC w programie Beauty❤️Polisa (STU Ergo Hestia SA) dla ${r.klient_nazwa} kończy się ${koniec}.`,
 		`Aby przedłużyć ją na okres ${data(nowy.od)}–${data(nowy.do)}, wypełnij wniosek online:`,
 		link,
 		'',
@@ -95,7 +101,7 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null): string[] {
 	const z = w.zmiany;
 	const linie: string[] = [];
 	if (z.wyzsza_suma) linie.push(`Wyższa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
-	if (z.ochrona_prawna) linie.push(`Klauzula ochrony prawnej (+92 zł rocznie, limit 100 000 zł)`);
+	if (z.ochrona_prawna) linie.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł rocznie, limit ${formatSuma(OCHRONA_PRAWNA_LIMIT)})`);
 	if (z.adres) linie.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 	if (z.nowe_zabiegi.length) linie.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join('; ')}`);
 	if (z.zabiegi_ankieta.length) linie.push(`Zabiegi wymagające ankiety: ${z.zabiegi_ankieta.join('; ')}`);
@@ -119,10 +125,11 @@ export function odpowiedziApk(apk: Apk): [string, string][] {
 	return [
 		[APK_PYTANIA.rodzaje, apk.rodzaje.map(rodzajNazwa).join(', ')],
 		[APK_PYTANIA.osoby, osobyNazwa(apk.osoby)],
-		[APK_PYTANIA.szkody, apk.szkody === 'tak' ? `tak — ${apk.szkody_opis}` : 'nie'],
-		[APK_PYTANIA.spoza_listy, apk.spoza_listy === 'tak' ? `tak — ${apk.spoza_listy_opis}` : 'nie'],
-		[APK_PYTANIA.suma_oczekiwana, APK_ODPOWIEDZI.suma_oczekiwana[apk.suma_oczekiwana]],
-		[APK_PYTANIA.ochrona_prawna, APK_ODPOWIEDZI.ochrona_prawna[apk.ochrona_prawna]],
+		// Starsze wnioski (przed 9.10.2026) miały w APK pytania o szkody i zabiegi spoza list.
+		...(apk.szkody ? ([[APK_PYTANIA.szkody, apk.szkody === 'tak' ? `tak — ${apk.szkody_opis ?? ''}` : 'nie']] as [string, string][]) : []),
+		...(apk.spoza_listy ? ([[APK_PYTANIA.spoza_listy, apk.spoza_listy === 'tak' ? `tak — ${apk.spoza_listy_opis ?? ''}` : 'nie']] as [string, string][]) : []),
+		[APK_PYTANIA.suma_oczekiwana, (APK_ODPOWIEDZI.suma_oczekiwana as Record<string, string>)[apk.suma_oczekiwana] ?? 'nie wiem'],
+		[APK_PYTANIA.ochrona_prawna, (APK_ODPOWIEDZI.ochrona_prawna as Record<string, string>)[apk.ochrona_prawna] ?? 'nie wiem'],
 		[APK_PYTANIA.szkolenia, tak(apk.szkolenia)],
 		[APK_PYTANIA.inne_ubezpieczenia, apk.inne_ubezpieczenia.map((k) => APK_ODPOWIEDZI.inne_ubezpieczenia[k]).join(', ')],
 		[APK_PYTANIA.priorytet, APK_ODPOWIEDZI.priorytet[apk.priorytet]],
@@ -141,7 +148,7 @@ export function mailPotwierdzenie(r: RenewalRow) {
 	} else if (r.decyzja === 'zmiany') {
 		akapity.push(`przyjęliśmy wniosek o odnowienie ubezpieczenia OC ze zmianami dla ${r.klient_nazwa}. Doradca sprawdzi zmiany i potwierdzi zakres oraz składkę przed wystawieniem certyfikatu na okres ${data(nowy.od)}–${data(nowy.do)}.`);
 		if (ankieta) {
-			akapity.push(`Zabiegi, które wskazano, wymagają ankiety ERGO Hestii. Wydrukuj załączony PDF, podpisz ankietę i odeślij jej skan na ${KONTAKT} (wystarczy odpowiedzieć na tę wiadomość). Bez podpisanej ankiety ubezpieczyciel nie obejmie tych zabiegów ochroną.`);
+			akapity.push(`Zabiegi, które wskazano, wymagają ankiety Ergo Hestii. Wydrukuj załączony PDF, podpisz ankietę i odeślij jej skan na ${KONTAKT} (wystarczy odpowiedzieć na tę wiadomość). Bez podpisanej ankiety ubezpieczyciel nie obejmie tych zabiegów ochroną.`);
 		}
 	} else {
 		akapity.push(`przyjęliśmy informację o rezygnacji z odnowienia ubezpieczenia OC dla ${r.klient_nazwa}. Ochrona kończy się ${data(r.okres_do)} — od tego dnia gabinet nie ma ubezpieczenia OC w programie.`);
@@ -168,7 +175,7 @@ export function sygnalyApk(r: RenewalRow): string[] {
 	if (a.osoby === '9+') s.push('APK: więcej niż 8 osób wykonujących zabiegi — poza taryfą programu');
 	if (a.szkody === 'tak') s.push(`APK: szkody lub roszczenia${a.szkody_opis ? ` — ${a.szkody_opis}` : ''}`);
 	if (a.spoza_listy === 'tak') s.push(`APK: zabiegi spoza list programu${a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : ''}`);
-	if (a.suma_oczekiwana === 'wiecej') s.push('APK: oczekiwana suma gwarancyjna wyższa niż 300 tys. zł');
+	if (a.suma_oczekiwana === 'wiecej') s.push(`APK: oczekiwana suma gwarancyjna wyższa niż ${formatSuma(300000)}`);
 	return s;
 }
 
@@ -192,7 +199,7 @@ export function mailBiuro(r: RenewalRow, linkCrm: string, kto: { ip: string | nu
       ${wiersze.map(([k, v]) => `<tr><td style="padding:6px 10px 6px 0;font-weight:600;color:#475569;vertical-align:top;white-space:nowrap;">${esc(k)}</td><td style="padding:6px 0;">${esc(v)}</td></tr>`).join('\n      ')}
     </table>
     ${zmiany.length ? `<p style="margin:0 0 6px;font-weight:600;">Zmiany i uwagi:</p><ul style="margin:0 0 14px;padding-left:20px;">${zmiany.map((z) => `<li>${esc(z)}</li>`).join('')}</ul>` : ''}
-    ${r.ankieta ? '<p style="margin:0 0 14px;color:#be123c;font-weight:600;">Klient wypełnił ankietę ERGO Hestii — czekamy na podpisany egzemplarz.</p>' : ''}
+    ${r.ankieta ? '<p style="margin:0 0 14px;color:#be123c;font-weight:600;">Klient wypełnił ankietę Ergo Hestii — czekamy na podpisany egzemplarz.</p>' : ''}
     ${przycisk(linkCrm, 'Otwórz polisę w CRM')}`);
 	const tekst = [...wiersze.map(([k, v]) => `${k}: ${v}`), ...(zmiany.length ? ['', 'Zmiany i uwagi:', ...zmiany.map((z) => `- ${z}`)] : []), '', linkCrm].join('\n');
 	return { temat, html, tekst };
@@ -237,14 +244,14 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 	doc.setFont(font, 'normal');
 	doc.setFontSize(9);
 	doc.setTextColor(100);
-	doc.text(`${r.program ?? ''} · ERGO Hestia · BeautyPolisa`, 14, 24);
+	doc.text(`${r.program ?? ''} · ${UBEZPIECZYCIEL} · BeautyPolisa`, 14, 24);
 	doc.setTextColor(0);
 
 	tabela(
 		[
 			['Ubezpieczający / Ubezpieczony', r.klient_nazwa ?? '—'],
 			['Certyfikat', r.nr_polisy ?? '—'],
-			['Ubezpieczyciel', r.tu_nazwa ?? 'STU ERGO Hestia S.A.'],
+			['Ubezpieczyciel', nazwaUbezpieczyciela(r.tu_nazwa)],
 			['Obecny okres ubezpieczenia', `${data(r.okres_od)} – ${data(r.okres_do)}`],
 			['Okres po odnowieniu', r.decyzja === 'nie' ? '—' : `${data(nowy.od)} – ${data(nowy.do)}`],
 			['Suma gwarancyjna (obecna)', r.suma ? formatSuma(Number(r.suma)) : 'zgodnie z obecnym certyfikatem'],
@@ -297,7 +304,7 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 	if (r.ankieta) {
 		const a = r.ankieta;
 		doc.addPage();
-		y = naglowek('Ankieta ERGO Hestia — zabiegi wymagające oceny ryzyka', 18);
+		y = naglowek('Ankieta Ergo Hestii — zabiegi wymagające oceny ryzyka', 18);
 		doc.setFontSize(8);
 		doc.setTextColor(100);
 		doc.text(`Ankieta ubezpieczeniowa do ${r.program ?? 'Programu Ubezpieczenia OC'}`, 14, y + 2);

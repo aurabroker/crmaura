@@ -192,7 +192,7 @@
 							<span>
 								<span class="block font-semibold text-slate-900">Klauzula ochrony prawnej (+{OCHRONA_PRAWNA_SKLADKA} zł/rok)</span>
 								<span class="block text-sm text-slate-600">
-									Koszty obrony prawnej, np. w sporze z klientem, do 100 tys. zł.
+									Koszty obrony prawnej, np. w sporze z klientem, do 100.000 zł.
 									{#if apk?.ochrona_prawna === 'tak'}W analizie potrzeb wskazano zainteresowanie ochroną prawną.{/if}
 								</span>
 							</span>
@@ -308,7 +308,7 @@
 						<label class="flex items-start gap-3 p-4 min-h-12 cursor-pointer">
 							<input type="checkbox" bind:checked={s.zm.ankieta} class={ZNACZNIK} />
 							<span>
-								<span class="block font-semibold text-slate-900">Zabiegi wymagające ankiety ERGO Hestii</span>
+								<span class="block font-semibold text-slate-900">Zabiegi wymagające ankiety Ergo Hestii</span>
 								<span class="block text-sm text-slate-600">Np. toksyna botulinowa, wypełniacze, nici PDO, HIFU — podlegają ocenie ubezpieczyciela.</span>
 							</span>
 						</label>
@@ -327,7 +327,7 @@
 								</fieldset>
 								{#if s.zm.zabiegi_ankieta.length}
 									<p class="mt-3 rounded-lg bg-[#2a3b69]/5 px-3 py-2 text-sm text-[#2a3b69]" role="status">
-										Te zabiegi wymagają ankiety ERGO Hestii — wypełnisz ją w następnym kroku i dołączysz dyplom oraz certyfikat.
+										Te zabiegi wymagają ankiety Ergo Hestii — wypełnisz ją w następnym kroku i dołączysz dyplom oraz certyfikat.
 									</p>
 								{/if}
 							</div>

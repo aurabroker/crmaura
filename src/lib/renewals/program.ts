@@ -5,7 +5,10 @@
 
 export const PROGRAM_NR = 'WA50/003353/24/A';
 export const PROGRAM_NAZWA = `Program Ubezpieczenia OC nr ${PROGRAM_NR}`;
-export const UBEZPIECZYCIEL = 'STU ERGO Hestia S.A.';
+export const UBEZPIECZYCIEL = 'STU Ergo Hestia SA';
+// Nazwa ubezpieczyciela do pokazania klientowi: w kartotece bywa wielkimi literami albo z „S.A.”.
+export const nazwaUbezpieczyciela = (n: string | null | undefined): string =>
+	!n || /hestia/i.test(n) ? UBEZPIECZYCIEL : n;
 
 // ---------- Taryfa (składka roczna za gabinet do 5 osób) ----------
 
@@ -26,7 +29,7 @@ export const OCHRONA_PRAWNA_LIMIT = 100000;
 export const KLAUZULA_OCHRONY_PRAWNEJ =
 	'Rozszerzenie zakresu ubezpieczenia o koszty ochrony prawnej poniesione przez Ubezpieczonego, inne niż objęte ' +
 	'za pisemną zgodą Ubezpieczyciela ochroną zgodnie z § 6 ust. 3 Warunków Ubezpieczenia (klauzula 7). ' +
-	'Limit: 100 000 zł. Składka dodatkowa: 92 zł rocznie.';
+	'Limit: 100.000 zł. Składka dodatkowa: 92 zł rocznie.';
 
 export type RodzajGabinetu = 'kosmetyczny' | 'fryzjerski' | 'kosmetologiczny' | 'podologiczny';
 export const RODZAJE_GABINETU: { key: RodzajGabinetu; nazwa: string }[] = [
@@ -70,7 +73,8 @@ export function skladkaProgramu(o: { kategoria: Kategoria; suma: Suma; osoby: Li
 	return { rodzaj: 'kwota', kwota, opis: czesci.join(', ') };
 }
 
-export const formatSuma = (s: number) => `${(s / 1000).toLocaleString('pl-PL')} tys. zł`;
+// Sumy zawsze w formacie „200.000 zł” (kropka między tysiącami).
+export const formatSuma = (s: number) => `${Math.round(s).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')} zł`;
 export const formatZl = (n: number) =>
 	`${n.toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} zł`;
 
@@ -137,12 +141,14 @@ export const ZABIEGI_LISTY = Array.from(new Set<string>([...ZABIEGI_LISTA_1, ...
 export type Apk = {
 	rodzaje: RodzajGabinetu[];
 	osoby: LiczbaOsob;
-	szkody: 'nie' | 'tak';
-	szkody_opis: string;
-	spoza_listy: 'nie' | 'tak';
-	spoza_listy_opis: string;
-	suma_oczekiwana: '100000' | '200000' | '300000' | 'wiecej' | 'nie_wiem';
-	ochrona_prawna: 'tak' | 'nie' | 'nie_wiem';
+	// Pytania o szkody i o zabiegi spoza list usunięte z APK (zabiegi są częścią wniosku) — pola zostają
+	// tylko w starszych wnioskach.
+	szkody?: 'nie' | 'tak';
+	szkody_opis?: string;
+	spoza_listy?: 'nie' | 'tak';
+	spoza_listy_opis?: string;
+	suma_oczekiwana: '100000' | '200000' | '300000' | 'wiecej';
+	ochrona_prawna: 'tak' | 'nie';
 	szkolenia: 'tak' | 'nie';
 	inne_ubezpieczenia: ('mienie' | 'nnw' | 'oc_najemcy' | 'brak')[];
 	priorytet: 'zakres' | 'cena' | 'suma' | 'obsluga';
@@ -153,6 +159,7 @@ export type Apk = {
 export const APK_PYTANIA = {
 	rodzaje: 'Jaką działalność prowadzisz?',
 	osoby: 'Ile osób wykonuje zabiegi w gabinecie (łącznie z Tobą)?',
+	// Tylko do wyświetlania starszych wniosków.
 	szkody: 'Czy w ostatnich 3 latach były szkody lub roszczenia klientów z tytułu OC?',
 	spoza_listy: 'Czy wykonujesz zabiegi spoza list programu albo z listy zabiegów wymagających ankiety?',
 	suma_oczekiwana: 'Jakiej sumy gwarancyjnej oczekujesz?',
@@ -164,8 +171,8 @@ export const APK_PYTANIA = {
 } as const;
 
 export const APK_ODPOWIEDZI = {
-	suma_oczekiwana: { '100000': '100 tys. zł', '200000': '200 tys. zł', '300000': '300 tys. zł', wiecej: 'więcej niż 300 tys. zł', nie_wiem: 'nie wiem — proszę o doradztwo' },
-	ochrona_prawna: { tak: 'tak', nie: 'nie', nie_wiem: 'nie wiem — proszę o informację' },
+	suma_oczekiwana: { '100000': '100.000 zł', '200000': '200.000 zł', '300000': '300.000 zł', wiecej: 'więcej niż 300.000 zł' },
+	ochrona_prawna: { tak: 'tak', nie: 'nie' },
 	inne_ubezpieczenia: { mienie: 'mienie gabinetu (sprzęt, wyposażenie)', nnw: 'NNW', oc_najemcy: 'OC najemcy lokalu', brak: 'nie mam innych' },
 	priorytet: { zakres: 'najszerszy zakres ochrony', cena: 'jak najniższa składka', suma: 'wysoka suma gwarancyjna', obsluga: 'pomoc przy szkodzie i obsługa' }
 } as const;
@@ -205,12 +212,22 @@ export type Ankieta = {
 export type Wniosek = { decyzja: Decyzja; zmiany: Zmiany | null; nie_powod: string; potwierdzenie_nie: boolean };
 
 export const TYPY_ZALACZNIKOW = {
-	dyplom: 'Dyplom (np. kosmetologia)',
-	certyfikat: 'Certyfikat ze szkolenia z ostatnich 12 miesięcy',
+	dyplom: 'Dyplom kosmetologa (studia licencjackie lub magisterskie)',
+	certyfikat: 'Certyfikat ze szkolenia z zabiegu (ukończonego co najmniej 12 miesięcy przed początkiem ochrony)',
 	zgoda: 'Wzór formularza zgody na zabieg',
 	inny: 'Inny dokument'
 } as const;
 export type TypZalacznika = keyof typeof TYPY_ZALACZNIKOW;
+
+// Certyfikat ze szkolenia z zabiegu: szkolenie ukończone co najmniej 12 miesięcy przed początkiem ochrony
+// (np. ochrona od 1.10.2026 → szkolenie najpóźniej 1.10.2025). Zwraca datę RRRR-MM-DD.
+export function terminSzkolenia(poczatekOchrony: string): string {
+	const [r, m, d] = poczatekOchrony.split('-').map(Number);
+	const t = new Date(Date.UTC(r - 1, m - 1, d));
+	// 29 lutego → 28 lutego (bez przeskoku na marzec)
+	if (t.getUTCMonth() !== m - 1) t.setUTCDate(0);
+	return t.toISOString().slice(0, 10);
+}
 
 export const ZALACZNIK_MAX_BAJTOW = 10 * 1024 * 1024;
 export const ZALACZNIKI_MAX = 12;
@@ -240,12 +257,8 @@ export function waliduj_apk(raw: unknown): Wynik<Apk> {
 	const apk: Apk = {
 		rodzaje: listOf(r.rodzaje, RODZAJE_KEYS),
 		osoby: oneOf(r.osoby, OSOBY_KEYS) ?? ('' as LiczbaOsob),
-		szkody: oneOf(r.szkody, ['nie', 'tak'] as const) ?? ('' as 'nie'),
-		szkody_opis: str(r.szkody_opis, 2000),
-		spoza_listy: oneOf(r.spoza_listy, ['nie', 'tak'] as const) ?? ('' as 'nie'),
-		spoza_listy_opis: str(r.spoza_listy_opis, 2000),
-		suma_oczekiwana: oneOf(r.suma_oczekiwana, ['100000', '200000', '300000', 'wiecej', 'nie_wiem'] as const) ?? ('' as 'nie_wiem'),
-		ochrona_prawna: oneOf(r.ochrona_prawna, ['tak', 'nie', 'nie_wiem'] as const) ?? ('' as 'nie'),
+		suma_oczekiwana: oneOf(r.suma_oczekiwana, ['100000', '200000', '300000', 'wiecej'] as const) ?? ('' as 'wiecej'),
+		ochrona_prawna: oneOf(r.ochrona_prawna, ['tak', 'nie'] as const) ?? ('' as 'nie'),
 		szkolenia: oneOf(r.szkolenia, ['tak', 'nie'] as const) ?? ('' as 'nie'),
 		inne_ubezpieczenia: listOf(r.inne_ubezpieczenia, ['mienie', 'nnw', 'oc_najemcy', 'brak'] as const),
 		priorytet: oneOf(r.priorytet, ['zakres', 'cena', 'suma', 'obsluga'] as const) ?? ('' as 'zakres'),
@@ -254,10 +267,6 @@ export function waliduj_apk(raw: unknown): Wynik<Apk> {
 	};
 	if (!apk.rodzaje.length) bledy.push('Zaznacz rodzaj działalności.');
 	if (!apk.osoby) bledy.push('Podaj liczbę osób wykonujących zabiegi.');
-	if (!apk.szkody) bledy.push('Odpowiedz na pytanie o szkody.');
-	if (apk.szkody === 'tak' && !apk.szkody_opis) bledy.push('Opisz krótko szkody lub roszczenia.');
-	if (!apk.spoza_listy) bledy.push('Odpowiedz na pytanie o zabiegi spoza list.');
-	if (apk.spoza_listy === 'tak' && !apk.spoza_listy_opis) bledy.push('Wymień zabiegi spoza list.');
 	if (!apk.suma_oczekiwana) bledy.push('Wybierz oczekiwaną sumę gwarancyjną.');
 	if (!apk.ochrona_prawna) bledy.push('Odpowiedz na pytanie o ochronę prawną.');
 	if (!apk.szkolenia) bledy.push('Odpowiedz na pytanie o szkolenia i targi.');

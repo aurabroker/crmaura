@@ -4,6 +4,29 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Po wdrożeniu nowej wersji stara karta (albo strona z pamięci przeglądarki) prosi o pliki,
+			// których już nie ma (404 jako text/html → „niedozwolony typ MIME”). Wtedy jedno przeładowanie.
+			(function () {
+				var KLUCZ = 'crm-przeladowanie-po-wdrozeniu';
+				function przeladuj() {
+					try {
+						var ostatnio = Number(sessionStorage.getItem(KLUCZ) || 0);
+						if (Date.now() - ostatnio < 60000) return;
+						sessionStorage.setItem(KLUCZ, String(Date.now()));
+					} catch (e) {}
+					location.reload();
+				}
+				window.addEventListener('vite:preloadError', function (e) {
+					e.preventDefault();
+					przeladuj();
+				});
+				window.addEventListener('unhandledrejection', function (e) {
+					var m = String((e.reason && e.reason.message) || e.reason || '');
+					if (/dynamically imported module|Importing a module script failed|error loading dynamically imported/i.test(m)) przeladuj();
+				});
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

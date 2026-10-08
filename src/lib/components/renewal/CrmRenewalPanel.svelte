@@ -280,8 +280,9 @@
 		return [
 			{ k: APK_PYTANIA.rodzaje, v: rodzajeNazwy(a.rodzaje) },
 			{ k: APK_PYTANIA.osoby, v: osobyNazwa(a.osoby) },
-			{ k: APK_PYTANIA.szkody, v: takNie(a.szkody) + (a.szkody === 'tak' && a.szkody_opis ? ` — ${a.szkody_opis}` : '') },
-			{ k: APK_PYTANIA.spoza_listy, v: takNie(a.spoza_listy) + (a.spoza_listy === 'tak' && a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : '') },
+			// Pytania o szkody i zabiegi spoza list były tylko w starszych APK.
+			...(a.szkody ? [{ k: APK_PYTANIA.szkody, v: takNie(a.szkody) + (a.szkody === 'tak' && a.szkody_opis ? ` — ${a.szkody_opis}` : '') }] : []),
+			...(a.spoza_listy ? [{ k: APK_PYTANIA.spoza_listy, v: takNie(a.spoza_listy) + (a.spoza_listy === 'tak' && a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : '') }] : []),
 			{ k: APK_PYTANIA.suma_oczekiwana, v: etykieta(APK_ODPOWIEDZI.suma_oczekiwana, a.suma_oczekiwana) },
 			{ k: APK_PYTANIA.ochrona_prawna, v: etykieta(APK_ODPOWIEDZI.ochrona_prawna, a.ochrona_prawna) },
 			{ k: APK_PYTANIA.szkolenia, v: takNie(a.szkolenia) },
@@ -545,7 +546,7 @@
 							<p class="text-xs text-slate-400 mt-2">Klient złożył oświadczenie: „{OSWIADCZENIE_ANKIETY}”</p>
 						{/if}
 					{/snippet}
-					{@render rozwijany('Ankieta ERGO Hestii (zabiegi wymagające oceny ryzyka)', ankietaOpen, () => (ankietaOpen = !ankietaOpen), ankietaTresc)}
+					{@render rozwijany('Ankieta Ergo Hestii (zabiegi wymagające oceny ryzyka)', ankietaOpen, () => (ankietaOpen = !ankietaOpen), ankietaTresc)}
 				{/if}
 
 				{#if events.length}

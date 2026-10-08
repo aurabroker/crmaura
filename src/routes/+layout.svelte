@@ -1,6 +1,13 @@
 <script lang="ts">
 	import '../app.css';
+	import { beforeNavigate } from '$app/navigation';
+	import { updated } from '$app/state';
 	let { children } = $props();
+
+	// Nowa wersja na serwerze: przejście w aplikacji robi pełne przeładowanie (świeże pliki).
+	beforeNavigate(({ willUnload, to }) => {
+		if (updated.current && !willUnload && to?.url) location.href = to.url.href;
+	});
 </script>
 
 <svelte:head>

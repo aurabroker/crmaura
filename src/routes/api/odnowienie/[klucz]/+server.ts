@@ -175,7 +175,7 @@ export const POST: RequestHandler = async (event) => {
 				const a = waliduj_ankiete(body.ankieta);
 				const bledy = a.ok ? [] : [...a.bledy];
 				if (!zalaczniki.some((z) => z.typ === 'dyplom')) bledy.push('Dołącz skan dyplomu (np. kosmetologia).');
-				if (!zalaczniki.some((z) => z.typ === 'certyfikat')) bledy.push('Dołącz certyfikat ze szkolenia z ostatnich 12 miesięcy.');
+				if (!zalaczniki.some((z) => z.typ === 'certyfikat')) bledy.push('Dołącz certyfikat ze szkolenia z zabiegu (ukończonego co najmniej 12 miesięcy przed początkiem ochrony).');
 				if (bledy.length || !a.ok) return blad(400, 'Uzupełnij ankietę ERGO Hestii.', bledy);
 				ankieta = a.value;
 			}

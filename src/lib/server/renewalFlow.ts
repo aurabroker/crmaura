@@ -193,7 +193,7 @@ async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boo
 				: `Klient rezygnuje z odnowienia — ${r.klient_nazwa}`);
 	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk);
 	const sygnaly = sygnalyApk(r);
-	// Złożony po końcu ochrony (link jest ważny min. 14 dni): ciągłość ochrony do sprawdzenia od razu.
+	// Link gaśnie z końcem ochrony, więc to tylko zabezpieczenie (np. wniosek wysłany tuż przed północą).
 	const poTerminie = !!r.okres_do && !!r.zlozono_at && dzisWarszawa() > r.okres_do;
 	const opis = [
 		...(test ? [`Wniosek testowy — e-maile z tego wniosku poszły na adres testowy (${adresTestowy()}), nie do klienta.`] : []),
@@ -201,7 +201,7 @@ async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boo
 		...(poTerminie ? [`⚠ Wniosek złożony po końcu ochrony (${r.okres_do}) — sprawdź ciągłość ubezpieczenia.`] : []),
 		...zmiany.map((z) => `• ${z}`),
 		...sygnaly.map((z) => `• ${z}`),
-		...(r.ankieta ? ['• Ankieta ERGO Hestii: czekamy na podpisany egzemplarz od klienta.'] : []),
+		...(r.ankieta ? ['• Ankieta Ergo Hestii: czekamy na podpisany egzemplarz od klienta.'] : []),
 		...(r.wniosek?.nie_powod ? [`Powód rezygnacji: ${r.wniosek.nie_powod}`] : [])
 	].join('\n');
 	const { error: e } = await admin.from('crm_tasks').insert({
