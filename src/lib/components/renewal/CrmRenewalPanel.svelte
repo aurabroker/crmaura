@@ -298,7 +298,11 @@
 			{ k: 'Ubezpieczony', v: a.ubezpieczony || '—' },
 			{ k: 'Data rozpoczęcia działalności', v: a.data_rozpoczecia || '—' },
 			{ k: 'Liczba zatrudnionych osób', v: a.liczba_zatrudnionych || '—' },
+			// NIP, REGON i inne zabiegi — tylko w nowszych ankietach.
+			{ k: 'NIP', v: a.nip || '—' },
+			{ k: 'REGON', v: a.regon || '—' },
 			{ k: 'Szkodowość z ostatnich 3 lat', v: a.szkodowosc || '—' },
+			{ k: 'Inne zabiegi wymagające oceny ryzyka', v: a.inne_zabiegi || '—' },
 			{ k: 'Od jak dawna zabiegi są wykonywane w gabinecie', v: a.jak_dlugo || '—' },
 			{ k: 'Klienci podpisują formularz zgody na zabieg', v: takNie(a.zgoda_klientow) }
 		];
@@ -408,6 +412,12 @@
 					{#if latest.pdf_path}
 						<button type="button" onclick={() => otworzPlik(latest!.pdf_path, 'PDF wniosku')} class={przyciskCls}>
 							<FileText size={12} /> PDF wniosku
+						</button>
+					{/if}
+					{#if latest.ankieta}
+						<!-- Ankieta Ergo Hestii: osobny PDF do podpisu klienta, ten sam folder co wniosek. -->
+						<button type="button" onclick={() => otworzPlik(`${latest!.tenant_id}/${latest!.id}/ankieta.pdf`, 'PDF ankiety')} class={przyciskCls} data-testid="renewal-pdf-ankiety">
+							<FileText size={12} /> PDF ankiety
 						</button>
 					{/if}
 					{#if czyLinkDziala(latest.status)}

@@ -100,9 +100,11 @@ export function opisPrzegladarki(ua: string | null | undefined): string {
 }
 
 // Pliki wniosku w buckecie renewal-files: <tenant_id>/<id wniosku>/… — PDF wniosku, PDF APK
-// (apk.pdf; starsze wnioski go nie mają) i załączniki od klienta.
+// (apk.pdf; starsze wnioski go nie mają), PDF ankiety Ergo Hestii (ankieta.pdf, przy zabiegach
+// wymagających ankiety) i załączniki od klienta.
 export const BUCKET_ODNOWIEN = 'renewal-files';
 export const APK_PDF = 'apk.pdf';
+export const ANKIETA_PDF = 'ankieta.pdf';
 export const folderWniosku = (r: { tenant_id: string; id: string }) => `${r.tenant_id}/${r.id}`;
 
 export const rozmiarPliku = (b: number | null | undefined) =>

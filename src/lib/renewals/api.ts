@@ -48,6 +48,10 @@ export type WidokOdnowienia =
 			ochrona_prawna_obecnie: boolean;
 			apk: Apk | null;
 			zalaczniki: Zalacznik[];
+			// NIP i REGON klienta z kartoteki CRM (same cyfry) — podpowiedź w ankiecie Ergo Hestii.
+			// Wypełnione tylko w odpowiedzi GET; null, gdy w kartotece ich nie ma.
+			nip: string | null;
+			regon: string | null;
 	  };
 
 // POST /api/odnowienie/[token] — jedno z działań:

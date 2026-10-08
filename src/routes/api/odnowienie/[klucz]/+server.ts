@@ -3,6 +3,7 @@ import { getAdminClient } from '$lib/server/auth';
 import {
 	BUCKET,
 	czyAktywny,
+	daneKlienta,
 	klientZadania,
 	odnowieniePoKluczu,
 	opObecnie,
@@ -56,7 +57,9 @@ export const GET: RequestHandler = async ({ params, request, getClientAddress })
 		await zapiszZdarzenie(admin, r, 'otwarcie', klientZadania(request, getClientAddress));
 		if (r.status === 'utworzony' || r.status === 'wyslany') r.status = 'otwarty';
 	}
-	return json(widok(r), { headers: { 'cache-control': 'no-store' } });
+	// NIP i REGON z kartoteki — podpowiedź w ankiecie Ergo Hestii (tylko dla aktywnego wniosku).
+	const klient = czyAktywny(r) ? await daneKlienta(admin, r) : null;
+	return json(widok(r, klient), { headers: { 'cache-control': 'no-store' } });
 };
 
 const blad = (status: number, message: string, bledy?: string[]) => json({ message, ...(bledy ? { bledy } : {}) }, { status });

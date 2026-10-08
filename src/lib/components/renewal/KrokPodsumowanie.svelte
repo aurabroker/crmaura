@@ -167,8 +167,12 @@
 		{#if s.potrzebnaAnkieta}
 			<div>
 				{@render wiersz('Ankieta Ergo Hestii', 'ankieta')}
-				<dd class="mt-1 text-slate-900">
+				<dd class="mt-1 text-slate-900" data-testid="podsumowanie-ankieta">
+					<span class="block">NIP: {s.ankieta.nip.trim() || '—'} · REGON: {s.ankieta.regon.trim() || '—'}</span>
 					Osoby wykonujące zabiegi: {s.ankieta.osoby.filter((o) => o.imie_nazwisko.trim()).length}, załączniki: {s.zalaczniki.length}
+					{#if s.ankieta.inne_zabiegi.trim()}
+						<span class="block break-words text-sm text-slate-700">Inne zabiegi: {s.ankieta.inne_zabiegi.trim()}</span>
+					{/if}
 					<span class="block text-sm text-slate-600">PDF ankiety przyjdzie e-mailem — wydrukuj go, podpisz i odeślij.</span>
 				</dd>
 			</div>

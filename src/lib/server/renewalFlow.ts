@@ -15,7 +15,7 @@ import {
 	type Klient,
 	type RenewalRow
 } from '$lib/server/renewals';
-import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfApk, pdfWniosku, sygnalyApk, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
+import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
 
 type PdfEvent = Parameters<typeof pdfWniosku>[0];
 
@@ -56,6 +56,25 @@ async function zapiszPdfApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRo
 }
 
 const nazwaPdfApk = (r: RenewalRow) => `APK-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;
+
+// PDF ankiety Ergo Hestii — osobny dokument do podpisu klienta (karta polisy i karta klienta szukają go pod tą nazwą).
+export const sciezkaPdfAnkiety = (r: Pick<RenewalRow, 'tenant_id' | 'id'>) => `${r.tenant_id}/${r.id}/ankieta.pdf`;
+const nazwaPdfAnkiety = (r: RenewalRow) => `Ankieta-ERGO-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;
+
+// PDF ankiety do magazynu (upsert). Zwraca bajty albo null przy błędzie (zapisanym w dzienniku) —
+// błąd ankiety nie wstrzymuje e-maila z wnioskiem.
+async function zapiszPdfAnkiety(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient): Promise<Uint8Array | null> {
+	try {
+		const pdf = await pdfAnkieta(event, r, kto);
+		const { error: e } = await admin.storage.from(BUCKET).upload(sciezkaPdfAnkiety(r), pdf, { contentType: 'application/pdf', upsert: true });
+		if (e) throw e;
+		return pdf;
+	} catch (e) {
+		console.error('renewals: PDF ankiety nie powstał:', (e as Error)?.message ?? e);
+		await zapiszZdarzenie(admin, r, 'blad_pdf_ankiety', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
+		return null;
+	}
+}
 
 // Historia e-maili klienta (karta klienta → E-maile). Błąd zapisu nie przerywa wysyłki.
 // Zapisuje adres, na który e-mail faktycznie poszedł (w trybie testowym — adres testowy).
@@ -148,7 +167,8 @@ export async function poApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRo
 }
 
 // Po złożeniu wniosku: zadanie dla doradcy (najpierw — jest tanie i najważniejsze), PDF wniosku do magazynu,
-// e-mail do klienta (z PDF wniosku) i do biura (same linki do CRM — bez załączników, żeby nie zapychać skrzynki).
+// e-mail do klienta (z PDF wniosku, a przy zabiegach z ankietą także z osobnym PDF ankiety Ergo Hestii)
+// i do biura (same linki do CRM — bez załączników, żeby nie zapychać skrzynki).
 // Decyzja jest już zapisana — błędy tutaj trafiają do dziennika, a nie do klienta.
 export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient): Promise<RenewalRow> {
 	const firma = await ustawieniaFirmy(admin, r.tenant_id);
@@ -187,9 +207,19 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 		}
 	}
 
+	// Ankieta Ergo Hestii: osobny PDF do wydruku i podpisu — kolejny załącznik potwierdzenia dla klienta.
+	let ankietaWZalaczniku = false;
+	if (r.ankieta) {
+		const ankietaPdf = await zapiszPdfAnkiety(event, admin, r, kto);
+		if (ankietaPdf) {
+			zalPdf.push({ filename: nazwaPdfAnkiety(r), content: base64(ankietaPdf), content_type: 'application/pdf' });
+			ankietaWZalaczniku = true;
+		}
+	}
+
 	if (firma?.resend_api_key) {
 		if (r.email) {
-			const m = mailPotwierdzenie(r, apkWZalaczniku);
+			const m = mailPotwierdzenie(r, apkWZalaczniku, ankietaWZalaczniku);
 			const adres = test ? adresTestowy() : r.email;
 			const temat = pre + m.temat;
 			const w = await wyslijEmail(firma.resend_api_key, { from: nadawca(), to: [adres], replyTo: biuro(), subject: temat, html: m.html, text: m.tekst, attachments: zalPdf });
@@ -197,7 +227,7 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 			if (w.ok) await zapiszEmailKlienta(admin, r, adres, temat, m.tekst, w.id);
 		}
 
-		// Do biura same linki: pliki (PDF APK, PDF wniosku, załączniki klienta) otwiera się w CRM.
+		// Do biura same linki: pliki (PDF APK, PDF wniosku, PDF ankiety, załączniki klienta) otwiera się w CRM.
 		const crm = new URL(event.url).origin;
 		const mb = mailBiuro(r, { polisa: `${crm}/policies/${r.polisa_id}`, klient: `${crm}/clients/${r.klient_id}?tab=zalaczniki` }, kto);
 		const wb = await wyslijEmail(firma.resend_api_key, {
