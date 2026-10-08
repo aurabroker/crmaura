@@ -7,9 +7,10 @@
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import type { Policy } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let search = $state('');
-	let sortAsc = $state(true);
 
 	function renewalMenu(p: Policy): CtxItem[] {
 		return [
@@ -47,21 +48,29 @@
 	}
 
 	const filtered = $derived(
-		appState.policies
-			.filter((p) => {
-				if (!search) return true;
-				const s = search.toLowerCase();
-				return (
-					p.nr_polisy.toLowerCase().includes(s) ||
-					(p.crm_clients?.nazwa ?? '').toLowerCase().includes(s)
-				);
-			})
-			.sort((a, b) => {
-				const da = new Date(a.data_do).getTime();
-				const db = new Date(b.data_do).getTime();
-				return sortAsc ? da - db : db - da;
-			})
+		appState.policies.filter((p) => {
+			if (!search) return true;
+			const s = search.toLowerCase();
+			return (
+				p.nr_polisy.toLowerCase().includes(s) ||
+				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(s)
+			);
+		})
 	);
+
+	// Domyślnie wg daty końca rosnąco (najwcześniej wygasające na górze)
+	const sort = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		tu: (p) => p.crm_insurers?.nazwa,
+		rodzaj: (p) => p.rodzaj,
+		do: (p) => p.data_do,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0),
+		status: (p) => p.data_do,
+		dni: (p) => daysUntil(p.data_do)
+	}, { klucz: 'do', kierunek: 'asc' }, 'odnowienia');
+	const wiersze = $derived(sort.sortuj(filtered));
+	const najpozniej = $derived(sort.klucz === 'do' && sort.kierunek === 'desc');
 
 	const expiredCount = $derived(filtered.filter((p) => daysUntil(p.data_do) < 0).length);
 	const in30Count = $derived(filtered.filter((p) => { const d = daysUntil(p.data_do); return d >= 0 && d <= 30; }).length);
@@ -116,10 +125,10 @@
 			/>
 		</div>
 		<button
-			onclick={() => (sortAsc = !sortAsc)}
+			onclick={() => sort.przelacz('do')}
 			class="rounded-lg border border-line bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
 		>
-			{sortAsc ? 'Najwcześniej wygasa' : 'Najpóźniej wygasa'}
+			{sort.klucz !== 'do' ? 'Sortuj wg daty końca' : najpozniej ? 'Najpóźniej wygasa' : 'Najwcześniej wygasa'}
 		</button>
 	</div>
 
@@ -128,18 +137,18 @@
 		<table class="min-w-full text-sm">
 			<thead>
 				<tr class="border-b border-line text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
-					<th class="px-4 py-3">Nr Polisy</th>
-					<th class="px-4 py-3">Klient</th>
-					<th class="px-4 py-3">TU</th>
-					<th class="px-4 py-3">Rodzaj</th>
-					<th class="px-4 py-3">Data do</th>
-					<th class="px-4 py-3 text-right">Składka</th>
-					<th class="px-4 py-3">Status</th>
-					<th class="px-4 py-3 text-right">Dni do wygaśnięcia</th>
+					<SortTh s={sort} k="nr" class="px-4 py-3">Nr Polisy</SortTh>
+					<SortTh s={sort} k="klient" class="px-4 py-3">Klient</SortTh>
+					<SortTh s={sort} k="tu" class="px-4 py-3">TU</SortTh>
+					<SortTh s={sort} k="rodzaj" class="px-4 py-3">Rodzaj</SortTh>
+					<SortTh s={sort} k="do" class="px-4 py-3">Data do</SortTh>
+					<SortTh s={sort} k="skladka" class="px-4 py-3 text-right" align="right">Składka</SortTh>
+					<SortTh s={sort} k="status" class="px-4 py-3">Status</SortTh>
+					<SortTh s={sort} k="dni" class="px-4 py-3 text-right" align="right">Dni do wygaśnięcia</SortTh>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-line-soft">
-				{#each filtered as p (p.id)}
+				{#each wiersze as p (p.id)}
 					{@const days = daysUntil(p.data_do)}
 					{@const badge = statusBadge(p.data_do)}
 					<tr use:ctxMenu={{ items: () => renewalMenu(p), title: p.nr_polisy }}

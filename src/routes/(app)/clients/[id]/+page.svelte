@@ -6,7 +6,7 @@
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor } from '$lib/utils';
-	import type { Claim, Vehicle, ClientContact, CrmTask } from '$lib/types/database';
+	import type { Claim, Vehicle, ClientContact, CrmTask, Policy } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
@@ -140,6 +140,41 @@
 		p.ug_podtyp === 'gwarancje' || p.gwarancja_typ != null || (p.rodzaj ?? '').includes('gwarancj')
 	));
 	const showGwarancje = $derived(!!client?.gwarancje || clientGwarancje.length > 0);
+
+	// Zakładka Polisy: aktywne i archiwum — sortowanie po kliknięciu w nagłówek kolumny.
+	const dzisPolisy = new Date().toISOString().slice(0, 10);
+	const activePolicies = $derived(clientPolicies.filter(p => p.data_do === null || p.data_do >= dzisPolisy));
+	const archivedPolicies = $derived(clientPolicies.filter(p => p.data_do !== null && p.data_do < dzisPolisy && p.deleted_at === null));
+	const kolumnyPolis = {
+		nr: (p: Policy) => p.nr_polisy,
+		tu: (p: Policy) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
+		rodzaj: (p: Policy) => p.rodzaj,
+		od: (p: Policy) => p.data_od,
+		do: (p: Policy) => p.data_do,
+		skladka: (p: Policy) => Number(p.skladka_przypisana ?? 0),
+		status: (p: Policy) => p.data_do
+	};
+	const sortAktywne = new Sortowanie<Policy>(kolumnyPolis, { klucz: 'nr' }, 'klient-polisy-aktywne');
+	const sortArchiwum = new Sortowanie<Policy>(kolumnyPolis, { klucz: 'nr' }, 'klient-polisy-archiwum');
+	const aktywneWiersze = $derived(sortAktywne.sortuj(activePolicies));
+	const archiwumWiersze = $derived(sortArchiwum.sortuj(archivedPolicies));
+
+	const sortGwarancje = new Sortowanie<Policy>({
+		nr: (g) => g.nr_polisy,
+		typ: (g) => g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : null),
+		beneficjent: (g) => g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt,
+		od: (g) => g.data_od,
+		do: (g) => g.data_do,
+		limit: (g) => (g.ug_limit != null ? Number(g.ug_limit) : null)
+	}, { klucz: 'nr' }, 'klient-gwarancje');
+	const gwarancjeWiersze = $derived(sortGwarancje.sortuj(clientGwarancje));
+
+	// Okno „Składki klienta" — lista polis ze składką.
+	const sortSkladki = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0)
+	}, { klucz: 'nr' }, 'klient-skladki-polisy');
+	const skladkiWiersze = $derived(sortSkladki.sortuj(clientPolicies));
 
 	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'emaile' | 'mailing';
 	let activeTab = $state<TabKey>('polisy');
@@ -713,23 +748,21 @@
 
 	{#if activeTab === 'polisy'}
 		{@const today = new Date().toISOString().slice(0,10)}
-		{@const activePolicies = clientPolicies.filter(p => p.data_do === null || p.data_do >= today)}
-		{@const archivedPolicies = clientPolicies.filter(p => p.data_do !== null && p.data_do < today && p.deleted_at === null)}
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-						<th class="px-5 py-3">Nr Polisy</th>
-						<th class="px-5 py-3">TU</th>
-						<th class="px-5 py-3">Rodzaj</th>
-						<th class="px-5 py-3">OD</th>
-						<th class="px-5 py-3">DO</th>
-						<th class="px-5 py-3 text-right">Składka</th>
-						<th class="px-5 py-3">Status</th>
+						<SortTh s={sortAktywne} k="nr">Nr Polisy</SortTh>
+						<SortTh s={sortAktywne} k="tu">TU</SortTh>
+						<SortTh s={sortAktywne} k="rodzaj">Rodzaj</SortTh>
+						<SortTh s={sortAktywne} k="od">OD</SortTh>
+						<SortTh s={sortAktywne} k="do">DO</SortTh>
+						<SortTh s={sortAktywne} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
+						<SortTh s={sortAktywne} k="status">Status</SortTh>
 					</tr>
 				</thead>
 				<tbody>
-					{#each activePolicies as p}
+					{#each aktywneWiersze as p}
 						{@const st = policyStatus(p.data_do)}
 						{@const daysLeft = p.data_do ? dateDiffDays(today, p.data_do) : 999}
 						{@const isRenewed = renewedPolicyIds.has(p.id)}
@@ -790,17 +823,17 @@
 					<table class="w-full text-left text-sm">
 						<thead>
 							<tr class="bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
-								<th class="px-5 py-3">Nr Polisy</th>
-								<th class="px-5 py-3">TU</th>
-								<th class="px-5 py-3">Rodzaj</th>
-								<th class="px-5 py-3">OD</th>
-								<th class="px-5 py-3">DO</th>
-								<th class="px-5 py-3 text-right">Składka</th>
-								<th class="px-5 py-3">Status</th>
+								<SortTh s={sortArchiwum} k="nr">Nr Polisy</SortTh>
+								<SortTh s={sortArchiwum} k="tu">TU</SortTh>
+								<SortTh s={sortArchiwum} k="rodzaj">Rodzaj</SortTh>
+								<SortTh s={sortArchiwum} k="od">OD</SortTh>
+								<SortTh s={sortArchiwum} k="do">DO</SortTh>
+								<SortTh s={sortArchiwum} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
+								<SortTh s={sortArchiwum} k="status">Status</SortTh>
 							</tr>
 						</thead>
 						<tbody>
-							{#each archivedPolicies as p}
+							{#each archiwumWiersze as p}
 								{@const st = policyStatus(p.data_do)}
 								{@const isRenewed = renewedPolicyIds.has(p.id)}
 								<tr class="border-t border-line-soft hover:bg-slate-50">
@@ -927,16 +960,16 @@
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-						<th class="px-5 py-3">Nr / Umowa</th>
-						<th class="px-5 py-3">Typ</th>
-						<th class="px-5 py-3">Beneficjent / Kontrakt</th>
-						<th class="px-5 py-3">OD</th>
-						<th class="px-5 py-3">DO</th>
-						<th class="px-5 py-3 text-right">Limit / Suma</th>
+						<SortTh s={sortGwarancje} k="nr">Nr / Umowa</SortTh>
+						<SortTh s={sortGwarancje} k="typ">Typ</SortTh>
+						<SortTh s={sortGwarancje} k="beneficjent">Beneficjent / Kontrakt</SortTh>
+						<SortTh s={sortGwarancje} k="od">OD</SortTh>
+						<SortTh s={sortGwarancje} k="do">DO</SortTh>
+						<SortTh s={sortGwarancje} k="limit" class="px-5 py-3 text-right" align="right">Limit / Suma</SortTh>
 					</tr>
 				</thead>
 				<tbody>
-					{#each clientGwarancje as g}
+					{#each gwarancjeWiersze as g}
 						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium text-blue-700"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a></td>
 							<td class="px-5 py-3 text-slate-600">{g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : '—')}</td>
@@ -1404,9 +1437,9 @@
 			</div>
 		</div>
 		<table class="w-full text-sm">
-			<thead><tr class="text-[11px] text-slate-500 uppercase"><th class="py-2 text-left">Polisa</th><th class="py-2 text-right">Składka</th></tr></thead>
+			<thead><tr class="text-[11px] text-slate-500 uppercase"><SortTh s={sortSkladki} k="nr" class="py-2 text-left">Polisa</SortTh><SortTh s={sortSkladki} k="skladka" class="py-2 text-right" align="right">Składka</SortTh></tr></thead>
 			<tbody>
-				{#each clientPolicies as p}
+				{#each skladkiWiersze as p}
 					<tr class="border-t border-line-soft">
 						<td class="py-2"><a href="/policies/{p.id}" class="text-blue-700 hover:underline">{p.nr_polisy}</a></td>
 						<td class="py-2 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>

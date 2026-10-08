@@ -2,7 +2,7 @@
 -- E-maile wysłane klientowi z CRM (przypomnienia o płatnościach, później odnowienia).
 -- Pokazywane na karcie klienta (zakładka „E-maile”). Zapisuje wyłącznie serwer (service_role):
 -- funkcja send-payment-reminders po udanej wysyłce. Pracownicy firmy tylko czytają.
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-08 (5 wpisów z 08.10, RLS: pracownicy firmy tylko odczyt).
 -- ============================================================
 
 create table if not exists public.crm_client_emails (

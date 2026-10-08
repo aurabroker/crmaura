@@ -12,6 +12,8 @@
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
@@ -22,6 +24,17 @@
 	const childPolicies = $derived(appState.policies.filter(p => p.parent_id === policyId));
 	const childSkladka = $derived(childPolicies.reduce((s, p) => s + (p.skladka_przypisana ?? 0), 0));
 	const childProwizja = $derived(childPolicies.reduce((s, p) => s + (p.prowizja_przypisana ?? 0), 0));
+	// Sortowanie tabeli „Polisy w ramach UG” po kliknięciu w nagłówek
+	type PolisaUg = (typeof appState.policies)[number];
+	const sortUg = new Sortowanie<PolisaUg>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		od: (p) => p.data_od,
+		do: (p) => p.data_do,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0),
+		prowizja: (p) => Number(p.prowizja_przypisana ?? 0)
+	}, { klucz: 'nr' }, 'polisa-ug-polisy');
+	const childWiersze = $derived(sortUg.sortuj(childPolicies));
 
 	const ugPodtypLabel: Record<string, string> = {
 		flota: 'Flota',
@@ -677,16 +690,16 @@
 		<table class="w-full text-sm text-left">
 			<thead>
 				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-5 py-2">Nr polisy</th>
-					<th class="px-5 py-2">Klient</th>
-					<th class="px-5 py-2">OD</th>
-					<th class="px-5 py-2">DO</th>
-					<th class="px-5 py-2 text-right">Składka</th>
-					<th class="px-5 py-2 text-right">Prowizja</th>
+					<SortTh s={sortUg} k="nr" class="px-5 py-2">Nr polisy</SortTh>
+					<SortTh s={sortUg} k="klient" class="px-5 py-2">Klient</SortTh>
+					<SortTh s={sortUg} k="od" class="px-5 py-2">OD</SortTh>
+					<SortTh s={sortUg} k="do" class="px-5 py-2">DO</SortTh>
+					<SortTh s={sortUg} k="skladka" class="px-5 py-2 text-right" align="right">Składka</SortTh>
+					<SortTh s={sortUg} k="prowizja" class="px-5 py-2 text-right" align="right">Prowizja</SortTh>
 				</tr>
 			</thead>
 			<tbody>
-				{#each childPolicies as cp}
+				{#each childWiersze as cp}
 					{@const cst = policyStatus(cp.data_do)}
 					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-5 py-2">

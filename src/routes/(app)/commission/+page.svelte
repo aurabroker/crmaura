@@ -8,6 +8,8 @@
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	function commissionMenu(pol: any): CtxItem[] {
 		return [
@@ -68,6 +70,20 @@
 			);
 		})
 	);
+
+	// Sortowanie tabeli polis (domyślnie po nr polisy, jak w zapytaniu)
+	const sort = new Sortowanie<any>(
+		{
+			nr: (p) => p.nr_polisy,
+			klient: (p) => p.crm_clients?.nazwa,
+			skladka: (p) => Number(p.skladka_przypisana ?? 0),
+			przypisana: (p) => Number(p.prowizja_przypisana ?? 0),
+			zainkasowana: (p) => Number(p.prowizja_zainkasowana ?? 0)
+		},
+		{ klucz: 'nr' },
+		'prowizja-polisy'
+	);
+	const wiersze = $derived(sort.sortuj(filteredPolicies));
 
 	// --- Load data on mount ---
 	$effect(() => {
@@ -221,15 +237,15 @@
 			<table class="w-full text-left text-sm">
 				<thead>
 					<tr class="border-b border-line-soft text-xs text-slate-500 uppercase">
-						<th class="px-5 py-3 font-medium">Nr polisy</th>
-						<th class="px-5 py-3 font-medium">Klient</th>
-						<th class="px-5 py-3 font-medium text-right">Składka</th>
-						<th class="px-5 py-3 font-medium text-right">Prowizja przypisana</th>
-						<th class="px-5 py-3 font-medium text-right">Prowizja zainkasowana</th>
+						<SortTh s={sort} k="nr" class="px-5 py-3 font-medium">Nr polisy</SortTh>
+						<SortTh s={sort} k="klient" class="px-5 py-3 font-medium">Klient</SortTh>
+						<SortTh s={sort} k="skladka" class="px-5 py-3 font-medium text-right" align="right">Składka</SortTh>
+						<SortTh s={sort} k="przypisana" class="px-5 py-3 font-medium text-right" align="right">Prowizja przypisana</SortTh>
+						<SortTh s={sort} k="zainkasowana" class="px-5 py-3 font-medium text-right" align="right">Prowizja zainkasowana</SortTh>
 					</tr>
 				</thead>
 				<tbody>
-					{#each filteredPolicies as pol}
+					{#each wiersze as pol}
 						<tr use:ctxMenu={{ items: () => commissionMenu(pol), title: pol.nr_polisy ?? 'Polisa' }}
 							class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-5 py-3 font-medium text-slate-900">{pol.nr_polisy ?? '—'}</td>

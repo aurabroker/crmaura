@@ -10,6 +10,9 @@
 	import { goto } from '$app/navigation';
 	import { isBroker, roleLabel } from '$lib/stores/app.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
+	import type { Policy } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let taskModalOpen = $state(false);
 	let editingTask = $state<(typeof appState.tasks)[0] | null>(null);
@@ -32,6 +35,15 @@
 			return d >= 0 && d <= 30;
 		})
 	);
+
+	// Sortowanie tabeli wznowień (całej listy, przed obcięciem do 8 wierszy)
+	const sortWznowienia = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		tu: (p) => p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa,
+		do: (p) => p.data_do
+	}, { klucz: 'do' }, 'pulpit-wznowienia');
+	const renewalsRows = $derived(sortWznowienia.sortuj(renewals));
 
 	const activeClaims = $derived(
 		appState.claims.filter((c) => c.status === 'W toku' || c.status === 'Zgłoszona')
@@ -572,14 +584,14 @@
 		<table class="w-full text-left text-xs">
 			<thead>
 				<tr class="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-4 py-2">Nr Polisy</th>
-					<th class="px-4 py-2">Klient</th>
-					<th class="px-4 py-2">TU</th>
-					<th class="px-4 py-2">Koniec</th>
+					<SortTh s={sortWznowienia} k="nr" class="px-4 py-2">Nr Polisy</SortTh>
+					<SortTh s={sortWznowienia} k="klient" class="px-4 py-2">Klient</SortTh>
+					<SortTh s={sortWznowienia} k="tu" class="px-4 py-2">TU</SortTh>
+					<SortTh s={sortWznowienia} k="do" class="px-4 py-2">Koniec</SortTh>
 				</tr>
 			</thead>
 			<tbody>
-				{#each renewals.slice(0, 8) as p}
+				{#each renewalsRows.slice(0, 8) as p}
 					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-4 py-2 font-medium text-blue-700"><a href="/policies/{p.id}" class="hover:underline">{p.nr_polisy}</a></td>
 						<td class="px-4 py-2 truncate max-w-[100px]">{p.crm_clients?.nazwa ?? '—'}</td>
