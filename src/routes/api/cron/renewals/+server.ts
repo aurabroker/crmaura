@@ -21,6 +21,7 @@ import type { RequestHandler } from './$types';
 // 3) wysyła jedno przypomnienie po 7 dniach bez złożonego wniosku.
 const MAKS_ZAPROSZEN = 50;
 const MAKS_PRZYPOMNIEN = 50;
+const PORTAL = 'https://portal.beautypolisa.eu';
 
 export const POST: RequestHandler = async ({ request, url }) => {
 	const admin = getAdminClient();
@@ -30,6 +31,9 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	if (e) return new Response('nie mogę sprawdzić tokenu', { status: 500 });
 	if (zgoda !== true) return new Response('zły nagłówek x-cron-token', { status: 401 });
 
+	// pg_cron woła adres *.pages.dev (domena portalu ma ochronę przed botami, która zatrzymuje żądania z bazy) —
+	// linki w e-mailach mają jednak prowadzić na portal.
+	const origin = url.hostname.endsWith('.pages.dev') ? PORTAL : url.origin;
 	const wynik = { wygaszone: 0, zaproszenia: 0, przypomnienia: 0, pominiete: 0, usunietePliki: 0, bledy: [] as string[] };
 	const teraz = new Date().toISOString();
 
@@ -84,7 +88,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		for (const r of (niewyslane ?? []) as RenewalRow[]) {
 			if (wyslane >= MAKS_ZAPROSZEN) break;
 			if (await anulujNieaktualny(admin, r)) continue;
-			const w = await wyslijZaproszenie(admin, r, url.origin);
+			const w = await wyslijZaproszenie(admin, r, origin);
 			if (w.ok) {
 				wynik.zaproszenia++;
 				wyslane++;
@@ -111,7 +115,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					continue;
 				}
 				const r = await utworzOdnowienie(admin, p, { utworzyl: null });
-				const w = await wyslijZaproszenie(admin, r, url.origin);
+				const w = await wyslijZaproszenie(admin, r, origin);
 				if (w.ok) {
 					wynik.zaproszenia++;
 					wyslane++;
@@ -152,7 +156,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			.select('id')
 			.maybeSingle();
 		if (!zajete) continue;
-		const w = await wyslijZaproszenie(admin, r, url.origin, { przypomnienie: true });
+		const w = await wyslijZaproszenie(admin, r, origin, { przypomnienie: true });
 		if (w.ok) wynik.przypomnienia++;
 		else {
 			// Nieudana wysyłka zwalnia wniosek — następne uruchomienie spróbuje ponownie.

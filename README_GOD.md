@@ -245,7 +245,8 @@ z załącznikami (dyplom, certyfikat szkolenia z ostatnich 12 miesięcy, wzory z
   klienta i do biura (`RENEWAL_OFFICE_EMAIL`, domyślnie odnowienia@auraexpert.pl) z PDF i załącznikami, zadanie w CRM dla
   opiekuna klienta. Dziennik: `crm_renewal_events` (otwarcie, APK/odmowa z IP i przeglądarką, złożenie, wysyłki, błędy).
 - **CRM**: karta polisy → „Odnów polisę” → wysyłka e-mailem albo link; panel statusu wniosku; kolumna na liście wznowień.
-- **Automat**: pg_cron `crm-renewals` (codziennie 6:20 UTC) → `/api/cron/renewals` z `x-cron-token`: wygaszanie,
+- **Automat**: pg_cron `crm-renewals` (codziennie 6:20 UTC) → `https://crmaura.pages.dev/api/cron/renewals` z `x-cron-token`
+  (nie przez portal.beautypolisa.eu — ochrona Cloudflare przed botami zwraca bazie 403; linki w e-mailach i tak na portal): wygaszanie,
   zaproszenia 45 dni przed końcem (moduł `odnowienia_auto` w SAAS Admin), jedno przypomnienie po 7 dniach.
 - **Wysyłka**: klucz Resend firmy (SAAS Admin), nadawca `RENEWAL_EMAIL_FROM` (domyślnie BeautyPolisa <odnowienia@beautypolisa.eu>).
 - **Tryb testowy**: moduł `odnowienia_test` (SAAS Admin) — każdy e-mail odnowień (zaproszenie, przypomnienie,
