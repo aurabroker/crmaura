@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPojazdy } from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { sb } from '$lib/supabase';
@@ -50,7 +51,7 @@
 		}]);
 		saving = false;
 		if (err) { error = err.message; return; }
-		const { data } = await sb.from('crm_vehicles').select('*');
+		const { data } = await wczytajPojazdy();
 		appState.vehicles = (data ?? []) as typeof appState.vehicles;
 		if (presetKlient) goto(`/clients/${presetKlient}`);
 		else goto('/clients');

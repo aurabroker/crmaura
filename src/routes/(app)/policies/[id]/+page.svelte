@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajAneksy, wczytajPodzialProwizji } from '$lib/kolekcje';
 	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
 	import { tick } from 'svelte';
 	import { page } from '$app/stores';
@@ -85,7 +86,7 @@
 	let pbError = $state('');
 
 	async function reloadPolicyBrokers() {
-		const { data } = await sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)');
+		const { data } = await wczytajPodzialProwizji();
 		appState.policyBrokers = (data ?? []) as typeof appState.policyBrokers;
 	}
 
@@ -226,7 +227,7 @@
 		axNewDataDo = ''; axNewSkladka = ''; axNewProwizjaPct = '';
 		const [, rA] = await Promise.all([
 			odswiezPolisy(),
-			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
+			wczytajAneksy()
 		]);
 		if (!rA.error && rA.data) appState.annexes = rA.data as typeof appState.annexes;
 	}

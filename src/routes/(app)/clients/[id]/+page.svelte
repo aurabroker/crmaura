@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { POLICY_SELECT } from '$lib/queries';
+	import { wczytajFormularzeApk, wczytajKlientow, wczytajKontakty, wczytajPojazdy, wczytajPolisy, wczytajSzkody } from '$lib/kolekcje';
 	import { untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -14,7 +14,7 @@
 	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
-	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken, APK_FORMS_SELECT } from '$lib/utils/apkLink';
+	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken } from '$lib/utils/apkLink';
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import type { ApkForm } from '$lib/types/database';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
@@ -568,7 +568,7 @@
 		}]);
 		if (e2) { savingApk = false; apkErr = e2.message; return; }
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: 'created', actor: apkAdvisor || 'system' }]);
-		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
+		const { data } = await wczytajFormularzeApk();
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 		savingApk = false; apkToken = token;
 	}
@@ -595,7 +595,7 @@
 		await sb.from('apk_tokens').delete().eq('form_id', id);
 		await sb.from('apk_audit').delete().eq('form_id', id);
 		await sb.from('apk_forms').delete().eq('id', id);
-		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
+		const { data } = await wczytajFormularzeApk();
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 		deletingApk = null;
 	}
@@ -623,13 +623,13 @@
 		savingCC = false;
 		if (error) { ccError = error.message; return; }
 		showContact = false;
-		const { data } = await sb.from('crm_client_contacts').select('*');
+		const { data } = await wczytajKontakty();
 		appState.clientContacts = (data ?? []) as typeof appState.clientContacts;
 	}
 
 	async function deleteContact(cc: ClientContact) {
 		await sb.from('crm_client_contacts').delete().eq('id', cc.id);
-		const { data } = await sb.from('crm_client_contacts').select('*');
+		const { data } = await wczytajKontakty();
 		appState.clientContacts = (data ?? []) as typeof appState.clientContacts;
 	}
 
@@ -649,7 +649,7 @@
 		savingClaim = true;
 		await sb.from('crm_claims').update({ status: claimStatus }).eq('id', editingClaim.id);
 		savingClaim = false; editingClaim = null;
-		const { data } = await sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)');
+		const { data } = await wczytajSzkody();
 		appState.claims = (data ?? []) as typeof appState.claims;
 	}
 
@@ -678,7 +678,7 @@
 		savingV = false;
 		if (error) { vError = error.message; return; }
 		showVehicle = false;
-		const { data } = await sb.from('crm_vehicles').select('*');
+		const { data } = await wczytajPojazdy();
 		appState.vehicles = (data ?? []) as typeof appState.vehicles;
 	}
 
@@ -697,7 +697,7 @@
 		}
 		linkingSaving = true;
 		await sb.from('crm_policies').update({ pojazd_id: vehicleId }).eq('id', linkPolicyId);
-		const { data, error: bladPolis } = await sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null);
+		const { data, error: bladPolis } = await wczytajPolisy();
 		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 		linkingSaving = false;
 		linkingVehicleId = null;
@@ -775,7 +775,7 @@
 	async function saveOpiekun() {
 		savingOpiekun = true;
 		await sb.from('crm_clients').update({ opiekun_id: selectedOpiekun || null }).eq('id', clientId);
-		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+		const { data } = await wczytajKlientow();
 		appState.clients = (data ?? []) as typeof appState.clients;
 		savingOpiekun = false;
 		editingOpiekun = false;

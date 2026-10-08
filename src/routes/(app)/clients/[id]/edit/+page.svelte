@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajKlientow } from '$lib/kolekcje';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
@@ -61,7 +62,7 @@
 		saving = false;
 		if (error) { formError = error.message; return; }
 		await logAudit('client_updated', 'client', client.id, payload.nazwa);
-		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+		const { data } = await wczytajKlientow();
 		appState.clients = (data ?? []) as typeof appState.clients;
 		goto(`/clients/${client.id}`);
 	}

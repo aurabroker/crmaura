@@ -1,6 +1,6 @@
 <script lang="ts">
+	import { wczytajAneksy, wczytajPolisy, wczytajSzkody } from '$lib/kolekcje';
 	import { opiekunZUmowy } from '$lib/policyImport/umowaGeneralna';
-	import { POLICY_SELECT } from '$lib/queries';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, odmiana, policyStatus, rodzajCls, ugPodtypCls } from '$lib/utils';
@@ -102,8 +102,8 @@
 
 	async function reloadPolicies() {
 		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null),
-			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
+			wczytajPolisy(),
+			wczytajAneksy()
 		]);
 		// Przy błędzie zostaje dotychczasowa lista (pusta lista wyglądałaby jak brak polis).
 		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
@@ -195,7 +195,7 @@
 		saving = false;
 		if (error) { formError = error.message; return; }
 		showClaim = false;
-		const { data } = await sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)');
+		const { data } = await wczytajSzkody();
 		appState.claims = (data ?? []) as typeof appState.claims;
 	}
 

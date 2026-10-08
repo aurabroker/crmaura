@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPojazdy } from '$lib/kolekcje';
 	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
@@ -277,7 +278,7 @@
 				.from('crm_policy_payments')
 				.select(PAYMENT_SELECT)
 				.order('data_platnosci'),
-			sb.from('crm_vehicles').select('*'),
+			wczytajPojazdy(),
 			sb.from('crm_leasings').select('*'),
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje')
 		]);

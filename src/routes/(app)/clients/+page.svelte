@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { POLICY_SELECT } from '$lib/queries';
+	import { wczytajFormularzeApk, wczytajKlientow, wczytajKontakty, wczytajPojazdy, wczytajPolisy, wczytajSzkody, wczytajZadania } from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
@@ -12,7 +12,6 @@
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 	import { page } from '$app/stores';
 	import { logAudit } from '$lib/utils/audit';
-	import { APK_FORMS_SELECT } from '$lib/utils/apkLink';
 
 	function clientMenu(c: Client): CtxItem[] {
 		return [
@@ -208,13 +207,13 @@
 		});
 
 		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
-			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
-			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null),
-			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
-			sb.from('crm_vehicles').select('*'),
-			sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false }),
-			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false }),
-			sb.from('crm_client_contacts').select('*')
+			wczytajKlientow(),
+			wczytajPolisy(),
+			wczytajSzkody(),
+			wczytajPojazdy(),
+			wczytajFormularzeApk(),
+			wczytajZadania(),
+			wczytajKontakty()
 		]);
 		// Lista z bazy ma już beauty_id zachowanego rekordu; gdy odczyt zawiedzie, poprawiamy ją lokalnie.
 		appState.clients = !rC.error && rC.data
@@ -283,7 +282,7 @@
 		if (error) { formError = error.message; return; }
 		await logAudit('client_created', 'client', undefined, payload.nazwa as string);
 		closeModal();
-		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+		const { data } = await wczytajKlientow();
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
 

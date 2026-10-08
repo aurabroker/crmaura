@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPlatnosci } from '$lib/kolekcje';
 	import { PAYMENT_SELECT } from '$lib/queries';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
@@ -388,7 +389,7 @@
 	});
 
 	async function reloadPayments() {
-		const { data } = await sb.from('crm_policy_payments').select(PAYMENT_SELECT).order('data_platnosci');
+		const { data } = await wczytajPlatnosci();
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
 
