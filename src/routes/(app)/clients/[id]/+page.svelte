@@ -377,8 +377,9 @@
 	// ── Wnioski o odnowienie (program OC beauty): dziennik zdarzeń, pliki, APK z wniosków ──
 	// Lista wniosków klienta to jedno zapytanie przy otwarciu karty — z niej liczy się zakładka APK.
 	// Dziennik i pliki w magazynie dopiero po wejściu w zakładkę. Pracownik tylko czyta (RLS).
-	type WniosekKlienta = Pick<RenewalRow, 'id' | 'tenant_id' | 'polisa_id' | 'status' | 'decyzja' | 'nr_polisy' | 'apk_at' | 'apk_odmowa' | 'zalaczniki' | 'pdf_path' | 'created_at' | 'zlozono_at'>;
-	const WNIOSKI_KOLUMNY = 'id, tenant_id, polisa_id, status, decyzja, nr_polisy, apk_at, apk_odmowa, zalaczniki, pdf_path, created_at, zlozono_at';
+	type WniosekKlienta = Pick<RenewalRow, 'id' | 'tenant_id' | 'polisa_id' | 'status' | 'decyzja' | 'nr_polisy' | 'apk_at' | 'apk_odmowa' | 'zalaczniki' | 'pdf_path' | 'created_at' | 'zlozono_at' | 'wniosek'>;
+	// wniosek — osoby wykonujące zabiegi (opis dyplomów i certyfikatów: czyje są).
+	const WNIOSKI_KOLUMNY = 'id, tenant_id, polisa_id, status, decyzja, nr_polisy, apk_at, apk_odmowa, zalaczniki, wniosek, pdf_path, created_at, zlozono_at';
 	let wnioski = $state<WniosekKlienta[]>([]);
 	let wnioskiDla = '';
 	let wnioskiNr = 0;

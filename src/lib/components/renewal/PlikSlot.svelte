@@ -22,11 +22,13 @@
 		typ: TypZalacznika;
 		etykieta: string;
 		osoba?: string | null;
+		/** Imię i nazwisko osoby — zapisane przy pliku, żeby osobę dało się odtworzyć w nowej karcie. */
+		osobaNazwa?: string;
 		zabieg?: string | null;
 		wymagany?: boolean;
 		testid?: string;
 	}
-	let { s, typ, etykieta, osoba = null, zabieg = null, wymagany = false, testid = typ }: Props = $props();
+	let { s, typ, etykieta, osoba = null, osobaNazwa = '', zabieg = null, wymagany = false, testid = typ }: Props = $props();
 
 	const ACCEPT = [...ZALACZNIK_TYPY_MIME, '.pdf', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'].join(',');
 
@@ -75,7 +77,7 @@
 			}
 		};
 
-		const r = await wyslij<OdpowiedzZalacznikUrl>(s.klucz, { akcja: 'zalacznik_url', typ, osoba, zabieg, nazwa: f.name, rozmiar: f.size, mime });
+		const r = await wyslij<OdpowiedzZalacznikUrl>(s.klucz, { akcja: 'zalacznik_url', typ, osoba, ...(osoba ? { osoba_nazwa: osobaNazwa.trim() } : {}), zabieg, nazwa: f.name, rozmiar: f.size, mime });
 		if (!r.ok) return blad([r.message, ...r.bledy].join(' '));
 
 		// Typ pliku ustalony z rozszerzenia (np. HEIC bez typu) musi trafić do magazynu.

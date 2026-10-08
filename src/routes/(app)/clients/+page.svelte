@@ -157,6 +157,18 @@
 		mergeError[group.reason] = '';
 		const otherIds = others.map(c => c.id);
 
+		// Wnioski o odnowienie i historia e-maili należą do klienta (usunięcie kasuje je razem z nim),
+		// a pracownik nie może ich przepiąć — rekord z nimi musi zostać jako docelowy.
+		const [{ count: nWnioskow }, { count: nEmaili }] = await Promise.all([
+			sb.from('crm_renewals').select('id', { count: 'exact', head: true }).in('klient_id', otherIds),
+			sb.from('crm_client_emails').select('id', { count: 'exact', head: true }).in('klient_id', otherIds)
+		]);
+		if ((nWnioskow ?? 0) > 0 || (nEmaili ?? 0) > 0) {
+			mergeError[group.reason] = 'Usuwany rekord ma wnioski o odnowienie albo historię e-maili — wybierz go jako rekord docelowy.';
+			merging = null;
+			return;
+		}
+
 		// Identyfikator firmy z BEAUTY przechodzi na zachowany rekord, gdy ten go nie ma — inaczej
 		// synchronizacja nie znajdzie odpowiednika usuniętego duplikatu. Stan z bazy, bo lista mogła
 		// się zestarzeć (synchronizacja działa w tle).

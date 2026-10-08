@@ -162,7 +162,7 @@ export function odpowiedziApk(apk: Apk): [string, string][] {
 
 // ---------- Potwierdzenie dla klienta i powiadomienie biura ----------
 
-export function mailPotwierdzenie(r: RenewalRow) {
+export function mailPotwierdzenie(r: RenewalRow, apkWZalaczniku = false) {
 	const nowy = nowyOkres(r.okres_do ?? '');
 	const ankieta = !!r.ankieta;
 	const akapity: string[] = [];
@@ -177,7 +177,11 @@ export function mailPotwierdzenie(r: RenewalRow) {
 		akapity.push(`przyjęliśmy informację o rezygnacji z odnowienia ubezpieczenia OC dla ${r.klient_nazwa}. Ochrona kończy się ${data(r.okres_do)} — od tego dnia gabinet nie ma ubezpieczenia OC w programie.`);
 		akapity.push('Jeśli zmienisz zdanie, odpowiedz na tę wiadomość — przygotujemy odnowienie.');
 	}
-	akapity.push('W załączniku przesyłamy PDF z treścią wniosku. Analizę potrzeb (APK) wysłaliśmy wcześniej osobnym e-mailem.');
+	akapity.push(
+		apkWZalaczniku
+			? 'W załącznikach przesyłamy PDF z treścią wniosku i PDF analizy potrzeb (APK).'
+			: 'W załączniku przesyłamy PDF z treścią wniosku. Analizę potrzeb (APK) wysłaliśmy wcześniej osobnym e-mailem.'
+	);
 	const temat =
 		r.decyzja === 'nie'
 			? `Rezygnacja z odnowienia ubezpieczenia OC — certyfikat ${r.nr_polisy ?? ''}`

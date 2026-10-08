@@ -191,6 +191,7 @@ export class Odnowienie {
 		this.ankieta = pustaAnkieta(widok.klient);
 		this.zalaczniki = [...widok.zalaczniki];
 		this.wczytajSzkic();
+		this.odtworzWykonawcow();
 	}
 
 	private zbudujWniosek(): Wniosek {
@@ -244,6 +245,34 @@ export class Odnowienie {
 		if (w.ok && w.value.zmiany) bledy.push(...brakiDokumentow(w.value.zmiany.wykonawcy, this.zalaczniki));
 		if (this.wgrywane.some((x) => x.stan === 'wysylanie')) bledy.push('Poczekaj, aż wszystkie pliki zostaną wysłane.');
 		return bledy;
+	}
+
+	// Osoby są w szkicu tej karty przeglądarki. Po powrocie z linku (nowa karta, inne urządzenie) szkicu nie ma,
+	// ale pliki na serwerze mają id osoby i jej imię z chwili wgrania — z nich odtwarzamy osoby i ich zabiegi.
+	private odtworzWykonawcow() {
+		const znane = new Set(this.wykonawcy.map((w) => w.id));
+		for (const z of this.zalaczniki) {
+			if ((z.typ !== 'dyplom' && z.typ !== 'certyfikat') || !z.osoba) continue;
+			let w = this.wykonawcy.find((x) => x.id === z.osoba);
+			if (!w) {
+				if (this.wykonawcy.length >= MAKS_WYKONAWCOW || znane.has(z.osoba)) continue;
+				w = { id: z.osoba, imie_nazwisko: z.osoba_nazwa ?? '', zabiegi: [] };
+				this.wykonawcy.push(w);
+			} else if (znane.has(w.id)) continue;
+			if (!w.imie_nazwisko && z.osoba_nazwa) w.imie_nazwisko = z.osoba_nazwa;
+			if (z.typ === 'certyfikat' && z.zabieg && !w.zabiegi.includes(z.zabieg)) w.zabiegi.push(z.zabieg);
+		}
+	}
+
+	// Dyplomy i certyfikaty, których nie widać przy żadnej osobie (osoba usunięta, zabieg odznaczony) —
+	// liczą się do limitu wniosku, więc klient musi je widzieć i móc usunąć.
+	get plikiBezOsoby(): Zalacznik[] {
+		return this.zalaczniki.filter((z) => {
+			if (z.typ !== 'dyplom' && z.typ !== 'certyfikat') return false;
+			const w = this.wykonawcy.find((x) => x.id === z.osoba);
+			if (!w) return true;
+			return z.typ === 'certyfikat' && (!z.zabieg || !w.zabiegi.includes(z.zabieg) || !this.zabiegiZgloszone.includes(z.zabieg));
+		});
 	}
 
 	dodajWykonawce(): Wykonawca | null {

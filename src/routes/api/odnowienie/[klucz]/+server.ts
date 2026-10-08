@@ -85,6 +85,8 @@ export const POST: RequestHandler = async (event) => {
 		case 'apk': {
 			const w = waliduj_apk(body.apk);
 			if (!w.ok) return blad(400, 'Uzupełnij analizę potrzeb.', w.bledy);
+			// Te same odpowiedzi co zapisane — nic nie zmieniamy i nie wysyłamy drugi raz PDF.
+			if (r.apk_at && !r.apk_odmowa && JSON.stringify(r.apk) === JSON.stringify(w.value)) return json(widok(r));
 			const teraz = new Date().toISOString();
 			const zapisany = await zapiszZWersja(admin, r, {
 				apk: w.value,
@@ -101,6 +103,7 @@ export const POST: RequestHandler = async (event) => {
 
 		case 'apk_odmowa': {
 			if (body.potwierdzenie !== true) return blad(400, 'Potwierdź odmowę wypełnienia APK.');
+			if (r.apk_at && r.apk_odmowa) return json(widok(r));
 			const zapisany = await zapiszZWersja(admin, r, {
 				apk: null,
 				apk_odmowa: true,
@@ -128,6 +131,7 @@ export const POST: RequestHandler = async (event) => {
 			// Dyplom należy do osoby, certyfikat — do osoby i jej zabiegu.
 			const osoba = typeof body.osoba === 'string' && ID_WYKONAWCY.test(body.osoba) ? body.osoba : null;
 			const zabieg = czyZabieg(body.zabieg) ? body.zabieg : null;
+			const osoba_nazwa = osoba && typeof body.osoba_nazwa === 'string' ? body.osoba_nazwa.trim().slice(0, 200) || null : null;
 			if ((typ === 'dyplom' || typ === 'certyfikat') && !osoba) return blad(400, 'Wskaż osobę, do której należy dokument.');
 			if (typ === 'certyfikat' && !zabieg) return blad(400, 'Wskaż zabieg, którego dotyczy certyfikat.');
 
@@ -137,13 +141,13 @@ export const POST: RequestHandler = async (event) => {
 			const { data: podpis, error: e } = await admin.storage.from(BUCKET).createSignedUploadUrl(path);
 			if (e || !podpis) return blad(500, 'Nie udało się przygotować wysyłki pliku. Spróbuj ponownie.');
 
-			const zalacznik = { id, path, typ, nazwa, rozmiar, mime, osoba: typ === 'dyplom' || typ === 'certyfikat' ? osoba : null, zabieg: typ === 'certyfikat' ? zabieg : null, at: new Date().toISOString() };
+			const zalacznik = { id, path, typ, nazwa, rozmiar, mime, osoba: typ === 'dyplom' || typ === 'certyfikat' ? osoba : null, osoba_nazwa: typ === 'dyplom' || typ === 'certyfikat' ? osoba_nazwa : null, zabieg: typ === 'certyfikat' ? zabieg : null, at: new Date().toISOString() };
 			// Lista w jsonb: zapis z kontrolą wersji, z ponowieniem przy równoległym dodawaniu plików.
 			let biezacy: RenewalRow | null = r;
 			for (let proba = 0; proba < 4 && biezacy; proba++) {
 				const zapisany = await zapiszZWersja(admin, biezacy, { zalaczniki: [...(biezacy.zalaczniki ?? []), zalacznik] });
 				if (zapisany) {
-					const odp: OdpowiedzZalacznikUrl = { id, path: podpis.path, token: podpis.token, zalacznik: { id, typ, nazwa, rozmiar, mime, osoba: zalacznik.osoba, zabieg: zalacznik.zabieg } };
+					const odp: OdpowiedzZalacznikUrl = { id, path: podpis.path, token: podpis.token, zalacznik: { id, typ, nazwa, rozmiar, mime, osoba: zalacznik.osoba, osoba_nazwa: zalacznik.osoba_nazwa, zabieg: zalacznik.zabieg } };
 					return json(odp);
 				}
 				const { data } = await admin.from('crm_renewals').select('*').eq('id', r.id).maybeSingle();

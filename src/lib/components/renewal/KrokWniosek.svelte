@@ -290,7 +290,18 @@
 									<div class="max-h-80 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100" data-testid="zabiegi-lista">
 										{#each zabiegiWidoczne as z (z)}
 											<label class="flex items-start gap-3 px-3 py-2.5 min-h-11 cursor-pointer hover:bg-slate-50 has-checked:bg-rose-50">
-												<input type="checkbox" value={z} bind:group={s.zm.nowe_zabiegi} class={ZNACZNIK} />
+												<!-- Bez bind:group: lista jest filtrowana, a bind:group liczy wybór tylko z widocznych pól
+													 — wyszukanie kolejnego zabiegu gubiło wcześniej zaznaczone. -->
+												<input
+													type="checkbox"
+													value={z}
+													checked={s.zm.nowe_zabiegi.includes(z)}
+													onchange={(e) => {
+														const bez = s.zm.nowe_zabiegi.filter((x) => x !== z);
+														s.zm.nowe_zabiegi = e.currentTarget.checked ? [...bez, z] : bez;
+													}}
+													class={ZNACZNIK}
+												/>
 												<span class="text-sm text-slate-800">{z}</span>
 											</label>
 										{:else}

@@ -22,6 +22,40 @@ type PdfEvent = Parameters<typeof pdfWniosku>[0];
 const AKTYWNE = ['utworzony', 'wyslany', 'otwarty', 'apk'];
 // Ścieżka PDF analizy potrzeb w magazynie (karta klienta → Załączniki szuka jej pod tą nazwą).
 export const sciezkaPdfApk = (r: Pick<RenewalRow, 'tenant_id' | 'id'>) => `${r.tenant_id}/${r.id}/apk.pdf`;
+// Limit e-maili z PDF APK na jeden wniosek (poprawki APK) i odstęp między nimi — link nie może służyć
+// do zasypywania skrzynki ani wyczerpania limitu wysyłki firmy. PDF w magazynie odświeża się zawsze.
+const APK_MAILE_MAKS = 5;
+const APK_MAILE_ODSTEP_MS = 60_000;
+
+async function moznaWyslacApk(admin: SupabaseClient, r: RenewalRow): Promise<boolean> {
+	const { data } = await admin
+		.from('crm_renewal_events')
+		.select('at')
+		.eq('renewal_id', r.id)
+		.in('zdarzenie', ['email_apk', 'blad_email_apk'])
+		.order('at', { ascending: false })
+		.limit(APK_MAILE_MAKS);
+	const wyslane = data ?? [];
+	if (wyslane.length >= APK_MAILE_MAKS) return false;
+	const ostatni = wyslane[0]?.at ? Date.parse(wyslane[0].at) : 0;
+	return Date.now() - ostatni >= APK_MAILE_ODSTEP_MS;
+}
+
+// PDF APK do magazynu (upsert). Zwraca bajty albo null przy błędzie (zapisanym w dzienniku).
+async function zapiszPdfApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient): Promise<Uint8Array | null> {
+	try {
+		const pdf = await pdfApk(event, r, kto);
+		const { error: e } = await admin.storage.from(BUCKET).upload(sciezkaPdfApk(r), pdf, { contentType: 'application/pdf', upsert: true });
+		if (e) throw e;
+		return pdf;
+	} catch (e) {
+		console.error('renewals: PDF APK nie powstał:', (e as Error)?.message ?? e);
+		await zapiszZdarzenie(admin, r, 'blad_pdf_apk', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
+		return null;
+	}
+}
+
+const nazwaPdfApk = (r: RenewalRow) => `APK-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;
 
 // Historia e-maili klienta (karta klienta → E-maile). Błąd zapisu nie przerywa wysyłki.
 // Zapisuje adres, na który e-mail faktycznie poszedł (w trybie testowym — adres testowy).
@@ -82,17 +116,12 @@ export async function wyslijZaproszenie(
 // Po APK (albo świadomej odmowie): PDF analizy potrzeb do magazynu i od razu e-mailem do klienta.
 // To osobny dokument — wniosek przychodzi drugim e-mailem po złożeniu. Błędy trafiają do dziennika.
 export async function poApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient, o: { aktualizacja?: boolean } = {}) {
-	let pdf: Uint8Array;
-	try {
-		pdf = await pdfApk(event, r, kto);
-		const { error: e } = await admin.storage.from(BUCKET).upload(sciezkaPdfApk(r), pdf, { contentType: 'application/pdf', upsert: true });
-		if (e) throw e;
-	} catch (e) {
-		console.error('renewals: PDF APK nie powstał:', (e as Error)?.message ?? e);
-		await zapiszZdarzenie(admin, r, 'blad_pdf_apk', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
+	const pdf = await zapiszPdfApk(event, admin, r, kto);
+	if (!pdf || !r.email) return;
+	if (!(await moznaWyslacApk(admin, r))) {
+		await zapiszZdarzenie(admin, r, 'email_apk_pominiety', null, { powod: 'limit e-maili z APK dla wniosku' });
 		return;
 	}
-	if (!r.email) return;
 	const firma = await ustawieniaFirmy(admin, r.tenant_id);
 	if (!firma?.resend_api_key) {
 		await zapiszZdarzenie(admin, r, 'blad_email_apk', null, { blad: 'Firma nie ma klucza Resend (SAAS Admin).' });
@@ -103,7 +132,7 @@ export async function poApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRo
 	const link = await linkDla(r.id, new URL(event.url).origin);
 	const m = mailApk(r, link, o.aktualizacja);
 	const temat = (test ? PREFIKS_TESTU : '') + m.temat;
-	const nazwa = `APK-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;
+	const nazwa = nazwaPdfApk(r);
 	const w = await wyslijEmail(firma.resend_api_key, {
 		from: nadawca(),
 		to: [adres],
@@ -144,9 +173,23 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 	const nazwaPdf = `Wniosek-odnowienia-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;
 	const zalPdf: Zalacznik[] = pdf ? [{ filename: nazwaPdf, content: base64(pdf), content_type: 'application/pdf' }] : [];
 
+	// PDF APK powinien już być (wysłany po APK). Gdy go brak — wniosek sprzed zmian albo błąd przy APK —
+	// tworzymy go teraz i dołączamy do potwierdzenia, żeby klient miał APK na trwałym nośniku.
+	let apkWZalaczniku = false;
+	if (r.apk_at) {
+		const { data: jest } = await admin.storage.from(BUCKET).list(`${r.tenant_id}/${r.id}`, { search: 'apk.pdf', limit: 10 });
+		if (!(jest ?? []).some((p) => p.name === 'apk.pdf')) {
+			const apkPdf = await zapiszPdfApk(event, admin, r, kto);
+			if (apkPdf) {
+				zalPdf.push({ filename: nazwaPdfApk(r), content: base64(apkPdf), content_type: 'application/pdf' });
+				apkWZalaczniku = true;
+			}
+		}
+	}
+
 	if (firma?.resend_api_key) {
 		if (r.email) {
-			const m = mailPotwierdzenie(r);
+			const m = mailPotwierdzenie(r, apkWZalaczniku);
 			const adres = test ? adresTestowy() : r.email;
 			const temat = pre + m.temat;
 			const w = await wyslijEmail(firma.resend_api_key, { from: nadawca(), to: [adres], replyTo: biuro(), subject: temat, html: m.html, text: m.tekst, attachments: zalPdf });
