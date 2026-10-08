@@ -21,7 +21,7 @@
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
 	import { APK_PDF, BUCKET_ODNOWIEN, folderWniosku, opisPrzegladarki, opisZdarzenia, rozmiarPliku, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
-	import { TYPY_ZALACZNIKOW } from '$lib/renewals/program';
+	import { opisZalacznika } from '$lib/renewals/program';
 
 	let pdfSaving = $state<string | null>(null);
 	let pdfError = $state('');
@@ -181,7 +181,12 @@
 	const skladkiWiersze = $derived(sortSkladki.sortuj(clientPolicies));
 
 	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zalaczniki' | 'dziennik' | 'zadania' | 'emaile' | 'mailing';
+	// ?tab=zalaczniki itp. (np. link z e-maila do biura o złożonym wniosku) — tylko znane zakładki.
 	let activeTab = $state<TabKey>('polisy');
+	$effect(() => {
+		const t = $page.url.searchParams.get('tab');
+		if (t && untrack(() => (tabs as string[]).includes(t))) untrack(() => (activeTab = t as TabKey));
+	});
 	const tabs = $derived(
 		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zalaczniki', 'dziennik', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
 	);
@@ -479,8 +484,8 @@
 			out.push({ klucz: 'wniosek', tytul: 'Wniosek o odnowienie — PDF', opis: '', path: w.pdf_path, rozmiar, at: w.zlozono_at, zalacznik: false });
 		}
 		for (const z of w.zalaczniki ?? []) {
-			const typ = (TYPY_ZALACZNIKOW as Record<string, string>)[z.typ] ?? z.typ;
-			out.push({ klucz: z.id, tytul: typ, opis: z.nazwa, path: z.path, rozmiar: z.rozmiar ?? null, at: z.at ?? null, zalacznik: true });
+			// Rodzaj + osoba (+ zabieg przy certyfikacie), jak w panelu polisy i e-mailu do biura.
+			out.push({ klucz: z.id, tytul: opisZalacznika(z, w.wniosek?.zmiany?.wykonawcy), opis: z.nazwa, path: z.path, rozmiar: z.rozmiar ?? null, at: z.at ?? null, zalacznik: true });
 		}
 		return out;
 	}
@@ -502,8 +507,8 @@
 		const dla = clientId;
 		untrack(() => {
 			if (!dla || wnioskiDla === dla) return;
-			zdarzenia = []; dziennikBlad = ''; dziennikLadowanie = false;
-			plikiWBuckecie = {}; plikiGotowe = false; plikiLadowanie = false; plikiBlad = ''; plikBlad = '';
+			zdarzenia = []; dziennikBlad = ''; dziennikLadowanie = false; dziennikDla = '';
+			plikiWBuckecie = {}; plikiGotowe = false; plikiLadowanie = false; plikiBlad = ''; plikBlad = ''; plikiDla = '';
 			wczytajWnioski();
 		});
 	});

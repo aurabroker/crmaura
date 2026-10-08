@@ -2,7 +2,7 @@
 	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
 	import { tick } from 'svelte';
 	import { page } from '$app/stores';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus } from '$lib/utils';
@@ -71,6 +71,10 @@
 		if (!el || $page.url.searchParams.get('odnow') !== '1' || odnowOtwartoDla === adres) return;
 		odnowOtwartoDla = adres;
 		renewMenuOpen = true;
+		// Parametr znika z adresu — powrót „Wstecz” albo odświeżenie nie otwiera menu ponownie.
+		const bez = new URL($page.url);
+		bez.searchParams.delete('odnow');
+		replaceState(bez, $page.state);
 		tick().then(() => (el.querySelector('[data-renew-menu]') ?? el).scrollIntoView({ block: 'nearest' }));
 	});
 	let showBrokers = $state(false);

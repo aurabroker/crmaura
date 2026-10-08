@@ -185,10 +185,15 @@
 		let beautyPrzeniesiony = false;
 		if (beautyId != null) {
 			const { error: bidError } = await sb.from('crm_clients').update({ beauty_id: beautyId } as never).eq('id', targetId);
-			if (bidError) mergeError[group.reason] = `Duplikaty scalone, ale nie udało się przenieść identyfikatora BEAUTY (${beautyId}): ${bidError.message}`;
-			else beautyPrzeniesiony = true;
+			if (bidError) {
+				// Grupa po scaleniu znika z listy, więc komunikat przy niej nie byłby widoczny.
+				alert(`Duplikaty scalone, ale nie udało się przenieść identyfikatora BEAUTY (${beautyId}): ${bidError.message}\nSynchronizacja może odtworzyć usunięty rekord — zgłoś to administratorowi.`);
+			} else beautyPrzeniesiony = true;
 		}
-		await logAudit('clients_merged', 'client', targetId, group.reason, { merged_ids: otherIds, ...(beautyId != null ? { beauty_id: beautyId } : {}) });
+		await logAudit('clients_merged', 'client', targetId, group.reason, {
+			merged_ids: otherIds,
+			...(beautyId != null ? (beautyPrzeniesiony ? { beauty_id: beautyId } : { beauty_id_blad: beautyId }) : {})
+		});
 
 		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
