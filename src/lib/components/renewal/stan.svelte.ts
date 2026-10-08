@@ -34,7 +34,13 @@ export type ApkForm = Omit<Apk, 'osoby' | 'szkody' | 'szkody_opis' | 'spoza_list
 	szkolenia: Apk['szkolenia'] | '';
 };
 
-export type AnkietaForm = Omit<Ankieta, 'zgoda_klientow'> & { zgoda_klientow: Ankieta['zgoda_klientow'] | '' };
+// NIP, REGON i inne zabiegi w typie Ankieta są opcjonalne (starsze ankiety) — w formularzu zawsze tekst.
+export type AnkietaForm = Omit<Ankieta, 'zgoda_klientow' | 'nip' | 'regon' | 'inne_zabiegi'> & {
+	zgoda_klientow: Ankieta['zgoda_klientow'] | '';
+	nip: string;
+	regon: string;
+	inne_zabiegi: string;
+};
 
 // Zmiany trzymamy „płasko”: odznaczenie pozycji nie kasuje tego, co klient już wpisał.
 export type ZmianyForm = {
@@ -98,12 +104,16 @@ const pusteZmiany = (): ZmianyForm => ({
 
 export const pustaOsoba = () => ({ imie_nazwisko: '', kwalifikacje: '', doswiadczenie: '' });
 
-const pustaAnkieta = (klient: string): AnkietaForm => ({
-	ubezpieczajacy: klient,
-	ubezpieczony: klient,
+// NIP i REGON podpowiadamy z kartoteki CRM (widok z serwera), klient może je poprawić.
+const pustaAnkieta = (w: Pick<WidokAktywny, 'klient' | 'nip' | 'regon'>): AnkietaForm => ({
+	ubezpieczajacy: w.klient,
+	ubezpieczony: w.klient,
 	data_rozpoczecia: '',
 	liczba_zatrudnionych: '',
+	nip: w.nip ?? '',
+	regon: w.regon ?? '',
 	szkodowosc: '',
+	inne_zabiegi: '',
 	jak_dlugo: '',
 	zgoda_klientow: '',
 	osoby: [pustaOsoba()],
@@ -150,7 +160,7 @@ export class Odnowienie {
 	wykonawcy = $state<Wykonawca[]>([]);
 
 	// Ankieta Ergo Hestii i załączniki (zapisane na serwerze oraz wgrywane teraz)
-	ankieta = $state<AnkietaForm>(pustaAnkieta(''));
+	ankieta = $state<AnkietaForm>(pustaAnkieta({ klient: '', nip: null, regon: null }));
 	zalaczniki = $state<Zalacznik[]>([]);
 	wgrywane = $state<Wgrywany[]>([]);
 
@@ -202,7 +212,7 @@ export class Odnowienie {
 		this.apkZapisana = widok.apk_wypelniona && widok.apk ? widok.apk : null;
 		if (widok.apk) this.apkForm = scal(pustaApk(), widok.apk);
 		this.apkEdycja = !this.apkGotowa;
-		this.ankieta = pustaAnkieta(widok.klient);
+		this.ankieta = pustaAnkieta(widok);
 		this.zalaczniki = [...widok.zalaczniki];
 		this.wczytajSzkic();
 		this.odtworzWykonawcow();
@@ -377,7 +387,7 @@ export class Odnowienie {
 				}))
 				.slice(0, MAKS_WYKONAWCOW);
 		}
-		const a = scal(pustaAnkieta(this.widok.klient), s.ankieta);
+		const a = scal(pustaAnkieta(this.widok), s.ankieta);
 		a.osoby = a.osoby
 			.filter((o) => o && typeof o === 'object')
 			.map((o) => scal(pustaOsoba(), o))

@@ -83,6 +83,7 @@ export const formatZl = (n: number) =>
 // ---------- Zabiegi ----------
 
 // Zabiegi wyłączone z programu — objęcie ich ochroną wymaga ankiety ERGO Hestii i oceny ryzyka.
+// Te same 8 pozycji i ta sama kolejność co w punkcie 2 formularza ankiety Ergo (PDF ankiety pokazuje wszystkie).
 export const ZABIEGI_ANKIETA = [
 	'Zabiegi urządzeniami opartymi na technologii HIFU (skupiona wiązka fal ultradźwiękowych o dużym natężeniu)',
 	'Zabiegi z użyciem toksyny botulinowej',
@@ -90,7 +91,8 @@ export const ZABIEGI_ANKIETA = [
 	'Zabiegi z użyciem urządzeń wykorzystujących technologię PLASMA',
 	'Zabiegi z użyciem wypełniaczy na bazie kwasu hialuronowego',
 	'Zabiegi z użyciem nici PDO',
-	'Zabiegi lipolizy iniekcyjnej'
+	'Zabiegi lipolizy iniekcyjnej',
+	'Zabiegi laserem ablacyjnym'
 ] as const;
 
 // Załącznik nr 1 do Programu — gabinety kosmetyczne i fryzjerskie.
@@ -221,12 +223,19 @@ export type Zmiany = {
 export type Wykonawca = { id: string; imie_nazwisko: string; zabiegi: string[] };
 export const MAKS_WYKONAWCOW = 10;
 
+// Ankieta Ergo Hestii (formularz do Programu WA50/003353/24/A). Pola NIP, REGON i „Inny – prosimy opisać”
+// doszły później — starsze zapisane ankiety ich nie mają (wyświetlamy „—”).
 export type Ankieta = {
 	ubezpieczajacy: string;
 	ubezpieczony: string;
 	data_rozpoczecia: string;
 	liczba_zatrudnionych: string;
+	// Same cyfry: NIP 10, REGON 9 albo 14 (REGON opcjonalny — pusty tekst).
+	nip?: string;
+	regon?: string;
 	szkodowosc: string;
+	// Inne zabiegi wymagające oceny ryzyka (opis klienta, opcjonalnie).
+	inne_zabiegi?: string;
 	jak_dlugo: string;
 	zgoda_klientow: 'tak' | 'nie';
 	osoby: { imie_nazwisko: string; kwalifikacje: string; doswiadczenie: string }[];
@@ -399,6 +408,19 @@ export function waliduj_wniosek(raw: unknown, apk: Apk | null, o: { pomijajWykon
 	return bledy.length ? { ok: false, bledy: Array.from(new Set(bledy)) } : { ok: true, value: { decyzja, zmiany, nie_powod: '', potwierdzenie_nie: false } };
 }
 
+// NIP: 10 cyfr, ostatnia to cyfra kontrolna — suma iloczynów 9 pierwszych cyfr i wag 6,5,7,2,3,4,5,6,7
+// modulo 11 (wynik 10 oznacza numer błędny).
+const WAGI_NIP = [6, 5, 7, 2, 3, 4, 5, 6, 7];
+export function poprawnyNip(nip: string): boolean {
+	if (!/^\d{10}$/.test(nip)) return false;
+	const k = WAGI_NIP.reduce((s, w, i) => s + w * Number(nip[i]), 0) % 11;
+	return k !== 10 && k === Number(nip[9]);
+}
+// NIP/REGON wpisany ze spacjami albo kreskami („526-025-02-74”) → same znaki bez separatorów.
+const bezSeparatorow = (v: unknown, max: number) => str(v, max).replace(/[\s-]+/g, '');
+// NIP z faktury bywa z prefiksem kraju („PL 526-025-02-74”) — prefiks pomijamy.
+const nipBezPrefiksu = (v: unknown) => bezSeparatorow(v, 40).replace(/^PL/i, '');
+
 export function waliduj_ankiete(raw: unknown): Wynik<Ankieta> {
 	const r = (raw ?? {}) as Record<string, unknown>;
 	const bledy: string[] = [];
@@ -408,7 +430,10 @@ export function waliduj_ankiete(raw: unknown): Wynik<Ankieta> {
 		ubezpieczony: str(r.ubezpieczony, 300),
 		data_rozpoczecia: str(r.data_rozpoczecia, 10),
 		liczba_zatrudnionych: str(r.liczba_zatrudnionych, 20),
+		nip: nipBezPrefiksu(r.nip),
+		regon: bezSeparatorow(r.regon, 40),
 		szkodowosc: str(r.szkodowosc, 3000),
+		inne_zabiegi: str(r.inne_zabiegi, 1000),
 		jak_dlugo: str(r.jak_dlugo, 1000),
 		zgoda_klientow: oneOf(r.zgoda_klientow, ['tak', 'nie'] as const) ?? ('' as 'nie'),
 		osoby: osobyRaw
@@ -421,6 +446,8 @@ export function waliduj_ankiete(raw: unknown): Wynik<Ankieta> {
 	if (!a.ubezpieczony) bledy.push('Ankieta: podaj Ubezpieczonego.');
 	if (!/^\d{4}-\d{2}-\d{2}$/.test(a.data_rozpoczecia)) bledy.push('Ankieta: podaj datę rozpoczęcia działalności.');
 	if (!a.liczba_zatrudnionych) bledy.push('Ankieta: podaj liczbę zatrudnionych osób.');
+	if (!poprawnyNip(a.nip ?? '')) bledy.push('Ankieta: podaj poprawny NIP (10 cyfr).');
+	if (a.regon && !/^(\d{9}|\d{14})$/.test(a.regon)) bledy.push('Ankieta: REGON ma 9 albo 14 cyfr (albo zostaw pole puste).');
 	if (!a.szkodowosc) bledy.push('Ankieta: opisz szkodowość z ostatnich 3 lat (albo wpisz „brak”).');
 	if (!a.jak_dlugo) bledy.push('Ankieta: podaj, jak długo zabiegi są wykonywane w gabinecie.');
 	if (!a.zgoda_klientow) bledy.push('Ankieta: odpowiedz, czy klienci podpisują formularz zgody.');

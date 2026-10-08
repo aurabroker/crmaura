@@ -3,6 +3,7 @@ import { getAdminClient } from '$lib/server/auth';
 import {
 	BUCKET,
 	czyAktywny,
+	daneKlienta,
 	klientZadania,
 	odnowieniePoKluczu,
 	opObecnie,
@@ -56,7 +57,9 @@ export const GET: RequestHandler = async ({ params, request, getClientAddress })
 		await zapiszZdarzenie(admin, r, 'otwarcie', klientZadania(request, getClientAddress));
 		if (r.status === 'utworzony' || r.status === 'wyslany') r.status = 'otwarty';
 	}
-	return json(widok(r), { headers: { 'cache-control': 'no-store' } });
+	// NIP i REGON z kartoteki — podpowiedź w ankiecie Ergo Hestii (tylko dla aktywnego wniosku).
+	const klient = czyAktywny(r) ? await daneKlienta(admin, r) : null;
+	return json(widok(r, klient), { headers: { 'cache-control': 'no-store' } });
 };
 
 const blad = (status: number, message: string, bledy?: string[]) => json({ message, ...(bledy ? { bledy } : {}) }, { status });
@@ -216,6 +219,12 @@ export const POST: RequestHandler = async (event) => {
 
 			let ankieta = null;
 			if (wniosek.zmiany?.zabiegi_ankieta.length) {
+				// Strona otwarta przed dodaniem NIP do ankiety (stary kod w przeglądarce nie ma tego pola) —
+				// klient nie poprawi tego w swoim formularzu, więc prosimy o odświeżenie (szkic odpowiedzi zostaje).
+				const surowa = body.ankieta;
+				if (surowa && typeof surowa === 'object' && !('nip' in surowa)) {
+					return blad(400, 'Formularz ankiety został zaktualizowany. Odśwież stronę (wpisane odpowiedzi zostaną zachowane), uzupełnij NIP w kroku „Ankieta Ergo Hestii” i wyślij wniosek ponownie.');
+				}
 				const a = waliduj_ankiete(body.ankieta);
 				if (!a.ok) return blad(400, 'Uzupełnij ankietę Ergo Hestii.', a.bledy);
 				ankieta = a.value;

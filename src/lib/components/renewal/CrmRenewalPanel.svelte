@@ -14,7 +14,7 @@
 	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
-	import { czyLinkDziala, fmtData, fmtDataCzas, opisZdarzenia, wariantDecyzji, wywolajApi } from './crmRenewals';
+	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisZdarzenia, wariantDecyzji, wywolajApi } from './crmRenewals';
 	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2 } from 'lucide-svelte';
 
 	interface Props {
@@ -40,8 +40,16 @@
 	let ankietaOpen = $state(false);
 	let zdarzeniaOpen = $state(false);
 	let historiaOpen = $state(false);
+	// PDF ankiety w magazynie (ankieta.pdf): 'nieznany', gdy magazyn nie odpowiedział — przycisk i tak jest.
+	let plikAnkiety = $state<'jest' | 'brak' | 'nieznany' | null>(null);
 
 	const latest = $derived(renewals[0] ?? null);
+	// Starsze wnioski (ankieta bez NIP) mają ankietę na ostatniej stronie PDF wniosku, bez osobnego pliku.
+	const ankietaWPdfWniosku = $derived(!!latest?.ankieta && !('nip' in latest.ankieta));
+	// Przy złożeniu PDF ankiety nie powstał (blad_pdf_ankiety) — biuro wysyła ankietę klientowi samo.
+	const brakPdfAnkiety = $derived(
+		!!latest?.ankieta && plikAnkiety === 'brak' && !ankietaWPdfWniosku && events.some((e) => e.zdarzenie === 'blad_pdf_ankiety')
+	);
 	const starsze = $derived(renewals.slice(1));
 	// Tryb testowy firmy (SAAS Admin) albo wniosek utworzony w tym trybie (ma zapisany adres testowy).
 	const trybTestowy = $derived(appState.tenantFeatures?.odnowienia_test === true);
@@ -65,6 +73,7 @@
 				return;
 			}
 			renewals = (data ?? []) as RenewalRow[];
+			plikAnkiety = null;
 			dostepne = true;
 			const r = renewals[0];
 			if (!r) {
@@ -78,8 +87,22 @@
 				.order('at', { ascending: true });
 			if (nr !== zapytanie) return;
 			events = e2 ? [] : ((ev ?? []) as RenewalEvent[]);
+			const plik = r.ankieta ? await sprawdzPlikAnkiety(r) : null;
+			if (nr !== zapytanie) return;
+			plikAnkiety = plik;
 		} catch {
 			if (nr === zapytanie) dostepne = false;
+		}
+	}
+
+	// Jak karta klienta: przycisk „PDF ankiety” tylko, gdy plik jest w folderze wniosku.
+	async function sprawdzPlikAnkiety(r: RenewalRow): Promise<'jest' | 'brak' | 'nieznany'> {
+		try {
+			const { data, error } = await sb.storage.from(BUCKET).list(folderWniosku(r), { search: ANKIETA_PDF, limit: 10 });
+			if (error) return 'nieznany';
+			return (data ?? []).some((f) => f.name === ANKIETA_PDF) ? 'jest' : 'brak';
+		} catch {
+			return 'nieznany';
 		}
 	}
 
@@ -251,6 +274,7 @@
 		if (z.adres) out.push({ k: 'Nowy adres działalności', v: `${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}` });
 		if (z.nowe_zabiegi?.length) out.push({ k: 'Nowe zabiegi', v: z.nowe_zabiegi });
 		if (z.zabiegi_ankieta?.length) out.push({ k: 'Zabiegi wymagające ankiety', v: z.zabiegi_ankieta });
+		if (r.ankieta?.inne_zabiegi?.trim()) out.push({ k: 'Inne zabiegi do oceny ryzyka (ankieta)', v: r.ankieta.inne_zabiegi.trim() });
 		if (z.rodzaje?.length) out.push({ k: 'Rodzaj działalności', v: rodzajeNazwy(z.rodzaje) });
 		if (z.osoby) out.push({ k: 'Osoby wykonujące zabiegi', v: osobyNazwa(z.osoby) });
 		if (z.inne) out.push({ k: 'Inne zmiany', v: z.inne });
@@ -299,7 +323,11 @@
 			{ k: 'Ubezpieczony', v: a.ubezpieczony || '—' },
 			{ k: 'Data rozpoczęcia działalności', v: a.data_rozpoczecia || '—' },
 			{ k: 'Liczba zatrudnionych osób', v: a.liczba_zatrudnionych || '—' },
+			// NIP, REGON i inne zabiegi — tylko w nowszych ankietach.
+			{ k: 'NIP', v: a.nip || '—' },
+			{ k: 'REGON', v: a.regon || '—' },
 			{ k: 'Szkodowość z ostatnich 3 lat', v: a.szkodowosc || '—' },
+			{ k: 'Inne zabiegi wymagające oceny ryzyka', v: a.inne_zabiegi || '—' },
 			{ k: 'Od jak dawna zabiegi są wykonywane w gabinecie', v: a.jak_dlugo || '—' },
 			{ k: 'Klienci podpisują formularz zgody na zabieg', v: takNie(a.zgoda_klientow) }
 		];
@@ -411,6 +439,14 @@
 							<FileText size={12} /> PDF wniosku
 						</button>
 					{/if}
+					{#if latest.ankieta && (plikAnkiety === 'jest' || plikAnkiety === 'nieznany')}
+						<!-- Ankieta Ergo Hestii: osobny PDF do podpisu klienta, ten sam folder co wniosek. -->
+						<button type="button" onclick={() => otworzPlik(`${folderWniosku(latest!)}/${ANKIETA_PDF}`, 'PDF ankiety')} class={przyciskCls} data-testid="renewal-pdf-ankiety">
+							<FileText size={12} /> PDF ankiety
+						</button>
+					{:else if brakPdfAnkiety}
+						<span class="text-xs font-semibold text-red-700" data-testid="renewal-brak-pdf-ankiety">PDF ankiety nie powstał</span>
+					{/if}
 					{#if czyLinkDziala(latest.status)}
 						<button
 							type="button"
@@ -518,6 +554,13 @@
 				{#if r.ankieta}
 					{#snippet ankietaTresc()}
 						{@const a = r.ankieta!}
+						{#if brakPdfAnkiety}
+							<p class="text-sm font-semibold text-red-700 mb-2">
+								PDF ankiety nie powstał przy złożeniu wniosku — wyślij klientowi ankietę do podpisu ręcznie (odpowiedzi klienta poniżej).
+							</p>
+						{:else if ankietaWPdfWniosku}
+							<p class="text-xs text-slate-500 mb-2">Wniosek sprzed osobnego PDF ankiety — ankieta jest na ostatniej stronie PDF wniosku.</p>
+						{/if}
 						{@render wiersze(ankietaWiersze(a))}
 						{#if a.osoby?.length}
 							<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mt-3 mb-1">Osoby wykonujące zabiegi</p>

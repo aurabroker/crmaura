@@ -20,7 +20,7 @@
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { APK_PDF, BUCKET_ODNOWIEN, folderWniosku, opisPrzegladarki, opisZdarzenia, rozmiarPliku, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
+	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, folderWniosku, opisPrzegladarki, opisZdarzenia, rozmiarPliku, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
 	import { opisZalacznika } from '$lib/renewals/program';
 
 	let pdfSaving = $state<string | null>(null);
@@ -483,6 +483,10 @@
 			const nazwa = w.pdf_path.split('/').pop() ?? '';
 			const rozmiar = w.pdf_path.startsWith(`${folder}/`) ? wBuckecie[nazwa] ?? null : null;
 			out.push({ klucz: 'wniosek', tytul: 'Wniosek o odnowienie — PDF', opis: '', path: w.pdf_path, rozmiar, at: w.zlozono_at, zalacznik: false });
+		}
+		// Ankieta Ergo Hestii: osobny PDF do podpisu klienta (tylko wnioski z zabiegami wymagającymi ankiety).
+		if (ANKIETA_PDF in wBuckecie) {
+			out.push({ klucz: 'ankieta', tytul: 'Ankieta ERGO Hestia — PDF do podpisu', opis: '', path: `${folder}/${ANKIETA_PDF}`, rozmiar: wBuckecie[ANKIETA_PDF] ?? null, at: w.zlozono_at, zalacznik: false });
 		}
 		for (const z of w.zalaczniki ?? []) {
 			// Rodzaj + osoba (+ zabieg przy certyfikacie), jak w panelu polisy i e-mailu do biura.
