@@ -283,11 +283,12 @@
 			// Pytania o szkody i zabiegi spoza list były tylko w starszych APK.
 			...(a.szkody ? [{ k: APK_PYTANIA.szkody, v: takNie(a.szkody) + (a.szkody === 'tak' && a.szkody_opis ? ` — ${a.szkody_opis}` : '') }] : []),
 			...(a.spoza_listy ? [{ k: APK_PYTANIA.spoza_listy, v: takNie(a.spoza_listy) + (a.spoza_listy === 'tak' && a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : '') }] : []),
-			{ k: APK_PYTANIA.suma_oczekiwana, v: etykieta(APK_ODPOWIEDZI.suma_oczekiwana, a.suma_oczekiwana) },
+			// Oczekiwana suma i priorytet — tylko starsze APK (dziś sumę wybiera się we wniosku).
+			...(a.suma_oczekiwana ? [{ k: APK_PYTANIA.suma_oczekiwana, v: etykieta(APK_ODPOWIEDZI.suma_oczekiwana, a.suma_oczekiwana) }] : []),
 			{ k: APK_PYTANIA.ochrona_prawna, v: etykieta(APK_ODPOWIEDZI.ochrona_prawna, a.ochrona_prawna) },
 			{ k: APK_PYTANIA.szkolenia, v: takNie(a.szkolenia) },
 			{ k: APK_PYTANIA.inne_ubezpieczenia, v: (a.inne_ubezpieczenia ?? []).map((x) => etykieta(APK_ODPOWIEDZI.inne_ubezpieczenia, x)).join(', ') || '—' },
-			{ k: APK_PYTANIA.priorytet, v: etykieta(APK_ODPOWIEDZI.priorytet, a.priorytet) },
+			...(a.priorytet ? [{ k: APK_PYTANIA.priorytet, v: etykieta(APK_ODPOWIEDZI.priorytet, a.priorytet) }] : []),
 			{ k: APK_PYTANIA.uwagi, v: a.uwagi || '—' }
 		];
 	}

@@ -15,6 +15,8 @@ export const nazwaUbezpieczyciela = (n: string | null | undefined): string =>
 export type Kategoria = 'kosmetyczny_fryzjerski' | 'kosmetologiczny' | 'pelny';
 export type Suma = 100000 | 200000 | 300000;
 export const SUMY: Suma[] = [100000, 200000, 300000];
+// Wariant oznaczany we wniosku jako „najczęściej wybierany” (informacja, nie rekomendacja).
+export const SUMA_NAJCZESCIEJ_WYBIERANA: Suma = 200000;
 
 export const KATEGORIE: Record<Kategoria, { nazwa: string; skladka: Record<Suma, number> }> = {
 	kosmetyczny_fryzjerski: { nazwa: 'Gabinety kosmetyczne i fryzjerskie', skladka: { 100000: 400, 200000: 500, 300000: 650 } },
@@ -147,11 +149,13 @@ export type Apk = {
 	szkody_opis?: string;
 	spoza_listy?: 'nie' | 'tak';
 	spoza_listy_opis?: string;
-	suma_oczekiwana: '100000' | '200000' | '300000' | 'wiecej';
+	// Sumę gwarancyjną klient wybiera tylko we wniosku, a pytanie „co najważniejsze” usunięte (agent nie
+	// rekomenduje produktu) — oba pola tylko w starszych wnioskach.
+	suma_oczekiwana?: '100000' | '200000' | '300000' | 'wiecej';
 	ochrona_prawna: 'tak' | 'nie';
 	szkolenia: 'tak' | 'nie';
 	inne_ubezpieczenia: ('mienie' | 'nnw' | 'oc_najemcy' | 'brak')[];
-	priorytet: 'zakres' | 'cena' | 'suma' | 'obsluga';
+	priorytet?: 'zakres' | 'cena' | 'suma' | 'obsluga';
 	uwagi: string;
 	oswiadczenie: boolean;
 };
@@ -159,7 +163,7 @@ export type Apk = {
 export const APK_PYTANIA = {
 	rodzaje: 'Jaką działalność prowadzisz?',
 	osoby: 'Ile osób wykonuje zabiegi w gabinecie (łącznie z Tobą)?',
-	// Tylko do wyświetlania starszych wniosków.
+	// Tylko do wyświetlania starszych wniosków (szkody, spoza_listy, suma_oczekiwana, priorytet).
 	szkody: 'Czy w ostatnich 3 latach były szkody lub roszczenia klientów z tytułu OC?',
 	spoza_listy: 'Czy wykonujesz zabiegi spoza list programu albo z listy zabiegów wymagających ankiety?',
 	suma_oczekiwana: 'Jakiej sumy gwarancyjnej oczekujesz?',
@@ -177,6 +181,18 @@ export const APK_ODPOWIEDZI = {
 	priorytet: { zakres: 'najszerszy zakres ochrony', cena: 'jak najniższa składka', suma: 'wysoka suma gwarancyjna', obsluga: 'pomoc przy szkodzie i obsługa' }
 } as const;
 
+// Czego nie obejmuje ubezpieczenie OC w programie — informacja przy APK i w PDF (nie rekomendacja).
+// `inne` łączy pozycję z odpowiedzią na pytanie o inne ubezpieczenia gabinetu.
+export const LUKI_OCHRONY: { tekst: string; inne?: 'mienie' | 'nnw' }[] = [
+	{ tekst: 'mienia gabinetu — sprzętu, urządzeń i wyposażenia (np. pożar, zalanie, kradzież)', inne: 'mienie' },
+	{ tekst: 'Twoich własnych obrażeń (to zakres ubezpieczenia NNW)', inne: 'nnw' },
+	{ tekst: 'utraty dochodu, gdy gabinet nie może działać' },
+	{
+		tekst:
+			'zabiegów spoza list programu (Załączniki nr 1 i 2); zabiegi z listy wymagającej ankiety są chronione dopiero po akceptacji ubezpieczyciela'
+	}
+];
+
 export const APK_ODMOWA_TRESC =
 	'Świadomie odmawiam wypełnienia analizy potrzeb (APK). Rozumiem, że bez tych informacji agent ubezpieczeniowy ' +
 	'nie może ocenić, czy proponowane ubezpieczenie odpowiada moim wymaganiom i potrzebom.';
@@ -186,6 +202,8 @@ export const APK_ODMOWA_TRESC =
 export type Decyzja = 'bez_zmian' | 'zmiany' | 'nie';
 
 export type Zmiany = {
+	// Nowa suma gwarancyjna — dowolny wariant programu inny niż obecny (także niższy). Nazwa pola z czasów,
+	// gdy można było tylko podwyższyć sumę; zostaje dla zgodności z zapisanymi wnioskami.
 	wyzsza_suma: Suma | null;
 	ochrona_prawna: boolean;
 	adres: { ulica: string; kod: string; miasto: string } | null;
@@ -301,21 +319,17 @@ export function waliduj_apk(raw: unknown): Wynik<Apk> {
 	const apk: Apk = {
 		rodzaje: listOf(r.rodzaje, RODZAJE_KEYS),
 		osoby: oneOf(r.osoby, OSOBY_KEYS) ?? ('' as LiczbaOsob),
-		suma_oczekiwana: oneOf(r.suma_oczekiwana, ['100000', '200000', '300000', 'wiecej'] as const) ?? ('' as 'wiecej'),
 		ochrona_prawna: oneOf(r.ochrona_prawna, ['tak', 'nie'] as const) ?? ('' as 'nie'),
 		szkolenia: oneOf(r.szkolenia, ['tak', 'nie'] as const) ?? ('' as 'nie'),
 		inne_ubezpieczenia: listOf(r.inne_ubezpieczenia, ['mienie', 'nnw', 'oc_najemcy', 'brak'] as const),
-		priorytet: oneOf(r.priorytet, ['zakres', 'cena', 'suma', 'obsluga'] as const) ?? ('' as 'zakres'),
 		uwagi: str(r.uwagi, 3000),
 		oswiadczenie: r.oswiadczenie === true
 	};
 	if (!apk.rodzaje.length) bledy.push('Zaznacz rodzaj działalności.');
 	if (!apk.osoby) bledy.push('Podaj liczbę osób wykonujących zabiegi.');
-	if (!apk.suma_oczekiwana) bledy.push('Wybierz oczekiwaną sumę gwarancyjną.');
 	if (!apk.ochrona_prawna) bledy.push('Odpowiedz na pytanie o ochronę prawną.');
 	if (!apk.szkolenia) bledy.push('Odpowiedz na pytanie o szkolenia i targi.');
 	if (!apk.inne_ubezpieczenia.length) bledy.push('Zaznacz inne ubezpieczenia (albo „nie mam innych”).');
-	if (!apk.priorytet) bledy.push('Wybierz, co jest dla Ciebie najważniejsze.');
 	if (!apk.oswiadczenie) bledy.push('Potwierdź, że informacje są zgodne z prawdą.');
 	return bledy.length ? { ok: false, bledy } : { ok: true, value: apk };
 }
@@ -377,10 +391,10 @@ export function waliduj_wniosek(raw: unknown, apk: Apk | null, o: { pomijajWykon
 	const cokolwiek = zmiany.wyzsza_suma || zmiany.ochrona_prawna || zmiany.adres || zmiany.nowe_zabiegi.length ||
 		zmiany.zabiegi_ankieta.length || zmiany.inne;
 	if (!cokolwiek) bledy.push('Zaznacz co najmniej jedną zmianę albo wybierz „tak, bez zmian”.');
-	// Wycena wyższej sumy wymaga rodzaju gabinetu i liczby osób — z APK albo podanych we wniosku.
+	// Wycena nowej sumy wymaga rodzaju gabinetu i liczby osób — z APK albo podanych we wniosku.
 	if (zmiany.wyzsza_suma && !apk) {
-		if (!zmiany.rodzaje.length) bledy.push('Do wyceny wyższej sumy zaznacz rodzaj działalności.');
-		if (!zmiany.osoby) bledy.push('Do wyceny wyższej sumy podaj liczbę osób wykonujących zabiegi.');
+		if (!zmiany.rodzaje.length) bledy.push('Do wyceny nowej sumy zaznacz rodzaj działalności.');
+		if (!zmiany.osoby) bledy.push('Do wyceny nowej sumy podaj liczbę osób wykonujących zabiegi.');
 	}
 	return bledy.length ? { ok: false, bledy: Array.from(new Set(bledy)) } : { ok: true, value: { decyzja, zmiany, nie_powod: '', potwierdzenie_nie: false } };
 }

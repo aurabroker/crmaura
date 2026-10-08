@@ -8,17 +8,22 @@ import {
 	APK_PYTANIA,
 	KLAUZULA_OCHRONY_PRAWNEJ,
 	LICZBA_OSOB,
+	LUKI_OCHRONY,
 	OCHRONA_PRAWNA_LIMIT,
 	OCHRONA_PRAWNA_SKLADKA,
 	OSWIADCZENIE_ANKIETY,
 	RODZAJE_GABINETU,
+	SUMA_NAJCZESCIEJ_WYBIERANA,
 	SUMY,
 	UBEZPIECZYCIEL,
 	formatSuma,
 	formatZl,
+	kategoriaZRodzajow,
 	nazwaUbezpieczyciela,
 	opisZalacznika,
+	skladkaProgramu,
 	type Apk,
+	type Suma,
 	type Wniosek
 } from '$lib/renewals/program';
 
@@ -104,6 +109,24 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 // jest propozycja wynikająca z Umowy Generalnej na OC dla branży beauty.
 export const DYSTRYBUTOR = 'Aura Expert sp. z o.o., ul. Bolkowska 2A/28, 01-466 Warszawa';
 
+// Wszystkie warianty sumy z programu z orientacyjną składką (gdy APK podaje rodzaj gabinetu i liczbę osób).
+// Bez rekomendacji — środkowy wariant oznaczony tylko jako najczęściej wybierany.
+function wariantySum(r: RenewalRow): string {
+	const a = r.apk_odmowa ? null : r.apk;
+	const kategoria = a ? kategoriaZRodzajow(a.rodzaje) : null;
+	const opis = (suma: Suma) => (suma === SUMA_NAJCZESCIEJ_WYBIERANA ? ' (najczęściej wybierany)' : '');
+	const linie = SUMY.map((suma) => {
+		const w = kategoria && a ? skladkaProgramu({ kategoria, suma, osoby: a.osoby, ochronaPrawna: false }) : null;
+		return `${formatSuma(suma)}${w?.rodzaj === 'kwota' ? ` — ${formatZl(w.kwota)} rocznie` : ''}${opis(suma)}`;
+	});
+	const zCenami = linie.some((l) => l.includes(' rocznie'));
+	return [
+		...linie,
+		...(zCenami ? [`Ochrona prawna (klauzula 7): +${formatZl(OCHRONA_PRAWNA_SKLADKA)} rocznie.`, 'Składki orientacyjne według taryfy programu.'] : ['Składka według taryfy programu.']),
+		'Sumę i ewentualne zmiany zakresu wskazujesz we wniosku o odnowienie.'
+	].join('\n');
+}
+
 // Propozycja ubezpieczenia po APK (PDF APK). Gdy zgłoszone potrzeby wykraczają poza program — informacja wprost.
 export function propozycjaApk(r: RenewalRow): [string, string][] {
 	const nowy = nowyOkres(r.okres_do ?? '');
@@ -114,11 +137,7 @@ export function propozycjaApk(r: RenewalRow): [string, string][] {
 			`Odnowienie ubezpieczenia OC zawodowego na okres ${data(nowy.od)} – ${data(nowy.do)} w ramach ${umowa}, ` +
 				`${UBEZPIECZYCIEL}, na warunkach tej umowy.`
 		],
-		[
-			'Suma gwarancyjna i składka',
-			`Sumy gwarancyjne w programie: ${SUMY.slice(0, -1).map((s) => formatSuma(s)).join(', ')} albo ${formatSuma(SUMY[SUMY.length - 1])}; ` +
-				'składka według taryfy programu. Sumę i ewentualne zmiany zakresu wskazujesz we wniosku o odnowienie.'
-		],
+		['Warianty sumy gwarancyjnej', wariantySum(r)],
 		[
 			'Charakter propozycji',
 			'Aura Expert sp. z o.o. działa jako agent ubezpieczeniowy. Propozycja wynika z zawartej Umowy Generalnej — ' +
@@ -126,6 +145,10 @@ export function propozycjaApk(r: RenewalRow): [string, string][] {
 		]
 	];
 	const a = r.apk_odmowa ? null : r.apk;
+	wiersze.push([
+		'Czego program nie obejmuje',
+		LUKI_OCHRONY.map((l) => `• ${l.tekst}${l.inne && a?.inne_ubezpieczenia.includes(l.inne) ? ' (Klient ma osobne ubezpieczenie)' : ''}`).join('\n')
+	]);
 	if (!a) {
 		wiersze.push(['Zgodność z potrzebami', 'Nie oceniono — Klient odmówił wypełnienia analizy potrzeb.']);
 		return wiersze;
@@ -165,7 +188,7 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null): string[] {
 	if (!w || w.decyzja !== 'zmiany' || !w.zmiany) return [];
 	const z = w.zmiany;
 	const linie: string[] = [];
-	if (z.wyzsza_suma) linie.push(`Wyższa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
+	if (z.wyzsza_suma) linie.push(`Nowa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
 	if (z.ochrona_prawna) linie.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł rocznie, limit ${formatSuma(OCHRONA_PRAWNA_LIMIT)})`);
 	if (z.adres) linie.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 	if (z.nowe_zabiegi.length) linie.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join('; ')}`);
@@ -194,11 +217,12 @@ export function odpowiedziApk(apk: Apk): [string, string][] {
 		// Starsze wnioski (przed 9.10.2026) miały w APK pytania o szkody i zabiegi spoza list.
 		...(apk.szkody ? ([[APK_PYTANIA.szkody, apk.szkody === 'tak' ? `tak — ${apk.szkody_opis ?? ''}` : 'nie']] as [string, string][]) : []),
 		...(apk.spoza_listy ? ([[APK_PYTANIA.spoza_listy, apk.spoza_listy === 'tak' ? `tak — ${apk.spoza_listy_opis ?? ''}` : 'nie']] as [string, string][]) : []),
-		[APK_PYTANIA.suma_oczekiwana, (APK_ODPOWIEDZI.suma_oczekiwana as Record<string, string>)[apk.suma_oczekiwana] ?? 'nie wiem'],
+		// Starsze APK: oczekiwana suma i priorytet (dziś sumę wybiera się we wniosku, a priorytetu nie pytamy).
+		...(apk.suma_oczekiwana ? ([[APK_PYTANIA.suma_oczekiwana, (APK_ODPOWIEDZI.suma_oczekiwana as Record<string, string>)[apk.suma_oczekiwana] ?? apk.suma_oczekiwana]] as [string, string][]) : []),
 		[APK_PYTANIA.ochrona_prawna, (APK_ODPOWIEDZI.ochrona_prawna as Record<string, string>)[apk.ochrona_prawna] ?? 'nie wiem'],
 		[APK_PYTANIA.szkolenia, tak(apk.szkolenia)],
 		[APK_PYTANIA.inne_ubezpieczenia, apk.inne_ubezpieczenia.map((k) => APK_ODPOWIEDZI.inne_ubezpieczenia[k]).join(', ')],
-		[APK_PYTANIA.priorytet, APK_ODPOWIEDZI.priorytet[apk.priorytet]],
+		...(apk.priorytet ? ([[APK_PYTANIA.priorytet, APK_ODPOWIEDZI.priorytet[apk.priorytet] ?? apk.priorytet]] as [string, string][]) : []),
 		...(apk.uwagi ? ([[APK_PYTANIA.uwagi, apk.uwagi]] as [string, string][]) : [])
 	];
 }

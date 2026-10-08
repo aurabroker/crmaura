@@ -30,7 +30,7 @@
 	const zmianyOpis = $derived.by(() => {
 		if (!z) return [] as string[];
 		const l: string[] = [];
-		if (z.wyzsza_suma) l.push(`Wyższa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
+		if (z.wyzsza_suma) l.push(`Nowa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
 		if (z.ochrona_prawna) l.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł/rok)`);
 		if (z.adres) l.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 		if (z.nowe_zabiegi.length) l.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join(', ')}`);

@@ -185,11 +185,11 @@ export const POST: RequestHandler = async (event) => {
 			const wniosek = w.value;
 			// Klauzula ochrony prawnej, którą certyfikat już ma, nie jest zmianą ani dopłatą.
 			if (wniosek.zmiany && opObecnie(r)) wniosek.zmiany.ochrona_prawna = false;
-			// Wyższa suma musi być wyższa od obecnej (strona pokazuje tylko takie, serwer sprawdza sam).
+			// Nowa suma — dowolny wariant programu poza obecnym (strona nie pozwala wybrać obecnej, serwer sprawdza sam).
 			const nowaSuma = wniosek.zmiany?.wyzsza_suma;
 			const suma = sumaObecna(r);
-			if (nowaSuma != null && suma != null && nowaSuma <= suma) {
-				return blad(400, 'Popraw wniosek.', ['Nowa suma gwarancyjna musi być wyższa od obecnej.']);
+			if (nowaSuma != null && suma != null && nowaSuma === suma) {
+				return blad(400, 'Popraw wniosek.', ['Nowa suma gwarancyjna jest taka sama jak obecna — wybierz inną albo odznacz „Inna suma gwarancyjna”.']);
 			}
 
 			// Pliki, które naprawdę są w magazynie (nieudane wysyłki odpadają).

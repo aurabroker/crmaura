@@ -5,6 +5,7 @@
 		LICZBA_OSOB,
 		OCHRONA_PRAWNA_SKLADKA,
 		RODZAJE_GABINETU,
+		SUMA_NAJCZESCIEJ_WYBIERANA,
 		SUMY,
 		ZABIEGI_ANKIETA,
 		ZABIEGI_LISTY,
@@ -34,7 +35,7 @@
 			tytul: 'TAK — odnawiam bez zmian',
 			opis: `Ten sam zakres i suma gwarancyjna${w.skladka != null ? `, składka ${formatZl(w.skladka)} rocznie` : ''}.`
 		},
-		{ key: 'zmiany', tytul: 'TAK — odnawiam ze zmianami', opis: 'Np. wyższa suma, ochrona prawna, nowe zabiegi albo nowy adres.' },
+		{ key: 'zmiany', tytul: 'TAK — odnawiam ze zmianami', opis: 'Np. inna suma gwarancyjna, ochrona prawna, nowe zabiegi albo nowy adres.' },
 		{ key: 'nie', tytul: 'NIE — nie odnawiam', opis: `Ochrona wygaśnie ${w.okres_obecny.do ? fmtData(w.okres_obecny.do) : 'z końcem obecnego okresu'}.` }
 	]);
 
@@ -48,12 +49,8 @@
 		return q ? ZABIEGI_LISTY.filter((z) => bezOgonkow(z).includes(q)) : ZABIEGI_LISTY;
 	});
 
-	// Podpowiedzi z zapisanej APK — klient nie musi pamiętać, co tam zaznaczył.
+	// Podpowiedź z zapisanej APK — klient nie musi pamiętać, co tam zaznaczył.
 	const apk = $derived(s.apkZapisana);
-	const podpowiedzSumy = $derived.by(() => {
-		const o = Number(apk?.suma_oczekiwana);
-		return o && (w.suma == null || o > w.suma) ? `W analizie potrzeb wskazano oczekiwaną sumę ${formatSuma(o)}.` : '';
-	});
 
 	function usunZabieg(z: string) {
 		s.zm.nowe_zabiegi = s.zm.nowe_zabiegi.filter((x) => x !== z);
@@ -116,38 +113,46 @@
 			<fieldset class="mt-8">
 				<legend class={LEGENDA}>Co chcesz zmienić? <span class="font-normal text-slate-500">(zaznacz wszystko, co dotyczy)</span></legend>
 				<div class="space-y-3">
-					<!-- Wyższa suma gwarancyjna -->
+					<!-- Suma gwarancyjna: wszystkie warianty programu z orientacyjną składką, bez rekomendacji -->
 					<div class="rounded-xl border border-slate-300 has-[>label>input:checked]:border-rose-400">
-						<label class="flex items-start gap-3 p-4 min-h-12 {s.wyzszeSumy.length ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}">
-							<input type="checkbox" bind:checked={s.zm.suma} disabled={!s.wyzszeSumy.length} class={ZNACZNIK} />
+						<label class="flex items-start gap-3 p-4 min-h-12 cursor-pointer">
+							<input type="checkbox" bind:checked={s.zm.suma} class={ZNACZNIK} />
 							<span>
-								<span class="block font-semibold text-slate-900">Wyższa suma gwarancyjna</span>
+								<span class="block font-semibold text-slate-900">Inna suma gwarancyjna</span>
 								<span class="block text-sm text-slate-600">
-									{#if !s.wyzszeSumy.length}
-										Masz już najwyższą sumę dostępną w programie ({formatSuma(SUMY[SUMY.length - 1])}).
-									{:else}
-										Obecnie: {w.suma != null ? formatSuma(w.suma) : 'zgodnie z obecnym certyfikatem'}.
-										{podpowiedzSumy}
-									{/if}
+									Obecnie: {w.suma != null ? formatSuma(w.suma) : 'zgodnie z obecnym certyfikatem'}.
 								</span>
 							</span>
 						</label>
 						{#if s.zm.suma}
 							<div class="border-t border-slate-200 px-4 pb-4 pt-3 space-y-5">
 								<fieldset>
-									<legend class={ETYKIETA}>Nowa suma gwarancyjna</legend>
-									<div class="grid gap-2 sm:grid-cols-3">
-										{#each s.wyzszeSumy as suma (suma)}
-											<label class={OPCJA}>
-												<input type="radio" name="wyzsza-suma" value={suma} bind:group={s.zm.wyzsza_suma} class={ZNACZNIK} />
-												<span class="font-medium">{formatSuma(suma)}</span>
+									<legend class={ETYKIETA}>Suma gwarancyjna na nowy okres</legend>
+									<div class="grid gap-2 sm:grid-cols-3" data-testid="warianty-sumy">
+										{#each SUMY as suma (suma)}
+											{@const obecna = suma === w.suma}
+											{@const skladka = s.skladkiSum[suma]}
+											<label class="{OPCJA} {obecna ? 'cursor-not-allowed opacity-60' : ''}" data-testid="suma-{suma}">
+												<input type="radio" name="wyzsza-suma" value={suma} bind:group={s.zm.wyzsza_suma} disabled={obecna} class={ZNACZNIK} />
+												<span class="min-w-0">
+													<span class="block font-semibold text-slate-900">{formatSuma(suma)}</span>
+													<span class="block text-sm text-slate-600">
+														{#if obecna}obecna suma{:else if skladka != null}{formatZl(skladka)} rocznie{:else}składka do wyceny{/if}
+													</span>
+													{#if suma === SUMA_NAJCZESCIEJ_WYBIERANA}
+														<span class="mt-1.5 inline-block rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-800">najczęściej wybierany</span>
+													{/if}
+												</span>
 											</label>
 										{/each}
 									</div>
+									<p class="mt-2 text-xs text-slate-500">
+										Składki orientacyjne według taryfy programu{s.zm.ochrona_prawna || w.ochrona_prawna_obecnie ? ', z ochroną prawną' : ''}. Ostateczną składkę potwierdzimy przed wystawieniem certyfikatu.
+									</p>
 								</fieldset>
 								{#if s.pytajODaneWyceny}
 									<p class="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-										Nie wypełniono analizy potrzeb — do wyceny wyższej sumy potrzebujemy dwóch informacji.
+										Nie wypełniono analizy potrzeb — do wyceny nowej sumy potrzebujemy dwóch informacji.
 									</p>
 									<fieldset>
 										<legend class={ETYKIETA}>Jaką działalność prowadzisz? (możesz zaznaczyć kilka)</legend>
