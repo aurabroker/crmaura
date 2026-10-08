@@ -1,5 +1,6 @@
 import { esc } from '$lib/server/mail';
 import { newServerPdf } from '$lib/server/pdf';
+import { rysujLogo } from '$lib/server/pdfLogo';
 import { nowyOkres, opObecnie, type RenewalRow } from '$lib/server/renewals';
 import {
 	APK_ODPOWIEDZI,
@@ -11,6 +12,7 @@ import {
 	OCHRONA_PRAWNA_SKLADKA,
 	OSWIADCZENIE_ANKIETY,
 	RODZAJE_GABINETU,
+	SUMY,
 	UBEZPIECZYCIEL,
 	formatSuma,
 	formatZl,
@@ -27,6 +29,8 @@ const STOPKA = 'Beauty❤️Polisa · Aura Expert sp. z o.o., ul. Bolkowska 2A/2
 const STOPKA_HTML =
 	'Beauty❤️Polisa · <a href="https://auraexpert.pl/" target="_blank" rel="noopener noreferrer" style="color:#64748b;">Aura Expert sp. z o.o.</a>, ul. Bolkowska 2A/28, 01-466 Warszawa';
 const KONTAKT = 'odnowienia@auraexpert.pl';
+// Logo w prawym górnym rogu PDF (mm; prawy margines 14 mm).
+const LOGO_PDF_SZER = 46;
 
 export const DECYZJA_TEKST = { bez_zmian: 'TAK — odnowienie bez zmian', zmiany: 'TAK — odnowienie ze zmianami', nie: 'NIE — rezygnacja z odnowienia' } as const;
 
@@ -96,7 +100,46 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 
 // ---------- E-mail z analizą potrzeb (od razu po APK) ----------
 
+// Aura Expert obsługuje program jako agent ubezpieczeniowy (nie broker): po APK nie ma rekomendacji,
+// jest propozycja wynikająca z Umowy Generalnej na OC dla branży beauty.
 export const DYSTRYBUTOR = 'Aura Expert sp. z o.o., ul. Bolkowska 2A/28, 01-466 Warszawa';
+
+// Propozycja ubezpieczenia po APK (PDF APK). Gdy zgłoszone potrzeby wykraczają poza program — informacja wprost.
+export function propozycjaApk(r: RenewalRow): [string, string][] {
+	const nowy = nowyOkres(r.okres_do ?? '');
+	const umowa = r.program ? `Umowy Generalnej na OC dla branży beauty (${r.program})` : 'Umowy Generalnej na OC dla branży beauty';
+	const wiersze: [string, string][] = [
+		[
+			'Proponowane ubezpieczenie',
+			`Odnowienie ubezpieczenia OC zawodowego na okres ${data(nowy.od)} – ${data(nowy.do)} w ramach ${umowa}, ` +
+				`${UBEZPIECZYCIEL}, na warunkach tej umowy.`
+		],
+		[
+			'Suma gwarancyjna i składka',
+			`Sumy gwarancyjne w programie: ${SUMY.slice(0, -1).map((s) => formatSuma(s)).join(', ')} albo ${formatSuma(SUMY[SUMY.length - 1])}; ` +
+				'składka według taryfy programu. Sumę i ewentualne zmiany zakresu wskazujesz we wniosku o odnowienie.'
+		],
+		[
+			'Charakter propozycji',
+			'Aura Expert sp. z o.o. działa jako agent ubezpieczeniowy. Propozycja wynika z zawartej Umowy Generalnej — ' +
+				'nie jest rekomendacją ani porównaniem ofert różnych ubezpieczycieli.'
+		]
+	];
+	const a = r.apk_odmowa ? null : r.apk;
+	if (!a) {
+		wiersze.push(['Zgodność z potrzebami', 'Nie oceniono — Klient odmówił wypełnienia analizy potrzeb.']);
+		return wiersze;
+	}
+	const uwagi: string[] = [];
+	if (a.suma_oczekiwana === 'wiecej')
+		uwagi.push(
+			`Oczekiwana suma gwarancyjna jest wyższa niż ${formatSuma(Math.max(...SUMY))} — najwyższa suma w programie. ` +
+				'Tej potrzeby program nie zaspokoi w pełni; skontaktujemy się w tej sprawie.'
+		);
+	if (a.osoby === '9+') uwagi.push(`Więcej niż 8 osób wykonujących zabiegi — warunki ustala indywidualnie ${UBEZPIECZYCIEL}.`);
+	wiersze.push(['Zgodność z potrzebami', uwagi.length ? uwagi.join(' ') : 'Propozycja odpowiada wymaganiom i potrzebom wskazanym w analizie.']);
+	return wiersze;
+}
 
 export function mailApk(r: RenewalRow, link: string, aktualizacja = false) {
 	const odmowa = r.apk_odmowa || !r.apk;
@@ -104,7 +147,7 @@ export function mailApk(r: RenewalRow, link: string, aktualizacja = false) {
 	const akapity = [
 		odmowa
 			? `zapisaliśmy, że świadomie odmawiasz wypełnienia analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. Potwierdzenie przesyłamy w załączonym PDF.`
-			: `dziękujemy za wypełnienie analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. W załączonym PDF są Twoje odpowiedzi — zachowaj go.`,
+			: `dziękujemy za wypełnienie analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. W załączonym PDF są Twoje odpowiedzi i propozycja ubezpieczenia wynikająca z Umowy Generalnej na OC dla branży beauty — zachowaj go.`,
 		'Wniosek o odnowienie dokończysz pod tym samym linkiem. Po wysłaniu wniosku przyślemy drugi e-mail z PDF wniosku.'
 	];
 	const html = ramka(odmowa ? 'Odmowa wypełnienia APK' : 'Analiza potrzeb (APK)', `
@@ -273,6 +316,7 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 		return y + 3;
 	};
 
+	rysujLogo(doc, 196 - LOGO_PDF_SZER, 10, LOGO_PDF_SZER);
 	doc.setFont(font, 'bold');
 	doc.setFontSize(16);
 	doc.text('Wniosek o odnowienie ubezpieczenia OC', 14, 18);
@@ -415,10 +459,12 @@ export async function pdfApk(event: PdfEvent, r: RenewalRow, kto: { ip: string |
 			head: head ? [head] : [],
 			body,
 			theme: 'grid',
-			styles: { font, fontSize: 9, cellPadding: 2.5, overflow: 'linebreak', lineColor: [226, 232, 240] },
+			styles: { font, fontSize: 9, cellPadding: 2, overflow: 'linebreak', lineColor: [226, 232, 240] },
 			headStyles: { fillColor: [42, 59, 105], textColor: 255, fontStyle: 'bold' },
 			columnStyles: { 0: { cellWidth: 80, fontStyle: 'bold', fillColor: [248, 250, 252] }, 1: { cellWidth: 102 } },
-			margin: { left: 14, right: 14 }
+			// Wiersz nie dzieli się między strony; dolny margines zostawia miejsce na stopkę strony.
+			rowPageBreak: 'avoid',
+			margin: { left: 14, right: 14, bottom: 16 }
 		});
 	const naglowek = (tekst: string, y: number) => {
 		if (y > 260) {
@@ -435,6 +481,7 @@ export async function pdfApk(event: PdfEvent, r: RenewalRow, kto: { ip: string |
 	};
 	const odmowa = r.apk_odmowa || !r.apk;
 
+	rysujLogo(doc, 196 - LOGO_PDF_SZER, 10, LOGO_PDF_SZER);
 	doc.setFont(font, 'bold');
 	doc.setFontSize(16);
 	doc.text('Analiza wymagań i potrzeb klienta (APK)', 14, 18);
@@ -452,7 +499,7 @@ export async function pdfApk(event: PdfEvent, r: RenewalRow, kto: { ip: string |
 			['Obecny okres ubezpieczenia', `${data(r.okres_od)} – ${data(r.okres_do)}`],
 			['Suma gwarancyjna (obecna)', r.suma ? formatSuma(Number(r.suma)) : 'zgodnie z obecnym certyfikatem'],
 			['Data i godzina', `${dataGodzina(r.apk_at)} (formularz elektroniczny)`],
-			['Dystrybutor', DYSTRYBUTOR]
+			['Agent ubezpieczeniowy', DYSTRYBUTOR]
 		],
 		30
 	);
@@ -469,6 +516,9 @@ export async function pdfApk(event: PdfEvent, r: RenewalRow, kto: { ip: string |
 		tabela([['Klient', 'Oświadczam, że podane informacje są zgodne z prawdą.']], y);
 	}
 	y = lastY() + 8;
+	y = naglowek('Propozycja ubezpieczenia', y);
+	tabela(propozycjaApk(r), y);
+	y = lastY() + 8;
 	if (y > 250) {
 		doc.addPage();
 		y = 20;
@@ -476,7 +526,9 @@ export async function pdfApk(event: PdfEvent, r: RenewalRow, kto: { ip: string |
 	doc.setFontSize(8.5);
 	doc.setTextColor(80);
 	const info = doc.splitTextToSize(
-		'Analiza została przeprowadzona przed odnowieniem ubezpieczenia na podstawie informacji przekazanych przez Klienta. ' +
+		(odmowa
+			? 'Klient odmówił wypełnienia analizy przed odnowieniem ubezpieczenia — propozycja nie uwzględnia jego wymagań i potrzeb. '
+			: 'Analiza została przeprowadzona przed odnowieniem ubezpieczenia na podstawie informacji przekazanych przez Klienta. ') +
 			'Dokument przekazano Klientowi na trwałym nośniku (PDF w wiadomości e-mail). Wniosek o odnowienie stanowi osobny dokument.',
 		182
 	);

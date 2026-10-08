@@ -83,11 +83,11 @@
 </svelte:head>
 
 <div class="min-h-screen flex flex-col bg-slate-100 text-slate-900">
-	<header class="bg-[#2a3b69] text-white">
-		<div class="mx-auto flex max-w-2xl items-center gap-2.5 px-4 py-4">
-			<LogoBeautyPolisa />
-			<span class="text-white/50" aria-hidden="true">·</span>
-			<p class="text-base text-white/90 sm:text-lg">odnowienie ubezpieczenia OC</p>
+	<header class="border-b border-slate-200 bg-white">
+		<div class="mx-auto flex max-w-2xl flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-4">
+			<LogoBeautyPolisa class="h-7 sm:h-8" />
+			<span class="hidden h-6 w-px bg-slate-300 sm:block" aria-hidden="true"></span>
+			<p class="text-sm text-slate-600 sm:text-base">odnowienie ubezpieczenia OC</p>
 		</div>
 	</header>
 

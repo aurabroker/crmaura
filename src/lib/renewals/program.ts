@@ -178,7 +178,7 @@ export const APK_ODPOWIEDZI = {
 } as const;
 
 export const APK_ODMOWA_TRESC =
-	'Świadomie odmawiam wypełnienia analizy potrzeb (APK). Rozumiem, że bez tych informacji pośrednik ' +
+	'Świadomie odmawiam wypełnienia analizy potrzeb (APK). Rozumiem, że bez tych informacji agent ubezpieczeniowy ' +
 	'nie może ocenić, czy proponowane ubezpieczenie odpowiada moim wymaganiom i potrzebom.';
 
 // ---------- Wniosek ----------
