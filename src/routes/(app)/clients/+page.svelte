@@ -157,6 +157,18 @@
 		mergeError[group.reason] = '';
 		const otherIds = others.map(c => c.id);
 
+		// Identyfikator firmy z BEAUTY przechodzi na zachowany rekord, gdy ten go nie ma — inaczej
+		// synchronizacja nie znajdzie odpowiednika usuniętego duplikatu. Stan z bazy, bo lista mogła
+		// się zestarzeć (synchronizacja działa w tle).
+		const { data: bidRows } = await sb.from('crm_clients').select('id, beauty_id').in('id', [targetId, ...otherIds]);
+		const bidZ = (id: string) => {
+			const row = (bidRows as { id: string; beauty_id: number | string | null }[] | null)?.find(r => r.id === id);
+			return row ? row.beauty_id : group.clients.find(c => c.id === id)?.beauty_id ?? null;
+		};
+		const beautyId = bidZ(targetId) == null
+			? otherIds.map(bidZ).find(b => b != null) ?? null
+			: null;
+
 		for (const table of KLIENT_ID_TABLES) {
 			await sb.from(table).update({ klient_id: targetId }).in('klient_id', otherIds);
 		}
@@ -169,7 +181,14 @@
 			merging = null;
 			return;
 		}
-		await logAudit('clients_merged', 'client', targetId, group.reason, { merged_ids: otherIds });
+		// Dopiero po usunięciu duplikatów: (beauty_id, tenant_id) jest unikalne.
+		let beautyPrzeniesiony = false;
+		if (beautyId != null) {
+			const { error: bidError } = await sb.from('crm_clients').update({ beauty_id: beautyId } as never).eq('id', targetId);
+			if (bidError) mergeError[group.reason] = `Duplikaty scalone, ale nie udało się przenieść identyfikatora BEAUTY (${beautyId}): ${bidError.message}`;
+			else beautyPrzeniesiony = true;
+		}
+		await logAudit('clients_merged', 'client', targetId, group.reason, { merged_ids: otherIds, ...(beautyId != null ? { beauty_id: beautyId } : {}) });
 
 		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
 			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
@@ -180,7 +199,12 @@
 			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false }),
 			sb.from('crm_client_contacts').select('*')
 		]);
-		appState.clients = (rC.data ?? []) as typeof appState.clients;
+		// Lista z bazy ma już beauty_id zachowanego rekordu; gdy odczyt zawiedzie, poprawiamy ją lokalnie.
+		appState.clients = !rC.error && rC.data
+			? rC.data as typeof appState.clients
+			: appState.clients
+				.filter(c => !otherIds.includes(c.id))
+				.map(c => (beautyPrzeniesiony && c.id === targetId ? { ...c, beauty_id: beautyId } : c));
 		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.claims = (rCl.data ?? []) as typeof appState.claims;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
