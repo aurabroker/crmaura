@@ -248,7 +248,7 @@ z załącznikami (dyplom, certyfikat szkolenia z ostatnich 12 miesięcy, wzory z
 - **Automat**: pg_cron `crm-renewals` (codziennie 6:20 UTC) → `/api/cron/renewals` z `x-cron-token`: wygaszanie,
   zaproszenia 45 dni przed końcem (moduł `odnowienia_auto` w SAAS Admin), jedno przypomnienie po 7 dniach.
 - **Wysyłka**: klucz Resend firmy (SAAS Admin), nadawca `RENEWAL_EMAIL_FROM` (domyślnie BeautyPolisa <odnowienia@beautypolisa.eu>).
-- Migracja: `supabase/pending/20261007000003_renewals.sql`.
+- Migracja: `supabase/migrations/20261007000003_renewals.sql` (zastosowana 2026-10-08).
 
 ---
 

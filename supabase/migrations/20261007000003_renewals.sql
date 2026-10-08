@@ -1,6 +1,6 @@
 -- ============================================================
 -- Odnowienia polis OC beauty: link dla klienta, APK, wniosek, decyzja.
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-08 (tabele z RLS, anon bez dostępu, bucket renewal-files prywatny, cron crm-renewals 06:20 UTC; automat 45 dni wyłączony do czasu włączenia w SAAS Admin).
 --
 -- Klient nie ma dostępu do tych tabel z przeglądarki: strona /odnowienie/<token> rozmawia
 -- z serwerem CRM (/api/odnowienie/...), który działa kluczem service_role i sprawdza token.
