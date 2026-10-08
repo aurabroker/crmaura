@@ -8,6 +8,7 @@
 	import LogoBeautyPolisa from '$lib/components/renewal/LogoBeautyPolisa.svelte';
 	import KrokAnkieta from '$lib/components/renewal/KrokAnkieta.svelte';
 	import KrokApk from '$lib/components/renewal/KrokApk.svelte';
+	import KrokKwalifikacje from '$lib/components/renewal/KrokKwalifikacje.svelte';
 	import KrokPodsumowanie from '$lib/components/renewal/KrokPodsumowanie.svelte';
 	import KrokWniosek from '$lib/components/renewal/KrokWniosek.svelte';
 	import Postep from '$lib/components/renewal/Postep.svelte';
@@ -59,6 +60,9 @@
 		s.krok = k;
 		fokusNaglowka();
 	}
+
+	// Następny / poprzedni krok według listy kroków (osoby i dokumenty oraz ankieta są tylko przy nowych zabiegach).
+	const obok = (k: Krok, o: 1 | -1): Krok => s?.kroki[(s?.kroki.indexOf(k) ?? 0) + o] ?? (o === 1 ? 'podsumowanie' : 'apk');
 
 	function poWyslaniu() {
 		if (!s) return;
@@ -218,9 +222,11 @@
 			{:else if s.krok === 'apk'}
 				<KrokApk {s} ondalej={() => idz('wniosek')} onwstecz={() => idz('start')} />
 			{:else if s.krok === 'wniosek'}
-				<KrokWniosek {s} ondalej={() => idz(s?.potrzebnaAnkieta ? 'ankieta' : 'podsumowanie')} onwstecz={() => idz('apk')} />
+				<KrokWniosek {s} ondalej={() => idz(obok('wniosek', 1))} onwstecz={() => idz('apk')} />
+			{:else if s.krok === 'kwalifikacje'}
+				<KrokKwalifikacje {s} ondalej={() => idz(obok('kwalifikacje', 1))} onwstecz={() => idz('wniosek')} />
 			{:else if s.krok === 'ankieta'}
-				<KrokAnkieta {s} ondalej={() => idz('podsumowanie')} onwstecz={() => idz('wniosek')} />
+				<KrokAnkieta {s} ondalej={() => idz('podsumowanie')} onwstecz={() => idz(obok('ankieta', -1))} />
 			{:else if s.krok === 'podsumowanie'}
 				<KrokPodsumowanie {s} onidz={idz} onwyslano={poWyslaniu} />
 			{:else if s.krok === 'wyslano'}

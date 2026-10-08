@@ -1,13 +1,15 @@
 <script lang="ts">
-	import { Mail, Plus, Trash2 } from 'lucide-svelte';
+	import { onMount } from 'svelte';
+	import { Mail } from 'lucide-svelte';
 	import { OSWIADCZENIE_ANKIETY } from '$lib/renewals/program';
 	import Bledy from './Bledy.svelte';
 	import Zalaczniki from './Zalaczniki.svelte';
 	import { BTN_DRUGI, BTN_GLOWNY, ETYKIETA, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK } from './klient';
-	import { pustaOsoba, type Odnowienie } from './stan.svelte';
+	import type { Odnowienie } from './stan.svelte';
 
-	// Krok 3 (tylko przy zabiegach wymagających oceny ryzyka): ankieta Ergo Hestii i dokumenty
-	// kwalifikacji. PDF ankiety klient dostaje e-mailem do podpisu.
+	// Krok tylko przy zabiegach wymagających oceny ryzyka: ankieta Ergo Hestii. Osoby wykonujące te zabiegi
+	// pochodzą z kroku „Osoby i dokumenty” (tam są też ich dyplomy i certyfikaty). PDF ankiety klient dostaje
+	// e-mailem do podpisu.
 	interface Props {
 		s: Odnowienie;
 		ondalej: () => void;
@@ -15,23 +17,12 @@
 	}
 	let { s, ondalej, onwstecz }: Props = $props();
 
-	const MAX_OSOB = 20;
 	const dzis = new Date().toISOString().slice(0, 10);
 
 	let bledy = $state<string[]>([]);
 
-	function dodajOsobe() {
-		if (s.ankieta.osoby.length >= MAX_OSOB) return;
-		s.ankieta.osoby.push(pustaOsoba());
-		const i = s.ankieta.osoby.length - 1;
-		// Fokus na pierwsze pole nowej osoby.
-		queueMicrotask(() => requestAnimationFrame(() => document.getElementById(`os-${i}-imie`)?.focus()));
-	}
-
-	function usunOsobe(i: number) {
-		s.ankieta.osoby.splice(i, 1);
-		if (!s.ankieta.osoby.length) s.ankieta.osoby.push(pustaOsoba());
-	}
+	// Osoby z kroku „Osoby i dokumenty”, które wykonują zabiegi z ankiety.
+	onMount(() => s.synchronizujOsobyAnkiety());
 
 	function dalej() {
 		bledy = s.sprawdzAnkiete();
@@ -115,10 +106,7 @@
 					<fieldset class="rounded-2xl border border-slate-200 p-4" data-testid="osoba-{i}">
 						<legend class="px-1 text-sm font-semibold text-slate-700">Osoba {i + 1}</legend>
 						<div class="space-y-3">
-							<div>
-								<label for="os-{i}-imie" class={ETYKIETA}>Imię i nazwisko</label>
-								<input id="os-{i}-imie" bind:value={o.imie_nazwisko} class={INP} maxlength="200" autocomplete="off" />
-							</div>
+							<p class="font-medium text-slate-900" data-testid="osoba-{i}-imie">{o.imie_nazwisko}</p>
 							<div>
 								<label for="os-{i}-kwal" class={ETYKIETA}>Kwalifikacje: wykształcenie, kursy, szkolenia</label>
 								<textarea id="os-{i}-kwal" rows="3" bind:value={o.kwalifikacje} class={INP} maxlength="3000"></textarea>
@@ -127,24 +115,11 @@
 								<label for="os-{i}-dosw" class={ETYKIETA}>Doświadczenie w wykonywaniu tych zabiegów</label>
 								<input id="os-{i}-dosw" bind:value={o.doswiadczenie} class={INP} maxlength="1000" placeholder="np. 3 lata" />
 							</div>
-							{#if s.ankieta.osoby.length > 1}
-								<button
-									type="button"
-									class="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-									onclick={() => usunOsobe(i)}
-								>
-									<Trash2 size={15} aria-hidden="true" /> Usuń osobę {i + 1}
-								</button>
-							{/if}
 						</div>
 					</fieldset>
 				{/each}
 			</div>
-			{#if s.ankieta.osoby.length < MAX_OSOB}
-				<button type="button" class="{BTN_DRUGI} mt-3 w-full sm:w-auto" onclick={dodajOsobe}>
-					<Plus size={17} aria-hidden="true" /> Dodaj kolejną osobę
-				</button>
-			{/if}
+			<p class="mt-2 text-sm text-slate-500">Osoby zmienisz w kroku „Osoby i dokumenty”.</p>
 		</fieldset>
 
 		<Zalaczniki {s} />

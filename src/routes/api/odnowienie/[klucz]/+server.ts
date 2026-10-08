@@ -17,9 +17,14 @@ import { poApk, poZlozeniu } from '$lib/server/renewalFlow';
 import {
 	APK_ODMOWA_TRESC,
 	TYPY_ZALACZNIKOW,
+	ID_WYKONAWCY,
 	ZALACZNIKI_MAX,
+	ZALACZNIKI_MAX_LACZNIE,
 	ZALACZNIK_MAX_BAJTOW,
 	ZALACZNIK_TYPY_MIME,
+	brakiDokumentow,
+	czyZabieg,
+	zabiegiWniosku,
 	waliduj_ankiete,
 	waliduj_apk,
 	waliduj_wniosek,
@@ -118,6 +123,13 @@ export const POST: RequestHandler = async (event) => {
 			if (!Number.isFinite(rozmiar) || rozmiar <= 0 || rozmiar > ZALACZNIK_MAX_BAJTOW) return blad(400, 'Plik może mieć najwyżej 10 MB.');
 			if (!ZALACZNIK_TYPY_MIME.includes(mime)) return blad(400, 'Dozwolone są pliki PDF i zdjęcia (JPG, PNG, WEBP, HEIC).');
 			if ((r.zalaczniki ?? []).length >= ZALACZNIKI_MAX) return blad(400, `Można dodać najwyżej ${ZALACZNIKI_MAX} plików.`);
+			const lacznie = (r.zalaczniki ?? []).reduce((a, z) => a + (Number(z.rozmiar) || 0), 0);
+			if (lacznie + rozmiar > ZALACZNIKI_MAX_LACZNIE) return blad(400, 'Przekroczono łączny limit plików (60 MB). Usuń niepotrzebne pliki albo zmniejsz zdjęcia.');
+			// Dyplom należy do osoby, certyfikat — do osoby i jej zabiegu.
+			const osoba = typeof body.osoba === 'string' && ID_WYKONAWCY.test(body.osoba) ? body.osoba : null;
+			const zabieg = czyZabieg(body.zabieg) ? body.zabieg : null;
+			if ((typ === 'dyplom' || typ === 'certyfikat') && !osoba) return blad(400, 'Wskaż osobę, do której należy dokument.');
+			if (typ === 'certyfikat' && !zabieg) return blad(400, 'Wskaż zabieg, którego dotyczy certyfikat.');
 
 			const id = crypto.randomUUID();
 			const bezpieczna = nazwa.normalize('NFKD').replace(/[^\w.-]+/g, '_').replace(/_+/g, '_').slice(-80) || 'plik';
@@ -125,18 +137,21 @@ export const POST: RequestHandler = async (event) => {
 			const { data: podpis, error: e } = await admin.storage.from(BUCKET).createSignedUploadUrl(path);
 			if (e || !podpis) return blad(500, 'Nie udało się przygotować wysyłki pliku. Spróbuj ponownie.');
 
-			const zalacznik = { id, path, typ, nazwa, rozmiar, mime, at: new Date().toISOString() };
+			const zalacznik = { id, path, typ, nazwa, rozmiar, mime, osoba: typ === 'dyplom' || typ === 'certyfikat' ? osoba : null, zabieg: typ === 'certyfikat' ? zabieg : null, at: new Date().toISOString() };
 			// Lista w jsonb: zapis z kontrolą wersji, z ponowieniem przy równoległym dodawaniu plików.
 			let biezacy: RenewalRow | null = r;
 			for (let proba = 0; proba < 4 && biezacy; proba++) {
 				const zapisany = await zapiszZWersja(admin, biezacy, { zalaczniki: [...(biezacy.zalaczniki ?? []), zalacznik] });
 				if (zapisany) {
-					const odp: OdpowiedzZalacznikUrl = { id, path: podpis.path, token: podpis.token, zalacznik: { id, typ, nazwa, rozmiar, mime } };
+					const odp: OdpowiedzZalacznikUrl = { id, path: podpis.path, token: podpis.token, zalacznik: { id, typ, nazwa, rozmiar, mime, osoba: zalacznik.osoba, zabieg: zalacznik.zabieg } };
 					return json(odp);
 				}
 				const { data } = await admin.from('crm_renewals').select('*').eq('id', r.id).maybeSingle();
 				biezacy = data as RenewalRow | null;
 				if (biezacy && (biezacy.zalaczniki ?? []).length >= ZALACZNIKI_MAX) return blad(400, `Można dodać najwyżej ${ZALACZNIKI_MAX} plików.`);
+				if (biezacy && (biezacy.zalaczniki ?? []).reduce((a, z) => a + (Number(z.rozmiar) || 0), 0) + rozmiar > ZALACZNIKI_MAX_LACZNIE) {
+					return blad(400, 'Przekroczono łączny limit plików (60 MB). Usuń niepotrzebne pliki albo zmniejsz zdjęcia.');
+				}
 			}
 			return blad(409, 'Nie udało się zapisać pliku — spróbuj ponownie.');
 		}
@@ -177,17 +192,28 @@ export const POST: RequestHandler = async (event) => {
 			// Rozmiar bierzemy z magazynu, nie z deklaracji klienta.
 			const { data: pliki } = await admin.storage.from(BUCKET).list(`${r.tenant_id}/${r.id}`, { limit: 1000 });
 			const rozmiary = new Map((pliki ?? []).map((p) => [p.name, Number((p.metadata as { size?: number } | null)?.size ?? 0)]));
+			// Dokumenty osób, których już nie ma we wniosku (albo zabiegów, których nie wykonują), odpadają.
+			const wykonawcy = wniosek.zmiany?.wykonawcy ?? [];
 			const zalaczniki = (r.zalaczniki ?? [])
 				.filter((z) => rozmiary.has(z.path.split('/').pop() ?? ''))
-				.map((z) => ({ ...z, rozmiar: rozmiary.get(z.path.split('/').pop() ?? '') || z.rozmiar }));
+				.map((z) => ({ ...z, rozmiar: rozmiary.get(z.path.split('/').pop() ?? '') || z.rozmiar }))
+				.filter((z) => {
+					if (z.typ !== 'dyplom' && z.typ !== 'certyfikat') return true;
+					const w = wykonawcy.find((x) => x.id === z.osoba);
+					return !!w && (z.typ === 'dyplom' || (!!z.zabieg && w.zabiegi.includes(z.zabieg)));
+				});
+			if (zalaczniki.reduce((a, z) => a + (Number(z.rozmiar) || 0), 0) > ZALACZNIKI_MAX_LACZNIE) {
+				return blad(400, 'Przekroczono łączny limit plików (60 MB). Usuń niepotrzebne pliki albo zmniejsz zdjęcia.');
+			}
+			if (zabiegiWniosku(wniosek.zmiany).length) {
+				const braki = brakiDokumentow(wykonawcy, zalaczniki);
+				if (braki.length) return blad(400, 'Dołącz brakujące dokumenty.', braki);
+			}
 
 			let ankieta = null;
 			if (wniosek.zmiany?.zabiegi_ankieta.length) {
 				const a = waliduj_ankiete(body.ankieta);
-				const bledy = a.ok ? [] : [...a.bledy];
-				if (!zalaczniki.some((z) => z.typ === 'dyplom')) bledy.push('Dołącz skan dyplomu (np. kosmetologia).');
-				if (!zalaczniki.some((z) => z.typ === 'certyfikat')) bledy.push('Dołącz certyfikat ze szkolenia z zabiegu (ukończonego co najmniej 12 miesięcy przed początkiem ochrony).');
-				if (bledy.length || !a.ok) return blad(400, 'Uzupełnij ankietę ERGO Hestii.', bledy);
+				if (!a.ok) return blad(400, 'Uzupełnij ankietę Ergo Hestii.', a.bledy);
 				ankieta = a.value;
 			}
 

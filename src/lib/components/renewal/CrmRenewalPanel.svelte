@@ -8,7 +8,7 @@
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import {
 		APK_ODMOWA_TRESC, APK_ODPOWIEDZI, APK_PYTANIA, LICZBA_OSOB, OCHRONA_PRAWNA_SKLADKA, OSWIADCZENIE_ANKIETY,
-		RODZAJE_GABINETU, TYPY_ZALACZNIKOW, formatSuma, formatZl, wycenaWniosku,
+		RODZAJE_GABINETU, formatSuma, formatZl, opisZalacznika, wycenaWniosku,
 		type Ankieta, type Apk
 	} from '$lib/renewals/program';
 	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
@@ -507,7 +507,7 @@
 											{z.nazwa}
 										</button>
 										<p class="text-[11px] text-slate-400">
-											{(TYPY_ZALACZNIKOW as Record<string, string>)[z.typ] ?? z.typ} · {rozmiar(z.rozmiar)}{z.at ? ` · ${fmtDataCzas(z.at)}` : ''}
+											{opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy)} · {rozmiar(z.rozmiar)}{z.at ? ` · ${fmtDataCzas(z.at)}` : ''}
 										</p>
 									</div>
 								</li>

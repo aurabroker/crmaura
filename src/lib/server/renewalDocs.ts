@@ -11,11 +11,11 @@ import {
 	OCHRONA_PRAWNA_SKLADKA,
 	OSWIADCZENIE_ANKIETY,
 	RODZAJE_GABINETU,
-	TYPY_ZALACZNIKOW,
 	UBEZPIECZYCIEL,
 	formatSuma,
 	formatZl,
 	nazwaUbezpieczyciela,
+	opisZalacznika,
 	type Apk,
 	type Wniosek
 } from '$lib/renewals/program';
@@ -127,6 +127,7 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null): string[] {
 	if (z.adres) linie.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 	if (z.nowe_zabiegi.length) linie.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join('; ')}`);
 	if (z.zabiegi_ankieta.length) linie.push(`Zabiegi wymagające ankiety: ${z.zabiegi_ankieta.join('; ')}`);
+	for (const w of z.wykonawcy ?? []) linie.push(`Wykonuje: ${w.imie_nazwisko} — ${w.zabiegi.join('; ')}`);
 	if (z.inne) linie.push(`Inne: ${z.inne}`);
 	if (!apk && z.rodzaje.length) linie.push(`Rodzaj działalności (do wyceny): ${z.rodzaje.map(rodzajNazwa).join(', ')}`);
 	if (!apk && z.osoby) linie.push(`Liczba osób (do wyceny): ${osobyNazwa(z.osoby)}`);
@@ -214,7 +215,7 @@ export function mailBiuro(r: RenewalRow, linki: { polisa: string; klient: string
 		['Złożono', `${dataGodzina(r.zlozono_at)}${kto.ip ? `, IP ${kto.ip}` : ''}`],
 		...(r.wniosek?.nie_powod ? ([['Powód rezygnacji', r.wniosek.nie_powod]] as [string, string][]) : []),
 		['Dokumenty w CRM', ['PDF analizy potrzeb (APK)', 'PDF wniosku', ...(r.zalaczniki?.length ? [`załączniki klienta: ${r.zalaczniki.length}`] : [])].join(', ')],
-		...(r.zalaczniki?.length ? ([['Załączniki klienta', r.zalaczniki.map((z) => `${TYPY_ZALACZNIKOW[z.typ] ?? z.typ}: ${z.nazwa}`).join('; ')]] as [string, string][]) : [])
+		...(r.zalaczniki?.length ? ([['Załączniki klienta', r.zalaczniki.map((z) => `${opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy)}: ${z.nazwa}`).join('; ')]] as [string, string][]) : [])
 	];
 	const html = ramka('Wniosek o odnowienie', `
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
@@ -331,7 +332,7 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 
 	if (r.zalaczniki?.length) {
 		y = naglowek('Załączniki przesłane przez klienta', y);
-		tabela(r.zalaczniki.map((z) => [TYPY_ZALACZNIKOW[z.typ] ?? z.typ, z.nazwa] as [string, string]), y);
+		tabela(r.zalaczniki.map((z) => [opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy), z.nazwa] as [string, string]), y);
 		y = lastY() + 8;
 	}
 

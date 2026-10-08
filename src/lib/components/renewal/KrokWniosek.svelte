@@ -68,7 +68,8 @@
 	function dalej() {
 		message = '';
 		bledy = [];
-		const r = s.sprawdzWniosek();
+		// Osoby i dokumenty klient podaje w następnym kroku.
+		const r = s.sprawdzWniosek(false);
 		if (!r.ok) {
 			bledy = r.bledy;
 			return;
@@ -377,7 +378,7 @@
 		<div class="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
 			<button type="button" class={BTN_DRUGI} onclick={onwstecz}>Wstecz</button>
 			<button type="submit" class={BTN_GLOWNY}>
-				{s.potrzebnaAnkieta ? 'Dalej: ankieta' : 'Dalej: podsumowanie'}
+				{s.potrzebneDokumenty ? 'Dalej: osoby i dokumenty' : 'Dalej: podsumowanie'}
 			</button>
 		</div>
 	</form>

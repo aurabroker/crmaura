@@ -364,7 +364,7 @@ export function widok(r: RenewalRow): WidokOdnowienia {
 		apk_odmowa: r.apk_odmowa,
 		ochrona_prawna_obecnie: opObecnie(r),
 		apk: r.apk_odmowa ? null : r.apk,
-		zalaczniki: (r.zalaczniki ?? []).map(({ id, typ, nazwa, rozmiar, mime }) => ({ id, typ, nazwa, rozmiar, mime }))
+		zalaczniki: (r.zalaczniki ?? []).map(({ id, typ, nazwa, rozmiar, mime, osoba, zabieg }) => ({ id, typ, nazwa, rozmiar, mime, osoba: osoba ?? null, zabieg: zabieg ?? null }))
 	};
 }
 

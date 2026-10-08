@@ -45,6 +45,11 @@
 	function sprawdzWszystko(): { bledy: string[]; krok: Krok | null; ankieta: Ankieta | null; wniosek: ReturnType<Odnowienie['sprawdzWniosek']> } {
 		const wn = s.sprawdzWniosek();
 		if (!s.apkGotowa) return { bledy: ['Wypełnij analizę potrzeb (APK) albo świadomie odmów jej wypełnienia.'], krok: 'apk', ankieta: null, wniosek: wn };
+		if (!s.sprawdzWniosek(false).ok) return { bledy: wn.ok ? [] : wn.bledy, krok: 'wniosek', ankieta: null, wniosek: wn };
+		if (s.potrzebneDokumenty) {
+			const braki = s.sprawdzKwalifikacje();
+			if (braki.length) return { bledy: braki, krok: 'kwalifikacje', ankieta: null, wniosek: wn };
+		}
 		if (!wn.ok) return { bledy: wn.bledy, krok: 'wniosek', ankieta: null, wniosek: wn };
 		if (!s.potrzebnaAnkieta) return { bledy: [], krok: null, ankieta: null, wniosek: wn };
 		const braki = s.sprawdzAnkiete();
@@ -139,6 +144,23 @@
 			<div>
 				{@render wiersz('Składka', null)}
 				<dd class="mt-2"><WycenaInfo wycena={s.wycena} skladkaObecna={w.skladka} /></dd>
+			</div>
+		{/if}
+
+		{#if s.potrzebneDokumenty}
+			<div>
+				{@render wiersz('Osoby i dokumenty', 'kwalifikacje')}
+				<dd class="mt-1">
+					<ul class="space-y-1 text-sm text-slate-800" data-testid="podsumowanie-osoby">
+						{#each s.wykonawcy as w (w.id)}
+							{@const dok = s.zalaczniki.filter((z) => z.osoba === w.id).length}
+							<li class="break-words">
+								<strong>{w.imie_nazwisko || '—'}</strong>: {w.zabiegi.filter((z) => s.zabiegiZgloszone.includes(z)).join(', ') || '—'}
+								<span class="text-slate-500">· dokumenty: {dok}</span>
+							</li>
+						{/each}
+					</ul>
+				</dd>
 			</div>
 		{/if}
 
