@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
+	import { wczytajAneksy, wczytajPlatnosci, wczytajPolisy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { goto } from '$app/navigation';
@@ -41,9 +41,9 @@
 		}
 
 		const [rP, rA, rPay] = await Promise.all([
-			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null),
-			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
-			sb.from('crm_policy_payments').select(PAYMENT_SELECT).order('data_platnosci')
+			wczytajPolisy(),
+			wczytajAneksy(),
+			wczytajPlatnosci()
 		]);
 		saving = false;
 		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;

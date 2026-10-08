@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPojazdy } from '$lib/kolekcje';
 	// Panel zarządzania pojazdami: pełna kartoteka, historia polis na pojeździe
 	// i obsługa przerejestrowania. Zakładka w Ustawieniach pokazywała tylko
 	// część pól i nie dawała wglądu w to, czym pojazd był ubezpieczony.
@@ -112,7 +113,7 @@
 	}
 
 	async function odswiezPojazdy() {
-		const { data } = await sb.from('crm_vehicles').select('*');
+		const { data } = await wczytajPojazdy();
 		appState.vehicles = (data ?? []) as typeof appState.vehicles;
 	}
 

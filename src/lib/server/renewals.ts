@@ -328,8 +328,8 @@ export const czyAktywny = (r: RenewalRow) => (AKTYWNE as readonly string[]).incl
 export async function usunSierotyPlikow(admin: SupabaseClient, r: Pick<RenewalRow, 'id' | 'tenant_id' | 'zalaczniki'>): Promise<number> {
 	const folder = `${r.tenant_id}/${r.id}`;
 	const { data: pliki } = await admin.storage.from(BUCKET).list(folder, { limit: 1000 });
-	// Pliki generowane przez serwer (PDF wniosku i PDF APK) zostają zawsze.
-	const zostaja = new Set([...(r.zalaczniki ?? []).map((z) => z.path.split('/').pop()), 'wniosek-odnowienia.pdf', 'apk.pdf']);
+	// Pliki generowane przez serwer (PDF wniosku, PDF APK i PDF ankiety Ergo Hestii) zostają zawsze.
+	const zostaja = new Set([...(r.zalaczniki ?? []).map((z) => z.path.split('/').pop()), 'wniosek-odnowienia.pdf', 'apk.pdf', 'ankieta.pdf']);
 	const sieroty = (pliki ?? []).filter((p) => p.id && !zostaja.has(p.name)).map((p) => `${folder}/${p.name}`);
 	if (sieroty.length) await admin.storage.from(BUCKET).remove(sieroty);
 	return sieroty.length;
@@ -342,7 +342,19 @@ export const sumaObecna = (r: Pick<RenewalRow, 'suma' | 'skladka'>): number | nu
 export const opObecnie = (r: Pick<RenewalRow, 'suma' | 'skladka'>): boolean =>
 	ochronaPrawnaWSkladce(r.skladka != null ? Number(r.skladka) : null, sumaObecna(r));
 
-export function widok(r: RenewalRow): WidokOdnowienia {
+// NIP i REGON klienta z kartoteki do podpowiedzi w ankiecie: same cyfry, tylko w poprawnej długości
+// (NIP 10, REGON 9 albo 14) — „PL 526-025-02-74” → „5260250274”, śmieci → null.
+export type DaneKlienta = { nip: string | null; regon: string | null };
+export async function daneKlienta(admin: SupabaseClient, r: Pick<RenewalRow, 'klient_id' | 'tenant_id'>): Promise<DaneKlienta> {
+	const { data } = await admin.from('crm_clients').select('nip, regon, tenant_id').eq('id', r.klient_id).maybeSingle();
+	if (!data || data.tenant_id !== r.tenant_id) return { nip: null, regon: null };
+	const cyfry = (v: unknown) => (typeof v === 'string' ? v.replace(/\D/g, '') : '');
+	const nip = cyfry(data.nip);
+	const regon = cyfry(data.regon);
+	return { nip: nip.length === 10 ? nip : null, regon: regon.length === 9 || regon.length === 14 ? regon : null };
+}
+
+export function widok(r: RenewalRow, klient: DaneKlienta | null = null): WidokOdnowienia {
 	if (r.status === 'anulowany') return { stan: 'anulowany' };
 	if (r.status === 'wygasl') return { stan: 'wygasl' };
 	if (r.status === 'zlozony') {
@@ -366,7 +378,9 @@ export function widok(r: RenewalRow): WidokOdnowienia {
 		apk: r.apk_odmowa ? null : r.apk,
 		zalaczniki: (r.zalaczniki ?? []).map(({ id, typ, nazwa, rozmiar, mime, osoba, osoba_nazwa, zabieg }) => ({
 			id, typ, nazwa, rozmiar, mime, osoba: osoba ?? null, osoba_nazwa: osoba_nazwa ?? null, zabieg: zabieg ?? null
-		}))
+		})),
+		nip: klient?.nip ?? null,
+		regon: klient?.regon ?? null
 	};
 }
 

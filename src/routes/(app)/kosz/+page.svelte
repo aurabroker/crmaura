@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { POLICY_SELECT } from '$lib/queries';
+	import { wczytajPolisy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln } from '$lib/utils';
@@ -72,9 +72,7 @@
 		if (error) { restoreError = error.message; return; }
 		showRestore = false;
 		// Reload policies in app state
-		const { data, error: bladPolis } = await sb.from('crm_policies')
-			.select(POLICY_SELECT)
-			.is('deleted_at', null);
+		const { data, error: bladPolis } = await wczytajPolisy();
 		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 		await loadDeleted();
 	}

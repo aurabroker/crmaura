@@ -30,7 +30,7 @@
 	const zmianyOpis = $derived.by(() => {
 		if (!z) return [] as string[];
 		const l: string[] = [];
-		if (z.wyzsza_suma) l.push(`Wyższa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
+		if (z.wyzsza_suma) l.push(`Nowa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
 		if (z.ochrona_prawna) l.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł/rok)`);
 		if (z.adres) l.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 		if (z.nowe_zabiegi.length) l.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join(', ')}`);
@@ -167,8 +167,12 @@
 		{#if s.potrzebnaAnkieta}
 			<div>
 				{@render wiersz('Ankieta Ergo Hestii', 'ankieta')}
-				<dd class="mt-1 text-slate-900">
+				<dd class="mt-1 text-slate-900" data-testid="podsumowanie-ankieta">
+					<span class="block">NIP: {s.ankieta.nip.trim() || '—'} · REGON: {s.ankieta.regon.trim() || '—'}</span>
 					Osoby wykonujące zabiegi: {s.ankieta.osoby.filter((o) => o.imie_nazwisko.trim()).length}, załączniki: {s.zalaczniki.length}
+					{#if s.ankieta.inne_zabiegi.trim()}
+						<span class="block break-words text-sm text-slate-700">Inne zabiegi: {s.ankieta.inne_zabiegi.trim()}</span>
+					{/if}
 					<span class="block text-sm text-slate-600">PDF ankiety przyjdzie e-mailem — wydrukuj go, podpisz i odeślij.</span>
 				</dd>
 			</div>

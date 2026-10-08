@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
+	import { wczytajPlatnosci, wczytajPojazdy, wczytajPolisy } from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { sb } from '$lib/supabase';
@@ -267,17 +267,9 @@
 		});
 
 		const [rP, rPay, rV, rL, rVR] = await Promise.all([
-			sb
-				.from('crm_policies')
-				.select(
-					POLICY_SELECT
-				)
-				.is('deleted_at', null),
-			sb
-				.from('crm_policy_payments')
-				.select(PAYMENT_SELECT)
-				.order('data_platnosci'),
-			sb.from('crm_vehicles').select('*'),
+			wczytajPolisy(),
+			wczytajPlatnosci(),
+			wczytajPojazdy(),
 			sb.from('crm_leasings').select('*'),
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje')
 		]);

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajZadania } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, dateDiffDays, todayStr } from '$lib/utils';
@@ -927,7 +928,7 @@
 	onclose={() => { taskModalOpen = false; editingTask = null; }}
 	onsaved={async () => {
 		taskModalOpen = false; editingTask = null;
-		const { data } = await sb.from('crm_tasks').select('*,crm_clients(nazwa),crm_prospects(nazwa),crm_policies(nr_polisy),assigned_profile:crm_profiles!assigned_to(imie_nazwisko,email)').order('termin', { ascending: true, nullsFirst: false });
+		const { data } = await wczytajZadania();
 		appState.tasks = (data ?? []) as typeof appState.tasks;
 	}}
 />

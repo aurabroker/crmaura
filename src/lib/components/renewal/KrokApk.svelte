@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { CheckCircle2, Pencil } from 'lucide-svelte';
+	import { CheckCircle2, Info, Pencil } from 'lucide-svelte';
 	import {
 		APK_ODMOWA_TRESC,
 		APK_ODPOWIEDZI,
 		APK_PYTANIA,
 		LICZBA_OSOB,
+		LUKI_OCHRONY,
+		LUKI_OCHRONY_WU,
 		RODZAJE_GABINETU,
 		waliduj_apk,
 		type Apk
@@ -23,14 +25,12 @@
 	}
 	let { s, ondalej, onwstecz }: Props = $props();
 
-	type PoleRadio = 'osoby' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet';
+	type PoleRadio = 'osoby' | 'ochrona_prawna' | 'szkolenia';
 	type Inne = Apk['inne_ubezpieczenia'][number];
 
 	const TAK_NIE: [string, string][] = [['tak', 'tak'], ['nie', 'nie']];
 	const OSOBY = LICZBA_OSOB.map((o): [string, string] => [o.key, o.nazwa]);
-	const SUMA = Object.entries(APK_ODPOWIEDZI.suma_oczekiwana);
 	const OCHRONA = Object.entries(APK_ODPOWIEDZI.ochrona_prawna);
-	const PRIORYTET = Object.entries(APK_ODPOWIEDZI.priorytet);
 	const INNE = Object.entries(APK_ODPOWIEDZI.inne_ubezpieczenia) as [Inne, string][];
 
 	let zajety = $state(false);
@@ -129,11 +129,12 @@
 		const wiersze: [string, string][] = [
 			[APK_PYTANIA.rodzaje, a.rodzaje.map((r) => RODZAJE_GABINETU.find((x) => x.key === r)?.nazwa ?? r).join(', ')],
 			[APK_PYTANIA.osoby, LICZBA_OSOB.find((o) => o.key === a.osoby)?.nazwa ?? a.osoby],
-			[APK_PYTANIA.suma_oczekiwana, etykieta(APK_ODPOWIEDZI.suma_oczekiwana, a.suma_oczekiwana)],
+			// Starsze APK miały jeszcze oczekiwaną sumę i priorytet.
+			...(a.suma_oczekiwana ? [[APK_PYTANIA.suma_oczekiwana, etykieta(APK_ODPOWIEDZI.suma_oczekiwana, a.suma_oczekiwana)] as [string, string]] : []),
 			[APK_PYTANIA.ochrona_prawna, etykieta(APK_ODPOWIEDZI.ochrona_prawna, a.ochrona_prawna)],
 			[APK_PYTANIA.szkolenia, a.szkolenia],
 			[APK_PYTANIA.inne_ubezpieczenia, a.inne_ubezpieczenia.map((k) => etykieta(APK_ODPOWIEDZI.inne_ubezpieczenia, k)).join(', ')],
-			[APK_PYTANIA.priorytet, etykieta(APK_ODPOWIEDZI.priorytet, a.priorytet)]
+			...(a.priorytet ? [[APK_PYTANIA.priorytet, etykieta(APK_ODPOWIEDZI.priorytet, a.priorytet)] as [string, string]] : [])
 		];
 		if (a.uwagi) wiersze.push(['Dodatkowe informacje', a.uwagi]);
 		return wiersze;
@@ -212,7 +213,6 @@
 
 			{@render radia('osoby', APK_PYTANIA.osoby, OSOBY)}
 
-			{@render radia('suma_oczekiwana', APK_PYTANIA.suma_oczekiwana, SUMA)}
 			{@render radia('ochrona_prawna', APK_PYTANIA.ochrona_prawna, OCHRONA)}
 			{@render radia('szkolenia', APK_PYTANIA.szkolenia, TAK_NIE)}
 
@@ -235,7 +235,18 @@
 				</div>
 			</fieldset>
 
-			{@render radia('priorytet', APK_PYTANIA.priorytet, PRIORYTET)}
+			<!-- Czego nie obejmuje OC w programie — informacja, nie pytanie i nie rekomendacja -->
+			<div class="rounded-xl border border-[#2a3b69]/20 bg-[#2a3b69]/5 p-4 text-sm" data-testid="luki-ochrony">
+				<p class="flex items-center gap-2 font-semibold text-[#2a3b69]"><Info size={18} aria-hidden="true" /> Dobrze wiedzieć: ubezpieczenie OC w programie nie obejmuje m.in.</p>
+				<ul class="mt-2 list-disc space-y-1 pl-5 text-slate-800">
+					{#each LUKI_OCHRONY as l (l.tekst)}
+						<li>
+							{l.tekst}{#if l.inne && s.apkForm.inne_ubezpieczenia.includes(l.inne)}<span class="text-emerald-700"> — masz osobne ubezpieczenie</span>{/if}
+						</li>
+					{/each}
+				</ul>
+				<p class="mt-2 text-slate-600">{LUKI_OCHRONY_WU} Jeśli potrzebujesz takiej ochrony, napisz do nas — przedstawimy osobną propozycję.</p>
+			</div>
 
 			<div>
 				<label for="apk-uwagi" class={LEGENDA + ' block'}>{APK_PYTANIA.uwagi}</label>

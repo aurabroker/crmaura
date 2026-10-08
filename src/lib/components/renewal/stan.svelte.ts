@@ -6,6 +6,8 @@ import {
 	MAKS_WYKONAWCOW,
 	SUMY,
 	brakiDokumentow,
+	kategoriaZRodzajow,
+	skladkaProgramu,
 	waliduj_ankiete,
 	waliduj_wniosek,
 	wycenaWniosku,
@@ -25,15 +27,20 @@ export type WidokAktywny = Extract<WidokOdnowienia, { stan: 'aktywny' }>;
 export type Krok = 'start' | 'apk' | 'wniosek' | 'kwalifikacje' | 'ankieta' | 'podsumowanie' | 'wyslano';
 
 // Pola formularza przed walidacją — puste odpowiedzi to ''.
+// Pola tylko ze starszych wniosków (szkody, zabiegi spoza list, oczekiwana suma, priorytet) nie trafiają do formularza.
 export type ApkForm = Omit<Apk, 'osoby' | 'szkody' | 'szkody_opis' | 'spoza_listy' | 'spoza_listy_opis' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet'> & {
 	osoby: Apk['osoby'] | '';
-	suma_oczekiwana: Apk['suma_oczekiwana'] | '';
 	ochrona_prawna: Apk['ochrona_prawna'] | '';
 	szkolenia: Apk['szkolenia'] | '';
-	priorytet: Apk['priorytet'] | '';
 };
 
-export type AnkietaForm = Omit<Ankieta, 'zgoda_klientow'> & { zgoda_klientow: Ankieta['zgoda_klientow'] | '' };
+// NIP, REGON i inne zabiegi w typie Ankieta są opcjonalne (starsze ankiety) — w formularzu zawsze tekst.
+export type AnkietaForm = Omit<Ankieta, 'zgoda_klientow' | 'nip' | 'regon' | 'inne_zabiegi'> & {
+	zgoda_klientow: Ankieta['zgoda_klientow'] | '';
+	nip: string;
+	regon: string;
+	inne_zabiegi: string;
+};
 
 // Zmiany trzymamy „płasko”: odznaczenie pozycji nie kasuje tego, co klient już wpisał.
 export type ZmianyForm = {
@@ -70,11 +77,9 @@ export const nowyWykonawca = (): Wykonawca => ({ id: crypto.randomUUID(), imie_n
 export const pustaApk = (): ApkForm => ({
 	rodzaje: [],
 	osoby: '',
-	suma_oczekiwana: '',
 	ochrona_prawna: '',
 	szkolenia: '',
 	inne_ubezpieczenia: [],
-	priorytet: '',
 	uwagi: '',
 	oswiadczenie: false
 });
@@ -99,12 +104,16 @@ const pusteZmiany = (): ZmianyForm => ({
 
 export const pustaOsoba = () => ({ imie_nazwisko: '', kwalifikacje: '', doswiadczenie: '' });
 
-const pustaAnkieta = (klient: string): AnkietaForm => ({
-	ubezpieczajacy: klient,
-	ubezpieczony: klient,
+// NIP i REGON podpowiadamy z kartoteki CRM (widok z serwera), klient może je poprawić.
+const pustaAnkieta = (w: Pick<WidokAktywny, 'klient' | 'nip' | 'regon'>): AnkietaForm => ({
+	ubezpieczajacy: w.klient,
+	ubezpieczony: w.klient,
 	data_rozpoczecia: '',
 	liczba_zatrudnionych: '',
+	nip: w.nip ?? '',
+	regon: w.regon ?? '',
 	szkodowosc: '',
+	inne_zabiegi: '',
 	jak_dlugo: '',
 	zgoda_klientow: '',
 	osoby: [pustaOsoba()],
@@ -151,7 +160,7 @@ export class Odnowienie {
 	wykonawcy = $state<Wykonawca[]>([]);
 
 	// Ankieta Ergo Hestii i załączniki (zapisane na serwerze oraz wgrywane teraz)
-	ankieta = $state<AnkietaForm>(pustaAnkieta(''));
+	ankieta = $state<AnkietaForm>(pustaAnkieta({ klient: '', nip: null, regon: null }));
 	zalaczniki = $state<Zalacznik[]>([]);
 	wgrywane = $state<Wgrywany[]>([]);
 
@@ -160,8 +169,25 @@ export class Odnowienie {
 	apkGotowa = $derived(this.apkOdmowa || !!this.apkZapisana);
 	// Przy odmowie APK wycena bierze rodzaj gabinetu i liczbę osób z wniosku.
 	apkDoWyceny = $derived(this.apkOdmowa ? null : this.apkZapisana);
-	wyzszeSumy = $derived(SUMY.filter((s) => this.widok.suma == null || s > this.widok.suma));
-	// Rodzaj i liczba osób we wniosku są potrzebne tylko do wyceny wyższej sumy bez APK.
+	// Suma na nowy okres: każdy wariant programu poza obecnym (także niższy) — bez rekomendacji.
+	inneSumy = $derived(SUMY.filter((s) => s !== this.widok.suma));
+	// Orientacyjna składka każdego wariantu sumy wg taryfy programu (gdy znamy rodzaj gabinetu i liczbę osób).
+	skladkiSum = $derived.by((): Partial<Record<Suma, number>> => {
+		// Zabiegi z ankietą: całą składkę wycenia ubezpieczyciel (jak w wycenaWniosku) — bez kwot przy sumach.
+		if (this.zm.ankieta && this.zm.zabiegi_ankieta.length) return {};
+		const apk = this.apkDoWyceny;
+		const kategoria = kategoriaZRodzajow(apk?.rodzaje.length ? apk.rodzaje : this.zm.rodzaje);
+		const osoby = apk?.osoby || this.zm.osoby;
+		if (!kategoria || !osoby) return {};
+		const ochronaPrawna = this.zm.ochrona_prawna || this.widok.ochrona_prawna_obecnie;
+		const out: Partial<Record<Suma, number>> = {};
+		for (const suma of SUMY) {
+			const w = skladkaProgramu({ kategoria, suma, osoby, ochronaPrawna });
+			if (w.rodzaj === 'kwota') out[suma] = w.kwota;
+		}
+		return out;
+	});
+	// Rodzaj i liczba osób we wniosku są potrzebne tylko do wyceny nowej sumy bez APK.
 	pytajODaneWyceny = $derived(this.decyzja === 'zmiany' && this.zm.suma && this.apkOdmowa);
 	potrzebnaAnkieta = $derived(this.decyzja === 'zmiany' && this.zm.ankieta && this.zm.zabiegi_ankieta.length > 0);
 	// Zabiegi zgłaszane we wniosku: z list programu i wymagające ankiety (bez powtórzeń).
@@ -188,7 +214,7 @@ export class Odnowienie {
 		this.apkZapisana = widok.apk_wypelniona && widok.apk ? widok.apk : null;
 		if (widok.apk) this.apkForm = scal(pustaApk(), widok.apk);
 		this.apkEdycja = !this.apkGotowa;
-		this.ankieta = pustaAnkieta(widok.klient);
+		this.ankieta = pustaAnkieta(widok);
 		this.zalaczniki = [...widok.zalaczniki];
 		this.wczytajSzkic();
 		this.odtworzWykonawcow();
@@ -222,14 +248,14 @@ export class Odnowienie {
 	}
 
 	// Reguły programu (waliduj_wniosek) plus braki w zaznaczonych pozycjach — inaczej klient,
-	// który zaznaczył „wyższa suma” bez wyboru kwoty, dostałby mylące „zaznacz co najmniej jedną zmianę”.
+	// który zaznaczył „inna suma” bez wyboru kwoty, dostałby mylące „zaznacz co najmniej jedną zmianę”.
 	// pelny: także osoby i dokumenty (podsumowanie); bez — sam krok „Wniosek”.
 	sprawdzWniosek(pelny = true): Wynik<Wniosek> {
 		const w = waliduj_wniosek(this.wniosek, this.apkDoWyceny, { pomijajWykonawcow: !pelny });
 		if (this.decyzja !== 'zmiany') return w;
 		const z = this.zm;
 		const braki: string[] = [];
-		if (z.suma && !z.wyzsza_suma) braki.push('Wybierz nową sumę gwarancyjną (albo odznacz „Wyższa suma gwarancyjna”).');
+		if (z.suma && !z.wyzsza_suma) braki.push('Wybierz nową sumę gwarancyjną (albo odznacz „Inna suma gwarancyjna”).');
 		if (z.zabiegi && !z.nowe_zabiegi.length) braki.push('Zaznacz nowe zabiegi z listy programu (albo odznacz tę pozycję).');
 		if (z.ankieta && !z.zabiegi_ankieta.length) braki.push('Zaznacz zabiegi wymagające ankiety (albo odznacz tę pozycję).');
 		if (z.inne_zaznaczone && !z.inne.trim()) braki.push('Opisz inne zmiany (albo odznacz tę pozycję).');
@@ -350,7 +376,7 @@ export class Odnowienie {
 		if (!this.apkGotowa && s.apkForm) this.apkForm = { ...scal(pustaApk(), s.apkForm), oswiadczenie: false };
 		if (s.decyzja === 'bez_zmian' || s.decyzja === 'zmiany' || s.decyzja === 'nie') this.decyzja = s.decyzja;
 		const zm = scal(pusteZmiany(), s.zm);
-		if (zm.wyzsza_suma != null && !this.wyzszeSumy.includes(zm.wyzsza_suma)) zm.wyzsza_suma = null;
+		if (zm.wyzsza_suma != null && !this.inneSumy.includes(zm.wyzsza_suma)) zm.wyzsza_suma = null;
 		this.zm = zm;
 		if (typeof s.niePowod === 'string') this.niePowod = s.niePowod;
 		if (Array.isArray(s.wykonawcy)) {
@@ -363,7 +389,7 @@ export class Odnowienie {
 				}))
 				.slice(0, MAKS_WYKONAWCOW);
 		}
-		const a = scal(pustaAnkieta(this.widok.klient), s.ankieta);
+		const a = scal(pustaAnkieta(this.widok), s.ankieta);
 		a.osoby = a.osoby
 			.filter((o) => o && typeof o === 'object')
 			.map((o) => scal(pustaOsoba(), o))

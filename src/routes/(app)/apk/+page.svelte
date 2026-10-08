@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajFormularzeApk, wczytajKlientow } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { ApkForm } from '$lib/types/database';
@@ -7,7 +8,7 @@
 	import { todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
-	import { apkTokenLink, apkOpenLink, newApkToken, APK_FORMS_SELECT } from '$lib/utils/apkLink';
+	import { apkTokenLink, apkOpenLink, newApkToken } from '$lib/utils/apkLink';
 	import { openStoredFile, copyStoredFileLink } from '$lib/utils/storageLink';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
@@ -119,7 +120,7 @@
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: clientDeclined ? 'client_declined' : 'created', actor: fAdvisor || 'system' }]);
 
 		// refresh
-		const { data } = await sb.from('apk_forms').select(APK_FORMS_SELECT).order('created_at', { ascending: false });
+		const { data } = await wczytajFormularzeApk();
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 
 		// Jeśli zebrano RODO — zapisz na kliencie
@@ -129,7 +130,7 @@
 				rodo_data: rodoData || todayStr(),
 				rodo_kanal: rodoKanal
 			}).eq('id', fKlient);
-			const { data: cls } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+			const { data: cls } = await wczytajKlientow();
 			if (cls) appState.clients = cls as typeof appState.clients;
 		}
 
