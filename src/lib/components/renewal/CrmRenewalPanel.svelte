@@ -14,7 +14,7 @@
 	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
-	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisZdarzenia, wariantDecyzji, wywolajApi } from './crmRenewals';
+	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisZdarzenia, otworzPdfApk, wariantDecyzji, wywolajApi } from './crmRenewals';
 	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2 } from 'lucide-svelte';
 
 	interface Props {
@@ -252,6 +252,13 @@
 
 	// ---------- Opisy odpowiedzi klienta ----------
 
+	// Oświadczenie o odmowie APK w brzmieniu, które klient zaznaczył (dziennik); dla starszych wpisów bieżąca treść.
+	function trescOdmowy(r: RenewalRow): string {
+		if (r.id !== latest?.id) return APK_ODMOWA_TRESC;
+		const t = events.filter((e) => e.zdarzenie === 'apk_odmowa').at(-1)?.szczegoly?.tresc;
+		return typeof t === 'string' && t ? t : APK_ODMOWA_TRESC;
+	}
+
 	const etykieta = (mapa: Record<string, string>, klucz: string | null | undefined) => (klucz ? mapa[klucz] ?? klucz : '—');
 	const takNie = (v: string | null | undefined) => (v === 'tak' ? 'tak' : v === 'nie' ? 'nie' : '—');
 	const rodzajeNazwy = (r: string[] | null | undefined) =>
@@ -429,8 +436,16 @@
 						</button>
 					{/if}
 					{#if latest.apk_at}
-						<!-- PDF APK powstaje od razu po APK (osobny dokument, ten sam folder co wniosek). -->
-						<button type="button" onclick={() => otworzPlik(`${latest!.tenant_id}/${latest!.id}/apk.pdf`, 'PDF APK')} class={przyciskCls}>
+						<!-- PDF APK powstaje od razu po APK; starszym wnioskom serwer tworzy go przy pierwszym otwarciu. -->
+						<button
+							type="button"
+							onclick={async () => {
+								blad = '';
+								blad = await otworzPdfApk(latest!.id);
+							}}
+							class={przyciskCls}
+							data-testid="renewal-pdf-apk"
+						>
 							<FileText size={12} /> PDF APK
 						</button>
 					{/if}
@@ -539,7 +554,7 @@
 				{#if r.apk || r.apk_odmowa}
 					{#snippet apkTresc()}
 						{#if r.apk_odmowa}
-							<p class="text-sm text-slate-700">{APK_ODMOWA_TRESC}</p>
+							<p class="text-sm text-slate-700">{trescOdmowy(r)}</p>
 							<p class="text-xs text-slate-400 mt-1">Odmowa złożona {fmtDataCzas(r.apk_at)}.</p>
 						{:else if r.apk}
 							{@render wiersze(apkWiersze(r.apk))}

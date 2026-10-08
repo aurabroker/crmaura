@@ -1,5 +1,6 @@
 import { sb } from '$lib/supabase';
 import type { Policy, RenewalEvent } from '$lib/types/database';
+import { OPEN_LINK_TTL, signedStorageUrl } from '$lib/utils/storageLink';
 
 // Wspólne dla karty polisy i listy odnowień w CRM: rozpoznanie certyfikatu z programu OC beauty,
 // stany wniosku i wywołania /api/renewals (kontrakt: $lib/renewals/staffApi).
@@ -75,6 +76,7 @@ export const ZDARZENIA: Record<string, string> = {
 	blad_pdf: 'PDF wniosku nie powstał',
 	blad_pdf_apk: 'PDF APK nie powstał',
 	blad_pdf_ankiety: 'PDF ankiety nie powstał — wyślij klientowi ankietę ręcznie',
+	pdf_apk_utworzony: 'Utworzono PDF APK z zapisanych odpowiedzi (na żądanie w CRM)',
 	przypomnienie: 'Wysłano przypomnienie',
 	anulowanie: 'Anulowano wniosek',
 	wygasniecie: 'Link wygasł'
@@ -112,3 +114,23 @@ export const folderWniosku = (r: { tenant_id: string; id: string }) => `${r.tena
 
 export const rozmiarPliku = (b: number | null | undefined) =>
 	b == null ? '' : b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;
+
+// PDF APK wniosku: serwer zwraca ścieżkę, a gdy pliku brak (wniosek sprzed osobnego PDF APK albo błąd przy APK),
+// najpierw go tworzy. Kartę otwieramy od razu w obsłudze kliknięcia — po await przeglądarka by ją zablokowała.
+// Zwraca '' albo treść błędu do pokazania.
+export async function otworzPdfApk(id: string): Promise<string> {
+	const okno = window.open('about:blank', '_blank');
+	const w = await wywolajApi<{ path: string }>('POST', '/api/renewals/pdf-apk', { id });
+	try {
+		if (!w.ok) throw new Error(w.message);
+		const url = await signedStorageUrl(BUCKET_ODNOWIEN, w.data.path, OPEN_LINK_TTL);
+		if (okno) {
+			okno.opener = null;
+			okno.location.href = url;
+		} else window.location.assign(url);
+		return '';
+	} catch (e) {
+		okno?.close();
+		return `Nie udało się otworzyć PDF APK. ${(e as Error)?.message ?? ''}`.trim();
+	}
+}

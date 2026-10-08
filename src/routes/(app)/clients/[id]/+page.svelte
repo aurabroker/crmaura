@@ -20,7 +20,7 @@
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, folderWniosku, opisPrzegladarki, opisZdarzenia, rozmiarPliku, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
+	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, rozmiarPliku, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
 	import { opisZalacznika } from '$lib/renewals/program';
 
 	let pdfSaving = $state<string | null>(null);
@@ -1396,7 +1396,11 @@
 													<FileText size={12} /> PDF APK
 												</button>
 											{:else if plikiGotowe}
-												<span class="text-xs text-slate-400" title="Wniosek sprzed zapisywania PDF APK — odpowiedzi są na karcie polisy">bez PDF</span>
+												<!-- Wniosek sprzed osobnego PDF APK: serwer tworzy PDF z zapisanych odpowiedzi. -->
+												<button type="button" onclick={async () => { plikBlad = await otworzPdfApk(w.id); }}
+													class="text-xs text-blue-600 hover:underline flex items-center gap-1" title="Wniosek sprzed zapisywania PDF APK — PDF powstanie teraz z zapisanych odpowiedzi">
+													<FileText size={12} /> Utwórz PDF APK
+												</button>
 											{/if}
 											<a href="/policies/{w.polisa_id}" class="text-xs text-blue-600 hover:underline">Karta polisy →</a>
 										</div>

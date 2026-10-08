@@ -173,6 +173,8 @@ export class Odnowienie {
 	inneSumy = $derived(SUMY.filter((s) => s !== this.widok.suma));
 	// Orientacyjna składka każdego wariantu sumy wg taryfy programu (gdy znamy rodzaj gabinetu i liczbę osób).
 	skladkiSum = $derived.by((): Partial<Record<Suma, number>> => {
+		// Zabiegi z ankietą: całą składkę wycenia ubezpieczyciel (jak w wycenaWniosku) — bez kwot przy sumach.
+		if (this.zm.ankieta && this.zm.zabiegi_ankieta.length) return {};
 		const apk = this.apkDoWyceny;
 		const kategoria = kategoriaZRodzajow(apk?.rodzaje.length ? apk.rodzaje : this.zm.rodzaje);
 		const osoby = apk?.osoby || this.zm.osoby;

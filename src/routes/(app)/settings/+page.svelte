@@ -1,6 +1,7 @@
 <svelte:head><title>Ustawienia — FRANK67 CRM</title></svelte:head>
 
 <script lang="ts">
+	import { wczytajPojazdy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import type { Vehicle } from '$lib/types/database';
@@ -278,12 +279,8 @@
 		}
 
 		// Reload vehicles
-		const { data } = await sb
-			.from('crm_vehicles')
-			.select('*')
-			.eq('tenant_id', appState.profile!.tenant_id)
-			.order('nr_rejestracyjny');
-		if (data) appState.vehicles = data;
+		const { data } = await wczytajPojazdy();
+		if (data) appState.vehicles = data as typeof appState.vehicles;
 
 		vehicleSaving = false;
 		closeVehicleModal();

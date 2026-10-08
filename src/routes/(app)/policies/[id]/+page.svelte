@@ -1,6 +1,5 @@
 <script lang="ts">
-	import { wczytajAneksy, wczytajPodzialProwizji } from '$lib/kolekcje';
-	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
+	import { wczytajAneksy, wczytajPlatnosci, wczytajPodzialProwizji, wczytajPolisy } from '$lib/kolekcje';
 	import { tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto, replaceState } from '$app/navigation';
@@ -273,9 +272,7 @@
 
 	// Odświeżenie listy polis po zmianie; przy błędzie zostaje dotychczasowa lista.
 	async function odswiezPolisy() {
-		const { data, error } = await sb.from('crm_policies')
-			.select(POLICY_SELECT)
-			.is('deleted_at', null);
+		const { data, error } = await wczytajPolisy();
 		if (!error && data) appState.policies = data as typeof appState.policies;
 	}
 
@@ -333,10 +330,8 @@
 	}
 
 	async function reloadPayments() {
-		const { data } = await sb.from('crm_policy_payments')
-			.select(PAYMENT_SELECT)
-			.order('data_platnosci');
-		appState.payments = (data ?? []) as typeof appState.payments;
+		const { data, error } = await wczytajPlatnosci();
+		if (!error && data) appState.payments = data as typeof appState.payments;
 	}
 
 	async function saveEditPayment() {

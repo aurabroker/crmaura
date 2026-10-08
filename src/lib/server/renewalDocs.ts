@@ -9,6 +9,7 @@ import {
 	KLAUZULA_OCHRONY_PRAWNEJ,
 	LICZBA_OSOB,
 	LUKI_OCHRONY,
+	LUKI_OCHRONY_WU,
 	OCHRONA_PRAWNA_LIMIT,
 	OCHRONA_PRAWNA_SKLADKA,
 	OSWIADCZENIE_ANKIETY,
@@ -123,9 +124,15 @@ function wariantySum(r: RenewalRow): string {
 		return `${formatSuma(suma)}${w?.rodzaj === 'kwota' ? ` — ${formatZl(w.kwota)} rocznie` : ''}${opis(suma)}`;
 	});
 	const zCenami = linie.some((l) => l.includes(' rocznie'));
+	const skladka = zCenami
+		? 'Składki orientacyjne według taryfy programu.'
+		: a?.osoby === '9+'
+			? `Składkę ustala indywidualnie ${UBEZPIECZYCIEL} (więcej niż 8 osób wykonujących zabiegi).`
+			: 'Składka według taryfy programu.';
 	return [
 		...linie,
-		...(zCenami ? [`Ochrona prawna (klauzula 7): +${formatZl(OCHRONA_PRAWNA_SKLADKA)} rocznie.`, 'Składki orientacyjne według taryfy programu.'] : ['Składka według taryfy programu.']),
+		`Ochrona prawna (klauzula 7): +${formatZl(OCHRONA_PRAWNA_SKLADKA)} rocznie.`,
+		skladka,
 		'Sumę i ewentualne zmiany zakresu wskazujesz we wniosku o odnowienie.'
 	].join('\n');
 }
@@ -149,8 +156,8 @@ export function propozycjaApk(r: RenewalRow): [string, string][] {
 	];
 	const a = r.apk_odmowa ? null : r.apk;
 	wiersze.push([
-		'Czego program nie obejmuje',
-		LUKI_OCHRONY.map((l) => `• ${l.tekst}${l.inne && a?.inne_ubezpieczenia.includes(l.inne) ? ' (Klient ma osobne ubezpieczenie)' : ''}`).join('\n')
+		'Czego program nie obejmuje (m.in.)',
+		[...LUKI_OCHRONY.map((l) => `• ${l.tekst}${l.inne && a?.inne_ubezpieczenia.includes(l.inne) ? ' (Klient ma osobne ubezpieczenie)' : ''}`), LUKI_OCHRONY_WU].join('\n')
 	]);
 	if (!a) {
 		wiersze.push(['Zgodność z potrzebami', 'Nie oceniono — Klient odmówił wypełnienia analizy potrzeb.']);
@@ -172,7 +179,7 @@ export function mailApk(r: RenewalRow, link: string, aktualizacja = false) {
 	const temat = `${odmowa ? 'Odmowa wypełnienia analizy potrzeb (APK)' : 'Analiza potrzeb (APK)'}${aktualizacja ? ' — wersja poprawiona' : ''} — certyfikat ${r.nr_polisy ?? ''}`;
 	const akapity = [
 		odmowa
-			? `zapisaliśmy, że świadomie odmawiasz wypełnienia analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. Potwierdzenie przesyłamy w załączonym PDF.`
+			? `zapisaliśmy, że świadomie odmawiasz wypełnienia analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. W załączonym PDF jest potwierdzenie odmowy i propozycja ubezpieczenia wynikająca z Umowy Generalnej na OC dla branży beauty — zachowaj go.`
 			: `dziękujemy za wypełnienie analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. W załączonym PDF są Twoje odpowiedzi i propozycja ubezpieczenia wynikająca z Umowy Generalnej na OC dla branży beauty — zachowaj go.`,
 		'Wniosek o odnowienie dokończysz pod tym samym linkiem. Po wysłaniu wniosku przyślemy drugi e-mail z PDF wniosku.'
 	];
@@ -452,7 +459,14 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 
 // ---------- PDF analizy potrzeb (osobny dokument, wysyłany klientowi od razu po APK) ----------
 
-export async function pdfApk(event: PdfEvent, r: RenewalRow, kto: { ip: string | null; ua: string | null }): Promise<Uint8Array> {
+// trescOdmowy: oświadczenie w brzmieniu, które klient zaznaczył (zapisane w dzienniku przy odmowie) — tekst
+// w programie mógł się od tego czasu zmienić. Bez niego bieżąca treść APK_ODMOWA_TRESC.
+export async function pdfApk(
+	event: PdfEvent,
+	r: RenewalRow,
+	kto: { ip: string | null; ua: string | null },
+	o: { trescOdmowy?: string | null } = {}
+): Promise<Uint8Array> {
 	const { doc, autoTable, font } = await newServerPdf(event);
 	const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 	const tabela = (body: [string, string][], startY: number, head?: [string, string]) =>
@@ -509,7 +523,7 @@ export async function pdfApk(event: PdfEvent, r: RenewalRow, kto: { ip: string |
 
 	if (odmowa) {
 		y = naglowek('Odmowa wypełnienia analizy potrzeb', y);
-		tabela([['Oświadczenie Klienta', APK_ODMOWA_TRESC]], y);
+		tabela([['Oświadczenie Klienta', o.trescOdmowy || APK_ODMOWA_TRESC]], y);
 	} else {
 		y = naglowek('Odpowiedzi Klienta', y);
 		tabela(odpowiedziApk(r.apk!), y, ['Pytanie', 'Odpowiedź']);

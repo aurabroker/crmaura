@@ -16,11 +16,13 @@ export const STRONA_BAZY = 1000;
 
 type OdpowiedzStrony<T> = { data: T[] | null; error: { message: string } | null; count?: number | null };
 
+// Kontrakt jak w supabase-js: przy jakimkolwiek błędzie data = null (wołający zostawiają wtedy starą listę
+// albo pokazują błąd — nigdy nie dostają listy uciętej po cichu).
 export async function wszystkieWiersze<T>(
 	strona: (od: number, doWiersza: number, licz: boolean) => PromiseLike<OdpowiedzStrony<T>>
-): Promise<{ data: T[]; error: { message: string } | null }> {
+): Promise<{ data: T[] | null; error: { message: string } | null }> {
 	const p = await strona(0, STRONA_BAZY - 1, true);
-	if (p.error) return { data: [], error: p.error };
+	if (p.error) return { data: null, error: p.error };
 	const out: T[] = [...(p.data ?? [])];
 	const razem = p.count ?? out.length;
 	const krok = out.length;
@@ -29,8 +31,20 @@ export async function wszystkieWiersze<T>(
 		Array.from({ length: Math.ceil((razem - krok) / krok) }, (_, i) => strona(krok * (i + 1), krok * (i + 2) - 1, false))
 	);
 	for (const r of reszta) {
-		if (r.error) return { data: out, error: r.error };
+		if (r.error) return { data: null, error: r.error };
 		out.push(...(r.data ?? []));
 	}
-	return { data: out, error: null };
+	// Strony to osobne zapytania: wiersz dodany w międzyczasie przesuwa kolejne strony i wiersz z granicy
+	// przychodzi dwa razy (a podwójne id psuje listy z kluczem w Svelte). Zostawiamy pierwsze wystąpienie.
+	const widziane = new Set<unknown>();
+	return {
+		data: out.filter((w) => {
+			const id = (w as { id?: unknown })?.id;
+			if (id === undefined) return true;
+			if (widziane.has(id)) return false;
+			widziane.add(id);
+			return true;
+		}),
+		error: null
+	};
 }

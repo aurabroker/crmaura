@@ -183,15 +183,16 @@ export const APK_ODPOWIEDZI = {
 	priorytet: { zakres: 'najszerszy zakres ochrony', cena: 'jak najniższa składka', suma: 'wysoka suma gwarancyjna', obsluga: 'pomoc przy szkodzie i obsługa' }
 } as const;
 
-// Czego nie obejmuje ubezpieczenie OC w programie — informacja przy APK i w PDF (nie rekomendacja).
-// `inne` łączy pozycję z odpowiedzią na pytanie o inne ubezpieczenia gabinetu.
+// Przykłady tego, czego nie obejmuje ubezpieczenie OC w programie — informacja przy APK i w PDF (nie rekomendacja,
+// nie pełna lista wyłączeń: tę mają Warunki Ubezpieczenia). `inne` łączy pozycję z odpowiedzią o inne ubezpieczenia.
+export const LUKI_OCHRONY_WU = 'Pełny zakres ochrony i wyłączenia opisują Warunki Ubezpieczenia programu.';
 export const LUKI_OCHRONY: { tekst: string; inne?: 'mienie' | 'nnw' }[] = [
 	{ tekst: 'mienia gabinetu — sprzętu, urządzeń i wyposażenia (np. pożar, zalanie, kradzież)', inne: 'mienie' },
 	{ tekst: 'Twoich własnych obrażeń (to zakres ubezpieczenia NNW)', inne: 'nnw' },
 	{ tekst: 'utraty dochodu, gdy gabinet nie może działać' },
 	{
 		tekst:
-			'zabiegów spoza list programu (Załączniki nr 1 i 2); zabiegi z listy wymagającej ankiety są chronione dopiero po akceptacji ubezpieczyciela'
+			'zabiegów spoza listy zabiegów programu dla Twojego rodzaju gabinetu; zabiegi z listy wymagającej ankiety są chronione dopiero po akceptacji ubezpieczyciela'
 	}
 ];
 

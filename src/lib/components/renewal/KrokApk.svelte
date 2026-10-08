@@ -7,6 +7,7 @@
 		APK_PYTANIA,
 		LICZBA_OSOB,
 		LUKI_OCHRONY,
+		LUKI_OCHRONY_WU,
 		RODZAJE_GABINETU,
 		waliduj_apk,
 		type Apk
@@ -236,7 +237,7 @@
 
 			<!-- Czego nie obejmuje OC w programie — informacja, nie pytanie i nie rekomendacja -->
 			<div class="rounded-xl border border-[#2a3b69]/20 bg-[#2a3b69]/5 p-4 text-sm" data-testid="luki-ochrony">
-				<p class="flex items-center gap-2 font-semibold text-[#2a3b69]"><Info size={18} aria-hidden="true" /> Dobrze wiedzieć: ubezpieczenie OC w programie nie obejmuje</p>
+				<p class="flex items-center gap-2 font-semibold text-[#2a3b69]"><Info size={18} aria-hidden="true" /> Dobrze wiedzieć: ubezpieczenie OC w programie nie obejmuje m.in.</p>
 				<ul class="mt-2 list-disc space-y-1 pl-5 text-slate-800">
 					{#each LUKI_OCHRONY as l (l.tekst)}
 						<li>
@@ -244,7 +245,7 @@
 						</li>
 					{/each}
 				</ul>
-				<p class="mt-2 text-slate-600">Jeśli potrzebujesz takiej ochrony, napisz do nas — przedstawimy osobną propozycję.</p>
+				<p class="mt-2 text-slate-600">{LUKI_OCHRONY_WU} Jeśli potrzebujesz takiej ochrony, napisz do nas — przedstawimy osobną propozycję.</p>
 			</div>
 
 			<div>

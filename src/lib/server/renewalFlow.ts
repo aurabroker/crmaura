@@ -42,9 +42,24 @@ async function moznaWyslacApk(admin: SupabaseClient, r: RenewalRow): Promise<boo
 }
 
 // PDF APK do magazynu (upsert). Zwraca bajty albo null przy błędzie (zapisanym w dzienniku).
+// Oświadczenie o odmowie w brzmieniu z chwili odmowy (dziennik), nie bieżąca stała z programu.
+async function trescOdmowy(admin: SupabaseClient, r: RenewalRow): Promise<string | null> {
+	if (!r.apk_odmowa) return null;
+	const { data } = await admin
+		.from('crm_renewal_events')
+		.select('szczegoly')
+		.eq('renewal_id', r.id)
+		.eq('zdarzenie', 'apk_odmowa')
+		.order('at', { ascending: false })
+		.limit(1)
+		.maybeSingle();
+	const t = (data?.szczegoly as { tresc?: unknown } | null)?.tresc;
+	return typeof t === 'string' && t ? t : null;
+}
+
 async function zapiszPdfApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient): Promise<Uint8Array | null> {
 	try {
-		const pdf = await pdfApk(event, r, kto);
+		const pdf = await pdfApk(event, r, kto, { trescOdmowy: await trescOdmowy(admin, r) });
 		const { error: e } = await admin.storage.from(BUCKET).upload(sciezkaPdfApk(r), pdf, { contentType: 'application/pdf', upsert: true });
 		if (e) throw e;
 		return pdf;
@@ -53,6 +68,27 @@ async function zapiszPdfApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRo
 		await zapiszZdarzenie(admin, r, 'blad_pdf_apk', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
 		return null;
 	}
+}
+
+// PDF APK na żądanie z CRM: wnioski złożone przed osobnym PDF APK (do wersji 1.36.0 APK było częścią PDF
+// wniosku) albo po błędzie przy APK. IP i przeglądarka z zapisu APK w dzienniku. Bez e-maila do klienta.
+// Zwraca ścieżkę pliku albo null, gdy wniosek nie ma APK albo PDF nie powstał (błąd w dzienniku).
+export async function pdfApkNaZadanie(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, przez: string): Promise<string | null> {
+	if (!r.apk_at) return null;
+	const { data: jest } = await admin.storage.from(BUCKET).list(`${r.tenant_id}/${r.id}`, { search: 'apk.pdf', limit: 10 });
+	if ((jest ?? []).some((p) => p.name === 'apk.pdf')) return sciezkaPdfApk(r);
+	const { data: zapis } = await admin
+		.from('crm_renewal_events')
+		.select('ip, user_agent')
+		.eq('renewal_id', r.id)
+		.in('zdarzenie', ['apk', 'apk_odmowa'])
+		.order('at', { ascending: false })
+		.limit(1)
+		.maybeSingle();
+	const pdf = await zapiszPdfApk(event, admin, r, { ip: zapis?.ip ?? null, ua: zapis?.user_agent ?? null });
+	if (!pdf) return null;
+	await zapiszZdarzenie(admin, r, 'pdf_apk_utworzony', null, { przez });
+	return sciezkaPdfApk(r);
 }
 
 const nazwaPdfApk = (r: RenewalRow) => `APK-${(r.nr_polisy ?? r.id).replace(/[^\w.-]+/g, '_')}.pdf`;

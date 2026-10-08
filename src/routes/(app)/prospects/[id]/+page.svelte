@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajZadania } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
@@ -300,10 +301,8 @@
 	}
 
 	async function refreshGlobalTasks() {
-		const { data } = await sb.from('crm_tasks')
-			.select('*, crm_clients(nazwa), crm_policies(nr_polisy), crm_prospects(nazwa), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)')
-			.order('termin', { ascending: true, nullsFirst: false });
-		appState.tasks = (data ?? []) as typeof appState.tasks;
+		const { data, error } = await wczytajZadania();
+		if (!error && data) appState.tasks = data as typeof appState.tasks;
 	}
 
 	async function saveTaskInline() {
