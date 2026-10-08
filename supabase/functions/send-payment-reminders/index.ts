@@ -13,6 +13,10 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  * jej dwa razy; gdy Resend odmówi, oznaczenie jest zdejmowane.
  * Zaległych rat nie przypominamy — to decyzja doradcy, nie automatu.
  *
+ * Polisy w programach Beauty (Umowa Generalna oc_beauty / beauty_tax) mają podpis
+ * „Beauty❤️Polisa / <firma>”. Każda wysłana wiadomość trafia do historii e-maili klienta
+ * (crm_client_emails, karta klienta → E-maile).
+ *
  * Body {"dry_run": true} — tylko liczy, co zostałoby wysłane.
  */
 
@@ -21,6 +25,7 @@ const SUPABASE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 const DNI_PRZED = 7;
 const MAKS_RAT_NA_FIRME = 500;
+const PODTYPY_BEAUTY = ["oc_beauty", "beauty_tax"];
 
 const EMAIL_RE = /^[^\s@<>()[\]\\,;:"']+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,24}$/i;
 
@@ -60,14 +65,18 @@ type Rata = {
   kwota: number | null;
   nr_raty: number | null;
   crm_policies: {
+    id: string;
+    klient_id: string;
+    parent_id: string | null;
     nr_polisy: string | null;
     crm_insurers: { nazwa: string | null } | null;
     crm_clients: { nazwa: string | null; email: string | null } | null;
   } | null;
 };
 
-function zbudujMail(firma: string, raty: Rata[]) {
+function zbudujMail(firma: string, raty: Rata[], beauty: boolean) {
   const jedna = raty.length === 1;
+  const podpis = beauty ? `Beauty❤️Polisa / ${firma}` : firma;
   const temat = jedna
     ? `Przypomnienie: termin płatności składki — polisa ${raty[0].crm_policies?.nr_polisy ?? ""}`.trim()
     : "Przypomnienie: terminy płatności składek ubezpieczeniowych";
@@ -91,10 +100,10 @@ function zbudujMail(firma: string, raty: Rata[]) {
     "",
     "Składkę należy opłacić na rachunek wskazany w polisie lub w wezwaniu ubezpieczyciela.",
     "Jeśli płatność została już zrealizowana, prosimy potraktować tę wiadomość jako nieaktualną.",
-    "W razie pytań wystarczy odpowiedzieć na tę wiadomość.",
+    "Nie odpowiadaj na tę wiadomość.",
     "",
     "—",
-    firma,
+    podpis,
   ].join("\n");
 
   const komorka = "padding:8px 10px;border-bottom:1px solid #eef0f3;font-size:14px;color:#1e293b;";
@@ -107,7 +116,7 @@ function zbudujMail(firma: string, raty: Rata[]) {
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;">
       <tr><td style="padding:24px 28px 8px;">
-        <p style="margin:0 0 4px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#64748b;">${esc(firma)}</p>
+        <p style="margin:0 0 4px;font-size:12px;letter-spacing:.06em;color:#64748b;">${esc(podpis)}</p>
         <h1 style="margin:0 0 16px;font-size:20px;color:#0f172a;">Przypomnienie o płatności składki</h1>
         <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">Dzień dobry,<br>
           ${jedna
@@ -119,9 +128,9 @@ function zbudujMail(firma: string, raty: Rata[]) {
         </table>
         <p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#334155;">Składkę należy opłacić na rachunek wskazany w polisie lub w wezwaniu ubezpieczyciela.</p>
         <p style="margin:0 0 10px;font-size:14px;line-height:1.6;color:#334155;">Jeśli płatność została już zrealizowana, prosimy potraktować tę wiadomość jako nieaktualną.</p>
-        <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#334155;">W razie pytań wystarczy odpowiedzieć na tę wiadomość.</p>
+        <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#334155;font-weight:600;">Nie odpowiadaj na tę wiadomość.</p>
       </td></tr>
-      <tr><td style="padding:14px 28px;border-top:1px solid #eef0f3;font-size:12px;color:#94a3b8;">${esc(firma)}</td></tr>
+      <tr><td style="padding:14px 28px;border-top:1px solid #eef0f3;font-size:12px;color:#94a3b8;">${esc(podpis)}</td></tr>
     </table>
   </td></tr>
 </table>
@@ -161,13 +170,17 @@ Deno.serve(async (req: Request) => {
 
   const od = dataWarszawa(0);
   const doDnia = dataWarszawa(DNI_PRZED);
-  const wynik = { ok: true, dry_run: dryRun, od, do: doDnia, firm: 0, wiadomosci: 0, rat: 0, bez_adresu: 0, bledy: [] as string[] };
+  const wynik = {
+    ok: true, dry_run: dryRun, od, do: doDnia, firm: 0, wiadomosci: 0, rat: 0, bez_adresu: 0, bledy: [] as string[],
+    // Tylko przy próbie: tematy i podpis (bez adresów i nazw klientów).
+    podglad: [] as { temat: string; beauty: boolean; rat: number }[],
+  };
 
   for (const firma of firmy ?? []) {
     wynik.firm++;
     const { data: raty, error } = await supabase
       .from("crm_policy_payments")
-      .select("id, data_platnosci, kwota, nr_raty, crm_policies!inner(nr_polisy, deleted_at, crm_insurers(nazwa), crm_clients(nazwa, email))")
+      .select("id, data_platnosci, kwota, nr_raty, crm_policies!inner(id, klient_id, parent_id, nr_polisy, deleted_at, crm_insurers(nazwa), crm_clients!klient_id(nazwa, email))")
       .eq("tenant_id", firma.id)
       .eq("status", "Oczekująca")
       .is("przypomnienie_wyslane_at", null)
@@ -182,6 +195,16 @@ Deno.serve(async (req: Request) => {
       continue;
     }
 
+    // Programy Beauty rozpoznajemy po Umowie Generalnej polisy.
+    const ugIds = [...new Set(((raty ?? []) as unknown as Rata[]).map((r) => r.crm_policies?.parent_id).filter((x): x is string => !!x))];
+    const beautyUg = new Set<string>();
+    if (ugIds.length) {
+      const { data: umowy, error: bladUmow } = await supabase.from("crm_policies").select("id, ug_podtyp").in("id", ugIds);
+      if (bladUmow) console.error("send-payment-reminders: umowy generalne:", bladUmow.message);
+      for (const u of umowy ?? []) if (PODTYPY_BEAUTY.includes(u.ug_podtyp ?? "")) beautyUg.add(u.id);
+    }
+    const czyBeauty = (lista: Rata[]) => lista.some((r) => !!r.crm_policies?.parent_id && beautyUg.has(r.crm_policies.parent_id));
+
     // Jedna wiadomość na adres klienta, ze wszystkimi jego ratami z okna.
     const wgAdresu = new Map<string, Rata[]>();
     for (const r of (raty ?? []) as unknown as Rata[]) {
@@ -192,7 +215,13 @@ Deno.serve(async (req: Request) => {
     }
 
     for (const [adres, listaRat] of wgAdresu) {
-      if (dryRun) { wynik.wiadomosci++; wynik.rat += listaRat.length; continue; }
+      if (dryRun) {
+        wynik.wiadomosci++;
+        wynik.rat += listaRat.length;
+        const beauty = czyBeauty(listaRat);
+        wynik.podglad.push({ temat: zbudujMail(firma.nazwa ?? "", listaRat, beauty).temat, beauty, rat: listaRat.length });
+        continue;
+      }
 
       // Zajmujemy raty przed wysyłką; rata zajęta przez równoległe uruchomienie odpada.
       const teraz = new Date().toISOString();
@@ -211,7 +240,7 @@ Deno.serve(async (req: Request) => {
       const doWyslania = listaRat.filter((r) => zajeteId.has(r.id));
       if (!doWyslania.length) continue;
 
-      const { temat, tekst, html } = zbudujMail(firma.nazwa ?? "", doWyslania);
+      const { temat, tekst, html } = zbudujMail(firma.nazwa ?? "", doWyslania, czyBeauty(doWyslania));
       // Wyjątek sieciowy traktujemy jak odmowę Resend (status 0), żeby zdjąć oznaczenie rat.
       let res: { ok: boolean; status: number; text(): Promise<string> };
       try {
@@ -234,6 +263,27 @@ Deno.serve(async (req: Request) => {
       if (res.ok) {
         wynik.wiadomosci++;
         wynik.rat += doWyslania.length;
+        // Historia e-maili klienta: wpis dla każdego klienta z tej wiadomości (wspólny adres = kilka kart).
+        const dostawcaId = await res.text().then((t) => { try { return JSON.parse(t)?.id ?? null; } catch { return null; } });
+        const wgKlienta = new Map<string, string[]>();
+        for (const r of doWyslania) {
+          const k = r.crm_policies?.klient_id;
+          if (k) wgKlienta.set(k, [...new Set([...(wgKlienta.get(k) ?? []), r.crm_policies!.id])]);
+        }
+        const { error: bladHistorii } = await supabase.from("crm_client_emails").insert(
+          [...wgKlienta].map(([klient_id, polisa_ids]) => ({
+            tenant_id: firma.id,
+            klient_id,
+            polisa_ids,
+            rodzaj: "przypomnienie_platnosci",
+            adres,
+            temat,
+            tresc: tekst,
+            dostawca_id: dostawcaId,
+            wyslano_at: new Date().toISOString(),
+          })),
+        );
+        if (bladHistorii) console.error("send-payment-reminders: historia e-maili:", bladHistorii.message);
         continue;
       }
 
@@ -248,5 +298,5 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  return json(wynik);
+  return json(dryRun ? wynik : { ...wynik, podglad: undefined });
 });

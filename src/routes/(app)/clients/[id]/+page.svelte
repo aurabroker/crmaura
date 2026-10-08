@@ -16,6 +16,8 @@
 	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken, APK_FORMS_SELECT } from '$lib/utils/apkLink';
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import type { ApkForm } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let pdfSaving = $state<string | null>(null);
 	let pdfError = $state('');
@@ -139,10 +141,10 @@
 	));
 	const showGwarancje = $derived(!!client?.gwarancje || clientGwarancje.length > 0);
 
-	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'mailing';
+	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'emaile' | 'mailing';
 	let activeTab = $state<TabKey>('polisy');
 	const tabs = $derived(
-		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
+		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
 	);
 
 	// ── Mailing GetResponse (tylko Aura Expert) ───────────────────────────────
@@ -274,6 +276,48 @@
 			grSaving = false;
 		}
 	}
+
+	// ── E-maile wysłane klientowi z CRM (przypomnienia o płatnościach, odnowienia) ──
+	type EmailKlienta = { id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[] };
+	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', inne: 'Inne' };
+	let emaile = $state<EmailKlienta[]>([]);
+	let emaileLadowanie = $state(false);
+	let emaileBlad = $state('');
+	let emaileDla = '';
+	let emailOtwarty = $state<string | null>(null);
+	const sortEmaile = new Sortowanie<EmailKlienta>({
+		data: (e) => e.wyslano_at,
+		rodzaj: (e) => RODZAJ_EMAILA[e.rodzaj] ?? e.rodzaj,
+		temat: (e) => e.temat,
+		adres: (e) => e.adres
+	}, { klucz: 'data', kierunek: 'desc' }, 'klient-emaile');
+	const emaileWiersze = $derived(sortEmaile.sortuj(emaile));
+	const nrPolisy = $derived(new Map(appState.policies.map(p => [p.id, p.nr_polisy])));
+
+	async function wczytajEmaile() {
+		emaileLadowanie = true; emaileBlad = '';
+		const { data, error } = await sb.from('crm_client_emails')
+			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids')
+			.eq('klient_id', clientId ?? '')
+			.order('wyslano_at', { ascending: false })
+			.limit(200);
+		emaileLadowanie = false;
+		if (error) {
+			emaileBlad = error.code === '42P01' || /crm_client_emails/.test(error.message)
+				? 'Historia e-maili będzie dostępna po aktualizacji bazy danych.'
+				: `Nie udało się wczytać e-maili: ${error.message}`;
+			emaile = [];
+			return;
+		}
+		emaile = (data ?? []) as EmailKlienta[];
+	}
+
+	$effect(() => {
+		if (activeTab === 'emaile' && clientId && emaileDla !== clientId) {
+			emaileDla = clientId;
+			wczytajEmaile();
+		}
+	});
 
 	// lazy-load przy wejściu w zakładkę (oszczędza limity API)
 	$effect(() => {
@@ -662,7 +706,7 @@
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
@@ -1163,6 +1207,60 @@
 			{/if}
 		</div>
 
+	{:else if activeTab === 'emaile'}
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
+				<div class="flex items-center gap-2">
+					<Mail size={16} class="text-slate-400" />
+					<span class="text-sm font-semibold text-slate-700">E-maile wysłane z CRM</span>
+					<span class="text-xs text-slate-400">— przypomnienia o płatnościach i odnowienia</span>
+				</div>
+				<button onclick={wczytajEmaile} disabled={emaileLadowanie}
+					class="flex items-center gap-1.5 text-xs text-slate-500 border border-line rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+					<RefreshCw size={12} class={emaileLadowanie ? 'animate-spin' : ''} /> Odśwież
+				</button>
+			</div>
+			{#if emaileBlad}
+				<div class="m-5 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{emaileBlad}</div>
+			{:else if emaileLadowanie && !emaile.length}
+				<p class="text-sm text-slate-400 text-center py-8">Wczytywanie…</p>
+			{:else if !emaile.length}
+				<p class="text-sm text-slate-400 text-center py-8">Do tego klienta nie wysłano jeszcze żadnego e-maila z CRM.</p>
+			{:else}
+				<table class="w-full text-left text-sm">
+					<thead>
+						<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+							<SortTh s={sortEmaile} k="data" class="px-4 py-2">Wysłano</SortTh>
+							<SortTh s={sortEmaile} k="rodzaj" class="px-4 py-2">Rodzaj</SortTh>
+							<SortTh s={sortEmaile} k="temat" class="px-4 py-2">Temat</SortTh>
+							<SortTh s={sortEmaile} k="adres" class="px-4 py-2">Do</SortTh>
+							<th class="px-4 py-2">Polisy</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each emaileWiersze as e (e.id)}
+							<tr class="border-t border-line-soft hover:bg-slate-50 cursor-pointer" onclick={() => (emailOtwarty = emailOtwarty === e.id ? null : e.id)}>
+								<td class="px-4 py-2.5 text-slate-500 whitespace-nowrap"><span class="inline-flex items-center gap-1"><Send size={12} class="text-slate-300" />{fmtDateTime(e.wyslano_at)}</span></td>
+								<td class="px-4 py-2.5 text-slate-600">{RODZAJ_EMAILA[e.rodzaj] ?? e.rodzaj}</td>
+								<td class="px-4 py-2.5 font-medium text-slate-800">
+									<button type="button" class="text-left hover:text-blue-700" aria-expanded={emailOtwarty === e.id}
+										onclick={(ev) => { ev.stopPropagation(); emailOtwarty = emailOtwarty === e.id ? null : e.id; }}>{e.temat}</button>
+								</td>
+								<td class="px-4 py-2.5 text-slate-500">{e.adres}</td>
+								<td class="px-4 py-2.5 text-xs">
+									{#each e.polisa_ids as pid, i (pid)}{#if i > 0}, {/if}<a href="/policies/{pid}" class="text-blue-700 hover:underline" onclick={(ev) => ev.stopPropagation()}>{nrPolisy.get(pid) ?? 'polisa'}</a>{/each}
+								</td>
+							</tr>
+							{#if emailOtwarty === e.id && e.tresc}
+								<tr class="bg-slate-50/70">
+									<td colspan="5" class="px-4 py-3"><pre class="whitespace-pre-wrap font-sans text-sm text-slate-700">{e.tresc}</pre></td>
+								</tr>
+							{/if}
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</div>
 	{:else if activeTab === 'mailing'}
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
