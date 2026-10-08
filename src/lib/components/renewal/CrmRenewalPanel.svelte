@@ -8,13 +8,13 @@
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import {
 		APK_ODMOWA_TRESC, APK_ODPOWIEDZI, APK_PYTANIA, LICZBA_OSOB, OCHRONA_PRAWNA_SKLADKA, OSWIADCZENIE_ANKIETY,
-		RODZAJE_GABINETU, TYPY_ZALACZNIKOW, formatSuma, formatZl, wycenaWniosku,
+		RODZAJE_GABINETU, formatSuma, formatZl, opisZalacznika, wycenaWniosku,
 		type Ankieta, type Apk
 	} from '$lib/renewals/program';
 	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
-	import { czyLinkDziala, fmtData, fmtDataCzas, wariantDecyzji, wywolajApi } from './crmRenewals';
+	import { czyLinkDziala, fmtData, fmtDataCzas, opisZdarzenia, wariantDecyzji, wywolajApi } from './crmRenewals';
 	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2 } from 'lucide-svelte';
 
 	interface Props {
@@ -280,8 +280,9 @@
 		return [
 			{ k: APK_PYTANIA.rodzaje, v: rodzajeNazwy(a.rodzaje) },
 			{ k: APK_PYTANIA.osoby, v: osobyNazwa(a.osoby) },
-			{ k: APK_PYTANIA.szkody, v: takNie(a.szkody) + (a.szkody === 'tak' && a.szkody_opis ? ` — ${a.szkody_opis}` : '') },
-			{ k: APK_PYTANIA.spoza_listy, v: takNie(a.spoza_listy) + (a.spoza_listy === 'tak' && a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : '') },
+			// Pytania o szkody i zabiegi spoza list były tylko w starszych APK.
+			...(a.szkody ? [{ k: APK_PYTANIA.szkody, v: takNie(a.szkody) + (a.szkody === 'tak' && a.szkody_opis ? ` — ${a.szkody_opis}` : '') }] : []),
+			...(a.spoza_listy ? [{ k: APK_PYTANIA.spoza_listy, v: takNie(a.spoza_listy) + (a.spoza_listy === 'tak' && a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : '') }] : []),
 			{ k: APK_PYTANIA.suma_oczekiwana, v: etykieta(APK_ODPOWIEDZI.suma_oczekiwana, a.suma_oczekiwana) },
 			{ k: APK_PYTANIA.ochrona_prawna, v: etykieta(APK_ODPOWIEDZI.ochrona_prawna, a.ochrona_prawna) },
 			{ k: APK_PYTANIA.szkolenia, v: takNie(a.szkolenia) },
@@ -302,24 +303,6 @@
 			{ k: 'Klienci podpisują formularz zgody na zabieg', v: takNie(a.zgoda_klientow) }
 		];
 	}
-
-	const ZDARZENIA: Record<string, string> = {
-		utworzenie: 'Utworzono wniosek',
-		wyslanie: 'Wysłano e-mail do klienta',
-		otwarcie: 'Klient otworzył link',
-		apk: 'Klient wypełnił APK',
-		apk_odmowa: 'Klient odmówił wypełnienia APK',
-		zalacznik: 'Klient dodał załącznik',
-		zalacznik_usun: 'Klient usunął załącznik',
-		zlozenie: 'Klient złożył wniosek',
-		przypomnienie: 'Wysłano przypomnienie',
-		anulowanie: 'Anulowano wniosek',
-		wygasniecie: 'Link wygasł'
-	};
-	const opisZdarzenia = (e: RenewalEvent) => {
-		const powod = typeof e.szczegoly?.powod === 'string' ? ` (${e.szczegoly.powod})` : '';
-		return (ZDARZENIA[e.zdarzenie] ?? e.zdarzenie) + powod;
-	};
 
 	const rozmiar = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 
@@ -416,6 +399,12 @@
 							<Copy size={12} /> {pracuje === 'kopiuj' ? 'Kopiowanie…' : 'Kopiuj link'}
 						</button>
 					{/if}
+					{#if latest.apk_at}
+						<!-- PDF APK powstaje od razu po APK (osobny dokument, ten sam folder co wniosek). -->
+						<button type="button" onclick={() => otworzPlik(`${latest!.tenant_id}/${latest!.id}/apk.pdf`, 'PDF APK')} class={przyciskCls}>
+							<FileText size={12} /> PDF APK
+						</button>
+					{/if}
 					{#if latest.pdf_path}
 						<button type="button" onclick={() => otworzPlik(latest!.pdf_path, 'PDF wniosku')} class={przyciskCls}>
 							<FileText size={12} /> PDF wniosku
@@ -500,7 +489,7 @@
 											{z.nazwa}
 										</button>
 										<p class="text-[11px] text-slate-400">
-											{(TYPY_ZALACZNIKOW as Record<string, string>)[z.typ] ?? z.typ} · {rozmiar(z.rozmiar)}{z.at ? ` · ${fmtDataCzas(z.at)}` : ''}
+											{opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy)} · {rozmiar(z.rozmiar)}{z.at ? ` · ${fmtDataCzas(z.at)}` : ''}
 										</p>
 									</div>
 								</li>
@@ -545,7 +534,7 @@
 							<p class="text-xs text-slate-400 mt-2">Klient złożył oświadczenie: „{OSWIADCZENIE_ANKIETY}”</p>
 						{/if}
 					{/snippet}
-					{@render rozwijany('Ankieta ERGO Hestii (zabiegi wymagające oceny ryzyka)', ankietaOpen, () => (ankietaOpen = !ankietaOpen), ankietaTresc)}
+					{@render rozwijany('Ankieta Ergo Hestii (zabiegi wymagające oceny ryzyka)', ankietaOpen, () => (ankietaOpen = !ankietaOpen), ankietaTresc)}
 				{/if}
 
 				{#if events.length}

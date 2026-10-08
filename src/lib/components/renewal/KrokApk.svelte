@@ -11,7 +11,7 @@
 		type Apk
 	} from '$lib/renewals/program';
 	import Bledy from './Bledy.svelte';
-	import { BTN_DRUGI, BTN_GLOWNY, BTN_LINK, ETYKIETA, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK, fokusNaglowka, wyslij } from './klient';
+	import { BTN_DRUGI, BTN_GLOWNY, BTN_LINK, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK, fokusNaglowka, wyslij } from './klient';
 	import { pustaApk, type ApkForm, type Odnowienie } from './stan.svelte';
 
 	// Krok 1: analiza potrzeb (APK) dla OC gabinetu albo świadoma odmowa jej wypełnienia.
@@ -23,7 +23,7 @@
 	}
 	let { s, ondalej, onwstecz }: Props = $props();
 
-	type PoleRadio = 'osoby' | 'szkody' | 'spoza_listy' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet';
+	type PoleRadio = 'osoby' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet';
 	type Inne = Apk['inne_ubezpieczenia'][number];
 
 	const TAK_NIE: [string, string][] = [['tak', 'tak'], ['nie', 'nie']];
@@ -129,8 +129,6 @@
 		const wiersze: [string, string][] = [
 			[APK_PYTANIA.rodzaje, a.rodzaje.map((r) => RODZAJE_GABINETU.find((x) => x.key === r)?.nazwa ?? r).join(', ')],
 			[APK_PYTANIA.osoby, LICZBA_OSOB.find((o) => o.key === a.osoby)?.nazwa ?? a.osoby],
-			[APK_PYTANIA.szkody, a.szkody === 'tak' ? `tak — ${a.szkody_opis}` : 'nie'],
-			[APK_PYTANIA.spoza_listy, a.spoza_listy === 'tak' ? `tak — ${a.spoza_listy_opis}` : 'nie'],
 			[APK_PYTANIA.suma_oczekiwana, etykieta(APK_ODPOWIEDZI.suma_oczekiwana, a.suma_oczekiwana)],
 			[APK_PYTANIA.ochrona_prawna, etykieta(APK_ODPOWIEDZI.ochrona_prawna, a.ochrona_prawna)],
 			[APK_PYTANIA.szkolenia, a.szkolenia],
@@ -164,7 +162,7 @@
 		{#if zapisanoTeraz}
 			<p class="mt-3 flex items-center gap-2 text-sm font-medium text-emerald-700" role="status">
 				<CheckCircle2 size={18} aria-hidden="true" />
-				{s.apkOdmowa ? 'Odmowa wypełnienia APK została zapisana.' : 'Analiza potrzeb została zapisana.'}
+				{s.apkOdmowa ? 'Odmowa wypełnienia APK została zapisana.' : 'Analiza potrzeb została zapisana.'} Potwierdzenie (PDF) wysyłamy na Twój adres e-mail.
 			</p>
 		{/if}
 		{#if s.apkOdmowa}
@@ -213,26 +211,6 @@
 			</fieldset>
 
 			{@render radia('osoby', APK_PYTANIA.osoby, OSOBY)}
-
-			<div>
-				{@render radia('szkody', APK_PYTANIA.szkody, TAK_NIE)}
-				{#if s.apkForm.szkody === 'tak'}
-					<div class="mt-3">
-						<label for="apk-szkody-opis" class={ETYKIETA}>Opisz krótko szkody lub roszczenia (kiedy, czego dotyczyły)</label>
-						<textarea id="apk-szkody-opis" rows="3" bind:value={s.apkForm.szkody_opis} class={INP} maxlength="2000"></textarea>
-					</div>
-				{/if}
-			</div>
-
-			<div>
-				{@render radia('spoza_listy', APK_PYTANIA.spoza_listy, TAK_NIE)}
-				{#if s.apkForm.spoza_listy === 'tak'}
-					<div class="mt-3">
-						<label for="apk-spoza-opis" class={ETYKIETA}>Wymień te zabiegi</label>
-						<textarea id="apk-spoza-opis" rows="3" bind:value={s.apkForm.spoza_listy_opis} class={INP} maxlength="2000"></textarea>
-					</div>
-				{/if}
-			</div>
 
 			{@render radia('suma_oczekiwana', APK_PYTANIA.suma_oczekiwana, SUMA)}
 			{@render radia('ochrona_prawna', APK_PYTANIA.ochrona_prawna, OCHRONA)}

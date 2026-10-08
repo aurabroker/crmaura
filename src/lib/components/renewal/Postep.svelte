@@ -2,7 +2,7 @@
 	import { Check } from 'lucide-svelte';
 	import type { Krok } from './stan.svelte';
 
-	// Pasek postępu: 1 APK, 2 Wniosek, (3 Ankieta — tylko gdy potrzebna), ostatni Podsumowanie.
+	// Pasek postępu: APK, Wniosek, (Dokumenty i Ankieta — tylko przy nowych zabiegach), Podsumowanie.
 	// Wcześniejsze kroki można kliknąć, żeby do nich wrócić.
 	interface Props {
 		kroki: Krok[];
@@ -11,7 +11,7 @@
 	}
 	let { kroki, aktualny, onwybierz }: Props = $props();
 
-	const NAZWY: Partial<Record<Krok, string>> = { apk: 'APK', wniosek: 'Wniosek', ankieta: 'Ankieta', podsumowanie: 'Podsumowanie' };
+	const NAZWY: Partial<Record<Krok, string>> = { apk: 'APK', wniosek: 'Wniosek', kwalifikacje: 'Dokumenty', ankieta: 'Ankieta', podsumowanie: 'Podsumowanie' };
 	const idx = $derived(kroki.indexOf(aktualny));
 </script>
 

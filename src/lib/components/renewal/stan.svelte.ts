@@ -1,9 +1,11 @@
 // Stan formularza odnowienia po stronie klienta. Jedna instancja na otwarty link; kroki
-// (APK, wniosek, ankieta, podsumowanie) czytają i zmieniają jej pola.
+// (APK, wniosek, osoby i dokumenty, ankieta, podsumowanie) czytają i zmieniają jej pola.
 
 import type { OdpowiedzZloz, WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
 import {
+	MAKS_WYKONAWCOW,
 	SUMY,
+	brakiDokumentow,
 	waliduj_ankiete,
 	waliduj_wniosek,
 	wycenaWniosku,
@@ -15,17 +17,16 @@ import {
 	type Suma,
 	type TypZalacznika,
 	type Wniosek,
+	type Wykonawca,
 	type Wynik
 } from '$lib/renewals/program';
 
 export type WidokAktywny = Extract<WidokOdnowienia, { stan: 'aktywny' }>;
-export type Krok = 'start' | 'apk' | 'wniosek' | 'ankieta' | 'podsumowanie' | 'wyslano';
+export type Krok = 'start' | 'apk' | 'wniosek' | 'kwalifikacje' | 'ankieta' | 'podsumowanie' | 'wyslano';
 
 // Pola formularza przed walidacją — puste odpowiedzi to ''.
-export type ApkForm = Omit<Apk, 'osoby' | 'szkody' | 'spoza_listy' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet'> & {
+export type ApkForm = Omit<Apk, 'osoby' | 'szkody' | 'szkody_opis' | 'spoza_listy' | 'spoza_listy_opis' | 'suma_oczekiwana' | 'ochrona_prawna' | 'szkolenia' | 'priorytet'> & {
 	osoby: Apk['osoby'] | '';
-	szkody: Apk['szkody'] | '';
-	spoza_listy: Apk['spoza_listy'] | '';
 	suma_oczekiwana: Apk['suma_oczekiwana'] | '';
 	ochrona_prawna: Apk['ochrona_prawna'] | '';
 	szkolenia: Apk['szkolenia'] | '';
@@ -53,15 +54,22 @@ export type ZmianyForm = {
 	osoby: LiczbaOsob | '';
 };
 
-export type Wgrywany = { tmp: string; typ: TypZalacznika; nazwa: string; rozmiar: number; stan: 'wysylanie' | 'blad'; blad: string };
+export type Wgrywany = {
+	tmp: string;
+	typ: TypZalacznika;
+	osoba: string | null;
+	zabieg: string | null;
+	nazwa: string;
+	rozmiar: number;
+	stan: 'wysylanie' | 'blad';
+	blad: string;
+};
+
+export const nowyWykonawca = (): Wykonawca => ({ id: crypto.randomUUID(), imie_nazwisko: '', zabiegi: [] });
 
 export const pustaApk = (): ApkForm => ({
 	rodzaje: [],
 	osoby: '',
-	szkody: '',
-	szkody_opis: '',
-	spoza_listy: '',
-	spoza_listy_opis: '',
 	suma_oczekiwana: '',
 	ochrona_prawna: '',
 	szkolenia: '',
@@ -139,7 +147,10 @@ export class Odnowienie {
 	niePowod = $state('');
 	potwierdzenieNie = $state(false);
 
-	// Ankieta ERGO Hestii i załączniki (zapisane na serwerze oraz wgrywane teraz)
+	// Osoby wykonujące zgłaszane zabiegi (krok „Osoby i dokumenty”)
+	wykonawcy = $state<Wykonawca[]>([]);
+
+	// Ankieta Ergo Hestii i załączniki (zapisane na serwerze oraz wgrywane teraz)
 	ankieta = $state<AnkietaForm>(pustaAnkieta(''));
 	zalaczniki = $state<Zalacznik[]>([]);
 	wgrywane = $state<Wgrywany[]>([]);
@@ -153,9 +164,22 @@ export class Odnowienie {
 	// Rodzaj i liczba osób we wniosku są potrzebne tylko do wyceny wyższej sumy bez APK.
 	pytajODaneWyceny = $derived(this.decyzja === 'zmiany' && this.zm.suma && this.apkOdmowa);
 	potrzebnaAnkieta = $derived(this.decyzja === 'zmiany' && this.zm.ankieta && this.zm.zabiegi_ankieta.length > 0);
+	// Zabiegi zgłaszane we wniosku: z list programu i wymagające ankiety (bez powtórzeń).
+	zabiegiZgloszone = $derived.by((): string[] =>
+		this.decyzja !== 'zmiany'
+			? []
+			: Array.from(new Set([...(this.zm.zabiegi ? this.zm.nowe_zabiegi : []), ...(this.zm.ankieta ? this.zm.zabiegi_ankieta : [])]))
+	);
+	potrzebneDokumenty = $derived(this.zabiegiZgloszone.length > 0);
 	wniosek = $derived.by((): Wniosek => this.zbudujWniosek());
 	wycena = $derived.by(() => wycenaWniosku(this.wniosek, this.apkDoWyceny, this.widok.skladka, this.widok.ochrona_prawna_obecnie));
-	kroki = $derived<Krok[]>(this.potrzebnaAnkieta ? ['apk', 'wniosek', 'ankieta', 'podsumowanie'] : ['apk', 'wniosek', 'podsumowanie']);
+	kroki = $derived<Krok[]>([
+		'apk',
+		'wniosek',
+		...(this.potrzebneDokumenty ? (['kwalifikacje'] as Krok[]) : []),
+		...(this.potrzebnaAnkieta ? (['ankieta'] as Krok[]) : []),
+		'podsumowanie'
+	]);
 
 	constructor(klucz: string, widok: WidokAktywny) {
 		this.klucz = klucz;
@@ -167,6 +191,7 @@ export class Odnowienie {
 		this.ankieta = pustaAnkieta(widok.klient);
 		this.zalaczniki = [...widok.zalaczniki];
 		this.wczytajSzkic();
+		this.odtworzWykonawcow();
 	}
 
 	private zbudujWniosek(): Wniosek {
@@ -185,7 +210,11 @@ export class Odnowienie {
 				zabiegi_ankieta: z.ankieta ? [...z.zabiegi_ankieta] : [],
 				inne: z.inne_zaznaczone ? z.inne : '',
 				rodzaje: this.pytajODaneWyceny ? [...z.rodzaje] : [],
-				osoby: this.pytajODaneWyceny ? z.osoby || null : null
+				osoby: this.pytajODaneWyceny ? z.osoby || null : null,
+				// Tylko zabiegi nadal zgłaszane (klient mógł odznaczyć zabieg po przypisaniu go osobie).
+				wykonawcy: this.potrzebneDokumenty
+					? this.wykonawcy.map((w) => ({ id: w.id, imie_nazwisko: w.imie_nazwisko.trim(), zabiegi: w.zabiegi.filter((t) => this.zabiegiZgloszone.includes(t)) }))
+					: []
 			},
 			nie_powod: '',
 			potwierdzenie_nie: false
@@ -194,8 +223,9 @@ export class Odnowienie {
 
 	// Reguły programu (waliduj_wniosek) plus braki w zaznaczonych pozycjach — inaczej klient,
 	// który zaznaczył „wyższa suma” bez wyboru kwoty, dostałby mylące „zaznacz co najmniej jedną zmianę”.
-	sprawdzWniosek(): Wynik<Wniosek> {
-		const w = waliduj_wniosek(this.wniosek, this.apkDoWyceny);
+	// pelny: także osoby i dokumenty (podsumowanie); bez — sam krok „Wniosek”.
+	sprawdzWniosek(pelny = true): Wynik<Wniosek> {
+		const w = waliduj_wniosek(this.wniosek, this.apkDoWyceny, { pomijajWykonawcow: !pelny });
 		if (this.decyzja !== 'zmiany') return w;
 		const z = this.zm;
 		const braki: string[] = [];
@@ -208,14 +238,68 @@ export class Odnowienie {
 		return { ok: false, bledy: [...braki, ...reszta] };
 	}
 
+	// Krok „Osoby i dokumenty”: osoby, przypisanie zabiegów, dyplom każdej osoby i certyfikat z każdego jej zabiegu.
+	sprawdzKwalifikacje(): string[] {
+		const w = waliduj_wniosek(this.wniosek, this.apkDoWyceny);
+		const bledy = w.ok ? [] : [...w.bledy];
+		if (w.ok && w.value.zmiany) bledy.push(...brakiDokumentow(w.value.zmiany.wykonawcy, this.zalaczniki));
+		if (this.wgrywane.some((x) => x.stan === 'wysylanie')) bledy.push('Poczekaj, aż wszystkie pliki zostaną wysłane.');
+		return bledy;
+	}
+
+	// Osoby są w szkicu tej karty przeglądarki. Po powrocie z linku (nowa karta, inne urządzenie) szkicu nie ma,
+	// ale pliki na serwerze mają id osoby i jej imię z chwili wgrania — z nich odtwarzamy osoby i ich zabiegi.
+	private odtworzWykonawcow() {
+		const znane = new Set(this.wykonawcy.map((w) => w.id));
+		for (const z of this.zalaczniki) {
+			if ((z.typ !== 'dyplom' && z.typ !== 'certyfikat') || !z.osoba) continue;
+			let w = this.wykonawcy.find((x) => x.id === z.osoba);
+			if (!w) {
+				if (this.wykonawcy.length >= MAKS_WYKONAWCOW || znane.has(z.osoba)) continue;
+				w = { id: z.osoba, imie_nazwisko: z.osoba_nazwa ?? '', zabiegi: [] };
+				this.wykonawcy.push(w);
+			} else if (znane.has(w.id)) continue;
+			if (!w.imie_nazwisko && z.osoba_nazwa) w.imie_nazwisko = z.osoba_nazwa;
+			if (z.typ === 'certyfikat' && z.zabieg && !w.zabiegi.includes(z.zabieg)) w.zabiegi.push(z.zabieg);
+		}
+	}
+
+	// Dyplomy i certyfikaty, których nie widać przy żadnej osobie (osoba usunięta, zabieg odznaczony) —
+	// liczą się do limitu wniosku, więc klient musi je widzieć i móc usunąć.
+	get plikiBezOsoby(): Zalacznik[] {
+		return this.zalaczniki.filter((z) => {
+			if (z.typ !== 'dyplom' && z.typ !== 'certyfikat') return false;
+			const w = this.wykonawcy.find((x) => x.id === z.osoba);
+			if (!w) return true;
+			return z.typ === 'certyfikat' && (!z.zabieg || !w.zabiegi.includes(z.zabieg) || !this.zabiegiZgloszone.includes(z.zabieg));
+		});
+	}
+
+	dodajWykonawce(): Wykonawca | null {
+		if (this.wykonawcy.length >= MAKS_WYKONAWCOW) return null;
+		const w = nowyWykonawca();
+		// Jeden zgłoszony zabieg — od razu przypisany, żeby nie klikać.
+		if (this.zabiegiZgloszone.length === 1) w.zabiegi = [...this.zabiegiZgloszone];
+		this.wykonawcy.push(w);
+		return w;
+	}
+
+	// Ankieta Ergo Hestii pyta o kwalifikacje osób wykonujących zabiegi z ankiety — te same osoby co w kroku
+	// „Osoby i dokumenty”. Wpisane kwalifikacje i doświadczenie zostają przy imieniu i nazwisku.
+	synchronizujOsobyAnkiety() {
+		const zAnkiety = new Set(this.zm.zabiegi_ankieta);
+		const imiona = this.wykonawcy
+			.filter((w) => w.imie_nazwisko.trim() && w.zabiegi.some((t) => zAnkiety.has(t)))
+			.map((w) => w.imie_nazwisko.trim());
+		if (!imiona.length) return;
+		const stare = new Map(this.ankieta.osoby.map((o) => [o.imie_nazwisko.trim(), o]));
+		this.ankieta.osoby = imiona.map((n) => ({ ...pustaOsoba(), ...stare.get(n), imie_nazwisko: n }));
+	}
+
 	sprawdzAnkiete(): string[] {
 		const w = waliduj_ankiete(this.ankieta);
 		const bledy = w.ok ? [] : [...w.bledy];
-		if (!this.zalaczniki.some((z) => z.typ === 'dyplom')) bledy.push('Załączniki: dodaj co najmniej jeden dyplom.');
-		if (!this.zalaczniki.some((z) => z.typ === 'certyfikat')) {
-			bledy.push('Załączniki: dodaj co najmniej jeden certyfikat ze szkolenia z ostatnich 12 miesięcy.');
-		}
-		if (this.wgrywane.some((w) => w.stan === 'wysylanie')) bledy.push('Poczekaj, aż wszystkie pliki zostaną wysłane.');
+		if (this.wgrywane.some((x) => x.stan === 'wysylanie')) bledy.push('Poczekaj, aż wszystkie pliki zostaną wysłane.');
 		return bledy;
 	}
 
@@ -233,6 +317,7 @@ export class Odnowienie {
 			decyzja: this.decyzja,
 			zm: this.zm,
 			niePowod: this.niePowod,
+			wykonawcy: this.wykonawcy,
 			ankieta: { ...this.ankieta, oswiadczenie: false }
 		};
 	}
@@ -268,6 +353,16 @@ export class Odnowienie {
 		if (zm.wyzsza_suma != null && !this.wyzszeSumy.includes(zm.wyzsza_suma)) zm.wyzsza_suma = null;
 		this.zm = zm;
 		if (typeof s.niePowod === 'string') this.niePowod = s.niePowod;
+		if (Array.isArray(s.wykonawcy)) {
+			this.wykonawcy = s.wykonawcy
+				.filter((w): w is Record<string, unknown> => !!w && typeof w === 'object' && typeof (w as { id?: unknown }).id === 'string')
+				.map((w) => ({
+					id: String(w.id).slice(0, 40),
+					imie_nazwisko: typeof w.imie_nazwisko === 'string' ? w.imie_nazwisko : '',
+					zabiegi: Array.isArray(w.zabiegi) ? w.zabiegi.filter((t): t is string => typeof t === 'string') : []
+				}))
+				.slice(0, MAKS_WYKONAWCOW);
+		}
 		const a = scal(pustaAnkieta(this.widok.klient), s.ankieta);
 		a.osoby = a.osoby
 			.filter((o) => o && typeof o === 'object')

@@ -68,7 +68,8 @@
 	function dalej() {
 		message = '';
 		bledy = [];
-		const r = s.sprawdzWniosek();
+		// Osoby i dokumenty klient podaje w następnym kroku.
+		const r = s.sprawdzWniosek(false);
 		if (!r.ok) {
 			bledy = r.bledy;
 			return;
@@ -192,7 +193,7 @@
 							<span>
 								<span class="block font-semibold text-slate-900">Klauzula ochrony prawnej (+{OCHRONA_PRAWNA_SKLADKA} zł/rok)</span>
 								<span class="block text-sm text-slate-600">
-									Koszty obrony prawnej, np. w sporze z klientem, do 100 tys. zł.
+									Koszty obrony prawnej, np. w sporze z klientem, do 100.000 zł.
 									{#if apk?.ochrona_prawna === 'tak'}W analizie potrzeb wskazano zainteresowanie ochroną prawną.{/if}
 								</span>
 							</span>
@@ -289,7 +290,18 @@
 									<div class="max-h-80 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100" data-testid="zabiegi-lista">
 										{#each zabiegiWidoczne as z (z)}
 											<label class="flex items-start gap-3 px-3 py-2.5 min-h-11 cursor-pointer hover:bg-slate-50 has-checked:bg-rose-50">
-												<input type="checkbox" value={z} bind:group={s.zm.nowe_zabiegi} class={ZNACZNIK} />
+												<!-- Bez bind:group: lista jest filtrowana, a bind:group liczy wybór tylko z widocznych pól
+													 — wyszukanie kolejnego zabiegu gubiło wcześniej zaznaczone. -->
+												<input
+													type="checkbox"
+													value={z}
+													checked={s.zm.nowe_zabiegi.includes(z)}
+													onchange={(e) => {
+														const bez = s.zm.nowe_zabiegi.filter((x) => x !== z);
+														s.zm.nowe_zabiegi = e.currentTarget.checked ? [...bez, z] : bez;
+													}}
+													class={ZNACZNIK}
+												/>
 												<span class="text-sm text-slate-800">{z}</span>
 											</label>
 										{:else}
@@ -308,7 +320,7 @@
 						<label class="flex items-start gap-3 p-4 min-h-12 cursor-pointer">
 							<input type="checkbox" bind:checked={s.zm.ankieta} class={ZNACZNIK} />
 							<span>
-								<span class="block font-semibold text-slate-900">Zabiegi wymagające ankiety ERGO Hestii</span>
+								<span class="block font-semibold text-slate-900">Zabiegi wymagające ankiety Ergo Hestii</span>
 								<span class="block text-sm text-slate-600">Np. toksyna botulinowa, wypełniacze, nici PDO, HIFU — podlegają ocenie ubezpieczyciela.</span>
 							</span>
 						</label>
@@ -327,7 +339,7 @@
 								</fieldset>
 								{#if s.zm.zabiegi_ankieta.length}
 									<p class="mt-3 rounded-lg bg-[#2a3b69]/5 px-3 py-2 text-sm text-[#2a3b69]" role="status">
-										Te zabiegi wymagają ankiety ERGO Hestii — wypełnisz ją w następnym kroku i dołączysz dyplom oraz certyfikat.
+										Te zabiegi wymagają ankiety Ergo Hestii — wypełnisz ją w następnym kroku i dołączysz dyplom oraz certyfikat.
 									</p>
 								{/if}
 							</div>
@@ -377,7 +389,7 @@
 		<div class="mt-8 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
 			<button type="button" class={BTN_DRUGI} onclick={onwstecz}>Wstecz</button>
 			<button type="submit" class={BTN_GLOWNY}>
-				{s.potrzebnaAnkieta ? 'Dalej: ankieta' : 'Dalej: podsumowanie'}
+				{s.potrzebneDokumenty ? 'Dalej: osoby i dokumenty' : 'Dalej: podsumowanie'}
 			</button>
 		</div>
 	</form>

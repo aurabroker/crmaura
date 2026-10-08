@@ -4,7 +4,7 @@ import { env } from '$env/dynamic/private';
 import { EMAIL_RE } from '$lib/server/mail';
 import type { WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
 import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
-import { ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
+import { nazwaUbezpieczyciela, ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
 // panelu CRM (/api/renewals) i zadania dziennego (/api/cron/renewals). Wszystko działa kluczem
@@ -214,9 +214,11 @@ export async function utworzOdnowienie(
 		}
 	}
 
-	const minWaznosc = Date.now() + 14 * 86_400_000;
-	const koniec = koniecDniaWarszawa(p.data_do);
-	const wazny_do = Date.parse(koniec) > minWaznosc ? koniec : new Date(minWaznosc).toISOString();
+	// Link jest ważny do końca obecnej ochrony (dzień przed odnowieniem) — nie dłużej.
+	const wazny_do = koniecDniaWarszawa(p.data_do);
+	if (Date.parse(wazny_do) <= Date.now()) {
+		throw error(400, { message: 'Ochrona z tego certyfikatu już się skończyła — wniosku online nie da się wysłać. Odnów polisę ręcznie.' });
+	}
 	const test = trybTestowy(await ustawieniaFirmy(admin, p.tenant_id));
 
 	const { data, error: e } = await admin
@@ -326,7 +328,8 @@ export const czyAktywny = (r: RenewalRow) => (AKTYWNE as readonly string[]).incl
 export async function usunSierotyPlikow(admin: SupabaseClient, r: Pick<RenewalRow, 'id' | 'tenant_id' | 'zalaczniki'>): Promise<number> {
 	const folder = `${r.tenant_id}/${r.id}`;
 	const { data: pliki } = await admin.storage.from(BUCKET).list(folder, { limit: 1000 });
-	const zostaja = new Set([...(r.zalaczniki ?? []).map((z) => z.path.split('/').pop()), 'wniosek-odnowienia.pdf']);
+	// Pliki generowane przez serwer (PDF wniosku i PDF APK) zostają zawsze.
+	const zostaja = new Set([...(r.zalaczniki ?? []).map((z) => z.path.split('/').pop()), 'wniosek-odnowienia.pdf', 'apk.pdf']);
 	const sieroty = (pliki ?? []).filter((p) => p.id && !zostaja.has(p.name)).map((p) => `${folder}/${p.name}`);
 	if (sieroty.length) await admin.storage.from(BUCKET).remove(sieroty);
 	return sieroty.length;
@@ -350,7 +353,7 @@ export function widok(r: RenewalRow): WidokOdnowienia {
 		status: r.status as 'otwarty',
 		klient: r.klient_nazwa ?? '',
 		nr_polisy: r.nr_polisy,
-		ubezpieczyciel: r.tu_nazwa,
+		ubezpieczyciel: nazwaUbezpieczyciela(r.tu_nazwa),
 		program: r.program,
 		suma: sumaObecna(r),
 		skladka: r.skladka,
@@ -361,7 +364,9 @@ export function widok(r: RenewalRow): WidokOdnowienia {
 		apk_odmowa: r.apk_odmowa,
 		ochrona_prawna_obecnie: opObecnie(r),
 		apk: r.apk_odmowa ? null : r.apk,
-		zalaczniki: (r.zalaczniki ?? []).map(({ id, typ, nazwa, rozmiar, mime }) => ({ id, typ, nazwa, rozmiar, mime }))
+		zalaczniki: (r.zalaczniki ?? []).map(({ id, typ, nazwa, rozmiar, mime, osoba, osoba_nazwa, zabieg }) => ({
+			id, typ, nazwa, rozmiar, mime, osoba: osoba ?? null, osoba_nazwa: osoba_nazwa ?? null, zabieg: zabieg ?? null
+		}))
 	};
 }
 

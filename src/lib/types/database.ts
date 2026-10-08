@@ -39,6 +39,8 @@ export interface Client {
 	rodo_data: string | null;
 	rodo_kanal: string | null;
 	gwarancje?: boolean;
+	/** Identyfikator firmy w BEAUTY (synchronizacja sync-beauty-companies); unikalny w firmie. */
+	beauty_id?: number | string | null;
 	created_at?: string;
 }
 
