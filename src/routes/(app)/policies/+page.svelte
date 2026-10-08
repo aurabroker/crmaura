@@ -3,7 +3,7 @@
 	import { POLICY_SELECT } from '$lib/queries';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, policyStatus, rodzajCls, ugPodtypCls } from '$lib/utils';
+	import { fmtPln, odmiana, policyStatus, rodzajCls, ugPodtypCls } from '$lib/utils';
 	import type { Policy } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -13,7 +13,7 @@
 		Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus
 	} from 'lucide-svelte';
 	import { page } from '$app/stores';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -132,8 +132,8 @@
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
 		const vals: Record<string, unknown> = editPolicyForm.getValues();
-		// Polisa bez opiekuna TU podpięta pod Umowę Generalną: opiekun domyślnie z umowy.
-		if (!editingPolicy.tu_contact_id && editingPolicy.typ_umowy !== 'generalna') {
+		// Polisa bez opiekuna TU podpinana właśnie pod Umowę Generalną: opiekun domyślnie z umowy.
+		if (!editingPolicy.tu_contact_id && editingPolicy.typ_umowy !== 'generalna' && vals.parent_id && vals.parent_id !== editingPolicy.parent_id) {
 			const opiekun = opiekunZUmowy(appState.policies, vals.parent_id as string | null, vals.tu_id as string | null);
 			if (opiekun) vals.tu_contact_id = opiekun;
 		}
@@ -236,8 +236,14 @@
 		const p = $page.url.searchParams;
 		if (p.get('new') === '1') openNewPolicy();
 		if (p.get('newguarantee') === '1') openNewPolicy('generalna', 'gwarancje');
-		const typ = p.get('typ');
+	});
+
+	// Tryb z adresu (?typ=generalna — menu „Umowy Generalne”, bez parametru — „Polisy”): przy każdej
+	// zmianie adresu, bo przejście między tymi pozycjami menu nie tworzy strony od nowa.
+	$effect(() => {
+		const typ = $page.url.searchParams.get('typ');
 		if (typ === 'generalna' || typ === 'jednostkowa') { filterTyp = typ; lockedTyp = true; }
+		else if (untrack(() => lockedTyp)) { filterTyp = 'all'; lockedTyp = false; }
 	});
 
 	// --- Menu kontekstowe (prawy przycisk na wierszu) ---
@@ -385,7 +391,7 @@
 					<td class="px-5 py-3">
 						<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
 						{#if axs.length > 0}
-							<div class="text-[10px] text-blue-500">{axs.length} aneks{axs.length > 1 ? 'ów' : ''}</div>
+							<div class="text-[10px] text-blue-500">{odmiana(axs.length, 'aneks', 'aneksy', 'aneksów')}</div>
 						{/if}
 					</td>
 					<td class="px-5 py-3">
@@ -409,7 +415,7 @@
 						{#if p.parent_id}
 							<a href="/policies/{p.parent_id}" class="hover:text-blue-700 hover:underline">{parentNr(p.parent_id)}</a>
 						{:else if isUG}
-							<span class="font-sans text-slate-400">{liczbaWUg.get(p.id) ?? 0} polis</span>
+							<span class="font-sans text-slate-400">{odmiana(liczbaWUg.get(p.id) ?? 0, 'polisa', 'polisy', 'polis')}</span>
 						{:else}
 							—
 						{/if}

@@ -330,12 +330,14 @@
 	const nrPolisy = $derived(new Map(appState.policies.map(p => [p.id, p.nr_polisy])));
 
 	async function wczytajEmaile() {
+		const dla = clientId ?? '';
 		emaileLadowanie = true; emaileBlad = '';
 		const { data, error } = await sb.from('crm_client_emails')
 			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids')
-			.eq('klient_id', clientId ?? '')
+			.eq('klient_id', dla)
 			.order('wyslano_at', { ascending: false })
 			.limit(200);
+		if (dla !== clientId) return; // w międzyczasie otwarto innego klienta
 		emaileLadowanie = false;
 		if (error) {
 			emaileBlad = error.code === '42P01' || /crm_client_emails/.test(error.message)
@@ -350,6 +352,7 @@
 	$effect(() => {
 		if (activeTab === 'emaile' && clientId && emaileDla !== clientId) {
 			emaileDla = clientId;
+			emaile = []; emailOtwarty = null;
 			wczytajEmaile();
 		}
 	});
@@ -529,8 +532,8 @@
 		}
 		linkingSaving = true;
 		await sb.from('crm_policies').update({ pojazd_id: vehicleId }).eq('id', linkPolicyId);
-		const { data } = await sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		const { data, error: bladPolis } = await sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null);
+		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 		linkingSaving = false;
 		linkingVehicleId = null;
 		linkPolicyId = '';
@@ -1272,16 +1275,17 @@
 					</thead>
 					<tbody>
 						{#each emaileWiersze as e (e.id)}
-							<tr class="border-t border-line-soft hover:bg-slate-50 cursor-pointer" onclick={() => (emailOtwarty = emailOtwarty === e.id ? null : e.id)}>
+							<tr class="border-t border-line-soft hover:bg-slate-50 cursor-pointer"
+								onclick={(ev) => { if ((ev.target as Element).closest('a,button')) return; emailOtwarty = emailOtwarty === e.id ? null : e.id; }}>
 								<td class="px-4 py-2.5 text-slate-500 whitespace-nowrap"><span class="inline-flex items-center gap-1"><Send size={12} class="text-slate-300" />{fmtDateTime(e.wyslano_at)}</span></td>
 								<td class="px-4 py-2.5 text-slate-600">{RODZAJ_EMAILA[e.rodzaj] ?? e.rodzaj}</td>
 								<td class="px-4 py-2.5 font-medium text-slate-800">
 									<button type="button" class="text-left hover:text-blue-700" aria-expanded={emailOtwarty === e.id}
-										onclick={(ev) => { ev.stopPropagation(); emailOtwarty = emailOtwarty === e.id ? null : e.id; }}>{e.temat}</button>
+										onclick={() => (emailOtwarty = emailOtwarty === e.id ? null : e.id)}>{e.temat}</button>
 								</td>
 								<td class="px-4 py-2.5 text-slate-500">{e.adres}</td>
 								<td class="px-4 py-2.5 text-xs">
-									{#each e.polisa_ids as pid, i (pid)}{#if i > 0}, {/if}<a href="/policies/{pid}" class="text-blue-700 hover:underline" onclick={(ev) => ev.stopPropagation()}>{nrPolisy.get(pid) ?? 'polisa'}</a>{/each}
+									{#each e.polisa_ids as pid, i (pid)}{#if i > 0}, {/if}<a href="/policies/{pid}" class="text-blue-700 hover:underline">{nrPolisy.get(pid) ?? 'polisa'}</a>{/each}
 								</td>
 							</tr>
 							{#if emailOtwarty === e.id && e.tresc}

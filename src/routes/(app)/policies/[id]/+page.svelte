@@ -159,8 +159,7 @@
 			ugEditUpdatedCount = 0;
 		}
 
-		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)');
-		appState.policies = (data ?? []) as typeof appState.policies;
+		await odswiezPolisy();
 		ugEditOpen = false; ugEditSaving = false;
 	}
 
@@ -199,12 +198,11 @@
 		showAnnex = false;
 		axNr = ''; axTyp = 'korekta'; axData = ''; axOpis = ''; axDeltaSkladka = '0';
 		axNewDataDo = ''; axNewSkladka = ''; axNewProwizjaPct = '';
-		const [rP, rA] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot)'),
+		const [, rA] = await Promise.all([
+			odswiezPolisy(),
 			sb.from('crm_policy_annexes').select('*').order('data_aneksu')
 		]);
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
-		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
+		if (!rA.error && rA.data) appState.annexes = rA.data as typeof appState.annexes;
 	}
 
 	// --- Delete (soft) ---
@@ -243,6 +241,9 @@
 			: appState.insurerContacts.filter(c => c.tu_id === policy?.tu_id && !c.branch_id)
 	);
 
+	// Opiekun UG sprzed zmiany — ustalany przy otwarciu okna, żeby ponowna próba po błędzie nadal go znała.
+	let poprzedniOpiekunUg = $state<string | null>(null);
+
 	// Odświeżenie listy polis po zmianie; przy błędzie zostaje dotychczasowa lista.
 	async function odswiezPolisy() {
 		const { data, error } = await sb.from('crm_policies')
@@ -254,7 +255,7 @@
 	async function saveContact() {
 		if (!contactPersonId) { contactError = 'Wybierz osobę.'; return; }
 		savingContact = true; contactError = '';
-		const poprzedni = policy?.tu_contact_id ?? null;
+		const poprzedni = poprzedniOpiekunUg;
 		const { error } = await sb.from('crm_policies')
 			.update({ tu_contact_id: contactPersonId })
 			.eq('id', policyId);
@@ -262,7 +263,8 @@
 			// Polisy w UG bez opiekuna albo z dotychczasowym opiekunem UG dostają nowego opiekuna z UG.
 			const q = sb.from('crm_policies')
 				.update({ tu_contact_id: contactPersonId })
-				.eq('parent_id', policyId)
+				.eq('parent_id', policyId ?? '')
+				.eq('tu_id', policy.tu_id)
 				.is('deleted_at', null);
 			const { error: eDzieci } = poprzedni
 				? await q.or(`tu_contact_id.is.null,tu_contact_id.eq.${poprzedni}`)
@@ -273,6 +275,7 @@
 		if (error) { contactError = error.message; return; }
 		await odswiezPolisy();
 		if (contactError) return;
+		poprzedniOpiekunUg = contactPersonId;
 		showContact = false;
 		contactBranchId = ''; contactPersonId = '';
 	}
@@ -480,7 +483,7 @@
 		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5 flex items-center justify-between">
 				<span>Kontakt TU</span>
-				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; }}
+				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; poprzedniOpiekunUg = policy?.tu_contact_id ?? null; }}
 					class="text-[10px] text-slate-400 hover:text-blue-600 transition-colors">
 					{policy.tu_contact_id ? 'Zmień' : '+ Przypisz'}
 				</button>

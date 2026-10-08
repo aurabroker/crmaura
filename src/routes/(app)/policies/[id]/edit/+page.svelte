@@ -29,8 +29,9 @@
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
 		const vals: Record<string, unknown> = form.getValues();
-		// Polisa bez opiekuna TU podpięta pod Umowę Generalną: opiekun domyślnie z umowy.
-		if (!isUg && !policy.tu_contact_id) {
+		// Polisa bez opiekuna TU podpinana właśnie pod Umowę Generalną: opiekun domyślnie z umowy
+		// (przy zwykłej edycji nie przywracamy opiekuna usuniętego celowo).
+		if (!isUg && !policy.tu_contact_id && vals.parent_id && vals.parent_id !== policy.parent_id) {
 			const opiekun = opiekunZUmowy(appState.policies, vals.parent_id as string | null, vals.tu_id as string | null);
 			if (opiekun) vals.tu_contact_id = opiekun;
 		}
@@ -79,7 +80,7 @@
 			sb.from('crm_policy_payments').select(PAYMENT_SELECT).order('data_platnosci')
 		]);
 		saving = false;
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		goto(`/policies/${policyId}`);

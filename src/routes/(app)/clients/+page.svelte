@@ -181,7 +181,7 @@
 			sb.from('crm_client_contacts').select('*')
 		]);
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.claims = (rCl.data ?? []) as typeof appState.claims;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.apkForms = (rA.data ?? []) as typeof appState.apkForms;

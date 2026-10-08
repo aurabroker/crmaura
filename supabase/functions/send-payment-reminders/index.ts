@@ -172,8 +172,8 @@ Deno.serve(async (req: Request) => {
   const doDnia = dataWarszawa(DNI_PRZED);
   const wynik = {
     ok: true, dry_run: dryRun, od, do: doDnia, firm: 0, wiadomosci: 0, rat: 0, bez_adresu: 0, bledy: [] as string[],
-    // Tylko przy próbie: tematy i podpis (bez adresów i nazw klientów).
-    podglad: [] as { temat: string; beauty: boolean; rat: number }[],
+    // Tylko przy próbie: podpis i liczba rat w każdej wiadomości (bez adresów, nazw i numerów polis).
+    podglad: [] as { beauty: boolean; rat: number }[],
   };
 
   for (const firma of firmy ?? []) {
@@ -203,7 +203,8 @@ Deno.serve(async (req: Request) => {
       if (bladUmow) console.error("send-payment-reminders: umowy generalne:", bladUmow.message);
       for (const u of umowy ?? []) if (PODTYPY_BEAUTY.includes(u.ug_podtyp ?? "")) beautyUg.add(u.id);
     }
-    const czyBeauty = (lista: Rata[]) => lista.some((r) => !!r.crm_policies?.parent_id && beautyUg.has(r.crm_policies.parent_id));
+    // Podpis Beauty tylko, gdy wszystkie raty w wiadomości są z programu Beauty.
+    const czyBeauty = (lista: Rata[]) => lista.every((r) => !!r.crm_policies?.parent_id && beautyUg.has(r.crm_policies.parent_id));
 
     // Jedna wiadomość na adres klienta, ze wszystkimi jego ratami z okna.
     const wgAdresu = new Map<string, Rata[]>();
@@ -218,8 +219,7 @@ Deno.serve(async (req: Request) => {
       if (dryRun) {
         wynik.wiadomosci++;
         wynik.rat += listaRat.length;
-        const beauty = czyBeauty(listaRat);
-        wynik.podglad.push({ temat: zbudujMail(firma.nazwa ?? "", listaRat, beauty).temat, beauty, rat: listaRat.length });
+        wynik.podglad.push({ beauty: czyBeauty(listaRat), rat: listaRat.length });
         continue;
       }
 
@@ -276,14 +276,18 @@ Deno.serve(async (req: Request) => {
             klient_id,
             polisa_ids,
             rodzaj: "przypomnienie_platnosci",
-            adres,
-            temat,
-            tresc: tekst,
+            adres: adres.slice(0, 320),
+            temat: temat.slice(0, 500),
+            tresc: tekst.slice(0, 20000),
             dostawca_id: dostawcaId,
             wyslano_at: new Date().toISOString(),
           })),
         );
-        if (bladHistorii) console.error("send-payment-reminders: historia e-maili:", bladHistorii.message);
+        if (bladHistorii) {
+          // Wiadomość wyszła — brak wpisu w historii zgłaszamy w wyniku uruchomienia.
+          wynik.bledy.push(`${firma.nazwa}: historia e-maili`);
+          console.error("send-payment-reminders: historia e-maili:", bladHistorii.message);
+        }
         continue;
       }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { POLICY_SELECT } from '$lib/queries';
 	import { appState, isFinance } from '$lib/stores/app.svelte';
 	import { sb } from '$lib/supabase';
 	import { goto } from '$app/navigation';
@@ -85,8 +86,8 @@
 		settling = false;
 		if (error) { settleError = error.message; return; }
 		showSettle = false;
-		const { data } = await sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa)');
-		appState.policies = (data ?? []) as typeof appState.policies;
+		const { data, error: bladPolis } = await sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null);
+		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 	}
 
 	const rozlStatusLabel: Record<string, string> = {

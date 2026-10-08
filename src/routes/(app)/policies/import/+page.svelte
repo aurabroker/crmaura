@@ -281,7 +281,7 @@
 			sb.from('crm_leasings').select('*'),
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje')
 		]);
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.leasings = (rL.data ?? []) as typeof appState.leasings;

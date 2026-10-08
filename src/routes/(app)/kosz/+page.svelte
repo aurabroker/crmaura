@@ -72,10 +72,10 @@
 		if (error) { restoreError = error.message; return; }
 		showRestore = false;
 		// Reload policies in app state
-		const { data } = await sb.from('crm_policies')
+		const { data, error: bladPolis } = await sb.from('crm_policies')
 			.select(POLICY_SELECT)
 			.is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 		await loadDeleted();
 	}
 

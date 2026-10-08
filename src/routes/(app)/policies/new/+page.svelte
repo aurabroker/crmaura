@@ -84,7 +84,7 @@
 			sb.from('crm_policy_payments').select(PAYMENT_SELECT).order('data_platnosci')
 		]);
 		saving = false;
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		if (isRenewal && inserted?.id) {

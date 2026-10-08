@@ -65,14 +65,14 @@
 	let vrError = $state('');
 
 	async function reloadVehicleRequests() {
-		const [{ data: wnioski }, { data: pojazdy }, { data: polisy }] = await Promise.all([
+		const [{ data: wnioski }, { data: pojazdy }, { data: polisy, error: bladPolis }] = await Promise.all([
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje').order('created_at', { ascending: false }),
 			sb.from('crm_vehicles').select('*'),
 			sb.from('crm_policies').select(POLICY_SELECT).is('deleted_at', null)
 		]);
 		appState.vehicleRequests = (wnioski ?? []) as typeof appState.vehicleRequests;
 		appState.vehicles = (pojazdy ?? []) as typeof appState.vehicles;
-		appState.policies = (polisy ?? []) as typeof appState.policies;
+		if (!bladPolis && polisy) appState.policies = polisy as typeof appState.policies;
 	}
 
 	async function acceptVehicleRequest(w: VehicleRequest) {
