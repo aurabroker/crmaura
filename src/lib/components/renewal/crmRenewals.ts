@@ -72,6 +72,9 @@ export const ZDARZENIA: Record<string, string> = {
 	zalacznik: 'Klient dodał załącznik',
 	zalacznik_usun: 'Klient usunął załącznik',
 	zlozenie: 'Klient złożył wniosek',
+	blad_pdf: 'PDF wniosku nie powstał',
+	blad_pdf_apk: 'PDF APK nie powstał',
+	blad_pdf_ankiety: 'PDF ankiety nie powstał — wyślij klientowi ankietę ręcznie',
 	przypomnienie: 'Wysłano przypomnienie',
 	anulowanie: 'Anulowano wniosek',
 	wygasniecie: 'Link wygasł'

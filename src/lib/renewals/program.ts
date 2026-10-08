@@ -404,6 +404,8 @@ export function poprawnyNip(nip: string): boolean {
 }
 // NIP/REGON wpisany ze spacjami albo kreskami („526-025-02-74”) → same znaki bez separatorów.
 const bezSeparatorow = (v: unknown, max: number) => str(v, max).replace(/[\s-]+/g, '');
+// NIP z faktury bywa z prefiksem kraju („PL 526-025-02-74”) — prefiks pomijamy.
+const nipBezPrefiksu = (v: unknown) => bezSeparatorow(v, 40).replace(/^PL/i, '');
 
 export function waliduj_ankiete(raw: unknown): Wynik<Ankieta> {
 	const r = (raw ?? {}) as Record<string, unknown>;
@@ -414,7 +416,7 @@ export function waliduj_ankiete(raw: unknown): Wynik<Ankieta> {
 		ubezpieczony: str(r.ubezpieczony, 300),
 		data_rozpoczecia: str(r.data_rozpoczecia, 10),
 		liczba_zatrudnionych: str(r.liczba_zatrudnionych, 20),
-		nip: bezSeparatorow(r.nip, 40),
+		nip: nipBezPrefiksu(r.nip),
 		regon: bezSeparatorow(r.regon, 40),
 		szkodowosc: str(r.szkodowosc, 3000),
 		inne_zabiegi: str(r.inne_zabiegi, 1000),

@@ -82,9 +82,9 @@
 						maxlength="20"
 						aria-describedby="ank-nip-pomoc"
 					/>
+					<!-- Spacja jawnie: Svelte obcina białe znaki na początku bloku {#if}. -->
 					<p id="ank-nip-pomoc" class={POMOC}>
-						10 cyfr (kreski i spacje nie przeszkadzają).{#if nipZKartoteki}
-							Wpisaliśmy NIP z naszej kartoteki — sprawdź, czy jest aktualny.{/if}
+						10 cyfr (kreski, spacje i prefiks PL nie przeszkadzają).{#if nipZKartoteki}{' '}Wpisaliśmy NIP z naszej kartoteki — sprawdź, czy jest aktualny.{/if}
 					</p>
 				</div>
 				<div>
@@ -136,7 +136,8 @@
 						aria-describedby="ank-inne-zabiegi-pomoc"
 					></textarea>
 					<p id="ank-inne-zabiegi-pomoc" class={POMOC}>
-						Zabiegi spoza powyższej listy, które wykonujesz w gabinecie — pozycja „Inny – prosimy opisać” w ankiecie.
+						Tylko zabiegi o podobnym ryzyku jak powyższe (np. iniekcyjne, laserowe, z użyciem urządzeń), których nie ma na liście — pozycja
+						„Inny – prosimy opisać” w ankiecie. Zabiegów z list programu tu nie wpisuj.
 					</p>
 				</div>
 				<div>
@@ -172,7 +173,19 @@
 							<p class="font-medium text-slate-900" data-testid="osoba-{i}-imie">{o.imie_nazwisko}</p>
 							<div>
 								<label for="os-{i}-kwal" class={ETYKIETA}>Kwalifikacje: wykształcenie, ukończone kursy i szkolenia</label>
-								<textarea id="os-{i}-kwal" rows="3" bind:value={o.kwalifikacje} class={INP} maxlength="3000"></textarea>
+								<textarea
+									id="os-{i}-kwal"
+									rows="3"
+									bind:value={o.kwalifikacje}
+									class={INP}
+									maxlength="3000"
+									aria-describedby="os-{i}-kwal-pomoc"
+								></textarea>
+								<!-- Formularz Ergo: certyfikaty, dyplomy ze wskazaniem przedmiotu, czasu trwania i instytucji. -->
+								<p id="os-{i}-kwal-pomoc" class={POMOC}>
+									Przy studiach, kursach i szkoleniach podaj przedmiot (czego dotyczyły), czas trwania i nazwę instytucji, która je
+									prowadziła.
+								</p>
 							</div>
 							<div>
 								<label for="os-{i}-dosw" class={ETYKIETA}>Doświadczenie — jak długo ta osoba wykonuje te zabiegi</label>

@@ -20,6 +20,7 @@ import {
 	formatZl,
 	nazwaUbezpieczyciela,
 	opisZalacznika,
+	type Ankieta,
 	type Apk,
 	type Wniosek
 } from '$lib/renewals/program';
@@ -163,7 +164,8 @@ export function mailApk(r: RenewalRow, link: string, aktualizacja = false) {
 
 // ---------- Opis decyzji (wspólny dla e-maili i PDF) ----------
 
-export function opisZmian(w: Wniosek | null, apk: Apk | null): string[] {
+// ankieta: zabiegi z pozycji „Inny – prosimy opisać” też są zmianą, o którą prosi klient (doradca je wycenia).
+export function opisZmian(w: Wniosek | null, apk: Apk | null, ankieta: Pick<Ankieta, 'inne_zabiegi'> | null = null): string[] {
 	if (!w || w.decyzja !== 'zmiany' || !w.zmiany) return [];
 	const z = w.zmiany;
 	const linie: string[] = [];
@@ -172,6 +174,7 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null): string[] {
 	if (z.adres) linie.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 	if (z.nowe_zabiegi.length) linie.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join('; ')}`);
 	if (z.zabiegi_ankieta.length) linie.push(`Zabiegi wymagające ankiety: ${z.zabiegi_ankieta.join('; ')}`);
+	if (ankieta?.inne_zabiegi?.trim()) linie.push(`Inne zabiegi do oceny ryzyka (ankieta, „Inny”): ${ankieta.inne_zabiegi.trim()}`);
 	for (const w of z.wykonawcy ?? []) linie.push(`Wykonuje: ${w.imie_nazwisko} — ${w.zabiegi.join('; ')}`);
 	if (z.inne) linie.push(`Inne: ${z.inne}`);
 	if (!apk && z.rodzaje.length) linie.push(`Rodzaj działalności (do wyceny): ${z.rodzaje.map(rodzajNazwa).join(', ')}`);
@@ -206,6 +209,10 @@ export function odpowiedziApk(apk: Apk): [string, string][] {
 }
 
 // ---------- Potwierdzenie dla klienta i powiadomienie biura ----------
+
+// PDF ankiety nie powstał przy złożeniu (blad_pdf_ankiety) — e-mail do biura i zadanie dla doradcy.
+export const BRAK_PDF_ANKIETY =
+	'PDF ankiety nie powstał — wyślij klientowi ankietę do podpisu ręcznie (odpowiedzi klienta są na karcie polisy w sekcji „Ankieta Ergo Hestii”).';
 
 // ankietaWZalaczniku: PDF ankiety Ergo Hestii (osobny dokument do podpisu) dołączony do e-maila.
 export function mailPotwierdzenie(r: RenewalRow, apkWZalaczniku = false, ankietaWZalaczniku = !!r.ankieta) {
@@ -258,8 +265,10 @@ export function sygnalyApk(r: RenewalRow): string[] {
 	return s;
 }
 
-export function mailBiuro(r: RenewalRow, linki: { polisa: string; klient: string }, kto: { ip: string | null }) {
-	const zmiany = [...opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk), ...sygnalyApk(r)];
+// ankietaPdf: czy PDF ankiety powstał (jest w CRM i poszedł do klienta). Gdy nie — biuro wysyła ankietę samo.
+export function mailBiuro(r: RenewalRow, linki: { polisa: string; klient: string }, kto: { ip: string | null }, ankietaPdf = !!r.ankieta) {
+	const zmiany = [...opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta), ...sygnalyApk(r)];
+	const ankietaBezPdf = !!r.ankieta && !ankietaPdf;
 	const temat = `[Odnowienie] ${DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? r.decyzja} — ${r.klient_nazwa} — cert. ${r.nr_polisy ?? '—'}${r.ankieta ? ' — ANKIETA' : ''}`;
 	const wiersze: [string, string][] = [
 		['Klient', r.klient_nazwa ?? '—'],
@@ -270,7 +279,8 @@ export function mailBiuro(r: RenewalRow, linki: { polisa: string; klient: string
 		['Ochrona prawna w obecnym certyfikacie', opObecnie(r) ? 'tak (zostaje)' : 'nie'],
 		['Złożono', `${dataGodzina(r.zlozono_at)}${kto.ip ? `, IP ${kto.ip}` : ''}`],
 		...(r.wniosek?.nie_powod ? ([['Powód rezygnacji', r.wniosek.nie_powod]] as [string, string][]) : []),
-		['Dokumenty w CRM', ['PDF analizy potrzeb (APK)', 'PDF wniosku', ...(r.ankieta ? ['PDF ankiety ERGO Hestia (do podpisu klienta)'] : []), ...(r.zalaczniki?.length ? [`załączniki klienta: ${r.zalaczniki.length}`] : [])].join(', ')],
+		...(ankietaBezPdf ? ([['Ankieta ERGO Hestia', BRAK_PDF_ANKIETY]] as [string, string][]) : []),
+		['Dokumenty w CRM', ['PDF analizy potrzeb (APK)', 'PDF wniosku', ...(r.ankieta && ankietaPdf ? ['PDF ankiety ERGO Hestia (do podpisu klienta)'] : []), ...(r.zalaczniki?.length ? [`załączniki klienta: ${r.zalaczniki.length}`] : [])].join(', ')],
 		...(r.zalaczniki?.length ? ([['Załączniki klienta', r.zalaczniki.map((z) => `${opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy)}: ${z.nazwa}`).join('; ')]] as [string, string][]) : [])
 	];
 	const html = ramka('Wniosek o odnowienie', `
@@ -278,8 +288,8 @@ export function mailBiuro(r: RenewalRow, linki: { polisa: string; klient: string
       ${wiersze.map(([k, v]) => `<tr><td style="padding:6px 10px 6px 0;font-weight:600;color:#475569;vertical-align:top;white-space:nowrap;">${esc(k)}</td><td style="padding:6px 0;">${esc(v)}</td></tr>`).join('\n      ')}
     </table>
     ${zmiany.length ? `<p style="margin:0 0 6px;font-weight:600;">Zmiany i uwagi:</p><ul style="margin:0 0 14px;padding-left:20px;">${zmiany.map((z) => `<li>${esc(z)}</li>`).join('')}</ul>` : ''}
-    ${r.ankieta ? '<p style="margin:0 0 14px;color:#be123c;font-weight:600;">Klient wypełnił ankietę Ergo Hestii — czekamy na podpisany egzemplarz.</p>' : ''}
-    <p style="margin:0 0 6px;">Pliki (PDF APK, PDF wniosku${r.ankieta ? ', PDF ankiety ERGO Hestia' : ''} i załączniki klienta) są w CRM — bez załączników w tej wiadomości:</p>
+    ${r.ankieta ? `<p style="margin:0 0 14px;color:#be123c;font-weight:600;">${ankietaBezPdf ? `${esc(BRAK_PDF_ANKIETY)}${r.email ? ' W potwierdzeniu napisaliśmy klientowi, że PDF ankiety prześlemy w osobnej wiadomości.' : ''}` : 'Klient wypełnił ankietę Ergo Hestii — czekamy na podpisany egzemplarz.'}</p>` : ''}
+    <p style="margin:0 0 6px;">Pliki (PDF APK, PDF wniosku${r.ankieta && ankietaPdf ? ', PDF ankiety ERGO Hestia' : ''} i załączniki klienta) są w CRM — bez załączników w tej wiadomości:</p>
     ${przycisk(linki.polisa, 'Otwórz wniosek na karcie polisy')}
     <p style="margin:0 0 14px;"><a href="${esc(linki.klient)}" style="color:#2a3b69;">Karta klienta → Załączniki</a></p>`);
 	const tekst = [
@@ -352,7 +362,7 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 	);
 
 	let y = lastY() + 8;
-	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk);
+	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta);
 	if (zmiany.length) {
 		y = naglowek('Zmiany wskazane przez klienta', y);
 		tabela(zmiany.map((z, i) => [`${i + 1}.`, z] as [string, string]), y);
@@ -527,7 +537,7 @@ const CZERWIEN_ERGO: [number, number, number] = [176, 18, 38];
 // Układ jak w formularzu „Ankieta ubezpieczeniowa do Programu Ubezpieczenia OC … dla gabinetów kosmetologicznych”:
 // 1. informacje ogólne, 2. zabiegi (wszystkie pozycje z kwadratem — zaznaczone te z wniosku), 3. osoby,
 // oświadczenie i miejsce na podpis. Starsze ankiety nie mają NIP, REGON ani innych zabiegów — „—”.
-export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, kto: { ip: string | null; ua: string | null }): Promise<Uint8Array> {
+export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: string | null; ua: string | null }): Promise<Uint8Array> {
 	const a = r.ankieta;
 	if (!a) throw new Error('Wniosek nie ma ankiety.');
 	const { doc, autoTable, font } = await newServerPdf(event);
@@ -663,7 +673,12 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 	const osoby = a.osoby?.length ? a.osoby : [{ imie_nazwisko: '', kwalifikacje: '', doswiadczenie: '' }];
 	tabela({
 		startY: y,
-		head: [['Osoba', 'Kwalifikacje w zakresie ich wykonywania: wykształcenie, ukończone kursy i szkolenia*', 'Doświadczenie (jak długo dana osoba wykonuje w/w zabiegi)']],
+		head: [[
+			'Osoba',
+			'Kwalifikacje w zakresie ich wykonywania: wykształcenie, ukończone kursy i szkolenia (certyfikaty, dyplomy ze wskazaniem ' +
+				'przedmiotu/czasu trwania, nazwy instytucji organizującej studia/kurs/szkolenie*)',
+			'Doświadczenie (jak długo dana osoba wykonuje w/w zabiegi)'
+		]],
 		body: osoby.flatMap((o) => [
 			[wartosc(o.imie_nazwisko), wartosc(o.kwalifikacje), wartosc(o.doswiadczenie)],
 			[{ content: skany(o.imie_nazwisko), colSpan: 3, styles: { fontSize: 7.5, fontStyle: 'normal', textColor: 70, fillColor: [247, 247, 247] } }]
@@ -700,7 +715,8 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 	doc.text('Miejscowość, data, czytelny podpis Ubezpieczonego', L, y + 4.5);
 	doc.setTextColor(0);
 
-	const stopka = `Ankieta do wniosku ${r.id} · wypełniona elektronicznie ${dataGodzina(r.zlozono_at)}${kto.ip ? ` · IP ${kto.ip}` : ''}`;
+	// Bez IP klienta: ankieta idzie do ubezpieczyciela, a IP zostaje w PDF wniosku i w dzienniku CRM.
+	const stopka = `Ankieta do wniosku ${r.id} · wypełniona elektronicznie ${dataGodzina(r.zlozono_at)}`;
 	const strony = doc.getNumberOfPages();
 	for (let i = 1; i <= strony; i++) {
 		doc.setPage(i);

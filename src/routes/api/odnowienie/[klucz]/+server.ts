@@ -219,6 +219,12 @@ export const POST: RequestHandler = async (event) => {
 
 			let ankieta = null;
 			if (wniosek.zmiany?.zabiegi_ankieta.length) {
+				// Strona otwarta przed dodaniem NIP do ankiety (stary kod w przeglądarce nie ma tego pola) —
+				// klient nie poprawi tego w swoim formularzu, więc prosimy o odświeżenie (szkic odpowiedzi zostaje).
+				const surowa = body.ankieta;
+				if (surowa && typeof surowa === 'object' && !('nip' in surowa)) {
+					return blad(400, 'Formularz ankiety został zaktualizowany. Odśwież stronę (wpisane odpowiedzi zostaną zachowane), uzupełnij NIP w kroku „Ankieta Ergo Hestii” i wyślij wniosek ponownie.');
+				}
 				const a = waliduj_ankiete(body.ankieta);
 				if (!a.ok) return blad(400, 'Uzupełnij ankietę Ergo Hestii.', a.bledy);
 				ankieta = a.value;

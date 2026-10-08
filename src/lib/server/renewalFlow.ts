@@ -15,7 +15,7 @@ import {
 	type Klient,
 	type RenewalRow
 } from '$lib/server/renewals';
-import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
+import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, BRAK_PDF_ANKIETY, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
 
 type PdfEvent = Parameters<typeof pdfWniosku>[0];
 
@@ -175,7 +175,7 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 	// Tryb testowy: potwierdzenie „dla klienta” i kopia „dla biura” idą na adres testowy.
 	const test = czyTest(firma, r);
 	const pre = test ? PREFIKS_TESTU : '';
-	await zadanieDlaDoradcy(admin, r, test);
+	const zadanie = await zadanieDlaDoradcy(admin, r, test);
 
 	let pdf: Uint8Array | null = null;
 	try {
@@ -208,12 +208,15 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 	}
 
 	// Ankieta Ergo Hestii: osobny PDF do wydruku i podpisu — kolejny załącznik potwierdzenia dla klienta.
+	// Gdy PDF nie powstanie, doradca dostaje w zadaniu (i biuro w e-mailu) polecenie wysłania ankiety ręcznie.
 	let ankietaWZalaczniku = false;
 	if (r.ankieta) {
 		const ankietaPdf = await zapiszPdfAnkiety(event, admin, r, kto);
 		if (ankietaPdf) {
 			zalPdf.push({ filename: nazwaPdfAnkiety(r), content: base64(ankietaPdf), content_type: 'application/pdf' });
 			ankietaWZalaczniku = true;
+		} else if (zadanie) {
+			await admin.from('crm_tasks').update({ opis: `${zadanie.opis}\n⚠ ${BRAK_PDF_ANKIETY}` }).eq('id', zadanie.id);
 		}
 	}
 
@@ -229,7 +232,7 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 
 		// Do biura same linki: pliki (PDF APK, PDF wniosku, PDF ankiety, załączniki klienta) otwiera się w CRM.
 		const crm = new URL(event.url).origin;
-		const mb = mailBiuro(r, { polisa: `${crm}/policies/${r.polisa_id}`, klient: `${crm}/clients/${r.klient_id}?tab=zalaczniki` }, kto);
+		const mb = mailBiuro(r, { polisa: `${crm}/policies/${r.polisa_id}`, klient: `${crm}/clients/${r.klient_id}?tab=zalaczniki` }, kto, ankietaWZalaczniku);
 		const wb = await wyslijEmail(firma.resend_api_key, {
 			from: nadawca(),
 			to: [test ? adresTestowy() : biuro()],
@@ -245,7 +248,8 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 	return r;
 }
 
-async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boolean) {
+// Zwraca id i opis zadania (do dopisania uwag po PDF-ach) albo null, gdy zadanie nie powstało.
+async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boolean): Promise<{ id: string; opis: string } | null> {
 	const { data: klient } = await admin.from('crm_clients').select('opiekun_id').eq('id', r.klient_id).maybeSingle();
 	const tytul =
 		(test ? PREFIKS_TESTU : '') +
@@ -254,7 +258,7 @@ async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boo
 			: r.decyzja === 'zmiany'
 				? `Odnowienie ze zmianami: sprawdź i potwierdź składkę — ${r.klient_nazwa}`
 				: `Klient rezygnuje z odnowienia — ${r.klient_nazwa}`);
-	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk);
+	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta);
 	const sygnaly = sygnalyApk(r);
 	// Link gaśnie z końcem ochrony, więc to tylko zabezpieczenie (np. wniosek wysłany tuż przed północą).
 	const poTerminie = !!r.okres_do && !!r.zlozono_at && dzisWarszawa() > r.okres_do;
@@ -267,7 +271,7 @@ async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boo
 		...(r.ankieta ? ['• Ankieta Ergo Hestii: czekamy na podpisany egzemplarz od klienta.'] : []),
 		...(r.wniosek?.nie_powod ? [`Powód rezygnacji: ${r.wniosek.nie_powod}`] : [])
 	].join('\n');
-	const { error: e } = await admin.from('crm_tasks').insert({
+	const { data: t, error: e } = await admin.from('crm_tasks').insert({
 		tenant_id: r.tenant_id,
 		klient_id: r.klient_id,
 		polisa_id: r.polisa_id,
@@ -278,9 +282,12 @@ async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boo
 		priorytet: poTerminie ? 'pilny' : r.decyzja === 'bez_zmian' && !sygnaly.length ? 'normalny' : 'wysoki',
 		// Status jawnie: domyślny w bazie („Oczekujące”) aplikacja nie traktuje jako otwarte zadanie.
 		status: 'otwarte'
-	});
-	if (e) {
-		console.error('renewals: zadanie nie utworzone:', e.message);
-		await zapiszZdarzenie(admin, r, 'blad_zadania', null, { blad: e.message.slice(0, 300) });
+	}).select('id').single();
+	if (e || !t) {
+		const blad = e?.message ?? 'brak id zadania';
+		console.error('renewals: zadanie nie utworzone:', blad);
+		await zapiszZdarzenie(admin, r, 'blad_zadania', null, { blad: blad.slice(0, 300) });
+		return null;
 	}
+	return { id: (t as { id: string }).id, opis };
 }
