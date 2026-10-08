@@ -1,5 +1,5 @@
 import { sb } from '$lib/supabase';
-import type { Policy } from '$lib/types/database';
+import type { Policy, RenewalEvent } from '$lib/types/database';
 
 // Wspólne dla karty polisy i listy odnowień w CRM: rozpoznanie certyfikatu z programu OC beauty,
 // stany wniosku i wywołania /api/renewals (kontrakt: $lib/renewals/staffApi).
@@ -61,3 +61,49 @@ export const fmtDataCzas = (iso: string | null | undefined) =>
 	iso
 		? new Date(iso).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 		: '—';
+
+// Dziennik wniosku (crm_renewal_events) — te same opisy na karcie polisy i na karcie klienta.
+export const ZDARZENIA: Record<string, string> = {
+	utworzenie: 'Utworzono wniosek',
+	wyslanie: 'Wysłano e-mail do klienta',
+	otwarcie: 'Klient otworzył link',
+	apk: 'Klient wypełnił APK',
+	apk_odmowa: 'Klient odmówił wypełnienia APK',
+	zalacznik: 'Klient dodał załącznik',
+	zalacznik_usun: 'Klient usunął załącznik',
+	zlozenie: 'Klient złożył wniosek',
+	przypomnienie: 'Wysłano przypomnienie',
+	anulowanie: 'Anulowano wniosek',
+	wygasniecie: 'Link wygasł'
+};
+
+export const opisZdarzenia = (e: Pick<RenewalEvent, 'zdarzenie' | 'szczegoly'>) => {
+	const powod = typeof e.szczegoly?.powod === 'string' ? ` (${e.szczegoly.powod})` : '';
+	return (ZDARZENIA[e.zdarzenie] ?? e.zdarzenie) + powod;
+};
+
+// Krótki opis przeglądarki z nagłówka User-Agent (pełny tekst zostaje w podpowiedzi).
+export function opisPrzegladarki(ua: string | null | undefined): string {
+	if (!ua) return '';
+	const wersja = (re: RegExp) => ua.match(re)?.[1]?.split('.')[0] ?? '';
+	const nazwa = /Edg(?:e|A|iOS)?\//.test(ua) ? `Edge ${wersja(/Edg(?:e|A|iOS)?\/([\d.]+)/)}`
+		: /OPR\//.test(ua) ? `Opera ${wersja(/OPR\/([\d.]+)/)}`
+		: /SamsungBrowser\//.test(ua) ? `Samsung Internet ${wersja(/SamsungBrowser\/([\d.]+)/)}`
+		: /(?:Firefox|FxiOS)\//.test(ua) ? `Firefox ${wersja(/(?:Firefox|FxiOS)\/([\d.]+)/)}`
+		: /(?:Chrome|CriOS)\//.test(ua) ? `Chrome ${wersja(/(?:Chrome|CriOS)\/([\d.]+)/)}`
+		: /Safari\//.test(ua) ? `Safari ${wersja(/Version\/([\d.]+)/)}`
+		: '';
+	const system = /iPhone/.test(ua) ? 'iPhone' : /iPad/.test(ua) ? 'iPad' : /Android/.test(ua) ? 'Android'
+		: /Windows/.test(ua) ? 'Windows' : /Mac OS X|Macintosh/.test(ua) ? 'macOS' : /Linux/.test(ua) ? 'Linux' : '';
+	const opis = [nazwa.trim(), system].filter(Boolean).join(', ');
+	return opis || (ua.length > 60 ? `${ua.slice(0, 57)}…` : ua);
+}
+
+// Pliki wniosku w buckecie renewal-files: <tenant_id>/<id wniosku>/… — PDF wniosku, PDF APK
+// (apk.pdf; starsze wnioski go nie mają) i załączniki od klienta.
+export const BUCKET_ODNOWIEN = 'renewal-files';
+export const APK_PDF = 'apk.pdf';
+export const folderWniosku = (r: { tenant_id: string; id: string }) => `${r.tenant_id}/${r.id}`;
+
+export const rozmiarPliku = (b: number | null | undefined) =>
+	b == null ? '' : b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} KB`;

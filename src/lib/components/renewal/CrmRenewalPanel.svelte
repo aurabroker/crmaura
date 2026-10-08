@@ -14,7 +14,7 @@
 	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
-	import { czyLinkDziala, fmtData, fmtDataCzas, wariantDecyzji, wywolajApi } from './crmRenewals';
+	import { czyLinkDziala, fmtData, fmtDataCzas, opisZdarzenia, wariantDecyzji, wywolajApi } from './crmRenewals';
 	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2 } from 'lucide-svelte';
 
 	interface Props {
@@ -302,24 +302,6 @@
 			{ k: 'Klienci podpisują formularz zgody na zabieg', v: takNie(a.zgoda_klientow) }
 		];
 	}
-
-	const ZDARZENIA: Record<string, string> = {
-		utworzenie: 'Utworzono wniosek',
-		wyslanie: 'Wysłano e-mail do klienta',
-		otwarcie: 'Klient otworzył link',
-		apk: 'Klient wypełnił APK',
-		apk_odmowa: 'Klient odmówił wypełnienia APK',
-		zalacznik: 'Klient dodał załącznik',
-		zalacznik_usun: 'Klient usunął załącznik',
-		zlozenie: 'Klient złożył wniosek',
-		przypomnienie: 'Wysłano przypomnienie',
-		anulowanie: 'Anulowano wniosek',
-		wygasniecie: 'Link wygasł'
-	};
-	const opisZdarzenia = (e: RenewalEvent) => {
-		const powod = typeof e.szczegoly?.powod === 'string' ? ` (${e.szczegoly.powod})` : '';
-		return (ZDARZENIA[e.zdarzenie] ?? e.zdarzenie) + powod;
-	};
 
 	const rozmiar = (b: number) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
 

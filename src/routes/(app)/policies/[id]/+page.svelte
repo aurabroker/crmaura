@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { PAYMENT_SELECT, POLICY_SELECT } from '$lib/queries';
+	import { tick } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
@@ -59,6 +60,18 @@
 		if (!renewMenuOpen) return;
 		const close = () => (renewMenuOpen = false);
 		window.addEventListener('click', close, { once: true });
+	});
+	// ?odnow=1 (np. „Odnów polisę” na karcie klienta przy certyfikacie OC beauty): menu otwiera się
+	// samo, gdy polisa jest już wczytana i przycisk widoczny — raz na dany adres.
+	let renewMenuEl = $state<HTMLDivElement | null>(null);
+	let odnowOtwartoDla = '';
+	$effect(() => {
+		const adres = $page.url.href;
+		const el = renewMenuEl;
+		if (!el || $page.url.searchParams.get('odnow') !== '1' || odnowOtwartoDla === adres) return;
+		odnowOtwartoDla = adres;
+		renewMenuOpen = true;
+		tick().then(() => (el.querySelector('[data-renew-menu]') ?? el).scrollIntoView({ block: 'nearest' }));
 	});
 	let showBrokers = $state(false);
 	let pbBrokerId = $state('');
@@ -396,7 +409,7 @@
 		<div class="flex gap-2">
 			{#if !renewalPolicy && policy.typ_umowy !== 'generalna'}
 				<!-- Odnowienie: ręcznie albo z pliku polisy. Podświetlone, gdy termin blisko. -->
-				<div class="relative">
+				<div class="relative" bind:this={renewMenuEl}>
 					<button
 						onclick={(e) => { e.stopPropagation(); renewMenuOpen = !renewMenuOpen; }}
 						class="flex items-center gap-1.5 text-sm rounded-lg px-3 py-2 border transition-colors
@@ -408,7 +421,7 @@
 						<ChevronDown size={12} />
 					</button>
 					{#if renewMenuOpen}
-						<div class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl {wProgramie ? 'w-80' : 'w-60'} overflow-hidden z-50">
+						<div data-renew-menu class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl {wProgramie ? 'w-80' : 'w-60'} overflow-hidden z-50">
 							<a
 								href={renewalUrl}
 								onclick={() => (renewMenuOpen = false)}

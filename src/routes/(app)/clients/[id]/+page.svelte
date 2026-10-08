@@ -1,16 +1,17 @@
 <script lang="ts">
 	import { POLICY_SELECT } from '$lib/queries';
+	import { untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor } from '$lib/utils';
-	import type { Claim, Vehicle, ClientContact, CrmTask, Policy } from '$lib/types/database';
+	import type { Claim, Vehicle, ClientContact, CrmTask, Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken, APK_FORMS_SELECT } from '$lib/utils/apkLink';
@@ -18,6 +19,9 @@
 	import type { ApkForm } from '$lib/types/database';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
+	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
+	import { APK_PDF, BUCKET_ODNOWIEN, folderWniosku, opisPrzegladarki, opisZdarzenia, rozmiarPliku, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
+	import { TYPY_ZALACZNIKOW } from '$lib/renewals/program';
 
 	let pdfSaving = $state<string | null>(null);
 	let pdfError = $state('');
@@ -176,10 +180,10 @@
 	}, { klucz: 'nr' }, 'klient-skladki-polisy');
 	const skladkiWiersze = $derived(sortSkladki.sortuj(clientPolicies));
 
-	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zadania' | 'emaile' | 'mailing';
+	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zalaczniki' | 'dziennik' | 'zadania' | 'emaile' | 'mailing';
 	let activeTab = $state<TabKey>('polisy');
 	const tabs = $derived(
-		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
+		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zalaczniki', 'dziennik', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
 	);
 
 	// ── Mailing GetResponse (tylko Aura Expert) ───────────────────────────────
@@ -362,6 +366,161 @@
 		if (activeTab === 'mailing' && isAuraTenant && clientId && grLoadedFor !== clientId) {
 			grLoadedFor = clientId;
 			loadMailing();
+		}
+	});
+
+	// ── Wnioski o odnowienie (program OC beauty): dziennik zdarzeń, pliki, APK z wniosków ──
+	// Lista wniosków klienta to jedno zapytanie przy otwarciu karty — z niej liczy się zakładka APK.
+	// Dziennik i pliki w magazynie dopiero po wejściu w zakładkę. Pracownik tylko czyta (RLS).
+	type WniosekKlienta = Pick<RenewalRow, 'id' | 'tenant_id' | 'polisa_id' | 'status' | 'decyzja' | 'nr_polisy' | 'apk_at' | 'apk_odmowa' | 'zalaczniki' | 'pdf_path' | 'created_at' | 'zlozono_at'>;
+	const WNIOSKI_KOLUMNY = 'id, tenant_id, polisa_id, status, decyzja, nr_polisy, apk_at, apk_odmowa, zalaczniki, pdf_path, created_at, zlozono_at';
+	let wnioski = $state<WniosekKlienta[]>([]);
+	let wnioskiDla = '';
+	let wnioskiNr = 0;
+	let wnioskiP: Promise<WniosekKlienta[]> | null = null;
+
+	// Wspólne dla zakładek; force = „Odśwież”. Odpowiedź spóźniona (inny klient, nowsze zapytanie) jest pomijana.
+	function wczytajWnioski(force = false): Promise<WniosekKlienta[]> {
+		const dla = clientId ?? '';
+		if (!force && wnioskiP && wnioskiDla === dla) return wnioskiP;
+		if (wnioskiDla !== dla) wnioski = [];
+		wnioskiDla = dla;
+		const nr = ++wnioskiNr;
+		wnioskiP = (async () => {
+			const { data, error } = await sb.from('crm_renewals')
+				.select(WNIOSKI_KOLUMNY)
+				.eq('klient_id', dla)
+				.order('created_at', { ascending: false });
+			// Przed migracją odnowień (albo przy błędzie) karta działa jak dotąd — bez wniosków.
+			const lista = error ? [] : ((data ?? []) as unknown as WniosekKlienta[]);
+			if (nr === wnioskiNr && dla === clientId) wnioski = lista;
+			return lista;
+		})();
+		return wnioskiP;
+	}
+
+	const wniosekPoId = $derived(new Map(wnioski.map(w => [w.id, w])));
+	const nrCertyfikatu = (w: WniosekKlienta) => w.nr_polisy ?? nrPolisy.get(w.polisa_id) ?? 'certyfikat';
+	// APK wypełniona albo świadomie odrzucona na stronie wniosku (apk_at = chwila odpowiedzi).
+	const apkWnioski = $derived(wnioski.filter(w => !!w.apk_at || w.apk_odmowa));
+
+	// Dziennik zdarzeń wszystkich wniosków klienta, od najnowszych.
+	let zdarzenia = $state<RenewalEvent[]>([]);
+	let dziennikLadowanie = $state(false);
+	let dziennikBlad = $state('');
+	let dziennikDla = '';
+	let dziennikNr = 0;
+
+	async function wczytajDziennik(force = false) {
+		const dla = clientId ?? '';
+		const nr = ++dziennikNr;
+		dziennikLadowanie = true; dziennikBlad = '';
+		const lista = await wczytajWnioski(force);
+		if (nr !== dziennikNr || dla !== clientId) return;
+		if (!lista.length) { zdarzenia = []; dziennikLadowanie = false; return; }
+		const { data, error } = await sb.from('crm_renewal_events')
+			.select('*')
+			.in('renewal_id', lista.map(w => w.id))
+			.order('at', { ascending: false })
+			.order('id', { ascending: false })
+			.limit(1000);
+		if (nr !== dziennikNr || dla !== clientId) return;
+		dziennikLadowanie = false;
+		if (error) { dziennikBlad = `Nie udało się wczytać dziennika: ${error.message}`; zdarzenia = []; return; }
+		zdarzenia = (data ?? []) as RenewalEvent[];
+	}
+
+	// Pliki wniosków w magazynie: PDF APK (apk.pdf — starsze wnioski go nie mają) i rozmiary PDF-ów.
+	// Klucz: id wniosku → nazwa pliku w folderze <tenant>/<wniosek> → rozmiar w bajtach.
+	let plikiWBuckecie = $state<Record<string, Record<string, number | null>>>({});
+	let plikiGotowe = $state(false);
+	let plikiLadowanie = $state(false);
+	let plikiBlad = $state('');
+	let plikiDla = '';
+	let plikiNr = 0;
+
+	async function wczytajPliki(force = false) {
+		const dla = clientId ?? '';
+		const nr = ++plikiNr;
+		plikiLadowanie = true; plikiBlad = '';
+		const lista = await wczytajWnioski(force);
+		const wyniki = await Promise.all(lista.map(async (w) => {
+			try {
+				const { data, error } = await sb.storage.from(BUCKET_ODNOWIEN).list(folderWniosku(w), { limit: 1000 });
+				if (error) return [w.id, null] as const;
+				const m: Record<string, number | null> = {};
+				// Podfoldery wracają bez id — pomijamy.
+				for (const f of data ?? []) if (f.id) m[f.name] = typeof f.metadata?.size === 'number' ? f.metadata.size : null;
+				return [w.id, m] as const;
+			} catch {
+				return [w.id, null] as const;
+			}
+		}));
+		if (nr !== plikiNr || dla !== clientId) return;
+		plikiWBuckecie = Object.fromEntries(wyniki.map(([id, m]) => [id, m ?? {}]));
+		if (wyniki.some(([, m]) => m === null)) plikiBlad = 'Nie udało się sprawdzić plików wszystkich wniosków — PDF APK może nie być widoczny. Odśwież za chwilę.';
+		plikiGotowe = true;
+		plikiLadowanie = false;
+	}
+
+	const maPdfApk = (w: WniosekKlienta) => APK_PDF in (plikiWBuckecie[w.id] ?? {});
+
+	type PlikWniosku = { klucz: string; tytul: string; opis: string; path: string; rozmiar: number | null; at: string | null; zalacznik: boolean };
+	function plikiWniosku(w: WniosekKlienta): PlikWniosku[] {
+		const folder = folderWniosku(w);
+		const wBuckecie = plikiWBuckecie[w.id] ?? {};
+		const out: PlikWniosku[] = [];
+		if (maPdfApk(w)) {
+			out.push({ klucz: 'apk', tytul: 'Analiza potrzeb (APK) — PDF', opis: w.apk_odmowa ? 'świadoma odmowa' : '', path: `${folder}/${APK_PDF}`, rozmiar: wBuckecie[APK_PDF] ?? null, at: w.apk_at, zalacznik: false });
+		}
+		if (w.pdf_path) {
+			const nazwa = w.pdf_path.split('/').pop() ?? '';
+			const rozmiar = w.pdf_path.startsWith(`${folder}/`) ? wBuckecie[nazwa] ?? null : null;
+			out.push({ klucz: 'wniosek', tytul: 'Wniosek o odnowienie — PDF', opis: '', path: w.pdf_path, rozmiar, at: w.zlozono_at, zalacznik: false });
+		}
+		for (const z of w.zalaczniki ?? []) {
+			const typ = (TYPY_ZALACZNIKOW as Record<string, string>)[z.typ] ?? z.typ;
+			out.push({ klucz: z.id, tytul: typ, opis: z.nazwa, path: z.path, rozmiar: z.rozmiar ?? null, at: z.at ?? null, zalacznik: true });
+		}
+		return out;
+	}
+	// Licznik w zakładce dopiero po sprawdzeniu magazynu (PDF APK jest tylko tam).
+	const liczbaPlikow = $derived(plikiGotowe ? wnioski.reduce((s, w) => s + plikiWniosku(w).length, 0) : null);
+
+	let plikBlad = $state('');
+	async function otworzPlikWniosku(path: string, nazwa: string) {
+		plikBlad = '';
+		try {
+			await openStoredFile(BUCKET_ODNOWIEN, path);
+		} catch (e) {
+			plikBlad = `Nie udało się otworzyć: ${nazwa}. ${(e as { message?: string })?.message ?? ''}`.trim();
+		}
+	}
+
+	// Nowy klient na tej samej stronie: czyścimy stan i od razu pytamy o jego wnioski.
+	$effect(() => {
+		const dla = clientId;
+		untrack(() => {
+			if (!dla || wnioskiDla === dla) return;
+			zdarzenia = []; dziennikBlad = ''; dziennikLadowanie = false;
+			plikiWBuckecie = {}; plikiGotowe = false; plikiLadowanie = false; plikiBlad = ''; plikBlad = '';
+			wczytajWnioski();
+		});
+	});
+
+	$effect(() => {
+		if (activeTab === 'dziennik' && clientId && dziennikDla !== clientId) {
+			dziennikDla = clientId;
+			untrack(() => wczytajDziennik());
+		}
+	});
+
+	// Magazyn sprawdzamy dla zakładki Załączniki albo APK (link do PDF APK przy wnioskach).
+	$effect(() => {
+		const potrzebne = activeTab === 'zalaczniki' || (activeTab === 'apk' && apkWnioski.length > 0);
+		if (potrzebne && clientId && plikiDla !== clientId) {
+			plikiDla = clientId;
+			untrack(() => wczytajPliki());
 		}
 	});
 
@@ -744,7 +903,7 @@
 			<button onclick={() => (activeTab = tab)}
 				class="pb-3 text-sm font-medium border-b-2 transition-colors
 					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length})` : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
+				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length + apkWnioski.length})` : tab === 'zalaczniki' ? (liczbaPlikow != null ? `Załączniki (${liczbaPlikow})` : 'Załączniki') : tab === 'dziennik' ? 'Dziennik zdarzeń' : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
 			</button>
 		{/each}
 	</div>
@@ -800,7 +959,11 @@
 								<div class="flex flex-col gap-1 items-start">
 									<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
 									{#if canRenew}
-										<a href="/policies/new?klient={p.klient_id}&rodzaj={encodeURIComponent(p.rodzaj)}&przedmiot={encodeURIComponent(p.przedmiot ?? '')}&renewal_of={p.id}{p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}"
+										<!-- Certyfikat OC beauty: karta polisy z otwartym menu odnowienia (wniosek dla klienta);
+										     pozostałe polisy — formularz z przeniesionymi danymi. -->
+										<a href={wProgramieOcBeauty(p, appState.policies)
+												? `/policies/${p.id}?odnow=1`
+												: `/policies/new?klient=${p.klient_id}&rodzaj=${encodeURIComponent(p.rodzaj)}&przedmiot=${encodeURIComponent(p.przedmiot ?? '')}&renewal_of=${p.id}${p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}`}
 										   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors">
 											<RefreshCw size={10} /> Odnów polisę
 										</a>
@@ -1186,6 +1349,170 @@
 				</table>
 			</div>
 		{/if}
+
+		{#if apkWnioski.length}
+			<div class="mt-6" data-testid="apk-odnowienia">
+				<div class="flex items-center gap-2 mb-2">
+					<RefreshCw size={14} class="text-slate-400" />
+					<span class="text-sm font-semibold text-slate-700">APK z wniosków o odnowienie</span>
+					<span class="text-xs text-slate-400">— program OC beauty, klient odpowiada na stronie wniosku</span>
+				</div>
+				{#if plikBlad}
+					<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{plikBlad}</div>
+				{/if}
+				<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+					<table class="w-full text-sm text-left">
+						<thead class="bg-slate-50 border-b border-line">
+							<tr>
+								<th class="px-5 py-3 font-semibold text-slate-600">Data</th>
+								<th class="px-5 py-3 font-semibold text-slate-600">Certyfikat</th>
+								<th class="px-5 py-3 font-semibold text-slate-600">APK</th>
+								<th class="px-5 py-3"></th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each apkWnioski as w (w.id)}
+								<tr class="border-t border-line-soft hover:bg-slate-50">
+									<td class="px-5 py-3 text-slate-500 whitespace-nowrap">{fmtDateTime(w.apk_at)}</td>
+									<td class="px-5 py-3 font-medium text-slate-800">{nrCertyfikatu(w)}</td>
+									<td class="px-5 py-3">
+										<Badge variant={w.apk_odmowa ? 'warning' : 'success'}>{w.apk_odmowa ? 'Świadoma odmowa' : 'Wypełniona'}</Badge>
+									</td>
+									<td class="px-5 py-3">
+										<div class="flex items-center justify-end gap-3 flex-wrap">
+											{#if maPdfApk(w)}
+												<button type="button" onclick={() => otworzPlikWniosku(`${folderWniosku(w)}/${APK_PDF}`, 'PDF APK')}
+													class="text-xs text-blue-600 hover:underline flex items-center gap-1">
+													<FileText size={12} /> PDF APK
+												</button>
+											{:else if plikiGotowe}
+												<span class="text-xs text-slate-400" title="Wniosek sprzed zapisywania PDF APK — odpowiedzi są na karcie polisy">bez PDF</span>
+											{/if}
+											<a href="/policies/{w.polisa_id}" class="text-xs text-blue-600 hover:underline">Karta polisy →</a>
+										</div>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			</div>
+		{/if}
+	{:else if activeTab === 'zalaczniki'}
+		<div class="flex items-center justify-between mb-3">
+			<p class="text-sm text-slate-500">Pliki z wniosków o odnowienie: PDF APK, PDF wniosku i dokumenty dodane przez klienta</p>
+			<button onclick={() => wczytajPliki(true)} disabled={plikiLadowanie}
+				class="flex items-center gap-1.5 text-xs text-slate-500 border border-line rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+				<RefreshCw size={12} class={plikiLadowanie ? 'animate-spin' : ''} /> Odśwież
+			</button>
+		</div>
+		{#if plikBlad}
+			<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{plikBlad}</div>
+		{/if}
+		{#if plikiBlad}
+			<div class="mb-3 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{plikiBlad}</div>
+		{/if}
+		{#if !plikiGotowe}
+			<div class="bg-white border border-line rounded-xl p-8 text-center text-sm text-slate-400">Wczytywanie…</div>
+		{:else if !wnioski.length}
+			<div class="bg-white border border-line rounded-xl p-8 text-center text-slate-400">
+				<Paperclip size={28} class="mx-auto mb-2 opacity-30" />
+				Klient nie ma wniosków o odnowienie — nie ma też plików od niego.
+			</div>
+		{:else}
+			<div class="space-y-4" data-testid="client-renewal-files">
+				{#each wnioski as w (w.id)}
+					{@const lista = plikiWniosku(w)}
+					<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden" data-testid="renewal-files-group">
+						<div class="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-line-soft bg-slate-50">
+							<a href="/policies/{w.polisa_id}" class="text-sm font-semibold text-blue-700 hover:underline">{nrCertyfikatu(w)}</a>
+							<CrmRenewalBadge status={w.status} decyzja={w.decyzja} />
+							<span class="text-xs text-slate-400">{w.zlozono_at ? `złożono ${fmtDateTime(w.zlozono_at)}` : `utworzono ${fmtDateTime(w.created_at)}`}</span>
+						</div>
+						{#if lista.length}
+							<ul class="divide-y divide-line-soft">
+								{#each lista as f (f.klucz)}
+									<li class="flex items-center gap-3 px-5 py-2.5 text-sm">
+										{#if f.zalacznik}
+											<Paperclip size={14} class="text-slate-400 shrink-0" />
+										{:else}
+											<FileText size={14} class="text-slate-400 shrink-0" />
+										{/if}
+										<div class="min-w-0 flex-1">
+											<p class="text-slate-800 truncate">{f.tytul}</p>
+											<p class="text-[11px] text-slate-400 truncate">{[f.opis, rozmiarPliku(f.rozmiar), f.at ? fmtDateTime(f.at) : ''].filter(Boolean).join(' · ')}</p>
+										</div>
+										<button type="button" onclick={() => otworzPlikWniosku(f.path, f.zalacznik ? f.opis : f.tytul)}
+											class="shrink-0 inline-flex items-center gap-1.5 text-xs border border-line rounded-lg px-2.5 py-1.5 text-slate-600 bg-white hover:bg-slate-50">
+											<Download size={12} /> Otwórz
+										</button>
+									</li>
+								{/each}
+							</ul>
+						{:else}
+							<p class="px-5 py-3 text-sm text-slate-400">Brak plików do tego wniosku.</p>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	{:else if activeTab === 'dziennik'}
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden" data-testid="client-renewal-log">
+			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
+				<div class="flex items-center gap-2">
+					<History size={16} class="text-slate-400" />
+					<span class="text-sm font-semibold text-slate-700">Dziennik zdarzeń</span>
+					<span class="text-xs text-slate-400">— wnioski o odnowienie: wysyłka, otwarcie linku, APK, załączniki, złożenie</span>
+				</div>
+				<button onclick={() => wczytajDziennik(true)} disabled={dziennikLadowanie}
+					class="flex items-center gap-1.5 text-xs text-slate-500 border border-line rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
+					<RefreshCw size={12} class={dziennikLadowanie ? 'animate-spin' : ''} /> Odśwież
+				</button>
+			</div>
+			{#if dziennikBlad}
+				<div class="m-5 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">{dziennikBlad}</div>
+			{:else if dziennikLadowanie && !zdarzenia.length}
+				<p class="text-sm text-slate-400 text-center py-8">Wczytywanie…</p>
+			{:else if !zdarzenia.length}
+				<p class="text-sm text-slate-400 text-center py-8">
+					{wnioski.length ? 'Brak zdarzeń w dzienniku wniosków tego klienta.' : 'Klient nie ma wniosków o odnowienie — dziennik jest pusty.'}
+				</p>
+			{:else}
+				<table class="w-full text-left text-sm">
+					<thead>
+						<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+							<th class="px-4 py-2">Kiedy</th>
+							<th class="px-4 py-2">Certyfikat</th>
+							<th class="px-4 py-2">Zdarzenie</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each zdarzenia as e (e.id)}
+							{@const w = wniosekPoId.get(e.renewal_id)}
+							{@const przegladarka = opisPrzegladarki(e.user_agent)}
+							<tr class="border-t border-line-soft hover:bg-slate-50 align-top">
+								<td class="px-4 py-2.5 text-slate-500 whitespace-nowrap">{fmtDateTime(e.at)}</td>
+								<td class="px-4 py-2.5 whitespace-nowrap">
+									{#if w}
+										<a href="/policies/{w.polisa_id}" class="text-blue-700 hover:underline">{nrCertyfikatu(w)}</a>
+									{:else}
+										<span class="text-slate-400">—</span>
+									{/if}
+								</td>
+								<td class="px-4 py-2.5">
+									<p class="text-slate-800">{opisZdarzenia(e)}</p>
+									{#if e.ip || przegladarka}
+										<p class="text-[11px] text-slate-400" title={e.user_agent ?? ''}>
+											{#if e.ip}IP <span class="font-mono">{e.ip}</span>{/if}{#if e.ip && przegladarka}&nbsp;·&nbsp;{/if}{przegladarka}
+										</p>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			{/if}
+		</div>
 	{:else if activeTab === 'zadania'}
 		<div class="flex justify-end mb-3">
 			<button onclick={openNewTask} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
