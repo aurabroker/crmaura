@@ -154,7 +154,7 @@ export class Odnowienie {
 	pytajODaneWyceny = $derived(this.decyzja === 'zmiany' && this.zm.suma && this.apkOdmowa);
 	potrzebnaAnkieta = $derived(this.decyzja === 'zmiany' && this.zm.ankieta && this.zm.zabiegi_ankieta.length > 0);
 	wniosek = $derived.by((): Wniosek => this.zbudujWniosek());
-	wycena = $derived.by(() => wycenaWniosku(this.wniosek, this.apkDoWyceny, this.widok.skladka));
+	wycena = $derived.by(() => wycenaWniosku(this.wniosek, this.apkDoWyceny, this.widok.skladka, this.widok.ochrona_prawna_obecnie));
 	kroki = $derived<Krok[]>(this.potrzebnaAnkieta ? ['apk', 'wniosek', 'ankieta', 'podsumowanie'] : ['apk', 'wniosek', 'podsumowanie']);
 
 	constructor(klucz: string, widok: WidokAktywny) {
@@ -178,7 +178,8 @@ export class Odnowienie {
 			decyzja: 'zmiany',
 			zmiany: {
 				wyzsza_suma: z.suma ? z.wyzsza_suma : null,
-				ochrona_prawna: z.ochrona_prawna,
+				// Klauzula, którą certyfikat już ma, nie jest zmianą (stary szkic mógł ją mieć zaznaczoną).
+				ochrona_prawna: z.ochrona_prawna && !this.widok.ochrona_prawna_obecnie,
 				adres: z.adres ? { ulica: z.ulica, kod: z.kod, miasto: z.miasto } : null,
 				nowe_zabiegi: z.zabiegi ? [...z.nowe_zabiegi] : [],
 				zabiegi_ankieta: z.ankieta ? [...z.zabiegi_ankieta] : [],

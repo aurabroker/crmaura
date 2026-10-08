@@ -16,7 +16,7 @@ create table if not exists public.crm_renewals (
   id uuid primary key default gen_random_uuid(),
   tenant_id uuid not null references public.crm_tenants(id),
   polisa_id uuid not null references public.crm_policies(id) on delete cascade,
-  klient_id uuid not null references public.crm_clients(id),
+  klient_id uuid not null references public.crm_clients(id) on delete cascade,
   status text not null default 'utworzony'
     check (status in ('utworzony', 'wyslany', 'otwarty', 'apk', 'zlozony', 'wygasl', 'anulowany')),
   decyzja text check (decyzja in ('bez_zmian', 'zmiany', 'nie')),

@@ -4,7 +4,9 @@ import {
 	DNI_DO_PRZYPOMNIENIA,
 	DNI_PRZED_KONCEM,
 	dzisWarszawa,
+	anulujNieaktualny,
 	polisaProgramu,
+	usunSierotyPlikow,
 	utworzOdnowienie,
 	type RenewalRow
 } from '$lib/server/renewals';
@@ -26,7 +28,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	if (e) return new Response('nie mogę sprawdzić tokenu', { status: 500 });
 	if (zgoda !== true) return new Response('zły nagłówek x-cron-token', { status: 401 });
 
-	const wynik = { wygaszone: 0, zaproszenia: 0, przypomnienia: 0, pominiete: 0, bledy: [] as string[] };
+	const wynik = { wygaszone: 0, zaproszenia: 0, przypomnienia: 0, pominiete: 0, usunietePliki: 0, bledy: [] as string[] };
 	const teraz = new Date().toISOString();
 
 	const { data: wygasle } = await admin
@@ -61,8 +63,36 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			.gte('data_do', dzis)
 			.lte('data_do', granica)
 			.order('data_do');
-		const { data: zajete } = await admin.from('crm_renewals').select('polisa_id').eq('tenant_id', f.id).neq('status', 'anulowany');
+		// Certyfikat, który miał już jakikolwiek wniosek (także anulowany przez pracownika albo wygasły),
+		// nie dostaje automatycznie nowego — ponowne zaproszenie to decyzja doradcy.
+		const { data: zajete } = await admin.from('crm_renewals').select('polisa_id').eq('tenant_id', f.id);
 		const maWniosek = new Set((zajete ?? []).map((z) => z.polisa_id));
+
+		// Automatyczne wnioski, których e-mail się nie wysłał (np. chwilowy błąd Resend) — ponawiamy.
+		const { data: niewyslane } = await admin
+			.from('crm_renewals')
+			.select('*')
+			.eq('tenant_id', f.id)
+			.eq('status', 'utworzony')
+			.is('wyslano_at', null)
+			.is('created_by', null)
+			.gt('wazny_do', teraz)
+			.limit(MAKS_ZAPROSZEN);
+		let zablokowana = false;
+		for (const r of (niewyslane ?? []) as RenewalRow[]) {
+			if (wyslane >= MAKS_ZAPROSZEN) break;
+			if (await anulujNieaktualny(admin, r)) continue;
+			const w = await wyslijZaproszenie(admin, r, url.origin);
+			if (w.ok) {
+				wynik.zaproszenia++;
+				wyslane++;
+			} else {
+				wynik.bledy.push(`ponowne zaproszenie ${r.id}: ${w.status}`);
+				if ([401, 403, 422].includes(w.status)) { zablokowana = true; break; }
+			}
+		}
+		if (zablokowana) continue;
+
 		for (const c of certyfikaty ?? []) {
 			if (wyslane >= MAKS_ZAPROSZEN) break;
 			if (maWniosek.has(c.id)) continue;
@@ -104,6 +134,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	const zablokowane = new Set<string>();
 	for (const r of (doPrzypomnienia ?? []) as RenewalRow[]) {
 		if (zablokowane.has(r.tenant_id)) continue;
+		if (await anulujNieaktualny(admin, r)) continue;
 		// Zajęcie przed wysyłką: nakładające się uruchomienia nie wyślą przypomnienia dwa razy.
 		const { data: zajete } = await admin
 			.from('crm_renewals')
@@ -122,6 +153,16 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			if ([401, 403, 422].includes(w.status)) zablokowane.add(r.tenant_id);
 		}
 	}
+
+	// 4) Pliki bez wpisu we wniosku (w zakończonych wnioskach z ostatnich dni) — sprzątanie magazynu.
+	const { data: zakonczone } = await admin
+		.from('crm_renewals')
+		.select('id, tenant_id, zalaczniki')
+		.in('status', ['zlozony', 'anulowany', 'wygasl'])
+		.gt('updated_at', new Date(Date.now() - 4 * 86_400_000).toISOString())
+		.lt('updated_at', new Date(Date.now() - 3 * 3_600_000).toISOString())
+		.limit(MAKS_PRZYPOMNIEN);
+	for (const r of zakonczone ?? []) wynik.usunietePliki += await usunSierotyPlikow(admin, r as RenewalRow);
 
 	return json(wynik);
 };

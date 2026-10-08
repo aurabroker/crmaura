@@ -338,8 +338,38 @@ export function waliduj_ankiete(raw: unknown): Wynik<Ankieta> {
 	return bledy.length ? { ok: false, bledy } : { ok: true, value: a };
 }
 
+// Wszystkie składki z tabeli programu (bez ochrony prawnej) dla danej sumy albo dla każdej sumy.
+function skladkiTabeli(suma: number | null): { suma: Suma; kwota: number }[] {
+	const out: { suma: Suma; kwota: number }[] = [];
+	for (const k of Object.values(KATEGORIE))
+		for (const s of SUMY) {
+			if (suma != null && s !== suma) continue;
+			const baza = k.skladka[s];
+			out.push({ suma: s, kwota: baza }, { suma: s, kwota: Math.round(baza * (1 + DOPLATA_6_8_OSOB) * 100) / 100 });
+		}
+	return out;
+}
+const grosze = (n: number) => Math.round(n * 100);
+
+// Czy obecna składka zawiera już ochronę prawną: składka = stawka z tabeli + 92 zł (i nie jest samą stawką).
+export function ochronaPrawnaWSkladce(skladka: number | null, suma: number | null): boolean {
+	if (skladka == null) return false;
+	const t = skladkiTabeli(suma);
+	const k = grosze(skladka);
+	return t.some((x) => grosze(x.kwota + OCHRONA_PRAWNA_SKLADKA) === k) && !t.some((x) => grosze(x.kwota) === k);
+}
+
+// Suma gwarancyjna odczytana ze składki, gdy pasuje do dokładnie jednej sumy w tabeli (z ochroną prawną lub bez).
+export function sumaZeSkladki(skladka: number | null): Suma | null {
+	if (skladka == null) return null;
+	const k = grosze(skladka);
+	const sumy = new Set(skladkiTabeli(null).filter((x) => grosze(x.kwota) === k || grosze(x.kwota + OCHRONA_PRAWNA_SKLADKA) === k).map((x) => x.suma));
+	return sumy.size === 1 ? [...sumy][0] : null;
+}
+
 // Wycena dla wniosku ze zmianami. null = składka bez zmian (np. tylko zmiana adresu).
-export function wycenaWniosku(w: Wniosek, apk: Apk | null, skladkaObecna: number | null): Wycena | null {
+// opObecnie: obecny certyfikat ma już ochronę prawną (patrz ochronaPrawnaWSkladce) — nie doliczamy jej drugi raz.
+export function wycenaWniosku(w: Wniosek, apk: Apk | null, skladkaObecna: number | null, opObecnie = false): Wycena | null {
 	if (w.decyzja !== 'zmiany' || !w.zmiany) return null;
 	const z = w.zmiany;
 	if (z.zabiegi_ankieta.length) return { rodzaj: 'indywidualna', powod: 'zabiegi wymagające ankiety podlegają ocenie ubezpieczyciela' };
@@ -348,9 +378,9 @@ export function wycenaWniosku(w: Wniosek, apk: Apk | null, skladkaObecna: number
 		const osoby = apk?.osoby || z.osoby;
 		const kategoria = kategoriaZRodzajow(rodzaje);
 		if (!kategoria || !osoby) return { rodzaj: 'indywidualna', powod: 'brak danych do wyceny' };
-		return skladkaProgramu({ kategoria, suma: z.wyzsza_suma, osoby, ochronaPrawna: z.ochrona_prawna });
+		return skladkaProgramu({ kategoria, suma: z.wyzsza_suma, osoby, ochronaPrawna: z.ochrona_prawna || opObecnie });
 	}
-	if (z.ochrona_prawna && skladkaObecna != null) {
+	if (z.ochrona_prawna && skladkaObecna != null && !opObecnie) {
 		return { rodzaj: 'kwota', kwota: Math.round((skladkaObecna + OCHRONA_PRAWNA_SKLADKA) * 100) / 100, opis: `obecna składka + ${OCHRONA_PRAWNA_SKLADKA} zł ochrona prawna` };
 	}
 	return null;

@@ -49,7 +49,7 @@
 		const d = daysUntil(p.data_do);
 		if (d < 0 || d > 45) return false;
 		const w = wnioski.get(p.id);
-		return !w || !czyAktywny(w.status);
+		return !w || !czyAktywny(w.status) || (w.status === 'utworzony' && !w.wyslano_at);
 	}
 	const bezWnioskuCount = $derived(wnioski ? appState.policies.filter(bezWniosku).length : 0);
 

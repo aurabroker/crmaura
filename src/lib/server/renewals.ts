@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { env } from '$env/dynamic/private';
 import { EMAIL_RE } from '$lib/server/mail';
 import type { WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
-import type { Apk, Ankieta, Wniosek } from '$lib/renewals/program';
+import { ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
 // panelu CRM (/api/renewals) i zadania dziennego (/api/cron/renewals). Wszystko działa kluczem
@@ -293,10 +293,48 @@ export async function odnowieniePoKluczu(admin: SupabaseClient, klucz: string): 
 		await admin.from('crm_renewals').update({ status: 'wygasl', updated_at: new Date().toISOString() }).eq('id', r.id).in('status', [...AKTYWNE]);
 		r.status = 'wygasl';
 	}
+	if ((AKTYWNE as readonly string[]).includes(r.status) && (await anulujNieaktualny(admin, r))) r.status = 'anulowany';
 	return r;
 }
 
+// Certyfikat odnowiony w CRM inną drogą (polisa z renewal_of) albo usunięty: wniosek online jest
+// nieaktualny — anulujemy go, żeby klient nie składał wniosku i nie dostawał przypomnień.
+export async function anulujNieaktualny(admin: SupabaseClient, r: Pick<RenewalRow, 'id' | 'tenant_id' | 'polisa_id'>): Promise<boolean> {
+	const [{ data: nastepca }, { data: polisa }] = await Promise.all([
+		admin.from('crm_policies').select('id').eq('renewal_of', r.polisa_id).is('deleted_at', null).limit(1),
+		admin.from('crm_policies').select('id, deleted_at').eq('id', r.polisa_id).maybeSingle()
+	]);
+	const powod = nastepca?.length ? 'polisa odnowiona w CRM' : !polisa || polisa.deleted_at ? 'polisa usunięta' : null;
+	if (!powod) return false;
+	const { data } = await admin
+		.from('crm_renewals')
+		.update({ status: 'anulowany', updated_at: new Date().toISOString() })
+		.eq('id', r.id)
+		.in('status', [...AKTYWNE])
+		.select('id');
+	if (data?.length) await zapiszZdarzenie(admin, r, 'anulowanie', null, { powod, przez: 'automat' });
+	return true;
+}
+
 export const czyAktywny = (r: RenewalRow) => (AKTYWNE as readonly string[]).includes(r.status);
+
+// Pliki w folderze wniosku, których nie ma na liście załączników (usunięte z listy albo wgrane
+// jednorazowym adresem po złożeniu) — kasujemy, żeby nie zostawały w magazynie bez śladu w CRM.
+export async function usunSierotyPlikow(admin: SupabaseClient, r: Pick<RenewalRow, 'id' | 'tenant_id' | 'zalaczniki'>): Promise<number> {
+	const folder = `${r.tenant_id}/${r.id}`;
+	const { data: pliki } = await admin.storage.from(BUCKET).list(folder, { limit: 1000 });
+	const zostaja = new Set([...(r.zalaczniki ?? []).map((z) => z.path.split('/').pop()), 'wniosek-odnowienia.pdf']);
+	const sieroty = (pliki ?? []).filter((p) => p.id && !zostaja.has(p.name)).map((p) => `${folder}/${p.name}`);
+	if (sieroty.length) await admin.storage.from(BUCKET).remove(sieroty);
+	return sieroty.length;
+}
+
+// Obecna suma gwarancyjna: z polisy, a gdy jej brak — odczytana ze składki (tylko jednoznacznie).
+export const sumaObecna = (r: Pick<RenewalRow, 'suma' | 'skladka'>): number | null =>
+	r.suma != null ? Number(r.suma) : sumaZeSkladki(r.skladka != null ? Number(r.skladka) : null);
+// Czy obecny certyfikat ma już ochronę prawną (składka = stawka z tabeli + 92 zł).
+export const opObecnie = (r: Pick<RenewalRow, 'suma' | 'skladka'>): boolean =>
+	ochronaPrawnaWSkladce(r.skladka != null ? Number(r.skladka) : null, sumaObecna(r));
 
 export function widok(r: RenewalRow): WidokOdnowienia {
 	if (r.status === 'anulowany') return { stan: 'anulowany' };
@@ -311,13 +349,14 @@ export function widok(r: RenewalRow): WidokOdnowienia {
 		nr_polisy: r.nr_polisy,
 		ubezpieczyciel: r.tu_nazwa,
 		program: r.program,
-		suma: r.suma,
+		suma: sumaObecna(r),
 		skladka: r.skladka,
 		okres_obecny: { od: r.okres_od, do: r.okres_do },
 		okres_nowy: nowyOkres(r.okres_do ?? dzisWarszawa()),
 		wazny_do: r.wazny_do,
 		apk_wypelniona: !!r.apk_at && !r.apk_odmowa,
 		apk_odmowa: r.apk_odmowa,
+		ochrona_prawna_obecnie: opObecnie(r),
 		apk: r.apk_odmowa ? null : r.apk,
 		zalaczniki: (r.zalaczniki ?? []).map(({ id, typ, nazwa, rozmiar, mime }) => ({ id, typ, nazwa, rozmiar, mime }))
 	};

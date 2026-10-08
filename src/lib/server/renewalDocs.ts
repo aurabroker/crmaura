@@ -1,6 +1,6 @@
 import { esc } from '$lib/server/mail';
 import { newServerPdf } from '$lib/server/pdf';
-import { nowyOkres, type RenewalRow } from '$lib/server/renewals';
+import { nowyOkres, opObecnie, type RenewalRow } from '$lib/server/renewals';
 import {
 	APK_ODPOWIEDZI,
 	APK_ODMOWA_TRESC,
@@ -160,8 +160,20 @@ export function mailPotwierdzenie(r: RenewalRow) {
 	return { temat, html, tekst };
 }
 
-export function mailBiuro(r: RenewalRow, linkCrm: string, kto: { ip: string | null }) {
-	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk);
+// Sygnały z APK, na które doradca powinien spojrzeć przed wystawieniem certyfikatu.
+export function sygnalyApk(r: RenewalRow): string[] {
+	const a = r.apk_odmowa ? null : r.apk;
+	if (!a) return [];
+	const s: string[] = [];
+	if (a.osoby === '9+') s.push('APK: więcej niż 8 osób wykonujących zabiegi — poza taryfą programu');
+	if (a.szkody === 'tak') s.push(`APK: szkody lub roszczenia${a.szkody_opis ? ` — ${a.szkody_opis}` : ''}`);
+	if (a.spoza_listy === 'tak') s.push(`APK: zabiegi spoza list programu${a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : ''}`);
+	if (a.suma_oczekiwana === 'wiecej') s.push('APK: oczekiwana suma gwarancyjna wyższa niż 300 tys. zł');
+	return s;
+}
+
+export function mailBiuro(r: RenewalRow, linkCrm: string, kto: { ip: string | null }, pominiete: string[] = []) {
+	const zmiany = [...opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk), ...sygnalyApk(r)];
 	const temat = `[Odnowienie] ${DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? r.decyzja} — ${r.klient_nazwa} — cert. ${r.nr_polisy ?? '—'}${r.ankieta ? ' — ANKIETA' : ''}`;
 	const wiersze: [string, string][] = [
 		['Klient', r.klient_nazwa ?? '—'],
@@ -169,18 +181,20 @@ export function mailBiuro(r: RenewalRow, linkCrm: string, kto: { ip: string | nu
 		['Decyzja', DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? '—'],
 		['Składka', opisSkladki(r)],
 		['APK', r.apk_odmowa ? 'klient odmówił wypełnienia APK' : 'wypełniona'],
+		['Ochrona prawna w obecnym certyfikacie', opObecnie(r) ? 'tak (zostaje)' : 'nie'],
 		['Złożono', `${dataGodzina(r.zlozono_at)}${kto.ip ? `, IP ${kto.ip}` : ''}`],
 		...(r.wniosek?.nie_powod ? ([['Powód rezygnacji', r.wniosek.nie_powod]] as [string, string][]) : []),
-		...(r.zalaczniki?.length ? ([['Załączniki', r.zalaczniki.map((z) => `${TYPY_ZALACZNIKOW[z.typ] ?? z.typ}: ${z.nazwa}`).join('; ')]] as [string, string][]) : [])
+		...(r.zalaczniki?.length ? ([['Załączniki', r.zalaczniki.map((z) => `${TYPY_ZALACZNIKOW[z.typ] ?? z.typ}: ${z.nazwa}`).join('; ')]] as [string, string][]) : []),
+		...(pominiete.length ? ([['Pliki niedołączone do e-maila', pominiete.join('; ')]] as [string, string][]) : [])
 	];
 	const html = ramka('Wniosek o odnowienie', `
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
       ${wiersze.map(([k, v]) => `<tr><td style="padding:6px 10px 6px 0;font-weight:600;color:#475569;vertical-align:top;white-space:nowrap;">${esc(k)}</td><td style="padding:6px 0;">${esc(v)}</td></tr>`).join('\n      ')}
     </table>
-    ${zmiany.length ? `<p style="margin:0 0 6px;font-weight:600;">Zmiany:</p><ul style="margin:0 0 14px;padding-left:20px;">${zmiany.map((z) => `<li>${esc(z)}</li>`).join('')}</ul>` : ''}
+    ${zmiany.length ? `<p style="margin:0 0 6px;font-weight:600;">Zmiany i uwagi:</p><ul style="margin:0 0 14px;padding-left:20px;">${zmiany.map((z) => `<li>${esc(z)}</li>`).join('')}</ul>` : ''}
     ${r.ankieta ? '<p style="margin:0 0 14px;color:#be123c;font-weight:600;">Klient wypełnił ankietę ERGO Hestii — czekamy na podpisany egzemplarz.</p>' : ''}
     ${przycisk(linkCrm, 'Otwórz polisę w CRM')}`);
-	const tekst = [...wiersze.map(([k, v]) => `${k}: ${v}`), ...(zmiany.length ? ['', 'Zmiany:', ...zmiany.map((z) => `- ${z}`)] : []), '', linkCrm].join('\n');
+	const tekst = [...wiersze.map(([k, v]) => `${k}: ${v}`), ...(zmiany.length ? ['', 'Zmiany i uwagi:', ...zmiany.map((z) => `- ${z}`)] : []), '', linkCrm].join('\n');
 	return { temat, html, tekst };
 }
 

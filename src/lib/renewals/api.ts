@@ -33,6 +33,8 @@ export type WidokOdnowienia =
 			wazny_do: string;
 			apk_wypelniona: boolean;
 			apk_odmowa: boolean;
+			// Obecna składka zawiera już klauzulę ochrony prawnej (stawka z tabeli + 92 zł).
+			ochrona_prawna_obecnie: boolean;
 			apk: Apk | null;
 			zalaczniki: Zalacznik[];
 	  };

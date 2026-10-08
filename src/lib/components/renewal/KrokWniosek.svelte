@@ -177,6 +177,16 @@
 
 					<!-- Klauzula ochrony prawnej -->
 					<div class="rounded-xl border border-slate-300 has-[>label>input:checked]:border-rose-400">
+						{#if w.ochrona_prawna_obecnie}
+							<!-- Obecny certyfikat ma już klauzulę: zostaje w odnowieniu, bez dopłaty. -->
+							<div class="flex items-start gap-3 p-4 pb-1 min-h-12" data-testid="op-obecnie">
+								<span class="mt-0.5 text-emerald-600" aria-hidden="true">✓</span>
+								<span>
+									<span class="block font-semibold text-slate-900">Klauzula ochrony prawnej — masz ją w obecnym certyfikacie</span>
+									<span class="block text-sm text-slate-600">Zostaje w odnowieniu, jest już w Twojej składce.</span>
+								</span>
+							</div>
+						{:else}
 						<label class="flex items-start gap-3 p-4 pb-1 min-h-12 cursor-pointer">
 							<input type="checkbox" bind:checked={s.zm.ochrona_prawna} class={ZNACZNIK} />
 							<span>
@@ -187,6 +197,7 @@
 								</span>
 							</span>
 						</label>
+						{/if}
 						<div class="px-4 pb-3 pl-12">
 							<button
 								type="button"

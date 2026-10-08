@@ -5,6 +5,9 @@ import {
 	czyAktywny,
 	klientZadania,
 	odnowieniePoKluczu,
+	opObecnie,
+	sumaObecna,
+	usunSierotyPlikow,
 	widok,
 	zapiszZWersja,
 	zapiszZdarzenie,
@@ -43,6 +46,7 @@ export const GET: RequestHandler = async ({ params, request, getClientAddress })
 			.from('crm_renewals')
 			.update({ otwarto_at: teraz, ...(r.status === 'utworzony' || r.status === 'wyslany' ? { status: 'otwarty' } : {}), updated_at: teraz })
 			.eq('id', r.id)
+			.in('status', ['utworzony', 'wyslany', 'otwarty', 'apk'])
 			.is('otwarto_at', null);
 		await zapiszZdarzenie(admin, r, 'otwarcie', klientZadania(request, getClientAddress));
 		if (r.status === 'utworzony' || r.status === 'wyslany') r.status = 'otwarty';
@@ -149,16 +153,22 @@ export const POST: RequestHandler = async (event) => {
 			const w = waliduj_wniosek(body.wniosek, apk);
 			if (!w.ok) return blad(400, 'Popraw wniosek.', w.bledy);
 			const wniosek = w.value;
+			// Klauzula ochrony prawnej, którą certyfikat już ma, nie jest zmianą ani dopłatą.
+			if (wniosek.zmiany && opObecnie(r)) wniosek.zmiany.ochrona_prawna = false;
 			// Wyższa suma musi być wyższa od obecnej (strona pokazuje tylko takie, serwer sprawdza sam).
 			const nowaSuma = wniosek.zmiany?.wyzsza_suma;
-			if (nowaSuma != null && r.suma != null && nowaSuma <= Number(r.suma)) {
+			const suma = sumaObecna(r);
+			if (nowaSuma != null && suma != null && nowaSuma <= suma) {
 				return blad(400, 'Popraw wniosek.', ['Nowa suma gwarancyjna musi być wyższa od obecnej.']);
 			}
 
 			// Pliki, które naprawdę są w magazynie (nieudane wysyłki odpadają).
-			const { data: pliki } = await admin.storage.from(BUCKET).list(`${r.tenant_id}/${r.id}`, { limit: 100 });
-			const nazwy = new Set((pliki ?? []).map((p) => p.name));
-			const zalaczniki = (r.zalaczniki ?? []).filter((z) => nazwy.has(z.path.split('/').pop() ?? ''));
+			// Rozmiar bierzemy z magazynu, nie z deklaracji klienta.
+			const { data: pliki } = await admin.storage.from(BUCKET).list(`${r.tenant_id}/${r.id}`, { limit: 1000 });
+			const rozmiary = new Map((pliki ?? []).map((p) => [p.name, Number((p.metadata as { size?: number } | null)?.size ?? 0)]));
+			const zalaczniki = (r.zalaczniki ?? [])
+				.filter((z) => rozmiary.has(z.path.split('/').pop() ?? ''))
+				.map((z) => ({ ...z, rozmiar: rozmiary.get(z.path.split('/').pop() ?? '') || z.rozmiar }));
 
 			let ankieta = null;
 			if (wniosek.zmiany?.zabiegi_ankieta.length) {
@@ -170,7 +180,7 @@ export const POST: RequestHandler = async (event) => {
 				ankieta = a.value;
 			}
 
-			const wycena = wycenaWniosku(wniosek, apk, r.skladka != null ? Number(r.skladka) : null);
+			const wycena = wycenaWniosku(wniosek, apk, r.skladka != null ? Number(r.skladka) : null, opObecnie(r));
 			const skladka_nowa =
 				wniosek.decyzja === 'nie' ? null
 				: wycena?.rodzaj === 'kwota' ? wycena.kwota
@@ -191,9 +201,10 @@ export const POST: RequestHandler = async (event) => {
 			await zapiszZdarzenie(admin, r, 'zlozenie', kto, { decyzja: wniosek.decyzja });
 
 			// PDF, e-maile i zadanie idą w tle (Cloudflare: waitUntil), żeby klient nie czekał na wysyłkę.
-			const dalej = poZlozeniu(event, admin, zlozony as RenewalRow, kto).catch((e) =>
-				console.error('renewals: po złożeniu:', (e as Error)?.message ?? e)
-			);
+			const dalej = Promise.all([
+				poZlozeniu(event, admin, zlozony as RenewalRow, kto),
+				usunSierotyPlikow(admin, zlozony as RenewalRow)
+			]).catch((e) => console.error('renewals: po złożeniu:', (e as Error)?.message ?? e));
 			const ctx = (event.platform as { context?: { waitUntil(p: Promise<unknown>): void } } | undefined)?.context;
 			if (ctx?.waitUntil) ctx.waitUntil(dalej);
 			else await dalej;
