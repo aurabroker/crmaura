@@ -363,13 +363,21 @@
 		if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
 		return String(Math.round(v));
 	}
+
+	// Numer wersji CRM przy nagłówku pulpitu (vite.config.ts; podnoszony przy każdym wdrożeniu).
+	const WERSJA = __APP_VERSION__;
+	const BUILD_DATA = new Date(__APP_BUILD__.data).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw', dateStyle: 'short', timeStyle: 'short' });
 </script>
 
 <svelte:head><title>Pulpit — FRANK67 CRM</title></svelte:head>
 
 <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Pulpit {roleLabel()}a</h1>
+		<h1 class="text-2xl font-semibold text-slate-900">
+			Pulpit {roleLabel()}a
+			<span class="ml-2 align-middle text-xs font-medium text-slate-400 bg-slate-100 border border-line rounded-full px-2 py-0.5"
+				title="Wersja CRM {WERSJA} · build {BUILD_DATA}{__APP_BUILD__.commit ? ` · ${__APP_BUILD__.commit}` : ''}">v{WERSJA}</span>
+		</h1>
 		<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
 	</div>
 	<div class="flex items-center gap-3">

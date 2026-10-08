@@ -18,6 +18,12 @@
 | Excel import | SheetJS (`xlsx`) — ładowany dynamicznie (`await import('xlsx')`) |
 | Email | Resend API — per tenant, klucz w `crm_tenants.resend_api_key` |
 
+### Wersja
+
+Numer wersji CRM jest w `package.json` (`version`) i widać go przy nagłówku „Pulpit …” (po najechaniu:
+data builda i commit). **Każde wdrożenie na main podnosi wersję**; środkowa liczba = numer PR
+(np. PR #31 → `1.31.0`, kolejna poprawka w tym samym PR → `1.31.1`). Plik `package-lock.json` ma ten sam numer.
+
 ---
 
 ## Struktura projektu
