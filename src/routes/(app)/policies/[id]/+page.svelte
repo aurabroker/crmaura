@@ -16,6 +16,7 @@
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalPanel from '$lib/components/renewal/CrmRenewalPanel.svelte';
 	import { wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
+	import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
@@ -441,8 +442,12 @@
 									<Mail size={14} class="mt-0.5 shrink-0 text-slate-400" />
 									<span class="min-w-0">
 										Wyślij klientowi wniosek o odnowienie (e-mail)
-										<span class="block text-[11px] {klientEmail ? 'text-slate-400' : 'text-amber-600'} break-all">
-											{klientEmail ? `na adres ${klientEmail}` : 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta albo utwórz link'}
+										<span class="block text-[11px] {klientEmail && !appState.tenantFeatures?.odnowienia_test ? 'text-slate-400' : 'text-amber-600'} break-all">
+											{!klientEmail
+												? 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta albo utwórz link'
+												: appState.tenantFeatures?.odnowienia_test
+													? `TRYB TESTOWY — na adres ${ADRES_TESTOWY}, nie do klienta`
+													: `na adres ${klientEmail}`}
 										</span>
 									</span>
 								</button>

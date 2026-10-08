@@ -248,6 +248,13 @@ z załącznikami (dyplom, certyfikat szkolenia z ostatnich 12 miesięcy, wzory z
 - **Automat**: pg_cron `crm-renewals` (codziennie 6:20 UTC) → `/api/cron/renewals` z `x-cron-token`: wygaszanie,
   zaproszenia 45 dni przed końcem (moduł `odnowienia_auto` w SAAS Admin), jedno przypomnienie po 7 dniach.
 - **Wysyłka**: klucz Resend firmy (SAAS Admin), nadawca `RENEWAL_EMAIL_FROM` (domyślnie BeautyPolisa <odnowienia@beautypolisa.eu>).
+- **Tryb testowy**: moduł `odnowienia_test` (SAAS Admin) — każdy e-mail odnowień (zaproszenie, przypomnienie,
+  potwierdzenie, kopia do biura) idzie na `RENEWAL_TEST_EMAIL` (domyślnie zarzad@auraexpert.pl) z „[TEST]” w temacie;
+  zadanie w CRM też ma „[TEST]”. Wniosek utworzony w trybie testowym ma adres testowy zamiast adresu klienta (zdarzenie
+  `tryb_testowy`), więc nie napisze do klienta także po wyłączeniu trybu. W trybie testowym automat 45 dni nie zakłada
+  nowych wniosków (ponawia tylko niewysłane — na adres testowy). Karta CRM otwarta przy włączonym trybie wysyła
+  `oczekiwany_test: true`; gdy tryb wyłączono w międzyczasie, serwer odpowiada 409 („odśwież stronę”).
+  Po testach: wyłączyć moduł i usunąć wnioski testowe (`email` = adres testowy) — inaczej automat pominie te certyfikaty.
 - Migracja: `supabase/migrations/20261007000003_renewals.sql` (zastosowana 2026-10-08).
 
 ---

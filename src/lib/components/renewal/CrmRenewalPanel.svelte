@@ -11,7 +11,8 @@
 		RODZAJE_GABINETU, TYPY_ZALACZNIKOW, formatSuma, formatZl, wycenaWniosku,
 		type Ankieta, type Apk
 	} from '$lib/renewals/program';
-	import { DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
+	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
+	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import { czyLinkDziala, fmtData, fmtDataCzas, wariantDecyzji, wywolajApi } from './crmRenewals';
 	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2 } from 'lucide-svelte';
@@ -42,6 +43,9 @@
 
 	const latest = $derived(renewals[0] ?? null);
 	const starsze = $derived(renewals.slice(1));
+	// Tryb testowy firmy (SAAS Admin) albo wniosek utworzony w tym trybie (ma zapisany adres testowy).
+	const trybTestowy = $derived(appState.tenantFeatures?.odnowienia_test === true);
+	const wniosekTestowy = $derived(latest?.email?.trim().toLowerCase() === ADRES_TESTOWY);
 
 	// Odpowiedzi spóźnione po zmianie polisy (nawigacja między kartami) są pomijane.
 	let zapytanie = 0;
@@ -118,8 +122,14 @@
 		blad = '';
 		pracuje = tryb;
 		try {
-			const body = { polisa_id: policy.id, tryb };
+			// Serwer odrzuca wysyłkę, gdy ekran pokazuje tryb testowy, a firma ma go już wyłączony.
+			const body = { polisa_id: policy.id, tryb, oczekiwany_test: trybTestowy };
 			let w = await wywolajApi<OdnowienieUtworzone>('POST', '/api/renewals', body);
+			if (!w.ok && w.status === 409 && !w.aktywny) {
+				const { data: t } = await sb.from('crm_tenants').select('features').eq('id', policy.tenant_id).maybeSingle();
+				const f = (t as { features?: Record<string, boolean> | null } | null)?.features;
+				if (t) appState.tenantFeatures = f ?? {};
+			}
 			if (!w.ok && w.status === 409 && w.aktywny) {
 				const tak = await askConfirm({
 					title: 'Ten certyfikat ma już aktywny wniosek.',
@@ -137,7 +147,12 @@
 			}
 			link = w.data.link ?? '';
 			if (tryb === 'email') {
-				if (w.data.wyslano) ctxToast(email ? `Wysłano wniosek na adres ${email}` : 'Wysłano wniosek do klienta');
+				if (w.data.wyslano)
+					ctxToast(
+						w.data.test
+							? `TEST: wniosek wysłany na adres testowy ${w.data.adres ?? ADRES_TESTOWY}`
+							: email ? `Wysłano wniosek na adres ${email}` : 'Wysłano wniosek do klienta'
+					);
 				else blad = 'Wniosek utworzony, ale e-mail nie został wysłany. Skopiuj link poniżej i przekaż go klientowi.';
 			} else if (link) {
 				const ok = await kopiujDoSchowka(Promise.resolve(link));
@@ -385,6 +400,11 @@
 	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5" data-testid="renewal-panel">
 		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex flex-wrap items-center gap-3">
 			<p class="text-sm font-semibold text-slate-700">Wniosek o odnowienie — program OC beauty</p>
+			{#if trybTestowy || wniosekTestowy}
+				<span class="text-[11px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-0.5" data-testid="renewal-test-mode">
+					{trybTestowy ? `Tryb testowy — e-maile idą na ${ADRES_TESTOWY}, nie do klienta` : 'Wniosek testowy'}
+				</span>
+			{/if}
 			{#if latest}
 				<CrmRenewalBadge status={latest.status} />
 				{#if pracuje === 'email' || pracuje === 'link'}

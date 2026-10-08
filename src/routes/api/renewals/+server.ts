@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth';
-import { linkDla, polisaProgramu, utworzOdnowienie, zapiszZdarzenie } from '$lib/server/renewals';
+import { czyTest, linkDla, polisaProgramu, trybTestowy, ustawieniaFirmy, utworzOdnowienie, zapiszZdarzenie } from '$lib/server/renewals';
 import { wyslijZaproszenie } from '$lib/server/renewalFlow';
 import type { OdnowienieUtworzone } from '$lib/renewals/staffApi';
 import type { RequestHandler } from './$types';
@@ -11,6 +11,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
 	const tryb = body?.tryb === 'link' ? 'link' : body?.tryb === 'email' ? 'email' : null;
 	if (!body || !tryb) throw error(400, { message: 'Nieprawidłowe dane.' });
+
+	// Karta CRM otwarta przy włączonym trybie testowym pokazuje „adres testowy”. Gdy tryb wyłączono w międzyczasie,
+	// nie wysyłamy do klienta na podstawie nieaktualnego ekranu — pracownik odświeża stronę i widzi prawdziwy adres.
+	if (body.oczekiwany_test === true && !trybTestowy(await ustawieniaFirmy(admin, profile.tenant_id))) {
+		throw error(409, { message: 'Tryb testowy odnowień został wyłączony — odśwież stronę (F5). Wniosek pójdzie teraz do klienta.', tryb_zmieniony: true } as App.Error);
+	}
 
 	const polisa = await polisaProgramu(admin, profile.tenant_id, String(body.polisa_id ?? ''));
 	if (tryb === 'email' && !polisa.klient.email) {
@@ -26,10 +32,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			// Wniosek zostaje (link działa), ale e-mail nie wyszedł — pracownik może wysłać link sam.
 			throw error(w.status === 400 ? 400 : 502, { message: `Wniosek utworzony, ale e-mail nie został wysłany: ${w.blad}` });
 		}
-		const odp: OdnowienieUtworzone = { id: r.id, link, status: 'wyslany', wyslano: true };
+		const odp: OdnowienieUtworzone = { id: r.id, link, status: 'wyslany', wyslano: true, adres: w.adres, test: w.test };
 		return json(odp);
 	}
-	const odp: OdnowienieUtworzone = { id: r.id, link, status: 'utworzony', wyslano: false };
+	// Wniosek utworzony w trybie testowym ma zapisany adres testowy.
+	const odp: OdnowienieUtworzone = { id: r.id, link, status: 'utworzony', wyslano: false, test: czyTest(null, r) };
 	return json(odp);
 };
 
