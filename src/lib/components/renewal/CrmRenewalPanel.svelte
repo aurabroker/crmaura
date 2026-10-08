@@ -122,8 +122,14 @@
 		blad = '';
 		pracuje = tryb;
 		try {
-			const body = { polisa_id: policy.id, tryb };
+			// Serwer odrzuca wysyłkę, gdy ekran pokazuje tryb testowy, a firma ma go już wyłączony.
+			const body = { polisa_id: policy.id, tryb, oczekiwany_test: trybTestowy };
 			let w = await wywolajApi<OdnowienieUtworzone>('POST', '/api/renewals', body);
+			if (!w.ok && w.status === 409 && !w.aktywny) {
+				const { data: t } = await sb.from('crm_tenants').select('features').eq('id', policy.tenant_id).maybeSingle();
+				const f = (t as { features?: Record<string, boolean> | null } | null)?.features;
+				if (t) appState.tenantFeatures = f ?? {};
+			}
 			if (!w.ok && w.status === 409 && w.aktywny) {
 				const tak = await askConfirm({
 					title: 'Ten certyfikat ma już aktywny wniosek.',

@@ -6,6 +6,7 @@ import {
 	dzisWarszawa,
 	anulujNieaktualny,
 	polisaProgramu,
+	trybTestowy,
 	usunSierotyPlikow,
 	utworzOdnowienie,
 	type RenewalRow
@@ -15,7 +16,8 @@ import type { RequestHandler } from './$types';
 
 // Zadanie dzienne (pg_cron → public.crm_run_renewals(), nagłówek x-cron-token z Vault):
 // 1) wygasza nieużyte linki po terminie,
-// 2) dla firm z włączonym modułem „odnowienia_auto” wysyła wnioski 45 dni przed końcem certyfikatu,
+// 2) dla firm z włączonym modułem „odnowienia_auto” wysyła wnioski 45 dni przed końcem certyfikatu
+//    (w trybie testowym „odnowienia_test” nowych nie zakłada),
 // 3) wysyła jedno przypomnienie po 7 dniach bez złożonego wniosku.
 const MAKS_ZAPROSZEN = 50;
 const MAKS_PRZYPOMNIEN = 50;
@@ -92,6 +94,12 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			}
 		}
 		if (zablokowana) continue;
+		// Tryb testowy: automat nie zakłada nowych wniosków. Wniosek testowy zająłby certyfikat na stałe
+		// (powyżej: każdy wniosek blokuje kolejne zaproszenie), a klient nie dostałby prawdziwego linku po testach.
+		if (trybTestowy(f)) {
+			wynik.pominiete += (certyfikaty ?? []).filter((c) => !maWniosek.has(c.id)).length;
+			continue;
+		}
 
 		for (const c of certyfikaty ?? []) {
 			if (wyslane >= MAKS_ZAPROSZEN) break;
