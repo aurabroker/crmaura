@@ -1,10 +1,10 @@
 -- ============================================================
 -- Przypomnienia o płatnościach składek (edge function send-payment-reminders).
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 2026-10-07 (zadanie pg_cron 'crm-payment-reminders', codziennie 06:05 UTC).
+--   Funkcja send-payment-reminders wdrożona 2026-10-07 (v1); próba bez wysyłki z tej funkcji SQL: HTTP 200.
 --
--- KOLEJNOŚĆ: najpierw wdrożyć kod CRM (pole „Nadawca e-maili” w SAAS Admin), potem ta migracja,
--- potem wdrożenie funkcji send-payment-reminders. Funkcja wysyła tylko dla firm, które mają
--- w SAAS Admin klucz Resend i adres nadawcy — do tego czasu zadanie dzienne nic nie wysyła.
+-- Funkcja wysyła tylko dla firm, które mają w SAAS Admin klucz Resend i adres nadawcy —
+-- do tego czasu zadanie dzienne nic nie wysyła.
 -- ============================================================
 
 -- 1) Rata dostaje przypomnienie raz: znacznik ustawiany przed wysyłką.

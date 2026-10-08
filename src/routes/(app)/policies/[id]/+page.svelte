@@ -7,13 +7,15 @@
 	import { fmtPln, policyStatus } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle, FileText, ChevronDown, Upload } from 'lucide-svelte';
+	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle, FileText, ChevronDown, Upload, Mail, Link2 } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyBroker } from '$lib/types/database';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
+	import CrmRenewalPanel from '$lib/components/renewal/CrmRenewalPanel.svelte';
+	import { wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
@@ -124,6 +126,12 @@
 		d.setUTCDate(d.getUTCDate() + 1);
 		return d.toISOString().slice(0, 10);
 	}
+	// Certyfikat z programu OC beauty: wniosek o odnowienie wysyłany klientowi (e-mail albo link).
+	const wProgramie = $derived(wProgramieOcBeauty(policy, appState.policies));
+	const klientEmail = $derived(
+		policy ? (appState.clients.find(c => c.id === policy!.klient_id)?.email ?? '').trim() || null : null
+	);
+	let renewalPanel = $state<ReturnType<typeof CrmRenewalPanel> | null>(null);
 
 	const renewalUrl = $derived(policy
 		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}${policy.pojazd_id ? `&pojazd_id=${policy.pojazd_id}` : ''}${ugOdnowienia ? `&parent_id=${ugOdnowienia.id}` : ''}`
@@ -362,6 +370,7 @@
 	<p class="text-slate-400">Polisa nie istnieje lub nie masz dostępu.</p>
 {:else}
 	{@const tuLabel = policy.crm_insurers?.skrot ?? policy.crm_insurers?.nazwa ?? '—'}
+	{@const sumaGw = policy.suma_gwarancyjna != null ? Number(policy.suma_gwarancyjna) : null}
 
 	<div class="flex items-center justify-between mb-4">
 		<div class="flex items-center gap-3">
@@ -398,7 +407,7 @@
 						<ChevronDown size={12} />
 					</button>
 					{#if renewMenuOpen}
-						<div class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-60 overflow-hidden z-50">
+						<div class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl {wProgramie ? 'w-80' : 'w-60'} overflow-hidden z-50">
 							<a
 								href={renewalUrl}
 								onclick={() => (renewMenuOpen = false)}
@@ -421,6 +430,34 @@
 									<span class="block text-[11px] text-slate-400">wgraj PDF nowej polisy</span>
 								</span>
 							</a>
+							{#if wProgramie}
+								<!-- Program OC beauty: klient sam wypełnia APK i wniosek pod linkiem. -->
+								<button
+									type="button"
+									disabled={!klientEmail}
+									onclick={() => { renewMenuOpen = false; renewalPanel?.utworz('email'); }}
+									class="w-full flex items-start gap-2 px-4 py-3 text-sm text-left text-slate-700 border-t border-line hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-white"
+								>
+									<Mail size={14} class="mt-0.5 shrink-0 text-slate-400" />
+									<span class="min-w-0">
+										Wyślij klientowi wniosek o odnowienie (e-mail)
+										<span class="block text-[11px] {klientEmail ? 'text-slate-400' : 'text-amber-600'} break-all">
+											{klientEmail ? `na adres ${klientEmail}` : 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta albo utwórz link'}
+										</span>
+									</span>
+								</button>
+								<button
+									type="button"
+									onclick={() => { renewMenuOpen = false; renewalPanel?.utworz('link'); }}
+									class="w-full flex items-start gap-2 px-4 py-3 text-sm text-left text-slate-700 border-t border-line-soft hover:bg-slate-50"
+								>
+									<Link2 size={14} class="mt-0.5 shrink-0 text-slate-400" />
+									<span>
+										Utwórz link do wniosku
+										<span class="block text-[11px] text-slate-400">skopiujesz go i przekażesz klientowi sam</span>
+									</span>
+								</button>
+							{/if}
 						</div>
 					{/if}
 				</div>
@@ -447,12 +484,18 @@
 	</div>
 
 	<!-- Dane polisy -->
-	<div class="grid gap-3 mb-5" style="grid-template-columns: repeat({policy.typ_umowy === 'generalna' ? 6 : 5}, minmax(0,1fr))">
+	<div class="grid gap-3 mb-5" style="grid-template-columns: repeat({(policy.typ_umowy === 'generalna' ? 6 : 5) + (sumaGw != null ? 1 : 0)}, minmax(0,1fr))">
 		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna składka polis' : 'Składka'}</p>
 			<p class="text-base font-semibold text-slate-900">{fmtPln(policy.typ_umowy === 'generalna' ? childSkladka : policy.skladka_przypisana)}</p>
 			<p class="text-xs text-slate-400">{policy.typ_umowy === 'generalna' ? `${childPolicies.length} polis` : `Raty: ${policy.ilosc_rat}`}</p>
 		</div>
+		{#if sumaGw != null}
+		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
+			<p class="text-xs text-slate-500 mb-0.5">Suma gwarancyjna</p>
+			<p class="text-base font-semibold text-slate-900">{fmtPln(sumaGw)} zł</p>
+		</div>
+		{/if}
 		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
 			<p class="text-xs text-slate-500 mb-0.5">Okres</p>
 			<p class="text-sm font-semibold text-slate-900">{policy.data_od}</p>
@@ -521,6 +564,11 @@
 			<span class="text-sm font-semibold text-slate-900">{linkedVehicle.nr_rejestracyjny}{linkedVehicle.vin ? ' / ' + linkedVehicle.vin : ''} — {linkedVehicle.marka_model}</span>
 		</div>
 		{/if}
+	{/if}
+
+	<!-- Wniosek o odnowienie (program OC beauty) -->
+	{#if wProgramie}
+		<CrmRenewalPanel bind:this={renewalPanel} {policy} email={klientEmail} odnowiona={!!renewalPolicy} />
 	{/if}
 
 	<!-- Parametry odczytane z pliku polisy (import z PDF) -->

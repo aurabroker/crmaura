@@ -31,10 +31,13 @@ function toBase64(buf: ArrayBuffer): string {
 // Pliki pobieramy raz na sesję strony; nieudane pobranie nie zostaje w pamięci podręcznej.
 let cache: Promise<FontData> | null = null;
 
-async function loadFonts(base: string): Promise<FontData> {
+// Pobiera plik czcionki (ścieżka względem katalogu static, np. /fonts/Roboto-Regular.ttf).
+export type FontFetcher = (path: string) => Promise<Response>;
+
+async function loadFonts(fetchFont: FontFetcher): Promise<FontData> {
 	const entries = await Promise.all(
 		(Object.entries(FILES) as [Style, string][]).map(async ([style, file]) => {
-			const res = await fetch(`${base}/fonts/${file}`);
+			const res = await fetchFont(`/fonts/${file}`);
 			if (!res.ok) throw new Error(`Nie udało się pobrać czcionki ${file} (HTTP ${res.status})`);
 			return [style, toBase64(await res.arrayBuffer())] as const;
 		})
@@ -43,10 +46,10 @@ async function loadFonts(base: string): Promise<FontData> {
 }
 
 // Osadza Roboto (zwykła, pogrubiona, kursywa) i ustawia ją jako bieżącą czcionkę dokumentu.
-// `base` to adres serwisu, gdy wywołanie nie odbywa się w przeglądarce na tej samej domenie.
-export async function applyPdfFont(doc: PdfDoc, base = ''): Promise<void> {
+// W przeglądarce pliki idą z tej samej domeny; serwer podaje własny `fetchFont` (zasoby statyczne).
+export async function applyPdfFont(doc: PdfDoc, fetchFont: FontFetcher = (path) => fetch(path)): Promise<void> {
 	if (!cache) {
-		cache = loadFonts(base).catch((e) => {
+		cache = loadFonts(fetchFont).catch((e) => {
 			cache = null;
 			throw e;
 		});

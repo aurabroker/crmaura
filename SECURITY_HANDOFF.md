@@ -26,6 +26,10 @@
 > - beautypolisa: poprawka panelu admina na gałęzi `claude/epic-cerf-1eyfeo` w `aurabroker/beautypolisa`; po jej
 >   wdrożeniu zastosować `supabase/pending/20261007000001_bp_public_inserts.sql`.
 >
+> - Odnowienia OC beauty (w budowie): publiczna strona `/odnowienie/<id>.<HMAC>` rozmawia tylko z
+>   `/api/odnowienie/[klucz]` (service_role po sprawdzeniu podpisu); tabele `crm_renewals*` bez dostępu anon,
+>   pracownicy tylko SELECT własnej firmy; pliki klienta w prywatnym `renewal-files` przez jednorazowe adresy.
+>
 > **Konfiguracja Cloudflare:** `TURNSTILE_SECRET_KEY` musi być ustawiony (Pages → Settings → Environment variables),
 > inaczej publiczna rejestracja `/api/register` odmawia (503) — to zamierzone zachowanie fail-closed.
 

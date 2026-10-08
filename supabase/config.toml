@@ -1,2 +1,2 @@
 # Harmonogram send-payment-reminders ustawia pg_cron (zadanie crm-payment-reminders,
-# migracja supabase/pending/20261007000002_payment_reminders.sql), nie ten plik.
+# migracja supabase/migrations/20261007000002_payment_reminders.sql), nie ten plik.
