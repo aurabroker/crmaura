@@ -3,15 +3,17 @@
 	import { opiekunZUmowy } from '$lib/policyImport/umowaGeneralna';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, odmiana, policyStatus, rodzajCls, ugPodtypCls } from '$lib/utils';
+	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, todayStr, ugPodtypCls } from '$lib/utils';
 	import type { Policy } from '$lib/types/database';
-	import Badge from '$lib/components/Badge.svelte';
+	import type { Snippet } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
 	import {
-		Search, Pencil, FilePlus2,
-		Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus
+		Search, Pencil, FilePlus2, Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus,
+		ChevronDown, ChevronLeft, ChevronRight, X, Download, Upload, FileStack, FileText
 	} from 'lucide-svelte';
+	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
+	import { nazwaRodzaju, nazwaTu, odnowionePolisy, statusPolisy } from '$lib/statusPolisy';
 	import { page } from '$app/stores';
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -58,19 +60,13 @@
 	let saving = $state(false);
 	let formError = $state('');
 
-	// Wszystkie polisy w jednej liście — Umowa Generalna jest tylko kolumną porządkową,
-	// polisy podpięte pod UG są widoczne tak samo jak pozostałe.
-	const widoczne = $derived.by(() => {
-		const q = search.trim().toLowerCase();
-		return appState.policies
-			.filter((p) => filterTyp === 'all' || p.typ_umowy === filterTyp)
-			.filter((p) =>
-				!q ||
-				p.nr_polisy.toLowerCase().includes(q) ||
-				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) ||
-				(p.parent_id ? parentNr(p.parent_id).toLowerCase().includes(q) : false)
-			);
-	});
+	// ── Lista: segmenty, filtry, sortowanie, strony ─────────────────────────────
+	const dzis = todayStr();
+	const odnowione = $derived(odnowionePolisy(appState.policies));
+	const ugBez = $derived(ugBezRozliczania(appState.policies));
+	// Polisy z co najmniej jedną ratą po terminie (te same reguły co Płatności).
+	const zZaleglaRata = $derived(new Set(appState.payments.filter(r => !ROZLICZONE.includes(r.status) && poTerminie(r, dzis, ugBez)).map(r => r.polisa_id)));
+	const status = (p: Policy) => statusPolisy(p, { dzis, odnowione, zZaleglaRata });
 
 	// O(1) lookup map instead of O(n) find per row
 	const parentNrMap = $derived(new Map(appState.policies.map(p => [p.id, p.nr_polisy])));
@@ -82,23 +78,122 @@
 		for (const p of appState.policies) if (p.parent_id) m.set(p.parent_id, (m.get(p.parent_id) ?? 0) + 1);
 		return m;
 	});
+	const liczbaAneksow = $derived.by(() => {
+		const m = new Map<string, number>();
+		for (const a of appState.annexes) m.set(a.polisa_id, (m.get(a.polisa_id) ?? 0) + 1);
+		return m;
+	});
+	const opiekunKlienta = $derived(new Map(appState.clients.map(c => [c.id, c.opiekun_id])));
+
+	type Segment = 'wszystkie' | 'aktywne' | 'wygasaja' | 'zalegle' | 'zakonczone';
+	let segment = $state<Segment>('wszystkie');
+	const aktywna = (p: Policy) => !(p.data_do && p.data_do < dzis);
+	function wSegmencie(p: Policy, s: Segment): boolean {
+		if (s === 'wszystkie') return true;
+		if (s === 'aktywne') return aktywna(p);
+		if (s === 'wygasaja') return aktywna(p) && !!p.data_do && dateDiffDays(dzis, p.data_do) <= 30 && !odnowione.has(p.id);
+		if (s === 'zalegle') return zZaleglaRata.has(p.id);
+		return !aktywna(p);
+	}
+	const SEGMENTY: [Segment, string][] = [['wszystkie', 'Wszystkie'], ['aktywne', 'Aktywne'], ['wygasaja', 'Wygasają w 30 dni'], ['zalegle', 'Z ratą po terminie'], ['zakonczone', 'Zakończone']];
+
+	// Filtry (typ umowy tylko poza widokiem „Umowy generalne” z menu)
+	let fTypUmowy = $state<'' | 'jednostkowa' | 'generalna' | 'w_ug'>('');
+	let fTu = $state('');
+	let fRodzaj = $state('');
+	let fOpiekun = $state('');
+	const ileFiltrow = $derived([fTypUmowy, fTu, fRodzaj, fOpiekun].filter(Boolean).length);
+	function wyczyscFiltry() { fTypUmowy = ''; fTu = ''; fRodzaj = ''; fOpiekun = ''; search = ''; }
+
+	// Najpierw typ z menu (Polisy / Umowy generalne), potem segmenty liczone na tym zbiorze.
+	const bazowe = $derived(appState.policies.filter((p) => filterTyp === 'all' || p.typ_umowy === filterTyp));
+	const liczSeg = $derived(Object.fromEntries(SEGMENTY.map(([id]) => [id, bazowe.filter(p => wSegmencie(p, id)).length])) as Record<Segment, number>);
+	const towarzystwa = $derived(
+		appState.insurers.filter(i => bazowe.some(p => p.tu_id === i.id)).sort((a, b) => (a.skrot || a.nazwa).localeCompare(b.skrot || b.nazwa, 'pl'))
+	);
+	const rodzaje = $derived([...new Set(bazowe.filter(p => p.typ_umowy !== 'generalna').map(p => p.rodzaj).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl')));
+	const opiekunowie = $derived([...appState.brokers].sort((a, b) => (a.imie_nazwisko || a.email).localeCompare(b.imie_nazwisko || b.email, 'pl')));
+	const opiekunWg = $derived(new Map(appState.brokers.map(b => [b.id, b.imie_nazwisko || b.email])));
+
+	// Wszystkie polisy w jednej liście — Umowa Generalna jest tylko kolumną porządkową,
+	// polisy podpięte pod UG są widoczne tak samo jak pozostałe.
+	const widoczne = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		return bazowe.filter((p) => {
+			if (!wSegmencie(p, segment)) return false;
+			if (fTypUmowy === 'w_ug' ? !p.parent_id : fTypUmowy && p.typ_umowy !== fTypUmowy) return false;
+			if (fTu && p.tu_id !== fTu) return false;
+			if (fRodzaj && p.rodzaj !== fRodzaj) return false;
+			if (fOpiekun && (fOpiekun === '-' ? !!opiekunKlienta.get(p.klient_id) : opiekunKlienta.get(p.klient_id) !== fOpiekun)) return false;
+			return !q ||
+				p.nr_polisy.toLowerCase().includes(q) ||
+				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) ||
+				(p.przedmiot ?? '').toLowerCase().includes(q) ||
+				(p.parent_id ? parentNr(p.parent_id).toLowerCase().includes(q) : false);
+		});
+	});
 
 	const sort = new Sortowanie<Policy>({
 		nr: (p) => p.nr_polisy,
 		klient: (p) => p.crm_clients?.nazwa,
 		tu: (p) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
 		rodzaj: (p) => (p.typ_umowy === 'generalna' ? `UG ${p.ug_podtyp ?? ''}` : p.rodzaj),
-		ug: (p) => (p.parent_id ? parentNr(p.parent_id) : null),
 		od: (p) => p.data_od,
 		do: (p) => p.data_do,
 		skladka: (p) => Number(p.skladka_przypisana ?? 0),
-		status: (p) => p.data_do
+		prowizja: (p) => Number(p.prowizja_przypisana ?? 0),
+		status: (p) => status(p).tekst
 	}, { klucz: 'nr' }, 'polisy');
 	const wiersze = $derived(sort.sortuj(widoczne));
+	const sumy = $derived(widoczne.reduce((s, p) => ({ skladka: s.skladka + Number(p.skladka_przypisana ?? 0), prowizja: s.prowizja + Number(p.prowizja_przypisana ?? 0) }), { skladka: 0, prowizja: 0 }));
 
-	function annexesOf(id: string) {
-		return appState.annexes.filter((a) => a.polisa_id === id);
+	const NA_STRONE = 50;
+	let strona = $state(0);
+	const stron = $derived(Math.max(1, Math.ceil(wiersze.length / NA_STRONE)));
+	$effect(() => {
+		void segment; void search; void fTypUmowy; void fTu; void fRodzaj; void fOpiekun; void filterTyp; void sort.klucz; void sort.kierunek;
+		strona = 0;
+	});
+	const naStronie = $derived(wiersze.slice(strona * NA_STRONE, (strona + 1) * NA_STRONE));
+	const zakres = $derived(wiersze.length === 0 ? '0 z 0' : `${strona * NA_STRONE + 1}–${Math.min((strona + 1) * NA_STRONE, wiersze.length)} z ${wiersze.length.toLocaleString('pl-PL')}`);
+
+	// Zaznaczanie i eksport
+	let selected = $state<Set<string>>(new Set());
+	$effect(() => { void segment; void filterTyp; selected = new Set(); });
+	function toggleSelect(id: string) {
+		const n = new Set(selected);
+		if (n.has(id)) n.delete(id); else n.add(id);
+		selected = n;
 	}
+	const wszystkieNaStronie = $derived(naStronie.length > 0 && naStronie.every(p => selected.has(p.id)));
+	function toggleStrona() {
+		const n = new Set(selected);
+		if (wszystkieNaStronie) naStronie.forEach(p => n.delete(p.id)); else naStronie.forEach(p => n.add(p.id));
+		selected = n;
+	}
+	function eksportujCsv() {
+		const wybrane = wiersze.filter(p => selected.has(p.id));
+		const pole = (v: string | number | null | undefined) => {
+			const t = v == null ? '' : String(v);
+			return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+		};
+		const naglowek = ['Nr polisy', 'Typ umowy', 'Umowa generalna', 'Klient', 'Towarzystwo', 'Rodzaj', 'Przedmiot', 'Od', 'Do', 'Składka przypisana', 'Składka zainkasowana', 'Prowizja %', 'Prowizja przypisana', 'Status'];
+		const linie = wybrane.map(p => [
+			p.nr_polisy, p.typ_umowy, p.parent_id ? parentNr(p.parent_id) : '', p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), p.przedmiot,
+			p.data_od, p.data_do, fmtPln(p.skladka_przypisana), fmtPln(p.skladka_zainkasowana), p.prowizja_pct, fmtPln(p.prowizja_przypisana), status(p).tekst
+		].map(pole).join(';'));
+		const blob = new Blob(['\uFEFF' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = `polisy-${dzis}.csv`;
+		a.click();
+		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+		void logAudit('policies_exported', 'policy', null, odmiana(wybrane.length, 'polisa', 'polisy', 'polis'), { ids: wybrane.map(p => p.id) });
+		ctxToast(`Wyeksportowano: ${odmiana(wybrane.length, 'polisa', 'polisy', 'polis')}`);
+	}
+
+	let nowaMenu = $state(false);
+	const trybUg = $derived(lockedTyp && filterTyp === 'generalna');
 
 	async function reloadPolicies() {
 		const [rP, rA] = await Promise.all([
@@ -323,126 +418,247 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>{lockedTyp && filterTyp === 'generalna' ? 'Umowy Generalne' : 'Polisy'} — AuraCRM</title></svelte:head>
+<svelte:head><title>{lockedTyp && filterTyp === 'generalna' ? 'Umowy generalne' : 'Polisy'} — AuraCRM</title></svelte:head>
+<svelte:window onclick={() => (nowaMenu = false)} />
 
-<div class="flex items-center justify-between mb-6">
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">{lockedTyp && filterTyp === 'generalna' ? 'Umowy Generalne' : 'Polisy w obsłudze'}</h1>
-		<p class="text-sm text-slate-500 mt-1">{lockedTyp && filterTyp === 'generalna' ? 'Rejestr umów generalnych' : 'Rejestr ubezpieczeń całego portfela'}</p>
+		<h1 class="text-2xl font-semibold text-ink">{trybUg ? 'Umowy generalne' : 'Polisy'} <span class="font-normal text-ink-3 tabular-nums">{bazowe.length.toLocaleString('pl-PL')}</span></h1>
+		<p class="text-sm text-ink-3 mt-0.5">{trybUg ? 'Rejestr umów generalnych i polis podpiętych pod nie' : 'Rejestr ubezpieczeń całego portfela — terminy, składki i prowizje'}</p>
 	</div>
-	<div class="flex gap-2">
-		<button onclick={() => { showClaim = true; formError = ''; }} class="border border-line text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors">
-			Zgłoś Szkodę
+	<div class="flex flex-wrap gap-2">
+		<button onclick={() => { showClaim = true; formError = ''; }} class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
+			<AlertTriangle size={16} class="text-ink-3" /> Zgłoś szkodę
 		</button>
-		{#if lockedTyp && filterTyp === 'generalna'}
-			<button onclick={() => goto('/policies/new-ug')} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
-				+ Nowa Umowa Generalna
+		{#if trybUg}
+			<button onclick={() => goto('/policies/new-ug')} class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
+				<Plus size={16} /> Nowa umowa generalna
 			</button>
 		{:else}
-			<button onclick={() => goto('/policies/new')} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
-				+ Nowa Polisa
-			</button>
+			<a href="/policies/import" class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
+				<Upload size={16} class="text-ink-3" /> Import z PDF
+			</a>
+			<div class="relative">
+				<button
+					onclick={(e) => { e.stopPropagation(); nowaMenu = !nowaMenu; }}
+					aria-expanded={nowaMenu}
+					aria-haspopup="menu"
+					class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors"
+				>
+					<Plus size={16} /> Nowa polisa <ChevronDown size={14} />
+				</button>
+				{#if nowaMenu}
+					<div role="menu" class="absolute right-0 top-full mt-1 w-64 bg-white border border-line rounded-xl shadow-xl z-50 py-1">
+						<button role="menuitem" onclick={() => goto('/policies/new')} class="w-full flex items-start gap-3 text-left px-4 py-2.5 hover:bg-surface-2">
+							<FileText size={16} class="text-ink-3 mt-0.5" />
+							<span><span class="block text-sm font-medium text-ink">Polisa</span><span class="block text-xs text-ink-3">jednostkowa albo pod umowę generalną</span></span>
+						</button>
+						<button role="menuitem" onclick={() => goto('/policies/new-ug')} class="w-full flex items-start gap-3 text-left px-4 py-2.5 hover:bg-surface-2">
+							<FileStack size={16} class="text-ink-3 mt-0.5" />
+							<span><span class="block text-sm font-medium text-ink">Umowa generalna</span><span class="block text-xs text-ink-3">flota, gwarancje, CPM, CAR/EAR</span></span>
+						</button>
+					</div>
+				{/if}
+			</div>
 		{/if}
 	</div>
 </div>
 
-<!-- Filters -->
-<div class="flex gap-3 mb-4 flex-wrap">
-	<div class="flex items-center gap-2 flex-1 bg-white border border-line rounded-xl px-4 py-2">
-		<Search size={15} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj po nr polisy lub kliencie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
-	</div>
+<!-- Segmenty -->
+<div role="tablist" aria-label="Segmenty polis" class="flex gap-x-5 border-b border-line mb-3 overflow-x-auto">
+	{#each SEGMENTY as [id, label]}
+		<button
+			role="tab"
+			aria-selected={segment === id}
+			onclick={() => (segment = id)}
+			class="h-10 -mb-px shrink-0 border-b-2 whitespace-nowrap text-sm transition-colors
+				{segment === id ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-2 font-medium hover:text-ink'}"
+		>
+			{label}
+			{#if id === 'zalegle' && liczSeg[id] > 0}
+				<span class="ml-0.5 px-1.5 rounded-full bg-danger-soft text-danger text-xs font-semibold leading-5 tabular-nums">{liczSeg[id]}</span>
+			{:else}
+				<span class="font-normal text-ink-3 tabular-nums">{liczSeg[id].toLocaleString('pl-PL')}</span>
+			{/if}
+		</button>
+	{/each}
+</div>
+
+<!-- Filtry -->
+<div class="flex flex-wrap items-center gap-2 mb-3">
+	<label class="w-full sm:w-auto sm:flex-[1_1_280px] sm:max-w-[420px] h-9 flex items-center gap-2 px-2.5 border border-line rounded-lg bg-white focus-within:border-accent">
+		<Search size={16} class="text-ink-3 shrink-0" />
+		<span class="sr-only">Filtruj listę</span>
+		<input bind:value={search} placeholder="Nr polisy, klient, przedmiot, nr UG…" class="flex-1 min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3" />
+		{#if search}
+			<button onclick={() => (search = '')} aria-label="Wyczyść wyszukiwanie" class="w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={14} /></button>
+		{/if}
+	</label>
+	{#snippet filtr(etykieta: string, tekst: string | null, wyczysc: () => void, opcje: Snippet, wartosc: string, ustaw: (v: string) => void)}
+		<!-- Widoczna etykieta + niewidoczny natywny select na wierzchu: szerokość wybranej wartości, nie najdłuższej opcji. -->
+		<span class="relative inline-flex items-center h-9 rounded-lg text-[13px] font-medium focus-within:ring-2 focus-within:ring-accent/40 {tekst ? 'border border-line bg-white text-ink pr-7' : 'border border-dashed border-[#C4CAD4] text-ink-2 hover:bg-white'}">
+			<span aria-hidden="true" class="px-2.5 max-w-[240px] truncate whitespace-nowrap">{tekst ?? `+ ${etykieta}`}</span>
+			<select aria-label={etykieta} value={wartosc} onchange={(e) => ustaw((e.currentTarget as HTMLSelectElement).value)} class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+				{@render opcje()}
+			</select>
+			{#if tekst}
+				<button onclick={wyczysc} aria-label="Usuń filtr: {etykieta}" class="absolute right-1 z-10 w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={12} /></button>
+			{/if}
+		</span>
+	{/snippet}
+	{#snippet opcjeTyp()}
+		<option value="">Dowolny typ umowy</option>
+		<option value="jednostkowa">polisy jednostkowe</option>
+		<option value="generalna">umowy generalne</option>
+		<option value="w_ug">polisy w umowach generalnych</option>
+	{/snippet}
+	{#snippet opcjeTu()}
+		<option value="">Dowolne towarzystwo</option>
+		{#each towarzystwa as t}<option value={t.id}>{t.skrot || t.nazwa}</option>{/each}
+	{/snippet}
+	{#snippet opcjeRodzaj()}
+		<option value="">Dowolny rodzaj</option>
+		{#each rodzaje as r}<option value={r}>{nazwaRodzaju(r)}</option>{/each}
+	{/snippet}
+	{#snippet opcjeOpiekun()}
+		<option value="">Dowolny opiekun klienta</option>
+		{#each opiekunowie as b}<option value={b.id}>{b.imie_nazwisko || b.email}{b.id === appState.profile?.id ? ' (ja)' : ''}</option>{/each}
+		<option value="-">Klient bez opiekuna</option>
+	{/snippet}
 	{#if !lockedTyp}
-		{#each [['all','Wszystkie'],['jednostkowa','Polisy'],['generalna','Umowy Generalne']] as [val, label]}
-			<button
-				onclick={() => filterTyp = val as typeof filterTyp}
-				class="px-4 py-2 rounded-xl text-sm font-medium border transition-colors
-					{filterTyp === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
-			>
-				{label}
-			</button>
-		{/each}
+		{@render filtr('Typ umowy', fTypUmowy ? ({ jednostkowa: 'Polisy jednostkowe', generalna: 'Umowy generalne', w_ug: 'Polisy w UG' } as const)[fTypUmowy] : null, () => (fTypUmowy = ''), opcjeTyp, fTypUmowy, (v) => (fTypUmowy = v as typeof fTypUmowy))}
+	{/if}
+	{@render filtr('Towarzystwo', fTu ? `TU: ${towarzystwa.find(t => t.id === fTu)?.skrot || towarzystwa.find(t => t.id === fTu)?.nazwa || '—'}` : null, () => (fTu = ''), opcjeTu, fTu, (v) => (fTu = v))}
+	{@render filtr('Rodzaj', fRodzaj ? `Rodzaj: ${nazwaRodzaju(fRodzaj)}` : null, () => (fRodzaj = ''), opcjeRodzaj, fRodzaj, (v) => (fRodzaj = v))}
+	{@render filtr('Opiekun', fOpiekun ? (fOpiekun === '-' ? 'Klient bez opiekuna' : `Opiekun: ${opiekunWg.get(fOpiekun) ?? '—'}`) : null, () => (fOpiekun = ''), opcjeOpiekun, fOpiekun, (v) => (fOpiekun = v))}
+	{#if ileFiltrow > 0}
+		<button onclick={wyczyscFiltry} class="h-9 px-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść</button>
 	{/if}
 </div>
 
-<div class="bg-white border border-line rounded-xl shadow-sm overflow-x-auto">
-	<table class="w-full text-left text-sm">
-		<thead>
-			<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-				<SortTh s={sort} k="nr">Nr Polisy</SortTh>
-				<SortTh s={sort} k="klient">Klient</SortTh>
-				<SortTh s={sort} k="tu">TU</SortTh>
-				<SortTh s={sort} k="rodzaj">Rodzaj / Typ</SortTh>
-				<SortTh s={sort} k="ug">UG</SortTh>
-				<SortTh s={sort} k="od">OD</SortTh>
-				<SortTh s={sort} k="do">DO</SortTh>
-				<SortTh s={sort} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
-				<SortTh s={sort} k="status">Status</SortTh>
-				<th class="px-5 py-3">Akcje</th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each wiersze as p (p.id)}
-				{@const st = policyStatus(p.data_do)}
-				{@const isUG = p.typ_umowy === 'generalna'}
-				{@const axs = annexesOf(p.id)}
-				<tr use:ctxMenu={{ items: () => policyMenu(p), title: p.nr_polisy }}
-					class="border-t border-line-soft hover:bg-slate-50 {isUG ? 'bg-blue-50/30' : ''}">
-					<td class="px-5 py-3">
-						<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
-						{#if axs.length > 0}
-							<div class="text-xs text-blue-500">{odmiana(axs.length, 'aneks', 'aneksy', 'aneksów')}</div>
-						{/if}
-					</td>
-					<td class="px-5 py-3">
-						<a href="/clients/{p.klient_id}" class="hover:text-blue-700 hover:underline">{p.crm_clients?.nazwa ?? '—'}</a>
-					</td>
-					<td class="px-5 py-3">
-						{#if p.crm_insurers?.skrot}
-							<span class="font-mono font-semibold text-blue-700" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
-						{:else}
-							{p.crm_insurers?.nazwa ?? '—'}
-						{/if}
-					</td>
-					<td class="px-5 py-3">
-						{#if isUG}
-							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {ugPodtypCls(p.ug_podtyp ?? '')}">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</span>
-						{:else}
-							<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold {rodzajCls(p.rodzaj)}">{p.rodzaj}</span>
-						{/if}
-					</td>
-					<td class="px-5 py-3 text-xs font-mono text-slate-500">
-						{#if p.parent_id}
-							<a href="/policies/{p.parent_id}" class="hover:text-blue-700 hover:underline">{parentNr(p.parent_id)}</a>
-						{:else if isUG}
-							<span class="font-sans text-slate-400">{odmiana(liczbaWUg.get(p.id) ?? 0, 'polisa', 'polisy', 'polis')}</span>
-						{:else}
-							—
-						{/if}
-					</td>
-					<td class="px-5 py-3 text-xs">{p.data_od}</td>
-					<td class="px-5 py-3 text-xs">{p.data_do}</td>
-					<td class="px-5 py-3 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
-					<td class="px-5 py-3">
-						<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
-					</td>
-					<td class="px-5 py-3">
-						<div class="flex items-center gap-1">
-							<a href="/policies/{p.id}/edit" title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-								<Pencil size={14} />
-							</a>
-							<button onclick={() => openAnnex(p)} title="Dodaj aneks" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-								<FilePlus2 size={14} />
-							</button>
-						</div>
-					</td>
-				</tr>
-			{:else}
-				<tr><td colspan="10" class="px-5 py-8 text-center text-slate-400">Brak polis</td></tr>
+<section aria-label="Lista polis" class="bg-white border border-line rounded-xl overflow-hidden">
+	{#if selected.size > 0}
+		<div class="flex flex-wrap items-center gap-2 px-4 py-2 bg-accent-soft text-accent-text text-[13px]">
+			<span class="font-semibold mr-1">{odmiana(selected.size, 'polisa zaznaczona', 'polisy zaznaczone', 'polis zaznaczonych')}</span>
+			<button onclick={eksportujCsv} class="h-7 flex items-center gap-1.5 px-2.5 border border-blue-300 rounded-lg bg-white font-medium hover:bg-blue-50"><Download size={14} /> Eksportuj CSV</button>
+			<button onclick={() => (selected = new Set())} class="ml-auto h-7 px-2 font-semibold hover:underline">Odznacz</button>
+		</div>
+	{/if}
+
+	{#if wiersze.length === 0}
+		<div class="px-4 py-12 text-center">
+			<p class="text-sm text-ink-3">Brak polis dla wybranych filtrów.</p>
+			{#if ileFiltrow > 0 || search}
+				<button onclick={wyczyscFiltry} class="mt-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść filtry</button>
+			{/if}
+		</div>
+	{:else}
+		<!-- Telefon: karty -->
+		<ul class="md:hidden divide-y divide-line-soft">
+			{#each naStronie as p (p.id)}
+				{@const st = status(p)}
+				<li use:ctxMenu={{ items: () => policyMenu(p), title: p.nr_polisy }} class="flex items-start gap-3 px-4 py-3 {selected.has(p.id) ? 'bg-blue-50' : ''}">
+					<input type="checkbox" checked={selected.has(p.id)} onchange={() => toggleSelect(p.id)} aria-label="Zaznacz polisę {p.nr_polisy}" class="mt-1 w-4 h-4 accent-accent shrink-0" />
+					<a href="/policies/{p.id}" class="flex-1 min-w-0">
+						<span class="flex items-start justify-between gap-2">
+							<span class="font-mono text-xs font-medium text-accent-text truncate pt-0.5">{p.nr_polisy}</span>
+							<span class="shrink-0 h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {st.cls}">{st.tekst}</span>
+						</span>
+						<span class="block font-medium text-ink truncate">{p.crm_clients?.nazwa ?? '—'}</span>
+						<span class="block text-xs text-ink-3">{p.typ_umowy === 'generalna' ? `UG ${ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp ?? ''}` : nazwaRodzaju(p.rodzaj)} · {nazwaTu(p)}</span>
+						<span class="block mt-1 text-[13px] text-ink-2 tabular-nums">do {fmtDzien(p.data_do, true)} · {fmtPln(p.skladka_przypisana)} zł</span>
+					</a>
+				</li>
 			{/each}
-		</tbody>
-	</table>
-</div>
+		</ul>
+
+		<!-- Komputer: tabela -->
+		<div class="hidden md:block overflow-x-auto">
+			<table class="w-full min-w-[1000px] text-[13px] text-left">
+				<thead>
+					<tr class="bg-surface-2 text-ink-2">
+						<th class="w-11 pl-4 py-2.5">
+							<input type="checkbox" checked={wszystkieNaStronie} onchange={toggleStrona} aria-label="Zaznacz wszystkie polisy na stronie" class="w-4 h-4 accent-accent cursor-pointer align-middle" />
+						</th>
+						<SortTh s={sort} k="nr" wersaliki={false} class="px-3 py-2.5 font-semibold">Polisa</SortTh>
+						<SortTh s={sort} k="klient" wersaliki={false} class="px-3 py-2.5 font-semibold">Klient</SortTh>
+						<SortTh s={sort} k="tu" wersaliki={false} class="px-3 py-2.5 font-semibold">TU</SortTh>
+						<SortTh s={sort} k="rodzaj" wersaliki={false} class="px-3 py-2.5 font-semibold">Rodzaj</SortTh>
+						<SortTh s={sort} k="do" wersaliki={false} class="px-3 py-2.5 font-semibold whitespace-nowrap">Koniec ochrony</SortTh>
+						<SortTh s={sort} k="skladka" wersaliki={false} align="right" class="px-3 py-2.5 font-semibold text-right">Składka</SortTh>
+						<SortTh s={sort} k="prowizja" wersaliki={false} align="right" class="hidden min-[1600px]:table-cell px-3 py-2.5 font-semibold text-right">Prowizja</SortTh>
+						<SortTh s={sort} k="status" wersaliki={false} class="px-3 py-2.5 font-semibold">Status</SortTh>
+						<th class="px-3 py-2.5"><span class="sr-only">Akcje</span></th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each naStronie as p (p.id)}
+						{@const st = status(p)}
+						{@const isUG = p.typ_umowy === 'generalna'}
+						{@const nAx = liczbaAneksow.get(p.id) ?? 0}
+						{@const checked = selected.has(p.id)}
+						<tr use:ctxMenu={{ items: () => policyMenu(p), title: p.nr_polisy }} class="border-t border-line-soft {checked ? 'bg-blue-50' : 'hover:bg-bg'}">
+							<td class="pl-4 py-2">
+								<input type="checkbox" {checked} onchange={() => toggleSelect(p.id)} aria-label="Zaznacz polisę {p.nr_polisy}" class="w-4 h-4 accent-accent cursor-pointer align-middle" />
+							</td>
+							<td class="px-3 py-2 whitespace-nowrap">
+								<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{p.nr_polisy}</a>
+								<span class="block text-xs text-ink-3">
+									{#if p.parent_id}
+										w UG <a href="/policies/{p.parent_id}" class="font-mono hover:text-accent-text hover:underline">{parentNr(p.parent_id)}</a>
+									{:else if isUG}
+										{odmiana(liczbaWUg.get(p.id) ?? 0, 'polisa', 'polisy', 'polis')} w umowie
+									{/if}
+									{#if nAx > 0}{p.parent_id || isUG ? ' · ' : ''}{odmiana(nAx, 'aneks', 'aneksy', 'aneksów')}{/if}
+								</span>
+							</td>
+							<td class="px-3 py-2 min-w-[160px] max-w-[240px]">
+								<a href="/clients/{p.klient_id}" class="block truncate font-medium text-ink hover:text-accent-text">{p.crm_clients?.nazwa ?? '—'}</a>
+								{#if p.przedmiot}<span class="block truncate text-xs text-ink-3" title={p.przedmiot}>{p.przedmiot}</span>{/if}
+							</td>
+							<td class="px-3 py-2 whitespace-nowrap" title={p.crm_insurers?.nazwa ?? undefined}>{nazwaTu(p)}</td>
+							<td class="px-3 py-2">
+								{#if isUG}
+									<span class="inline-flex items-center px-2 rounded-full text-xs font-semibold leading-5 whitespace-nowrap {ugPodtypCls(p.ug_podtyp ?? '')}">UG: {ugLabel[p.ug_podtyp ?? ''] ?? p.ug_podtyp}</span>
+								{:else}
+									{nazwaRodzaju(p.rodzaj)}
+								{/if}
+							</td>
+							<td class="px-3 py-2 whitespace-nowrap">
+								<span class="block tabular-nums">{p.data_do ? fmtDzien(p.data_do, true) : 'bezterminowo'}</span>
+								{#if p.data_do && st.klucz !== 'zakonczona' && st.klucz !== 'wznowiona' && dateDiffDays(dzis, p.data_do) <= 45}
+									<span class="block text-xs {dateDiffDays(dzis, p.data_do) <= 14 ? 'text-warn font-semibold' : 'text-ink-2'}">{fmtTermin(p.data_do, dzis)}</span>
+								{:else}
+									<span class="block text-xs text-ink-3">od {fmtDzien(p.data_od, true)}</span>
+								{/if}
+							</td>
+							<td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtPln(p.skladka_przypisana)} zł</td>
+							<td class="hidden min-[1600px]:table-cell px-3 py-2 text-right tabular-nums whitespace-nowrap text-ink-2">{fmtPln(p.prowizja_przypisana)} zł</td>
+							<td class="px-3 py-2">
+								<span class="inline-block h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {st.cls}">{st.tekst}</span>
+							</td>
+							<td class="px-3 py-1.5 text-right whitespace-nowrap">
+								<a href="/policies/{p.id}/edit" title="Edytuj" aria-label="Edytuj polisę {p.nr_polisy}" class="inline-flex w-8 h-8 items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><Pencil size={14} /></a>
+								<button onclick={() => openAnnex(p)} title="Dodaj aneks" aria-label="Dodaj aneks do polisy {p.nr_polisy}" class="inline-flex w-8 h-8 items-center justify-center rounded-lg text-ink-3 hover:text-accent-text hover:bg-accent-soft"><FilePlus2 size={14} /></button>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
+
+	<div class="flex flex-wrap items-center gap-3 px-4 py-2.5 border-t border-line-soft text-[13px] text-ink-2">
+		<span class="w-full sm:w-auto sm:flex-1 min-w-0 tabular-nums">
+			{odmiana(widoczne.length, 'polisa', 'polisy', 'polis')} · składka <span class="font-semibold text-ink">{fmtPln(sumy.skladka)} zł</span> · prowizja <span class="font-semibold text-ink">{fmtPln(sumy.prowizja)} zł</span>
+		</span>
+		<span class="tabular-nums">{zakres}</span>
+		<span class="flex gap-1">
+			<button onclick={() => (strona = Math.max(0, strona - 1))} disabled={strona === 0} aria-label="Poprzednia strona" class="w-8 h-8 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2 disabled:opacity-40 disabled:cursor-default"><ChevronLeft size={14} /></button>
+			<button onclick={() => (strona = Math.min(stron - 1, strona + 1))} disabled={strona >= stron - 1} aria-label="Następna strona" class="w-8 h-8 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2 disabled:opacity-40 disabled:cursor-default"><ChevronRight size={14} /></button>
+		</span>
+	</div>
+</section>
 
 <!-- Modal: Nowa Polisa -->
 <Modal title="Nowa Polisa" open={showPolicy} onclose={() => { showPolicy = false; formError = ''; }}>

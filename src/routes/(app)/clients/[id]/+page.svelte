@@ -8,6 +8,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
+	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
 	import { logAudit } from '$lib/utils/audit';
 	import type { Claim, Vehicle, ClientContact, CrmTask, Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
@@ -813,20 +814,11 @@
 			.filter(p => p.data_do && !renewedPolicyIds.has(p.id))
 			.sort((a, b) => a.data_do.localeCompare(b.data_do))[0] ?? null
 	);
-	const nazwaRodzaju = (r: string | null | undefined) => (r ?? '').replace(/_/g, ' ');
-	const nazwaTu = (p: Policy) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa || '—';
 	const rodzajeAktywnych = $derived([...new Set(activePolicies.map(p => nazwaRodzaju(p.rodzaj)).filter(Boolean))].join(', '));
 	const blisko = (d: string | null, dni = 14) => !!d && dateDiffDays(dzis, d) <= dni;
 
-	/** Status polisy do chipów (Przegląd i zakładka Polisy). */
-	function statusPolisy(p: Policy): { tekst: string; cls: string } {
-		if (renewedPolicyIds.has(p.id)) return { tekst: 'Wznowiona', cls: 'bg-surface-2 text-ink-2' };
-		if (polisyZZaleglaRata.has(p.id)) return { tekst: 'Rata po terminie', cls: 'bg-danger-soft text-danger' };
-		if (p.renewal_of && p.data_od > dzis) return { tekst: 'Oczekująca', cls: 'bg-accent-soft text-accent-text' };
-		if (p.data_do && p.data_do < dzis) return { tekst: 'Zakończona', cls: 'bg-surface-2 text-ink-2' };
-		if (blisko(p.data_do, 30)) return { tekst: 'Wygasa', cls: 'bg-warn-soft text-warn' };
-		return { tekst: 'Aktywna', cls: 'bg-ok-soft text-ok' };
-	}
+	/** Status polisy do chipów (Przegląd i zakładka Polisy) — reguły wspólne z listą Polis. */
+	const statusPolisy = (p: Policy) => statusPolisyWspolny(p, { dzis, odnowione: renewedPolicyIds, zZaleglaRata: polisyZZaleglaRata });
 	const aktywneNaPrzeglad = $derived(
 		[...activePolicies].sort((a, b) => (a.data_do ?? '9999').localeCompare(b.data_do ?? '9999')).slice(0, 5)
 	);

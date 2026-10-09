@@ -11,7 +11,7 @@
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList, Settings, Plus, LogOut,
 		ShieldCheck, ChevronDown, AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield,
-		CalendarCheck, Upload, Car, Menu, X, FileStack
+		CalendarCheck, Upload, Car, Menu, X, FileStack, ChartColumn, GitCompare, FileChartColumn
 	} from 'lucide-svelte';
 
 	let {
@@ -112,6 +112,9 @@
 		{
 			nazwa: 'Analityka',
 			pozycje: [
+				{ href: '/statystyki', label: 'Statystyki', icon: ChartColumn },
+				{ href: '/porownania', label: 'Porównania', icon: GitCompare },
+				{ href: '/raporty', label: 'Raporty', icon: FileChartColumn },
 				{ href: '/knf-report', label: 'Raport KNF', icon: Scale, show: isAdmin(appState.profile) && isBroker() }
 			]
 		},
