@@ -11,6 +11,7 @@
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { dekodujCsv, parseErgoCsv } from '$lib/commissionImport/ergoCsv';
 	const today = todayStr();
 	const currentMonth = $state(today.slice(0, 7));
 
@@ -62,6 +63,12 @@
 	let importSaving = $state(false);
 	let importDone = $state(false);
 	let importSummary = $state('');
+	// Zestawienie CSV ERGO: miesiąc z numeru i rozbieżności z sumami w nagłówku pliku
+	let importOkres = $state<string | null>(null);
+	let importOstrzezenia = $state<string[]>([]);
+	// Wcześniejszy import tego samego zestawienia: rozliczone wtedy polisy są pomijane,
+	// a nowe pozycje dopisujemy do tej samej noty
+	let importPoprzednia = $state<{ id: string; data: string; pozycji: number } | null>(null);
 
 	// Policy number normalization — strips spaces, uppercase
 	function normalizeNr(nr: string): string {
@@ -92,9 +99,11 @@
 		row.nr_polisy = policy.nr_polisy; // use CRM canonical form
 		row.prowizja_crm = parseFloat(String(policy.prowizja_przypisana)) || 0;
 
-		const payment = appState.payments.find(
-			p => p.polisa_id === policy.id && !settledStatuses.includes(p.status)
-		);
+		// Rata o kwocie równej składce z noty, a gdy takiej nie ma — najwcześniejsza nierozliczona
+		const otwarte = appState.payments
+			.filter(p => p.polisa_id === policy.id && !settledStatuses.includes(p.status))
+			.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci));
+		const payment = otwarte.find(p => Math.abs(Number(p.kwota) - Math.abs(row.skladka_nota)) < 0.01) ?? otwarte[0];
 		if (payment) {
 			row.payment_id = payment.id;
 			const diff = Math.abs((row.prowizja_crm ?? 0) - row.prowizja_nota);
@@ -166,6 +175,25 @@
 		});
 	}
 
+	// ===== ERGO CSV — „Szczegóły zestawienia prowizyjnego” z portalu agenta =====
+	async function parseErgoCsvFile(file: File): Promise<void> {
+		const z = parseErgoCsv(dekodujCsv(new Uint8Array(await file.arrayBuffer())));
+		importNumerNoty = z.numer;
+		importDataZest = ''; // plik nie podaje daty sporządzenia, tylko miesiąc w numerze
+		importOkres = z.okres;
+		importOstrzezenia = z.ostrzezenia;
+		importRazemSkladka = z.razem_podstawa;
+		importRazemProwizja = z.razem_prowizja;
+		importPreview = z.pozycje.map(p => resolveRow({
+			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
+			ubezpieczajacy: p.ubezpieczajacy,
+			skladka_nota: p.podstawa, prowizja_nota: p.prowizja,
+			payment_id: null, policy_id: null, prowizja_crm: null,
+			new_status: null, not_found: false, already_settled: false,
+			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle'
+		}));
+	}
+
 	// ===== LEADENHALL PARSER =====
 	// Squarelife jest tożsamy z Leadenhall — obsługiwane identycznie
 	async function parseLeadenhallXlsx(file: File): Promise<void> {
@@ -230,9 +258,33 @@
 		importLoading = true;
 		importError = '';
 		importPreview = [];
+		importOkres = null;
+		importOstrzezenia = [];
+		importPoprzednia = null;
 		try {
-			if (importMode === 'ergo') await parseErgoXlsx(file);
+			if (importMode === 'ergo' && /\.csv$/i.test(file.name)) await parseErgoCsvFile(file);
+			else if (importMode === 'ergo') await parseErgoXlsx(file);
 			else await parseLeadenhallXlsx(file);
+			if (importNumerNoty) {
+				const { data } = await sb.from('crm_noty').select('id, data_importu, pozycji_count')
+					.eq('numer_noty', importNumerNoty).eq('tu_skrot', importMode === 'ergo' ? 'ERGO' : 'LEADENHALL')
+					.order('data_importu');
+				const wczesniej = (data ?? []) as { id: string; data_importu: string; pozycji_count: number | null }[];
+				if (wczesniej.length) {
+					importPoprzednia = {
+						id: wczesniej[0].id,
+						data: new Date(wczesniej[0].data_importu).toLocaleDateString('pl-PL'),
+						pozycji: wczesniej[0].pozycji_count ?? 0
+					};
+					// Polisa rozliczona już tym zestawieniem nie dostaje drugiej raty z tej samej noty
+					const notaIds = new Set(wczesniej.map(n => n.id));
+					importPreview = importPreview.map(r =>
+						r.policy_id && appState.payments.some(p => p.polisa_id === r.policy_id && p.nota_id && notaIds.has(p.nota_id))
+							? { ...r, payment_id: null, new_status: null, already_settled: true }
+							: r
+					);
+				}
+			}
 		} catch (err: any) {
 			importError = err.message ?? 'Błąd parsowania pliku';
 		} finally {
@@ -252,27 +304,38 @@
 
 		// Plik źródłowy do prywatnego bucketu; w nocie zapisujemy ścieżkę, a link do pobrania
 		// powstaje przy kliknięciu (storageLink.ts).
-		let fileUrl: string | null = null;
-		if (importFile) {
-			const ext = importFile.name.split('.').pop() ?? 'xlsx';
-			const path = `${appState.profile!.tenant_id}/${tuSkrot}_${importNumerNoty.replace(/\//g, '-')}_${Date.now()}.${ext}`;
-			const { data: upData } = await sb.storage.from('settlement-files').upload(path, importFile, { upsert: true });
-			if (upData) fileUrl = path;
+		const pozycji = importPreview.filter(r => r.payment_id && r.operator_action === 'settle').length;
+		let notaId: string;
+		if (importPoprzednia) {
+			// Ponowny import tego samego zestawienia — pozycje dopisujemy do istniejącej noty (plik już w niej jest)
+			const { error: notaErr } = await sb.from('crm_noty')
+				.update({ pozycji_count: importPoprzednia.pozycji + pozycji } as never)
+				.eq('id', importPoprzednia.id);
+			if (notaErr) { importSaving = false; importError = notaErr.message; return; }
+			notaId = importPoprzednia.id;
+		} else {
+			let fileUrl: string | null = null;
+			if (importFile) {
+				const ext = importFile.name.split('.').pop() ?? 'xlsx';
+				const path = `${appState.profile!.tenant_id}/${tuSkrot}_${importNumerNoty.replace(/\//g, '-')}_${Date.now()}.${ext}`;
+				const { data: upData } = await sb.storage.from('settlement-files').upload(path, importFile, { upsert: true });
+				if (upData) fileUrl = path;
+			}
+
+			const { data: nota, error: notaErr } = await sb.from('crm_noty').insert([{
+				tenant_id: appState.profile!.tenant_id,
+				numer_noty: importNumerNoty,
+				tu_skrot: tuSkrot,
+				data_zestawienia: importDataZest || null,
+				razem_skladka: importRazemSkladka,
+				razem_prowizja: importRazemProwizja,
+				pozycji_count: pozycji,
+				file_url: fileUrl
+			}]).select('id').single();
+
+			if (notaErr) { importSaving = false; importError = notaErr.message; return; }
+			notaId = nota!.id;
 		}
-
-		const { data: nota, error: notaErr } = await sb.from('crm_noty').insert([{
-			tenant_id: appState.profile!.tenant_id,
-			numer_noty: importNumerNoty,
-			tu_skrot: tuSkrot,
-			data_zestawienia: importDataZest || null,
-			razem_skladka: importRazemSkladka,
-			razem_prowizja: importRazemProwizja,
-			pozycji_count: importPreview.filter(r => r.payment_id && r.operator_action === 'settle').length,
-			file_url: fileUrl
-		}]).select('id').single();
-
-		if (notaErr) { importSaving = false; importError = notaErr.message; return; }
-		const notaId = nota!.id;
 
 		// Rows to settle
 		const toSettle = importPreview.filter(r => r.payment_id && r.new_status && r.operator_action === 'settle' && !r.is_negative);
@@ -345,6 +408,9 @@
 		importError = '';
 		importDone = false;
 		importSummary = '';
+		importOkres = null;
+		importOstrzezenia = [];
+		importPoprzednia = null;
 		showImport = true;
 	}
 
@@ -755,9 +821,9 @@
 		<div class="space-y-4">
 			<div>
 				<label class="block text-sm font-medium text-slate-700 mb-2">
-					Wybierz plik zestawienia prowizyjnego {importMode === 'ergo' ? 'ERGO' : 'Leadenhall/Squarelife'} (.xlsx)
+					Wybierz plik zestawienia prowizyjnego {importMode === 'ergo' ? 'ERGO — „Szczegóły zestawienia prowizyjnego” (.csv) lub zestawienie .xlsx' : 'Leadenhall/Squarelife (.xlsx)'}
 				</label>
-				<input type="file" accept=".xlsx" onchange={onImportFile}
+				<input type="file" accept={importMode === 'ergo' ? '.csv,.xlsx' : '.xlsx'} onchange={onImportFile}
 					class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold {importMode === 'ergo' ? 'file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100' : 'file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100'}" />
 			</div>
 
@@ -772,8 +838,25 @@
 				<!-- Info noty -->
 				<div class="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm">
 					<div class="font-semibold text-blue-800 mb-1">Nota: {importNumerNoty}</div>
+					{#if importOkres}
+						<div class="text-blue-700">Okres: {new Date(`${importOkres}-01T12:00:00`).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' })} · {importPreview.length} polis</div>
+					{/if}
 					<div class="text-blue-700">Razem składka: {fmtPln(importRazemSkladka)} PLN · Razem prowizja: {fmtPln(importRazemProwizja)} PLN</div>
 				</div>
+
+				{#if importPoprzednia}
+					<div class="flex items-start gap-2 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+						<AlertTriangle size={15} class="mt-0.5 shrink-0" />
+						<span>To zestawienie było już importowane {importPoprzednia.data} ({importPoprzednia.pozycji} rozliczonych pozycji). Polisy rozliczone tą notą są pominięte — rozliczysz tylko pozostałe, a nowe pozycje trafią do tej samej noty.</span>
+					</div>
+				{/if}
+
+				{#if importOstrzezenia.length > 0}
+					<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+						<div class="flex items-center gap-2 font-semibold text-amber-700 mb-1"><AlertTriangle size={15} /> Sumy w pliku nie zgadzają się z wierszami:</div>
+						{#each importOstrzezenia as o}<div class="text-sm text-amber-700">{o}</div>{/each}
+					</div>
+				{/if}
 
 				<!-- Ujemne kwoty — alert -->
 				{#if importNegative.length > 0}
