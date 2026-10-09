@@ -601,7 +601,7 @@
 	}
 </script>
 
-<svelte:head><title>Płatności — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Płatności — AuraCRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
@@ -615,7 +615,7 @@
 		<button onclick={() => openImport('leadenhall')} class="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors">
 			<FileSpreadsheet size={15} /> Rozlicz Leadenhall
 		</button>
-		<button onclick={() => showModal = true} class="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+		<button onclick={() => showModal = true} class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 			<Plus size={15} /> Dodaj Ratę
 		</button>
 	</div>
@@ -715,7 +715,7 @@
 		</div>
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm border-collapse table-fixed">
-				<thead class="bg-slate-50 border-b border-line text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+				<thead class="bg-slate-50 border-b border-line text-xs font-semibold text-slate-500 uppercase tracking-wide">
 					<tr>
 						<th class="px-4 py-2 w-10"></th>
 						<th class="px-4 py-2 w-[14%]">Polisa</th>
@@ -769,7 +769,7 @@
 <Modal title="Dodaj Ratę Płatności" open={showModal} onclose={() => { showModal = false; formError = ''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={addPayment} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={addPayment} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Dodaj Ratę'}
 		</button>
 	{/snippet}
@@ -801,7 +801,7 @@
 >
 	{#snippet footer()}
 		{#if importDone}
-			<button onclick={closeImport} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Zamknij</button>
+			<button onclick={closeImport} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover">Zamknij</button>
 		{:else}
 			<button onclick={closeImport} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 			{#if importToProcess.length > 0 && !importLoading}
@@ -914,22 +914,22 @@
 											{#if bigDiff}
 												<!-- Różnica > 0.5 PLN: operator decyduje -->
 												<div class="flex flex-col gap-1">
-													<p class="text-[10px] text-amber-700 font-semibold">Δ {fmtPln(r.prowizja_diff)} PLN</p>
+													<p class="text-xs text-amber-700 font-semibold">Δ {fmtPln(r.prowizja_diff)} PLN</p>
 													<div class="flex gap-1">
 														<button
 															onclick={() => setOperatorAction(r, 'settle')}
-															class="px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors {r.operator_action === 'settle' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-line text-slate-600 hover:bg-slate-50'}">
+															class="px-2 py-0.5 rounded text-xs font-semibold border transition-colors {r.operator_action === 'settle' ? 'bg-emerald-600 text-white border-emerald-600' : 'border-line text-slate-600 hover:bg-slate-50'}">
 															Rozlicz
 														</button>
 														<button
 															onclick={() => setOperatorAction(r, 'skip')}
-															class="px-2 py-0.5 rounded text-[10px] font-semibold border transition-colors {r.operator_action === 'skip' ? 'bg-red-600 text-white border-red-600' : 'border-line text-slate-600 hover:bg-slate-50'}">
+															class="px-2 py-0.5 rounded text-xs font-semibold border transition-colors {r.operator_action === 'skip' ? 'bg-red-600 text-white border-red-600' : 'border-line text-slate-600 hover:bg-slate-50'}">
 															Aneks
 														</button>
 													</div>
 												</div>
 											{:else}
-												<span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">Opłacona ✓</span>
+												<span class="px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">Opłacona ✓</span>
 											{/if}
 										</td>
 									</tr>

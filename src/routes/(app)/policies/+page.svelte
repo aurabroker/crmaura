@@ -323,7 +323,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>{lockedTyp && filterTyp === 'generalna' ? 'Umowy Generalne' : 'Polisy'} — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>{lockedTyp && filterTyp === 'generalna' ? 'Umowy Generalne' : 'Polisy'} — AuraCRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
@@ -335,11 +335,11 @@
 			Zgłoś Szkodę
 		</button>
 		{#if lockedTyp && filterTyp === 'generalna'}
-			<button onclick={() => goto('/policies/new-ug')} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<button onclick={() => goto('/policies/new-ug')} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 				+ Nowa Umowa Generalna
 			</button>
 		{:else}
-			<button onclick={() => goto('/policies/new')} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<button onclick={() => goto('/policies/new')} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 				+ Nowa Polisa
 			</button>
 		{/if}
@@ -368,7 +368,7 @@
 <div class="bg-white border border-line rounded-xl shadow-sm overflow-x-auto">
 	<table class="w-full text-left text-sm">
 		<thead>
-			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+			<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 				<SortTh s={sort} k="nr">Nr Polisy</SortTh>
 				<SortTh s={sort} k="klient">Klient</SortTh>
 				<SortTh s={sort} k="tu">TU</SortTh>
@@ -391,7 +391,7 @@
 					<td class="px-5 py-3">
 						<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
 						{#if axs.length > 0}
-							<div class="text-[10px] text-blue-500">{odmiana(axs.length, 'aneks', 'aneksy', 'aneksów')}</div>
+							<div class="text-xs text-blue-500">{odmiana(axs.length, 'aneks', 'aneksy', 'aneksów')}</div>
 						{/if}
 					</td>
 					<td class="px-5 py-3">
@@ -448,7 +448,7 @@
 <Modal title="Nowa Polisa" open={showPolicy} onclose={() => { showPolicy = false; formError = ''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showPolicy = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveNewPolicy} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveNewPolicy} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Zapisz'}
 		</button>
 	{/snippet}
@@ -461,7 +461,7 @@
 <Modal title="Edytuj Polisę — {editingPolicy.nr_polisy}" open={showEdit} onclose={() => { showEdit = false; editingPolicy = null; formError = ''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showEdit = false; editingPolicy = null; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveEditPolicy} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveEditPolicy} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Zapisz zmiany'}
 		</button>
 	{/snippet}

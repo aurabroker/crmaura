@@ -73,7 +73,7 @@
 		>
 			<t.icon size={15} />
 			{t.label}
-			<span class="text-[11px] {tab === t.id ? 'text-blue-400' : 'text-slate-400'}">{t.count}</span>
+			<span class="text-xs {tab === t.id ? 'text-blue-400' : 'text-slate-400'}">{t.count}</span>
 		</button>
 	{/each}
 </div>
@@ -92,11 +92,11 @@
 						{#if p.przedmiot}<div class="text-xs text-slate-500">{p.przedmiot}</div>{/if}
 					</div>
 					<div class="text-sm text-slate-600">
-						<div class="text-[11px] text-slate-400 uppercase">Okres</div>
+						<div class="text-xs text-slate-400 uppercase">Okres</div>
 						{p.data_od} → {p.data_do}
 					</div>
 					<div class="text-sm text-slate-600">
-						<div class="text-[11px] text-slate-400 uppercase">Składka</div>
+						<div class="text-xs text-slate-400 uppercase">Składka</div>
 						{fmtPln(p.skladka_przypisana)} PLN
 					</div>
 					<span class="ml-auto text-xs font-semibold {st.color}">{st.label}</span>
@@ -127,7 +127,7 @@
 							<td class="px-4 py-2.5 text-slate-600">{p.data_platnosci}</td>
 							<td class="px-4 py-2.5 text-right font-medium text-slate-900">{fmtPln(p.kwota)} PLN</td>
 							<td class="px-4 py-2.5 text-right">
-								<span class="inline-block text-[11px] font-semibold border rounded-full px-2.5 py-0.5 {payCls(p)}">{payLabel(p)}</span>
+								<span class="inline-block text-xs font-semibold border rounded-full px-2.5 py-0.5 {payCls(p)}">{payLabel(p)}</span>
 							</td>
 						</tr>
 					{/each}
@@ -143,15 +143,15 @@
 			{#each claims as c}
 				<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-2">
 					<div class="min-w-[140px]">
-						<div class="text-[11px] text-slate-400 uppercase">Nr szkody</div>
+						<div class="text-xs text-slate-400 uppercase">Nr szkody</div>
 						<div class="font-semibold text-slate-900">{c.nr_szkody ?? '—'}</div>
 					</div>
 					<div class="text-sm text-slate-600">
-						<div class="text-[11px] text-slate-400 uppercase">Data</div>
+						<div class="text-xs text-slate-400 uppercase">Data</div>
 						{c.data_szkody ?? '—'}
 					</div>
 					<div class="text-sm text-slate-600">
-						<div class="text-[11px] text-slate-400 uppercase">Polisa</div>
+						<div class="text-xs text-slate-400 uppercase">Polisa</div>
 						{polNr.get(c.polisa_id ?? '') ?? '—'}
 					</div>
 					{#if c.opis_szkody}
@@ -174,7 +174,7 @@
 						<span class="font-semibold text-slate-900">{v.nr_rejestracyjny ?? '—'}</span>
 					</div>
 					<div class="text-sm text-slate-600">{v.marka_model ?? '—'}{v.rok_produkcji ? ` • ${v.rok_produkcji}` : ''}</div>
-					{#if v.vin}<div class="text-[11px] text-slate-400 mt-1">VIN: {v.vin}</div>{/if}
+					{#if v.vin}<div class="text-xs text-slate-400 mt-1">VIN: {v.vin}</div>{/if}
 				</div>
 			{/each}
 		</div>

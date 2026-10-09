@@ -87,7 +87,7 @@
 	}
 </script>
 
-<svelte:head><title>Edytuj Polisę — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Edytuj Polisę — AuraCRM</title></svelte:head>
 
 <div class="max-w-5xl">
 	<div class="flex items-center gap-3 mb-6">
@@ -120,7 +120,7 @@
 			<button onclick={() => goto(`/policies/${policyId}`)} class="px-5 py-2.5 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 				Anuluj
 			</button>
-			<button onclick={save} disabled={saving} class="px-6 py-2.5 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			<button onclick={save} disabled={saving} class="px-6 py-2.5 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 				{saving ? 'Zapisywanie...' : 'Zapisz zmiany'}
 			</button>
 		</div>

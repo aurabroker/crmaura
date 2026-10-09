@@ -7,7 +7,7 @@
 	import SectionHeader from '$lib/components/SectionHeader.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { dndzone } from 'svelte-dnd-action';
-	import { Settings2, TrendingUp, TrendingDown, Search, AlertTriangle, X } from 'lucide-svelte';
+	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, X } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { isBroker, roleLabel } from '$lib/stores/app.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
@@ -209,18 +209,8 @@
 		return { total, items: top4.map(([r, c]) => ({ r, c, pct: total > 0 ? Math.round(c / total * 100) : 0 })) };
 	});
 
-	// global search
-	let globalSearch = $state('');
-	let searchOpen = $state(false);
+	// Kolory segmentów wykresu rodzajów polis
 	const SEARCH_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6'];
-
-	const searchResults = $derived(() => {
-		const q = globalSearch.trim().toLowerCase();
-		if (q.length < 2) return { clients: [], policies: [] };
-		const clients = appState.clients.filter(c => (c.nazwa + ' ' + (c.nip ?? '') + ' ' + (c.nazwa_skrocona ?? '')).toLowerCase().includes(q)).slice(0, 4);
-		const policies = appState.policies.filter(p => (p.nr_polisy + ' ' + (p.crm_clients?.nazwa ?? '')).toLowerCase().includes(q)).slice(0, 4);
-		return { clients, policies };
-	});
 
 	// claims_stats
 	const claimsStats = $derived(() => {
@@ -370,7 +360,7 @@
 	const BUILD_DATA = new Date(__APP_BUILD__.data).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw', dateStyle: 'short', timeStyle: 'short' });
 </script>
 
-<svelte:head><title>Pulpit — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Pulpit — AuraCRM</title></svelte:head>
 
 <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
 	<div>
@@ -382,45 +372,6 @@
 		<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
 	</div>
 	<div class="flex items-center gap-3">
-		<!-- Globalna wyszukiwarka -->
-		<div class="relative">
-			<Search size={15} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-			<input
-				bind:value={globalSearch}
-				oninput={() => searchOpen = globalSearch.trim().length >= 2}
-				onfocus={() => { if (globalSearch.trim().length >= 2) searchOpen = true; }}
-				onblur={() => setTimeout(() => searchOpen = false, 150)}
-				placeholder="Szukaj klienta, polisy..."
-				class="pl-9 pr-4 py-2 w-64 border border-line rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-			/>
-			{#if searchOpen}
-			{@const res = searchResults()}
-			{#if res.clients.length > 0 || res.policies.length > 0}
-			<div class="absolute right-0 top-full mt-1 w-80 bg-white border border-line rounded-xl shadow-xl z-50 overflow-hidden">
-				{#if res.clients.length > 0}
-					<p class="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Klienci</p>
-					{#each res.clients as c}
-						<button onclick={() => { goto(`/clients/${c.id}`); searchOpen = false; globalSearch = ''; }}
-							class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center gap-2">
-							<span class="font-medium">{c.nazwa_skrocona ?? c.nazwa}</span>
-							{#if c.nip}<span class="text-xs text-slate-400">NIP: {c.nip}</span>{/if}
-						</button>
-					{/each}
-				{/if}
-				{#if res.policies.length > 0}
-					<p class="px-3 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wide border-t border-line-soft">Polisy</p>
-					{#each res.policies as p}
-						<button onclick={() => { goto(`/policies/${p.id}`); searchOpen = false; globalSearch = ''; }}
-							class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 flex items-center gap-2">
-							<span class="font-mono font-semibold text-blue-700">{p.nr_polisy}</span>
-							<span class="text-slate-500 truncate">{p.crm_clients?.nazwa}</span>
-						</button>
-					{/each}
-				{/if}
-			</div>
-			{/if}
-			{/if}
-		</div>
 		<button
 			onclick={() => configMode = !configMode}
 			class="flex items-center gap-2 px-3 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50 transition-colors"
@@ -564,7 +515,7 @@
 								<div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
 									<div class="h-full rounded-full {pct >= 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-400'}" style="width:{pct}%"></div>
 								</div>
-								<span class="text-[10px] text-slate-400 shrink-0">{pct}%</span>
+								<span class="text-xs text-slate-400 shrink-0">{pct}%</span>
 							</div>
 						{/if}
 					</li>
@@ -592,7 +543,7 @@
 		</div>
 		<table class="w-full text-left text-xs">
 			<thead>
-				<tr class="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+				<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 					<SortTh s={sortWznowienia} k="nr" class="px-4 py-2">Nr Polisy</SortTh>
 					<SortTh s={sortWznowienia} k="klient" class="px-4 py-2">Klient</SortTh>
 					<SortTh s={sortWznowienia} k="tu" class="px-4 py-2">TU</SortTh>
@@ -698,7 +649,7 @@
 			</div>
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<th class="px-5 py-3">Klient</th>
 						<th class="px-5 py-3 text-right">Polis</th>
 						<th class="px-5 py-3 text-right">Składka</th>
@@ -903,7 +854,7 @@
 									<div class="h-full rounded-full {pct >= 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-400'}"
 										style="width:{pct}%"></div>
 								</div>
-								<span class="text-[10px] text-slate-400 shrink-0">{pct}%</span>
+								<span class="text-xs text-slate-400 shrink-0">{pct}%</span>
 							</div>
 						{/if}
 					</li>

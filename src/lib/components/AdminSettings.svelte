@@ -387,7 +387,7 @@
 				</div>
 				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 							<th class="px-5 py-3">Skrót</th>
 							<th class="px-5 py-3">Nazwa</th>
 							<th class="px-5 py-3">NIP / KRS</th>
@@ -417,10 +417,10 @@
 									{#if t.ulica}<div class="text-xs text-slate-400">{t.ulica}</div>{/if}
 									<div class="flex items-center gap-3 mt-1">
 										{#if tBranches.length > 0}
-											<span class="text-[10px] text-slate-400"><Building2 class="inline" size={10} /> {tBranches.length} oddz.</span>
+											<span class="text-xs text-slate-400"><Building2 class="inline" size={10} /> {tBranches.length} oddz.</span>
 										{/if}
 										{#if tContacts.length > 0}
-											<span class="text-[10px] text-slate-400"><UserRound class="inline" size={10} /> {tContacts.length} os.</span>
+											<span class="text-xs text-slate-400"><UserRound class="inline" size={10} /> {tContacts.length} os.</span>
 										{/if}
 									</div>
 								</td>
@@ -486,7 +486,7 @@
 												<UserRound size={11} class="text-emerald-600" />
 												<span class="text-sm text-slate-700">{c.imie_nazwisko}</span>
 												{#if c.stanowisko}<span class="text-xs text-slate-400">— {c.stanowisko}</span>{/if}
-												<span class="text-[10px] text-slate-300">(centrala)</span>
+												<span class="text-xs text-slate-300">(centrala)</span>
 											</div>
 										</td>
 										<td class="px-5 py-2 text-xs text-slate-500">
@@ -515,13 +515,13 @@
 	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		<div class="px-5 py-4 border-b border-line flex items-center justify-between">
 			<h2 class="font-semibold text-slate-900">Zespół ({teamLabel()})</h2>
-				<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-slate-900 text-white rounded-lg px-3 py-1.5 hover:bg-slate-700">
+				<button onclick={() => { showInvite=true; inviteError=''; inviteSuccess=''; tempPassword=''; }} class="flex items-center gap-1.5 text-xs bg-accent text-white rounded-lg px-3 py-1.5 hover:bg-accent-hover">
 					<UserPlus size={13} /> Dodaj użytkownika
 				</button>
 			</div>
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<th class="px-5 py-3">Imię / Email</th>
 						<th class="px-5 py-3">Rola</th>
 						<th class="px-5 py-3">PESEL</th>
@@ -571,7 +571,7 @@
 			{:else}
 				<table class="w-full text-left text-xs">
 					<thead>
-						<tr class="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
+						<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 							<SortTh s={brokerSort} k="nr" class="px-4 py-2">Nr Polisy</SortTh>
 							<SortTh s={brokerSort} k="klient" class="px-4 py-2">Klient</SortTh>
 							<SortTh s={brokerSort} k="tu" class="px-4 py-2">TU</SortTh>
@@ -613,7 +613,7 @@
 		</div>
 		<table class="w-full text-left text-sm">
 			<thead>
-				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+				<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 					<th class="px-5 py-3">Nazwa</th>
 					<th class="px-5 py-3">NIP</th>
 					<th class="px-5 py-3">Adres</th>
@@ -685,7 +685,7 @@
 
 				<div class="flex flex-wrap items-end gap-3">
 					<div>
-						<label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vr-{w.id}">
+						<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vr-{w.id}">
 							Numer rejestracyjny *
 						</label>
 						<input
@@ -697,7 +697,7 @@
 						/>
 					</div>
 					<div class="flex-1 min-w-[200px]">
-						<label class="block text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vp-{w.id}">
+						<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vp-{w.id}">
 							Powód odrzucenia
 						</label>
 						<input
@@ -793,7 +793,7 @@
 <Modal title={editingTU ? `Edytuj TU — ${editingTU.nazwa}` : 'Nowe Towarzystwo (TU)'} open={showTU} onclose={() => { showTU=false; tuError=''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showTU=false; tuError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveTU} disabled={savingTU} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveTU} disabled={savingTU} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingTU ? 'Zapisywanie...' : editingTU ? 'Zapisz zmiany' : 'Zapisz TU'}
 		</button>
 	{/snippet}
@@ -822,7 +822,7 @@
 	{#snippet footer()}
 		<button onclick={() => { showInvite=false; inviteSuccess=''; tempPassword=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 		{#if !inviteSuccess}
-			<button onclick={inviteUser} disabled={inviting} class="flex items-center gap-2 px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			<button onclick={inviteUser} disabled={inviting} class="flex items-center gap-2 px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 				<UserPlus size={14} /> {inviting ? 'Tworzenie...' : 'Utwórz konto'}
 			</button>
 		{/if}
@@ -856,7 +856,7 @@
 <Modal title="Edytuj użytkownika — {editingUser.imie_nazwisko ?? editingUser.email}" open={showEditUser} onclose={() => { showEditUser=false; }}>
 	{#snippet footer()}
 		<button onclick={() => showEditUser=false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveUserRole} disabled={savingUser} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveUserRole} disabled={savingUser} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingUser ? 'Zapisywanie...' : 'Zapisz zmiany'}
 		</button>
 	{/snippet}
@@ -882,7 +882,7 @@
 <Modal title={editingBranch ? `Edytuj oddział — ${editingBranch.nazwa}` : 'Nowy Oddział TU'} open={showBranch} onclose={() => { showBranch=false; branchError=''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showBranch=false; branchError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveBranch} disabled={savingBranch} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveBranch} disabled={savingBranch} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingBranch ? 'Zapisywanie...' : editingBranch ? 'Zapisz zmiany' : 'Dodaj oddział'}
 		</button>
 	{/snippet}
@@ -901,7 +901,7 @@
 <Modal title={editingLeasing ? `Edytuj — ${editingLeasing.nazwa}` : 'Nowa firma leasingowa'} open={showLeasing} onclose={() => { showLeasing=false; leasingError=''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showLeasing=false; leasingError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveLeasing} disabled={savingLeasing} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveLeasing} disabled={savingLeasing} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingLeasing ? 'Zapisywanie...' : editingLeasing ? 'Zapisz zmiany' : 'Dodaj'}
 		</button>
 	{/snippet}
@@ -917,7 +917,7 @@
 <Modal title={editingContact ? `Edytuj osobę — ${editingContact.imie_nazwisko}` : 'Nowa Osoba Kontaktowa TU'} open={showContactModal} onclose={() => { showContactModal=false; contactMError=''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showContactModal=false; contactMError=''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveContact} disabled={savingContactM} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveContact} disabled={savingContactM} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingContactM ? 'Zapisywanie...' : editingContact ? 'Zapisz zmiany' : 'Dodaj osobę'}
 		</button>
 	{/snippet}

@@ -98,12 +98,12 @@
 			<button
 				type="submit"
 				disabled={loading || (turnstileEnabled && !turnstileToken)}
-				class="w-full bg-slate-900 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60"
+				class="w-full bg-accent text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-60"
 			>
 				{loading ? 'Logowanie…' : 'Zaloguj się'}
 			</button>
 		</form>
-		<p class="text-[11px] text-slate-400 text-center mt-5">
+		<p class="text-xs text-slate-400 text-center mt-5">
 			Dane logowania otrzymasz od swojego doradcy.
 		</p>
 	</div>

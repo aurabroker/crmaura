@@ -1,4 +1,4 @@
-<svelte:head><title>Ustawienia — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Ustawienia — AuraCRM</title></svelte:head>
 
 <script lang="ts">
 	import { wczytajPojazdy } from '$lib/kolekcje';
@@ -353,7 +353,7 @@
 			>
 				<Car size={16} /> Wnioski o pojazdy
 				{#if appState.vehicleRequests.length > 0}
-					<span class="bg-amber-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+					<span class="bg-amber-500 text-white text-xs font-bold rounded-full px-1.5 py-0.5">
 						{appState.vehicleRequests.length}
 					</span>
 				{/if}
@@ -380,7 +380,7 @@
 					<a href="/vehicles" class="flex items-center gap-1.5 px-3 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 						<Car size={15} /> Panel pojazdów
 					</a>
-					<button onclick={openNewVehicle} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
+					<button onclick={openNewVehicle} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover">
 						<Plus size={16} />
 						Dodaj pojazd
 					</button>
@@ -482,7 +482,7 @@
 					{/if}
 					<div class="flex justify-end gap-2 pt-2">
 						<button onclick={closeVehicleModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-700 hover:bg-slate-50">Anuluj</button>
-						<button onclick={saveVehicle} disabled={vehicleSaving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
+						<button onclick={saveVehicle} disabled={vehicleSaving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50">
 							{vehicleSaving ? 'Zapisywanie...' : 'Zapisz'}
 						</button>
 					</div>
@@ -533,7 +533,7 @@
 				<button
 					onclick={saveProfile}
 					disabled={profileLoading}
-					class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50"
+					class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50"
 				>
 					{profileLoading ? 'Zapisywanie...' : 'Zapisz dane'}
 				</button>
@@ -561,7 +561,7 @@
 				<button
 					onclick={savePassword}
 					disabled={passwordLoading}
-					class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50"
+					class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50"
 				>
 					{passwordLoading ? 'Zapisywanie...' : 'Zmień hasło'}
 				</button>
@@ -579,7 +579,7 @@
 			</div>
 			<div class="flex items-center gap-3">
 				{#if rodoMsg}<span class="text-sm text-emerald-600">{rodoMsg}</span>{/if}
-				<button onclick={addRodoText} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
+				<button onclick={addRodoText} class="flex items-center gap-1.5 px-3 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover">
 					<Plus size={14} /> Dodaj zgodę
 				</button>
 			</div>
@@ -616,7 +616,7 @@
 							</label>
 						</div>
 						<div class="flex gap-2">
-							<button onclick={() => saveRodoText(t)} disabled={rodoLoading} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50">
+							<button onclick={() => saveRodoText(t)} disabled={rodoLoading} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50">
 								{rodoLoading ? 'Zapisywanie...' : 'Zapisz'}
 							</button>
 							<button onclick={() => { t.editing = false; rodoTexts = [...rodoTexts]; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
@@ -669,7 +669,7 @@
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-sm text-left">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<th class="px-5 py-3">Nr zestawienia</th>
 						<th class="px-5 py-3">TU</th>
 						<th class="px-5 py-3">Data zestawienia</th>
@@ -749,7 +749,7 @@
 			</div>
 
 			<div class="flex items-center gap-3 pt-1">
-				<button onclick={saveCalSettings} class="px-5 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-700">
+				<button onclick={saveCalSettings} class="px-5 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover">
 					Zapisz ustawienia
 				</button>
 				{#if calSaved}<span class="text-sm text-emerald-600 font-medium">✓ Zapisano</span>{/if}

@@ -307,7 +307,7 @@
 			{#if fpParentId}
 				{@const parentUg = generalPolicies.find(p => p.id === fpParentId)}
 				{#if parentUg?.ug_default_prowizja_pct}
-					<p class="text-[11px] text-blue-600 mt-1">Domyślna prowizja UG: {parentUg.ug_default_prowizja_pct}%</p>
+					<p class="text-xs text-blue-600 mt-1">Domyślna prowizja UG: {parentUg.ug_default_prowizja_pct}%</p>
 				{/if}
 			{/if}
 		</div>
@@ -354,7 +354,7 @@
 				{/if}
 			</div>
 			{#if fpKlient && !clientOpen}
-				<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedClientName}</p>
+				<p class="text-xs text-emerald-600 mt-1">✓ {selectedClientName}</p>
 			{/if}
 		</div>
 
@@ -366,7 +366,7 @@
 					<span class="text-xs text-slate-400">🔒</span>
 					{selectedTUName || '—'}
 				</div>
-				<p class="text-[11px] text-slate-400 mt-1">TU przypisane z UG — zmień w panelu UG</p>
+				<p class="text-xs text-slate-400 mt-1">TU przypisane z UG — zmień w panelu UG</p>
 			{:else}
 				<div class="relative"
 					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { tuOpen = false; tuSearch = ''; } }}>
@@ -394,7 +394,7 @@
 					{/if}
 				</div>
 				{#if fpTu && !tuOpen}
-					<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedTUName}</p>
+					<p class="text-xs text-emerald-600 mt-1">✓ {selectedTUName}</p>
 				{/if}
 			{/if}
 		</div>
@@ -440,7 +440,7 @@
 					{/if}
 				</div>
 				{#if fpUbezpieczony && !ubezpieczonyOpen}
-					<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedUbezpieczonyName}</p>
+					<p class="text-xs text-emerald-600 mt-1">✓ {selectedUbezpieczonyName}</p>
 				{/if}
 			</div>
 		</div>
@@ -451,7 +451,7 @@
 				class="inline-flex items-center gap-2 px-4 py-2 text-sm border border-dashed border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 hover:border-blue-400 transition-colors">
 				<span class="text-base leading-none">+</span> Dodaj ubezpieczonego
 			</button>
-			<p class="text-[11px] text-slate-400 mt-1">Opcjonalny drugi podmiot ubezpieczony na polisie</p>
+			<p class="text-xs text-slate-400 mt-1">Opcjonalny drugi podmiot ubezpieczony na polisie</p>
 		</div>
 	{/if}
 
@@ -491,9 +491,9 @@
 						{/each}
 					</select>
 					{#if availableVehicles.length === 0}
-						<p class="text-[11px] text-amber-700 mt-1">Wszystkie pojazdy klienta są już przypisane do innych polis.</p>
+						<p class="text-xs text-amber-700 mt-1">Wszystkie pojazdy klienta są już przypisane do innych polis.</p>
 					{:else}
-						<p class="text-[11px] text-slate-400 mt-1">Pojazdy już przypisane do innych polis nie są widoczne na liście.</p>
+						<p class="text-xs text-slate-400 mt-1">Pojazdy już przypisane do innych polis nie są widoczne na liście.</p>
 					{/if}
 				{:else}
 					<select class={inp} disabled><option>Najpierw wybierz klienta</option></select>
@@ -522,7 +522,7 @@
 					{/each}
 				</select>
 				{#if appState.leasings.length === 0}
-					<p class="text-[11px] text-amber-600 mt-1">Brak firm leasingowych — dodaj w Administracji.</p>
+					<p class="text-xs text-amber-600 mt-1">Brak firm leasingowych — dodaj w Administracji.</p>
 				{/if}
 			</div>
 			<div>

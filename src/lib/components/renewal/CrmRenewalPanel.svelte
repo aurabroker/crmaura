@@ -420,7 +420,7 @@
 		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex flex-wrap items-center gap-3">
 			<p class="text-sm font-semibold text-slate-700">Wniosek o odnowienie — program OC beauty</p>
 			{#if trybTestowy || wniosekTestowy}
-				<span class="text-[11px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-0.5" data-testid="renewal-test-mode">
+				<span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-0.5" data-testid="renewal-test-mode">
 					{trybTestowy ? `Tryb testowy — e-maile idą na ${ADRES_TESTOWY}, nie do klienta` : 'Wniosek testowy'}
 				</span>
 			{/if}
@@ -495,7 +495,7 @@
 				<ol class="grid grid-cols-2 sm:grid-cols-5 gap-2" data-testid="renewal-timeline">
 					{#each kroki(r) as k}
 						<li class="rounded-lg border px-3 py-2 {k.at ? (k.uwaga ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50') : 'border-line bg-white'}">
-							<p class="text-[11px] font-semibold uppercase tracking-wide {k.at ? (k.uwaga ? 'text-amber-700' : 'text-emerald-700') : 'text-slate-400'}">{k.label}</p>
+							<p class="text-xs font-semibold uppercase tracking-wide {k.at ? (k.uwaga ? 'text-amber-700' : 'text-emerald-700') : 'text-slate-400'}">{k.label}</p>
 							<p class="text-xs {k.at ? 'text-slate-800' : 'text-slate-400'}">{fmtDataCzas(k.at)}</p>
 						</li>
 					{/each}
@@ -518,7 +518,7 @@
 								<span class="ml-auto text-sm text-slate-600" data-testid="renewal-premium">
 									Nowa składka:
 									<strong class={sk.kwota === 'do wyceny' ? 'text-amber-700' : 'text-slate-900'}>{sk.kwota}</strong>
-									{#if sk.opis}<span class="block text-[11px] text-slate-400 text-right">{sk.opis}</span>{/if}
+									{#if sk.opis}<span class="block text-xs text-slate-400 text-right">{sk.opis}</span>{/if}
 								</span>
 							{/if}
 						</div>
@@ -540,7 +540,7 @@
 										<button type="button" onclick={() => otworzPlik(z.path, z.nazwa)} class="text-blue-700 hover:underline truncate max-w-full text-left">
 											{z.nazwa}
 										</button>
-										<p class="text-[11px] text-slate-400">
+										<p class="text-xs text-slate-400">
 											{opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy)} · {rozmiar(z.rozmiar)}{z.at ? ` · ${fmtDataCzas(z.at)}` : ''}
 										</p>
 									</div>
@@ -600,7 +600,7 @@
 					{#snippet zdarzeniaTresc()}
 						<table class="w-full text-sm">
 							<thead>
-								<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide text-left">
+								<tr class="text-xs font-semibold text-slate-500 uppercase tracking-wide text-left">
 									<th class="py-1 pr-3">Zdarzenie</th>
 									<th class="py-1 pr-3">Kiedy</th>
 									<th class="py-1">IP</th>

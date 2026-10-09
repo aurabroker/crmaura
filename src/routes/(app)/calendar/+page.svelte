@@ -418,7 +418,7 @@
 				</button>
 			{/each}
 		</div>
-		<button onclick={() => openNew()} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors flex items-center gap-2">
+		<button onclick={() => openNew()} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors flex items-center gap-2">
 			<Plus size={15} /> Nowe zadanie
 		</button>
 	</div>
@@ -482,7 +482,7 @@
 			<CalendarDays size={18} class="text-slate-300" /> Ładowanie kalendarza…
 		</div>
 	{/if}
-	<div class="cal-legend flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pt-3 pb-1 text-[11px] text-slate-500 border-t border-line-soft mt-3">
+	<div class="cal-legend flex flex-wrap items-center gap-x-4 gap-y-1 px-2 pt-3 pb-1 text-xs text-slate-500 border-t border-line-soft mt-3">
 		<span class="font-semibold text-slate-400 uppercase tracking-wide">Priorytet:</span>
 		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#dc2626]"></span> Pilny</span>
 		<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-[#ea580c]"></span> Wysoki</span>
@@ -569,7 +569,7 @@
 <Modal windowed title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showModal} onclose={() => { showModal = false; formError = ''; }}>
 	{#snippet footer()}
 		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveTask} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveTask} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
 		</button>
 	{/snippet}
@@ -581,7 +581,7 @@
 				class="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors">
 				<span class="flex items-center gap-2 min-w-0">
 					{#if isProspectTask}<Target size={16} class="text-blue-600 shrink-0" />{:else}<User size={16} class="text-blue-600 shrink-0" />{/if}
-					<span class="text-[11px] uppercase font-semibold text-blue-500 shrink-0">{isProspectTask ? 'Prospekt' : 'Klient'}</span>
+					<span class="text-xs uppercase font-semibold text-blue-500 shrink-0">{isProspectTask ? 'Prospekt' : 'Klient'}</span>
 					<span class="font-semibold text-slate-800 truncate">{linkedName || '—'}</span>
 				</span>
 				<span class="flex items-center gap-1 text-xs font-semibold text-blue-700 shrink-0 whitespace-nowrap">Otwórz kartę <ExternalLink size={13} /></span>
@@ -603,7 +603,7 @@
 			<div>
 				<label class={labelCls}>Godzina</label>
 				<input type="time" bind:value={fGodzina} class={inputCls} />
-				<p class="text-[11px] text-slate-400 mt-1">puste = całodniowe</p>
+				<p class="text-xs text-slate-400 mt-1">puste = całodniowe</p>
 			</div>
 			<div>
 				<label class={labelCls}>Priorytet</label>
@@ -695,21 +695,21 @@
 </Modal>
 
 <style>
-	/* Schedule-X — dopasowanie do wyglądu aplikacji (Inter, akcent, ramki).
+	/* Schedule-X — dopasowanie do wyglądu aplikacji (IBM Plex, akcent, ramki).
 	   Nadpisania jasne zawężone do :not(.is-dark), by nie psuć wbudowanego dark mode. */
 	.sx-app-calendar :global(.sx__calendar) {
-		font-family: 'Inter', sans-serif;
+		font-family: var(--font-sans);
 		border: none;
-		--sx-color-primary: #2563eb;
+		--sx-color-primary: #2453D6;
 		--sx-color-on-primary: #ffffff;
-		--sx-color-primary-container: #dbeafe;
-		--sx-color-on-primary-container: #1e3a8a;
+		--sx-color-primary-container: #E1E8FB;
+		--sx-color-on-primary-container: #142F74;
 	}
 	.sx-app-calendar :global(.sx__calendar:not(.is-dark)) {
 		--sx-color-surface: #ffffff;
 		--sx-color-background: #ffffff;
-		--sx-internal-color-text: #0f172a;
-		--sx-color-outline-variant: #cbd5e1;
+		--sx-internal-color-text: #121826;
+		--sx-color-outline-variant: #DCE0E6;
 	}
 	.sx-app-calendar :global(.sx__calendar-wrapper) {
 		border: none;

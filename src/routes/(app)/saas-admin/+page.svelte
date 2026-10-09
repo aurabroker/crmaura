@@ -597,7 +597,7 @@
 		<div class="text-center py-4">
 			<p class="text-emerald-700 font-semibold mb-1">✓ {ntSuccess}</p>
 			<p class="text-xs text-slate-400 mb-5">Firma pojawi się na liście po lewej.</p>
-			<button onclick={() => newTenantModal = false} class="px-5 py-2 bg-slate-900 text-white text-sm font-semibold rounded-lg hover:bg-slate-700">
+			<button onclick={() => newTenantModal = false} class="px-5 py-2 bg-accent text-white text-sm font-semibold rounded-lg hover:bg-accent-hover">
 				Zamknij
 			</button>
 		</div>

@@ -90,7 +90,7 @@
 			{/each}
 		</select>
 		{#if selectedUl}
-			<p class="text-[11px] text-slate-400 mt-1">
+			<p class="text-xs text-slate-400 mt-1">
 				Stawka bazowa: {selectedUl.bond_stawka_bazowa ?? '—'}% • Min. składka: {selectedUl.bond_skladka_min != null ? `${fmtPln(selectedUl.bond_skladka_min)} PLN` : '—'}
 				{#if ulView && ulView.bond_wolny_limit != null}
 					• Wolny limit: <span class="font-semibold {Number(ulView.bond_wolny_limit) > 0 ? 'text-emerald-600' : 'text-red-600'}">{fmtPln(ulView.bond_wolny_limit)} PLN</span>
@@ -152,7 +152,7 @@
 		<div>
 			<label class={lbl}>Data do *</label>
 			<input type="date" bind:value={fpDo} class={inp} />
-			{#if dni > 0}<p class="text-[11px] text-slate-400 mt-1">Okres: {dni} dni</p>{/if}
+			{#if dni > 0}<p class="text-xs text-slate-400 mt-1">Okres: {dni} dni</p>{/if}
 		</div>
 	</div>
 
@@ -180,7 +180,7 @@
 			<span class="text-xs text-slate-500">Składka (wyliczona): </span>
 			<span class="text-base font-bold text-violet-900">{skladka != null ? `${fmtPln(skladka)} PLN` : '—'}</span>
 		</div>
-		<div class="text-[11px] text-slate-400">
+		<div class="text-xs text-slate-400">
 			{effStawka != null ? `${effStawka}% × ${dni} dni / 365` : 'uzupełnij UL, sumę i daty'}
 		</div>
 		{#if wolnyPo != null}

@@ -122,7 +122,7 @@
 	const inp = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 </script>
 
-<svelte:head><title>Analiza Potrzeb Klienta — FRANK67</title></svelte:head>
+<svelte:head><title>Analiza Potrzeb Klienta</title></svelte:head>
 
 <div class="min-h-screen bg-slate-50 flex flex-col items-center py-10 px-4">
 	<div class="w-full max-w-2xl">
@@ -288,7 +288,7 @@
 							{saving ? 'Zapisywanie…' : 'Zapisz szkic'}
 						</button>
 						<button onclick={() => submit(false)} disabled={saving}
-							class="flex-[2] py-2.5 text-sm bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-700 disabled:opacity-60 transition-colors">
+							class="flex-[2] py-2.5 text-sm bg-accent text-white rounded-xl font-semibold hover:bg-accent-hover disabled:opacity-60 transition-colors">
 							{saving ? 'Wysyłanie…' : 'Wyślij formularz'}
 						</button>
 					</div>

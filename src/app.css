@@ -1,19 +1,134 @@
 @import "tailwindcss";
 
+/* System wizualny „B · Precyzja” (makiety: kanwa AuraCRM — restyle UI/UX).
+   Tokeny nazwane (bg, surface, ink, accent…) są dla nowych ekranów. Paleta slate i blue
+   Tailwinda jest przemapowana na te same wartości, więc istniejące ekrany przejmują nowe
+   kolory bez przepisywania klas. Szarości od slate-400 w górę mają kontrast AA (≥ 4,5:1)
+   na białym i na tle strony — dawny slate-400 (#94a3b8) miał 2,6:1. */
 @theme {
-  --color-primary: #0f172a;
-  --color-primary-hover: #1e293b;
-  --font-sans: 'Inter', sans-serif;
+  --font-sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
 
-  /* Ramki — jeden centralny "pokrętło" na przyciemnienie.
-     line      = główne ramki kart/sekcji/inputów (wyraźna)
+  --color-bg: #F4F5F7;
+  --color-side: #FBFBFC;
+  --color-surface: #FFFFFF;
+  --color-surface-2: #F0F2F5;
+  --color-ink: #121826;
+  --color-ink-2: #475066;
+  --color-ink-3: #5E6A7E;
+  --color-accent: #2453D6;
+  --color-accent-hover: #1D44B3;
+  --color-accent-soft: #E8EEFC;
+  --color-accent-text: #1D44B3;
+  --color-danger: #B42318;
+  --color-danger-soft: #FDECEA;
+  --color-warn: #B54708;
+  --color-warn-soft: #FEF0E1;
+  --color-ok: #067647;
+  --color-ok-soft: #E6F4EC;
+
+  --color-primary: #121826;
+  --color-primary-hover: #222838;
+
+  /* Ramki — jeden centralny „pokrętło”.
+     line      = główne ramki kart/sekcji/inputów
      line-soft = delikatne wewnętrzne linie i dzielniki list */
-  --color-line: #cbd5e1;       /* było slate-200 (#e2e8f0) — teraz wyraźniejsze */
-  --color-line-soft: #e2e8f0;  /* było slate-100 (#f1f5f9) — subtelny dzielnik */
+  --color-line: #DCE0E6;
+  --color-line-soft: #EAEDF1;
+
+  --color-slate-50: #F4F5F7;
+  --color-slate-100: #EDEFF3;
+  --color-slate-200: #E1E5EA;
+  --color-slate-300: #C4CAD4;
+  --color-slate-400: #646D80;
+  --color-slate-500: #566074;
+  --color-slate-600: #475066;
+  --color-slate-700: #353C4E;
+  --color-slate-800: #222838;
+  --color-slate-900: #121826;
+  --color-slate-950: #0B0F18;
+
+  --color-blue-50: #EEF2FD;
+  --color-blue-100: #E1E8FB;
+  --color-blue-200: #C4D3F7;
+  --color-blue-300: #9AB2F0;
+  --color-blue-400: #6A8CE6;
+  --color-blue-500: #3A63D8;
+  --color-blue-600: #2453D6;
+  --color-blue-700: #1D44B3;
+  --color-blue-800: #183A94;
+  --color-blue-900: #142F74;
+
+  /* Statusy (po terminie / uwaga / w porządku) w tonacji B — spokojniejsze niż domyślne
+     Tailwinda; 600–700 mają kontrast AA na białym i na swoim jasnym tle 50–100. */
+  --color-red-50: #FDECEA;
+  --color-red-100: #FBD9D5;
+  --color-red-200: #F5B5AE;
+  --color-red-300: #EE8D82;
+  --color-red-400: #E15A4B;
+  --color-red-500: #D92D20;
+  --color-red-600: #B42318;
+  --color-red-700: #912018;
+  --color-red-800: #7A1A13;
+  --color-red-900: #55160C;
+
+  --color-amber-50: #FEF0E1;
+  --color-amber-100: #FDE1C2;
+  --color-amber-200: #FAC68F;
+  --color-amber-300: #F5A65B;
+  --color-amber-400: #EE8A2E;
+  --color-amber-500: #DC6803;
+  --color-amber-600: #B54708;
+  --color-amber-700: #93370D;
+  --color-amber-800: #7A2E0E;
+  --color-amber-900: #4E1D09;
+
+  --color-emerald-50: #E6F4EC;
+  --color-emerald-100: #CDEAD9;
+  --color-emerald-200: #A3D9BA;
+  --color-emerald-300: #6CC290;
+  --color-emerald-400: #32A466;
+  --color-emerald-500: #079455;
+  --color-emerald-600: #067647;
+  --color-emerald-700: #05603A;
+  --color-emerald-800: #054F31;
+  --color-emerald-900: #053321;
+
+  --color-green-50: #E6F4EC;
+  --color-green-100: #CDEAD9;
+  --color-green-200: #A3D9BA;
+  --color-green-300: #6CC290;
+  --color-green-400: #32A466;
+  --color-green-500: #079455;
+  --color-green-600: #067647;
+  --color-green-700: #05603A;
+  --color-green-800: #054F31;
+  --color-green-900: #053321;
+
+  /* Promienie: 6 px kontrolki, 10 px karty */
+  --radius-lg: 6px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+}
+
+html {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Kwoty i liczby w kolumnach równe w pionie */
+td, th { font-variant-numeric: tabular-nums; }
+
+/* Widoczny fokus z klawiatury */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* Wiersz / karta, na której otwarto menu kontekstowe */
 .ctx-target {
-  background-color: #dbeafe !important;
-  box-shadow: inset 3px 0 0 0 #1d4ed8;
+  background-color: var(--color-accent-soft) !important;
+  box-shadow: inset 3px 0 0 0 var(--color-accent);
 }
