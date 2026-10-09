@@ -6,6 +6,7 @@
 	import { afterNavigate } from '$app/navigation';
 	import { appState, isAdmin, isFinance, isBroker } from '$lib/stores/app.svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
+	import { poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import GlobalSearch from './GlobalSearch.svelte';
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList, Settings, Plus, LogOut,
@@ -33,11 +34,8 @@
 	});
 
 	const today = todayStr();
-	const zaplacone = ['Opłacona', 'Częściowo opłacona'];
-
-	const ratyPoTerminie = $derived(
-		appState.payments.filter((p) => !zaplacone.includes(p.status) && p.data_platnosci < today).length
-	);
+	const ug = $derived(ugBezRozliczania(appState.policies));
+	const ratyPoTerminie = $derived(appState.payments.filter((p) => poTerminie(p, today, ug)).length);
 	const odnowienia30 = $derived(
 		appState.policies.filter((p) => {
 			const d = dateDiffDays(today, p.data_do);

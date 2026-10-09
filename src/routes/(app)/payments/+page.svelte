@@ -3,20 +3,27 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { PolicyPayment } from '$lib/types/database';
-	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { fmtPln, todayStr } from '$lib/utils';
-	import { Plus, Check, Search, FileSpreadsheet, AlertTriangle, CheckCircle2, Bell,
-		RotateCcw, FileText, User, Copy } from 'lucide-svelte';
+	import Toast from '$lib/components/Toast.svelte';
+	import { fmtPln, todayStr, fmtDzien, fmtTermin, dateDiffDays, odmiana } from '$lib/utils';
+	import { poTerminie, ugBezRozliczania, ROZLICZONE } from '$lib/platnosci';
+	import { Plus, Check, Search, FileSpreadsheet, AlertTriangle, CheckCircle2,
+		RotateCcw, FileText, User, Copy, ChevronDown } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { dekodujCsv, parseErgoCsv } from '$lib/commissionImport/ergoCsv';
 	const today = todayStr();
-	const currentMonth = $state(today.slice(0, 7));
-
-	let filterMonth = $state(currentMonth);
-	let filterStatus = $state('all');
+	type Filtr = 'wszystkie' | 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone';
+	let filtr = $state<Filtr>('wszystkie');
+	let filterMonth = $state('all');
+	// Głębokie linki, np. /payments?filtr=po-terminie
+	onMount(() => {
+		const f = $page.url.searchParams.get('filtr') as Filtr | null;
+		if (f && ['po-terminie', 'tydzien', 'pozniej', 'oplacone'].includes(f)) filtr = f;
+	});
 	let search = $state('');
 	let showModal = $state(false);
 	let saving = $state(false);
@@ -429,28 +436,114 @@
 		}
 	});
 
-	const filtered = $derived(
+	// ===== RATY: grupy wg pilności (wspólna definicja „po terminie” — $lib/platnosci) =====
+	const ugIds = $derived(ugBezRozliczania(appState.policies));
+	const polisaWg = $derived(new Map(appState.policies.map((p) => [p.id, p])));
+
+	type Grupa = 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone' | 'ug';
+	function grupaRaty(p: PolicyPayment): Grupa {
+		if (ROZLICZONE.includes(p.status)) return 'oplacone';
+		if (ugIds.has(p.polisa_id)) return 'ug';
+		if (poTerminie(p, today, ugIds)) return 'po-terminie';
+		return dateDiffDays(today, p.data_platnosci) <= 7 ? 'tydzien' : 'pozniej';
+	}
+
+	// Okres i wyszukiwanie — podstawa podsumowania, liczników i grup
+	const wOkresie = $derived(
 		appState.payments
 			.filter((p) => filterMonth === 'all' || p.data_platnosci.startsWith(filterMonth))
-			.filter((p) => filterStatus === 'all' || p.status === filterStatus)
 			.filter((p) => {
 				if (!search) return true;
-				const klient = p.crm_policies?.crm_clients?.nazwa ?? '';
-				const nr = p.crm_policies?.nr_polisy ?? '';
-				return klient.toLowerCase().includes(search.toLowerCase()) || nr.toLowerCase().includes(search.toLowerCase());
+				const q = search.toLowerCase();
+				return (p.crm_policies?.crm_clients?.nazwa ?? '').toLowerCase().includes(q) ||
+					(p.crm_policies?.nr_polisy ?? '').toLowerCase().includes(q);
 			})
-			.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci))
 	);
+	const zGrupa = $derived(wOkresie.map((p) => ({ p, g: grupaRaty(p) })));
+	const licznik = (g: Grupa) => zGrupa.filter((x) => x.g === g).length;
+	const suma = (g: Grupa) => zGrupa.filter((x) => x.g === g).reduce((s, x) => s + Number(x.p.kwota), 0);
 
-	const byDay = $derived(() => {
-		const map = new Map<string, typeof filtered>();
-		for (const p of filtered) {
-			const day = p.data_platnosci;
-			if (!map.has(day)) map.set(day, []);
-			map.get(day)!.push(p);
-		}
-		return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
+	const GRUPY: { id: Grupa; tytul: string; ton: string }[] = [
+		{ id: 'po-terminie', tytul: 'Po terminie', ton: 'text-danger' },
+		{ id: 'tydzien', tytul: 'Najbliższe 7 dni', ton: 'text-warn' },
+		{ id: 'pozniej', tytul: 'Później', ton: 'text-ink' },
+		{ id: 'oplacone', tytul: 'Opłacone', ton: 'text-ok' },
+		{ id: 'ug', tytul: 'Umowy generalne bez rozliczania płatności', ton: 'text-ink-2' }
+	];
+	const grupy = $derived(
+		GRUPY.filter((g) => filtr === 'wszystkie' || g.id === filtr)
+			.map((g) => {
+				const raty = zGrupa
+					.filter((x) => x.g === g.id)
+					.map((x) => x.p)
+					.sort((a, b) => g.id === 'oplacone'
+						? (b.data_oplacenia ?? b.data_platnosci).localeCompare(a.data_oplacenia ?? a.data_platnosci)
+						: a.data_platnosci.localeCompare(b.data_platnosci));
+				return { ...g, raty, suma: raty.reduce((s, p) => s + Number(p.kwota), 0) };
+			})
+			.filter((g) => g.raty.length > 0)
+	);
+	const filtered = $derived(grupy.flatMap((g) => g.raty));
+
+	const LIMIT = 25;
+	let rozwiniete = $state(new Set<Grupa>());
+	function przelaczGrupe(g: Grupa) {
+		const s = new Set(rozwiniete);
+		s.has(g) ? s.delete(g) : s.add(g);
+		rozwiniete = s;
+	}
+
+	const filtry = $derived<[Filtr, string, number | null][]>([
+		['wszystkie', 'Wszystkie', null],
+		['po-terminie', 'Po terminie', licznik('po-terminie')],
+		['tydzien', 'Najbliższe 7 dni', licznik('tydzien')],
+		['pozniej', 'Później', licznik('pozniej')],
+		['oplacone', 'Opłacone', licznik('oplacone')]
+	]);
+
+	const podsum = $derived({
+		oplacone: { n: licznik('oplacone'), s: suma('oplacone') },
+		oczekujace: { n: licznik('tydzien') + licznik('pozniej'), s: suma('tydzien') + suma('pozniej') },
+		poTerminie: { n: licznik('po-terminie'), s: suma('po-terminie') }
 	});
+	const razem = $derived(podsum.oplacone.s + podsum.oczekujace.s + podsum.poTerminie.s);
+	const udzial = (x: number) => (razem > 0 ? (x / razem) * 100 : 0);
+	const fmtProc = (n: number) => `${n.toLocaleString('pl-PL', { maximumFractionDigits: 1 })}%`;
+	const nazwaMiesiaca = (ym: string) =>
+		new Date(`${ym}-01T12:00:00`).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+
+	function rataZ(p: PolicyPayment): string {
+		const ile = parseInt(polisaWg.get(p.polisa_id)?.ilosc_rat ?? '1') || 1;
+		return ile > 1 ? `${p.nr_raty}/${ile}` : String(p.nr_raty);
+	}
+	function chip(p: PolicyPayment, g: Grupa): { tekst: string; cls: string } {
+		if (g === 'oplacone') {
+			return p.status === 'Częściowo opłacona'
+				? { tekst: 'Częściowo', cls: 'bg-warn-soft text-warn' }
+				: { tekst: 'Opłacona', cls: 'bg-ok-soft text-ok' };
+		}
+		if (g === 'po-terminie') return { tekst: 'Po terminie', cls: 'bg-danger-soft text-danger' };
+		if (g === 'ug') return { tekst: 'Bez rozliczania', cls: 'bg-surface-2 text-ink-2' };
+		return { tekst: 'Oczekuje', cls: 'bg-surface-2 text-ink-2' };
+	}
+	function opisTerminu(p: PolicyPayment, g: Grupa): string {
+		if (g === 'oplacone') return p.data_oplacenia ? `opłacona ${fmtDzien(p.data_oplacenia)}` : 'opłacona';
+		return fmtTermin(p.data_platnosci, today);
+	}
+	const tonTerminu = (g: Grupa) =>
+		g === 'po-terminie' ? 'text-danger font-semibold' : g === 'tydzien' ? 'text-warn font-semibold' : g === 'oplacone' ? 'text-ok' : 'text-ink-2';
+
+	let rozliczMenu = $state(false);
+	$effect(() => {
+		if (rozliczMenu) {
+			const zamknij = () => (rozliczMenu = false);
+			window.addEventListener('click', zamknij, { once: true });
+		}
+	});
+
+	// Komunikat po zapisie, z „Cofnij”
+	let toast = $state<{ tekst: string; blad?: boolean; cofnij?: () => void } | null>(null);
+	const bladZapisu = (e: { message: string }) => { toast = { tekst: `Nie udało się zapisać: ${e.message}`, blad: true }; };
 
 	async function reloadPayments() {
 		const { data } = await wczytajPlatnosci();
@@ -458,8 +551,19 @@
 	}
 
 	async function markPaid(pay: PolicyPayment) {
-		await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today }).eq('id', pay.id);
+		const poprzednio = { status: pay.status, data_oplacenia: pay.data_oplacenia };
+		const { error } = await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today } as never).eq('id', pay.id);
+		if (error) { bladZapisu(error); return; }
 		await reloadPayments();
+		toast = {
+			tekst: `Rata ${pay.nr_raty} polisy ${pay.crm_policies?.nr_polisy ?? ''} oznaczona jako opłacona`,
+			cofnij: async () => {
+				toast = null;
+				const { error: e2 } = await sb.from('crm_policy_payments').update(poprzednio as never).eq('id', pay.id);
+				if (e2) { bladZapisu(e2); return; }
+				await reloadPayments();
+			}
+		};
 	}
 
 	async function markOverdue(pay: PolicyPayment) {
@@ -539,13 +643,6 @@
 		await reloadPayments();
 	}
 
-	const statusVariant = (s: string) =>
-		s === 'Opłacona' ? 'success' : s === 'Zaległa' ? 'error' : s === 'Częściowo opłacona' ? 'warning' : 'neutral';
-
-	function isOverdue(pay: PolicyPayment): boolean {
-		return pay.status === 'Oczekująca' && pay.data_platnosci < today;
-	}
-
 	const months = $derived(() => {
 		const set = new Set<string>();
 		for (const p of appState.payments) set.add(p.data_platnosci.slice(0, 7));
@@ -554,10 +651,6 @@
 
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
-
-	const totalFiltered = $derived(filtered.reduce((s, p) => s + Number(p.kwota), 0));
-	const totalPaid = $derived(filtered.filter((p) => p.status === 'Opłacona').reduce((s, p) => s + Number(p.kwota), 0));
-	const totalPending = $derived(filtered.filter((p) => p.status !== 'Opłacona').reduce((s, p) => s + Number(p.kwota), 0));
 
 	const importToProcess = $derived(importPreview.filter(r => r.payment_id && r.new_status && !r.is_negative));
 	const importNotFound = $derived(importPreview.filter(r => r.not_found));
@@ -572,7 +665,7 @@
 		s.has(id) ? s.delete(id) : s.add(id);
 		selected = s;
 	}
-	function toggleDay(ids: string[]) {
+	function toggleGrupa(ids: string[]) {
 		const s = new Set(selected);
 		const allIn = ids.every(id => s.has(id));
 		ids.forEach(id => allIn ? s.delete(id) : s.add(id));
@@ -585,9 +678,24 @@
 	const canRevert = $derived(selectedPays.some(p => p.status === 'Opłacona' || p.status === 'Częściowo opłacona'));
 
 	async function bulkMarkPaid() {
-		const ids = selectedPays.filter(p => p.status === 'Oczekująca' || p.status === 'Zaległa').map(p => p.id);
-		await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today }).in('id', ids);
+		const doZmiany = selectedPays.filter(p => p.status === 'Oczekująca' || p.status === 'Zaległa');
+		const ids = doZmiany.map(p => p.id);
+		const { error } = await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today } as never).in('id', ids);
+		if (error) { bladZapisu(error); return; }
 		await reloadPayments(); selected = new Set();
+		toast = {
+			tekst: `${odmiana(ids.length, 'rata oznaczona', 'raty oznaczone', 'rat oznaczonych')} jako opłacone`,
+			cofnij: async () => {
+				toast = null;
+				for (const status of ['Oczekująca', 'Zaległa']) {
+					const grupa = doZmiany.filter(p => p.status === status).map(p => p.id);
+					if (!grupa.length) continue;
+					const { error: e2 } = await sb.from('crm_policy_payments').update({ status, data_oplacenia: null } as never).in('id', grupa);
+					if (e2) { bladZapisu(e2); return; }
+				}
+				await reloadPayments();
+			}
+		};
 	}
 	async function bulkMarkOverdue() {
 		const ids = selectedPays.filter(p => p.status === 'Oczekująca').map(p => p.id);
@@ -603,167 +711,239 @@
 
 <svelte:head><title>Płatności — AuraCRM</title></svelte:head>
 
-<div class="flex items-center justify-between mb-6">
+<div class="flex flex-wrap items-end justify-between gap-3 mb-5">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Płatności Składek</h1>
-		<p class="text-sm text-slate-500 mt-1">Kalendarz rat i kontrola płatności klientów</p>
+		<h1 class="text-2xl font-semibold text-ink">Płatności</h1>
+		<p class="text-sm text-ink-3 mt-0.5">Raty składek — terminy, wpłaty i rozliczenia not</p>
 	</div>
-	<div class="flex gap-2">
-		<button onclick={() => openImport('ergo')} class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition-colors">
-			<FileSpreadsheet size={15} /> Rozlicz ERGO
-		</button>
-		<button onclick={() => openImport('leadenhall')} class="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors">
-			<FileSpreadsheet size={15} /> Rozlicz Leadenhall
-		</button>
-		<button onclick={() => showModal = true} class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
-			<Plus size={15} /> Dodaj Ratę
+	<div class="flex flex-wrap gap-2">
+		<div class="relative">
+			<button
+				onclick={(e) => { e.stopPropagation(); rozliczMenu = !rozliczMenu; }}
+				aria-expanded={rozliczMenu}
+				aria-haspopup="menu"
+				class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2"
+			>
+				<FileSpreadsheet size={16} class="text-ink-3" /> Rozlicz notę TU <ChevronDown size={14} />
+			</button>
+			{#if rozliczMenu}
+				<div role="menu" class="absolute right-0 top-full mt-1 w-72 bg-white border border-line rounded-xl shadow-xl z-50 py-1">
+					<button role="menuitem" onclick={() => { rozliczMenu = false; openImport('ergo'); }} class="w-full text-left px-4 py-2.5 hover:bg-surface-2">
+						<span class="block text-sm font-medium text-ink">ERGO Hestia</span>
+						<span class="block text-xs text-ink-3">zestawienie prowizyjne — CSV lub XLSX</span>
+					</button>
+					<button role="menuitem" onclick={() => { rozliczMenu = false; openImport('leadenhall'); }} class="w-full text-left px-4 py-2.5 hover:bg-surface-2">
+						<span class="block text-sm font-medium text-ink">Leadenhall / Squarelife</span>
+						<span class="block text-xs text-ink-3">nota prowizyjna — XLSX</span>
+					</button>
+				</div>
+			{/if}
+		</div>
+		<button onclick={() => (showModal = true)} class="h-9 flex items-center gap-1.5 px-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
+			<Plus size={16} /> Dodaj ratę
 		</button>
 	</div>
 </div>
 
-<!-- Alerty (prowizja, ujemne) -->
+<!-- Alerty prowizyjne -->
 {#if appState.alerts.length > 0}
-<div class="mb-4 bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
-	<div class="px-4 py-3 flex items-center gap-2 border-b border-amber-200">
-		<Bell size={14} class="text-amber-600" />
-		<span class="text-sm font-semibold text-amber-800">Alerty prowizyjne ({appState.alerts.length})</span>
-		<a href="/dashboard" class="ml-auto text-xs text-amber-600 hover:underline">Pulpit →</a>
+	<div class="mb-4 bg-white border border-amber-200 rounded-xl overflow-hidden">
+		<div class="px-4 py-2.5 flex items-center gap-2 bg-warn-soft border-b border-amber-200">
+			<AlertTriangle size={16} class="text-warn" />
+			<span class="text-sm font-semibold text-amber-800">Alerty prowizyjne ({appState.alerts.length})</span>
+			<a href="/dashboard#alerty" class="ml-auto text-[13px] font-semibold text-accent-text hover:underline">Rozwiąż na pulpicie →</a>
+		</div>
+		<ul class="divide-y divide-line-soft">
+			{#each appState.alerts.slice(0, 3) as alert}
+				<li class="px-4 py-2 text-[13px] text-ink-2">
+					<span class="font-semibold text-ink">{alert.typ === 'ujemna_prowizja' ? 'Ujemna prowizja' : alert.typ === 'aneks_wymagany' ? 'Aneks wymagany' : 'Rozbieżność prowizji'}</span>
+					{#if alert.nr_polisy} · polisa <span class="font-mono">{alert.nr_polisy}</span>{/if}
+					· {alert.opis}
+				</li>
+			{/each}
+			{#if appState.alerts.length > 3}
+				<li class="px-4 py-2 text-[13px] text-ink-3">… i {appState.alerts.length - 3} więcej</li>
+			{/if}
+		</ul>
 	</div>
-	<div class="divide-y divide-amber-100">
-		{#each appState.alerts.slice(0, 3) as alert}
-			<div class="px-4 py-2 text-xs text-amber-800">
-				<span class="font-semibold">{alert.typ === 'ujemna_prowizja' ? '⊖ Ujemna prowizja' : alert.typ === 'aneks_wymagany' ? '⚠ Aneks wymagany' : '≠ Rozjazd prowizji'}</span>
-				{#if alert.nr_polisy} · Polisa <span class="font-mono">{alert.nr_polisy}</span>{/if}
-				· {alert.opis}
-			</div>
-		{/each}
-		{#if appState.alerts.length > 3}
-			<div class="px-4 py-2 text-xs text-amber-600">... i {appState.alerts.length - 3} więcej</div>
-		{/if}
-	</div>
-</div>
 {/if}
-
-<!-- Filtry -->
-<div class="flex gap-3 mb-4 flex-wrap">
-	<div class="flex items-center gap-2 bg-white border border-line rounded-xl px-4 py-2">
-		<Search size={15} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj klienta / polisy..." class="text-sm outline-none placeholder:text-slate-400 w-48" />
-	</div>
-	<select bind:value={filterMonth} class="bg-white border border-line rounded-xl px-4 py-2 text-sm text-slate-700">
-		<option value="all">Wszystkie miesiące</option>
-		{#each months() as m}
-			<option value={m}>{m}</option>
-		{/each}
-	</select>
-	{#each [['all','Wszystkie'],['Oczekująca','Oczekujące'],['Opłacona','Opłacone'],['Częściowo opłacona','Częściowo'],['Zaległa','Zaległe']] as [val, label]}
-		<button
-			onclick={() => filterStatus = val}
-			class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors
-				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
-		>{label}</button>
-	{/each}
-</div>
 
 <!-- Podsumowanie -->
-<div class="grid grid-cols-3 gap-4 mb-6">
-	<div class="bg-white border border-line rounded-xl p-4 shadow-sm">
-		<p class="text-xs font-medium text-slate-500 mb-1">Łącznie rat</p>
-		<p class="text-xl font-semibold text-slate-900">{fmtPln(totalFiltered)} PLN</p>
+<section aria-label="Podsumowanie rat" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3 mb-4">
+	<div class="flex flex-wrap items-center gap-3">
+		<label>
+			<span class="sr-only">Okres</span>
+			<select bind:value={filterMonth} class="h-8 px-2.5 border border-line rounded-lg bg-white text-[13px] font-semibold text-ink">
+				<option value="all">Wszystkie raty · stan na {fmtDzien(today)}</option>
+				{#each months() as m}
+					<option value={m}>{nazwaMiesiaca(m)}</option>
+				{/each}
+			</select>
+		</label>
+		<div class="flex flex-wrap gap-x-6 gap-y-2 sm:ml-auto">
+			<span class="flex items-center gap-2">
+				<span class="w-2.5 h-2.5 rounded-sm bg-ok"></span>
+				<span class="text-[13px] text-ink-2">Opłacone · {podsum.oplacone.n}</span>
+				<span class="font-semibold tabular-nums">{fmtPln(podsum.oplacone.s)} zł</span>
+			</span>
+			<span class="flex items-center gap-2">
+				<span class="w-2.5 h-2.5 rounded-sm bg-[#7B8496]"></span>
+				<span class="text-[13px] text-ink-2">Oczekujące · {podsum.oczekujace.n}</span>
+				<span class="font-semibold tabular-nums">{fmtPln(podsum.oczekujace.s)} zł</span>
+			</span>
+			<span class="flex items-center gap-2">
+				<span class="w-2.5 h-2.5 rounded-sm bg-danger"></span>
+				<span class="text-[13px] text-ink-2">Po terminie · {podsum.poTerminie.n}</span>
+				<span class="font-semibold tabular-nums text-danger">{fmtPln(podsum.poTerminie.s)} zł</span>
+			</span>
+		</div>
 	</div>
-	<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 shadow-sm">
-		<p class="text-xs font-medium text-emerald-600 mb-1">Opłacone</p>
-		<p class="text-xl font-semibold text-emerald-700">{fmtPln(totalPaid)} PLN</p>
+	<div
+		role="img"
+		aria-label="Opłacone {fmtProc(udzial(podsum.oplacone.s))}, oczekujące {fmtProc(udzial(podsum.oczekujace.s))}, po terminie {fmtProc(udzial(podsum.poTerminie.s))} wartości rat"
+		class="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-surface-2"
+	>
+		{#if podsum.oplacone.s > 0}<span class="bg-ok min-w-1" style="width: {udzial(podsum.oplacone.s)}%"></span>{/if}
+		{#if podsum.oczekujace.s > 0}<span class="bg-[#7B8496] min-w-1" style="width: {udzial(podsum.oczekujace.s)}%"></span>{/if}
+		{#if podsum.poTerminie.s > 0}<span class="bg-danger min-w-1" style="width: {udzial(podsum.poTerminie.s)}%"></span>{/if}
 	</div>
-	<div class="bg-red-50 border border-red-200 rounded-xl p-4 shadow-sm">
-		<p class="text-xs font-medium text-red-500 mb-1">Do zapłaty / Zaległe</p>
-		<p class="text-xl font-semibold text-red-600">{fmtPln(totalPending)} PLN</p>
+</section>
+
+<!-- Filtry -->
+<div class="flex flex-wrap items-center gap-2 mb-3">
+	<div role="group" aria-label="Filtr statusu" class="flex flex-wrap gap-1.5">
+		{#each filtry as [id, label, n]}
+			<button
+				aria-pressed={filtr === id}
+				onclick={() => (filtr = id)}
+				class="h-[30px] px-3 rounded-full text-[13px] font-medium border transition-colors
+					{filtr === id ? 'bg-ink text-white border-ink' : 'bg-white text-ink-2 border-line hover:bg-surface-2'}"
+			>{n != null ? `${label} ${n}` : label}</button>
+		{/each}
 	</div>
+	<label class="w-full sm:w-[300px] sm:ml-auto h-9 flex items-center gap-2 px-2.5 border border-line rounded-lg bg-white focus-within:border-accent">
+		<Search size={16} class="text-ink-3 shrink-0" />
+		<span class="sr-only">Filtruj raty</span>
+		<input bind:value={search} placeholder="Klient lub nr polisy" class="flex-1 min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3" />
+	</label>
 </div>
 
-<!-- Floating action bar -->
-{#if selected.size > 0}
-	<div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl">
-		<span class="text-sm font-medium">{selected.size} zaznaczone</span>
-		<div class="w-px h-5 bg-slate-600"></div>
-		{#if canMarkPaid}
-			<button onclick={bulkMarkPaid} class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-500 hover:bg-emerald-400 rounded-xl font-semibold transition-colors">
-				<Check size={13} /> Opłacona
-			</button>
-		{/if}
-		{#if canMarkOverdue}
-			<button onclick={bulkMarkOverdue} class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-500 hover:bg-red-400 rounded-xl font-semibold transition-colors">Zaległa</button>
-		{/if}
-		{#if canRevert}
-			<button onclick={bulkRevert} class="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-600 hover:bg-slate-500 rounded-xl font-semibold transition-colors">↩ Cofnij</button>
-		{/if}
-		<button onclick={() => selected = new Set()} class="text-slate-400 hover:text-white text-xs ml-1">✕</button>
-	</div>
-{/if}
-
-<!-- Tabela rat -->
-{#each byDay() as [day, pays]}
-	{@const dayIds = pays.map(p => p.id)}
-	{@const allChecked = dayIds.every(id => selected.has(id))}
-	<div class="mb-5">
-		<div class="flex items-center gap-3 mb-1.5">
-			<input type="checkbox" checked={allChecked} onchange={() => toggleDay(dayIds)}
-				class="w-3.5 h-3.5 rounded accent-slate-700 cursor-pointer" />
-			<div class="text-sm font-bold text-slate-700">{day}</div>
-			<div class="flex-1 h-px bg-slate-200"></div>
-			<div class="text-xs text-slate-400">{pays.length} rat · {fmtPln(pays.reduce((s,p) => s+Number(p.kwota),0))} PLN</div>
+<!-- Raty -->
+<section aria-label="Raty" class="bg-white border border-line rounded-xl overflow-hidden">
+	{#if selected.size > 0}
+		<div class="flex flex-wrap items-center gap-2 px-4 py-2 bg-accent-soft text-accent-text text-[13px]">
+			<span class="font-semibold mr-1">{odmiana(selected.size, 'rata zaznaczona', 'raty zaznaczone', 'rat zaznaczonych')}</span>
+			{#if canMarkPaid}
+				<button onclick={bulkMarkPaid} class="h-7 px-2.5 border border-blue-300 rounded-lg bg-white font-medium hover:bg-blue-50">Oznacz jako opłacone</button>
+			{/if}
+			{#if canMarkOverdue}
+				<button onclick={bulkMarkOverdue} class="h-7 px-2.5 border border-blue-300 rounded-lg bg-white font-medium hover:bg-blue-50">Oznacz jako zaległe</button>
+			{/if}
+			{#if canRevert}
+				<button onclick={bulkRevert} class="h-7 px-2.5 border border-blue-300 rounded-lg bg-white font-medium hover:bg-blue-50">Cofnij do oczekujących</button>
+			{/if}
+			<button onclick={() => (selected = new Set())} class="ml-auto h-7 px-2 font-semibold hover:underline">Odznacz</button>
 		</div>
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm border-collapse table-fixed">
-				<thead class="bg-slate-50 border-b border-line text-xs font-semibold text-slate-500 uppercase tracking-wide">
-					<tr>
-						<th class="px-4 py-2 w-10"></th>
-						<th class="px-4 py-2 w-[14%]">Polisa</th>
-						<th class="px-4 py-2 w-[22%]">Klient</th>
-						<th class="px-4 py-2 w-[7%] text-center">Rata</th>
-						<th class="px-4 py-2 w-[12%] text-right">Kwota</th>
-						<th class="px-4 py-2 w-[12%] text-right">Prowizja</th>
-						<th class="px-4 py-2 w-[14%]">Status</th>
-						<th class="px-4 py-2">Info</th>
+	{/if}
+
+	{#if grupy.length === 0}
+		<p class="px-4 py-12 text-center text-sm text-ink-3">Brak rat dla wybranych filtrów.</p>
+	{:else}
+		<div class="overflow-x-auto">
+			<table class="w-full min-w-[960px] text-[13px] text-left">
+				<thead>
+					<tr class="bg-surface-2 text-ink-2">
+						<th class="w-11 pl-4 py-2.5"><span class="sr-only">Zaznacz</span></th>
+						<th class="px-3 py-2.5 font-semibold">Termin</th>
+						<th class="px-3 py-2.5 font-semibold">Polisa</th>
+						<th class="px-3 py-2.5 font-semibold">Klient</th>
+						<th class="px-3 py-2.5 font-semibold">Rata</th>
+						<th class="hidden min-[1400px]:table-cell px-3 py-2.5 font-semibold">TU</th>
+						<th class="px-3 py-2.5 font-semibold text-right">Kwota</th>
+						<th class="hidden min-[1400px]:table-cell px-3 py-2.5 font-semibold text-right" title="Prowizja z noty prowizyjnej TU">Prowizja</th>
+						<th class="px-3 py-2.5 font-semibold">Status</th>
+						<th class="px-3 py-2.5"><span class="sr-only">Akcje</span></th>
 					</tr>
 				</thead>
-				<tbody>
-					{#each pays as pay}
-						{@const checked = selected.has(pay.id)}
-						<tr onclick={() => toggleSelect(pay.id)}
-							use:ctxMenu={{ items: () => paymentMenu(pay), title: `${pay.crm_policies?.nr_polisy ?? 'Rata'} — rata ${pay.nr_raty}` }}
-							class="border-t border-line cursor-pointer transition-colors
-								{checked ? 'bg-blue-50' : pay.status === 'Zaległa' || isOverdue(pay) ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}">
-							<td class="px-4 py-2.5 text-center" onclick={(e) => e.stopPropagation()}>
-								<input type="checkbox" {checked} onchange={() => toggleSelect(pay.id)}
-									class="w-3.5 h-3.5 rounded accent-blue-600 cursor-pointer" />
+				{#each grupy as g (g.id)}
+					{@const ids = g.raty.map((p) => p.id)}
+					{@const wszystkie = ids.every((id) => selected.has(id))}
+					{@const widoczne = rozwiniete.has(g.id) ? g.raty : g.raty.slice(0, LIMIT)}
+					<tbody>
+						<tr class="border-t border-line bg-side">
+							<td class="pl-4 py-2.5">
+								<input type="checkbox" checked={wszystkie} onchange={() => toggleGrupa(ids)} aria-label="Zaznacz całą grupę: {g.tytul}" class="w-4 h-4 accent-accent cursor-pointer align-middle" />
 							</td>
-							<td class="px-4 py-2.5 font-mono text-xs font-semibold text-blue-700 border-l border-line">
-								<a href="/policies/{pay.polisa_id}" onclick={(e) => e.stopPropagation()} class="hover:underline">{pay.crm_policies?.nr_polisy ?? '—'}</a>
-							</td>
-							<td class="px-4 py-2.5 border-l border-line">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</td>
-							<td class="px-4 py-2.5 text-center text-slate-500 border-l border-line">{pay.nr_raty}</td>
-							<td class="px-4 py-2.5 text-right font-semibold border-l border-line">{fmtPln(pay.kwota)}</td>
-							<td class="px-4 py-2.5 text-right text-xs border-l border-line">
-								{#if pay.prowizja_z_noty}<span class="text-blue-600 font-medium">{fmtPln(pay.prowizja_z_noty)}</span>{:else}<span class="text-slate-300">—</span>{/if}
-							</td>
-							<td class="px-4 py-2.5 border-l border-line">
-								<Badge variant={statusVariant(pay.status)}>{pay.status}</Badge>
-							</td>
-							<td class="px-4 py-2.5 text-xs text-slate-400 border-l border-line">
-								{pay.data_oplacenia ? `Zapł. ${pay.data_oplacenia}` : ''}{pay.notatka ? ` · ${pay.notatka}` : ''}
-							</td>
+							<th scope="rowgroup" colspan="9" class="px-3 py-2.5 text-left font-normal">
+								<span class="font-semibold {g.ton}">{g.tytul}</span>
+								<span class="ml-2.5 text-ink-2 tabular-nums">{odmiana(g.raty.length, 'rata', 'raty', 'rat')} · {fmtPln(g.suma)} zł</span>
+							</th>
 						</tr>
-					{/each}
-				</tbody>
+						{#each widoczne as pay (pay.id)}
+							{@const checked = selected.has(pay.id)}
+							{@const c = chip(pay, g.id)}
+							{@const pol = polisaWg.get(pay.polisa_id)}
+							<tr
+								use:ctxMenu={{ items: () => paymentMenu(pay), title: `${pay.crm_policies?.nr_polisy ?? 'Rata'} — rata ${pay.nr_raty}` }}
+								class="border-t border-line-soft {checked ? 'bg-blue-50' : 'hover:bg-bg'}"
+							>
+								<td class="pl-4 py-2">
+									<input type="checkbox" {checked} onchange={() => toggleSelect(pay.id)} aria-label="Zaznacz ratę {pay.nr_raty} polisy {pay.crm_policies?.nr_polisy ?? ''}" class="w-4 h-4 accent-accent cursor-pointer align-middle" />
+								</td>
+								<td class="px-3 py-2 whitespace-nowrap">
+									<span class="block">{fmtDzien(pay.data_platnosci)}</span>
+									<span class="block text-xs {tonTerminu(g.id)}">{opisTerminu(pay, g.id)}</span>
+								</td>
+								<td class="px-3 py-2 font-mono text-xs whitespace-nowrap">
+									<a href="/policies/{pay.polisa_id}" class="text-accent-text hover:underline">{pay.crm_policies?.nr_polisy ?? '—'}</a>
+								</td>
+								<td class="px-3 py-2 min-w-[180px] max-w-[300px]">
+									{#if pol?.klient_id}
+										<a href="/clients/{pol.klient_id}" class="block truncate font-medium text-ink hover:text-accent-text">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</a>
+									{:else}
+										<span class="block truncate font-medium">{pay.crm_policies?.crm_clients?.nazwa ?? '—'}</span>
+									{/if}
+									{#if pay.notatka}<span class="block truncate text-xs text-ink-3" title={pay.notatka}>{pay.notatka}</span>{/if}
+								</td>
+								<td class="px-3 py-2 tabular-nums">{rataZ(pay)}</td>
+								<td class="hidden min-[1400px]:table-cell px-3 py-2 text-ink-2 whitespace-nowrap">{pol?.crm_insurers?.skrot ?? pol?.crm_insurers?.nazwa ?? '—'}</td>
+								<td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtPln(pay.kwota)} zł</td>
+								<td class="hidden min-[1400px]:table-cell px-3 py-2 text-right tabular-nums whitespace-nowrap text-ink-2">{pay.prowizja_z_noty != null ? `${fmtPln(pay.prowizja_z_noty)} zł` : '—'}</td>
+								<td class="px-3 py-2">
+									<span class="inline-block h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {c.cls}">{c.tekst}</span>
+								</td>
+								<td class="px-3 py-1.5 text-right whitespace-nowrap">
+									{#if g.id !== 'oplacone'}
+										<button onclick={() => markPaid(pay)} class="h-[30px] px-2.5 text-[13px] font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Oznacz wpłatę</button>
+									{/if}
+								</td>
+							</tr>
+						{/each}
+						{#if g.raty.length > LIMIT}
+							<tr class="border-t border-line-soft">
+								<td></td>
+								<td colspan="9" class="px-3 py-2">
+									<button onclick={() => przelaczGrupe(g.id)} class="text-[13px] font-semibold text-accent-text hover:underline">
+										{rozwiniete.has(g.id) ? 'Pokaż mniej' : `Pokaż wszystkie ${g.raty.length} →`}
+									</button>
+								</td>
+							</tr>
+						{/if}
+					</tbody>
+				{/each}
 			</table>
 		</div>
+	{/if}
+
+	<div class="flex flex-wrap items-center gap-3 px-4 py-2.5 border-t border-line-soft text-[13px] text-ink-2">
+		<span>Status „po terminie” liczony z daty — tak samo na pulpicie i w menu. Prawy przycisk myszy na racie: więcej akcji.</span>
+		<span class="sm:ml-auto tabular-nums">{odmiana(wOkresie.length, 'rata', 'raty', 'rat')}</span>
 	</div>
-{:else}
-	<div class="bg-white border border-line rounded-xl p-8 text-center text-slate-400">
-		Brak rat płatności w wybranym filtrze
-	</div>
-{/each}
+</section>
+
+{#if toast}
+	<Toast tekst={toast.tekst} blad={toast.blad} oncofnij={toast.cofnij} onzamknij={() => (toast = null)} />
+{/if}
 
 <!-- Modal: Dodaj Ratę -->
 <Modal title="Dodaj Ratę Płatności" open={showModal} onclose={() => { showModal = false; formError = ''; }}>

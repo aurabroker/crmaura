@@ -74,3 +74,22 @@ export function odmiana(n: number, jeden: string, kilka: string, wiele: string):
 	const slowo = n === 1 ? jeden : d >= 2 && d <= 4 && (s < 12 || s > 14) ? kilka : wiele;
 	return `${n} ${slowo}`;
 }
+
+const MIESIACE_KROTKO = ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'];
+
+/** "2026-10-14" → „14 paź”; rok dopisywany, gdy inny niż bieżący (albo gdy zRokiem = true). */
+export function fmtDzien(iso: string | null | undefined, zRokiem?: boolean): string {
+	if (!iso) return '—';
+	const [r, m, d] = iso.slice(0, 10).split('-');
+	const rok = zRokiem ?? r !== todayStr().slice(0, 4);
+	return `${Number(d)} ${MIESIACE_KROTKO[Number(m) - 1]}${rok ? ` ${r}` : ''}`;
+}
+
+/** Termin względem dziś: „dziś”, „jutro”, „za 5 dni”, „1 dzień po terminie”, „12 dni po terminie”. */
+export function fmtTermin(iso: string, today = todayStr()): string {
+	const n = dateDiffDays(today, iso);
+	if (n === 0) return 'dziś';
+	if (n === 1) return 'jutro';
+	if (n > 1) return `za ${n} dni`;
+	return `${odmiana(-n, 'dzień', 'dni', 'dni')} po terminie`;
+}
