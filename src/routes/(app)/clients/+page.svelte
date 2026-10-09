@@ -4,14 +4,18 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Client } from '$lib/types/database';
-	import Badge from '$lib/components/Badge.svelte';
+	import type { Snippet } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone } from 'lucide-svelte';
+	import Toast from '$lib/components/Toast.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
+	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Download } from 'lucide-svelte';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 	import { page } from '$app/stores';
 	import { logAudit } from '$lib/utils/audit';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, inicjaly, miastoZAdresu, odmiana, todayStr } from '$lib/utils';
 
 	function clientMenu(c: Client): CtxItem[] {
 		return [
@@ -55,7 +59,13 @@
 	}
 
 	let search = $state('');
-	let compactView = $state(false);
+	let kompakt = $state(false);
+	try { kompakt = localStorage.getItem('crm-klienci-gestosc') === 'kompakt'; } catch { /* noop */ }
+	function ustawGestosc(k: boolean) {
+		kompakt = k;
+		try { localStorage.setItem('crm-klienci-gestosc', k ? 'kompakt' : 'komfort'); } catch { /* noop */ }
+	}
+	let nowyMenu = $state(false);
 	let showModal = $state(false);
 	let modalTyp = $state<'firma' | 'osoba'>('firma');
 
@@ -231,21 +241,202 @@
 		merging = null;
 	}
 
+	// ── Portfel klienta: aktywne polisy (ubezpieczający), składka, najbliższe odnowienie ──
+	const dzis = todayStr();
+	type Portfel = { polisy: number; skladka: number; odnowienie: string | null; tu: Set<string>; rodzaje: Set<string> };
+	const portfele = $derived.by(() => {
+		const m = new Map<string, Portfel>();
+		for (const p of appState.policies) {
+			if (p.deleted_at || (p.data_do !== null && p.data_do < dzis)) continue;
+			let w = m.get(p.klient_id);
+			if (!w) { w = { polisy: 0, skladka: 0, odnowienie: null, tu: new Set(), rodzaje: new Set() }; m.set(p.klient_id, w); }
+			w.polisy++;
+			w.skladka += Number(p.skladka_przypisana ?? 0);
+			if (p.data_do && (!w.odnowienie || p.data_do < w.odnowienie)) w.odnowienie = p.data_do;
+			if (p.tu_id) w.tu.add(p.tu_id);
+			if (p.rodzaj) w.rodzaje.add(p.rodzaj);
+		}
+		return m;
+	});
+
+	type Wiersz = { c: Client; p: Portfel | undefined; opiekun: string | null };
+	const opiekunWg = $derived(new Map(appState.brokers.map(b => [b.id, b.imie_nazwisko || b.email])));
+	const wiersze = $derived<Wiersz[]>(appState.clients.map(c => ({
+		c,
+		p: portfele.get(c.id),
+		opiekun: c.opiekun_id ? (opiekunWg.get(c.opiekun_id) ?? null) : null
+	})));
+
+	// Segmenty (zakładki nad listą)
+	type Segment = 'wszyscy' | 'portfel' | 'bez' | 'rodo';
+	let segment = $state<Segment>('wszyscy');
+	const wSegmencie = (w: Wiersz, s: Segment) =>
+		s === 'wszyscy' || (s === 'portfel' ? !!w.p : s === 'bez' ? !w.p : !w.c.rodo_zgoda);
+	const liczSeg = $derived({
+		wszyscy: wiersze.length,
+		portfel: wiersze.filter(w => w.p).length,
+		bez: wiersze.filter(w => !w.p).length,
+		rodo: wiersze.filter(w => !w.c.rodo_zgoda).length
+	});
+	const SEGMENTY: [Segment, string][] = [['wszyscy', 'Wszyscy'], ['portfel', 'Z polisami'], ['bez', 'Bez polis'], ['rodo', 'Bez zgody RODO']];
+	const podpowiedz = $derived.by(() => {
+		if (segment === 'wszyscy') return 'Cała kartoteka, także firmy z importu BEAUTY bez polis. Prawy przycisk myszy na kliencie: więcej akcji.';
+		if (segment === 'portfel') return 'Klienci z co najmniej jedną aktywną polisą (jako ubezpieczający).';
+		if (segment === 'bez') {
+			const proc = liczSeg.wszyscy ? Math.round((liczSeg.bez / liczSeg.wszyscy) * 100) : 0;
+			const beauty = wiersze.filter(w => !w.p && w.c.beauty_id != null).length;
+			return `${proc}% kartoteki${beauty ? `, w tym ${odmiana(beauty, 'firma', 'firmy', 'firm')} z importu BEAUTY` : ''} — kandydaci do kampanii lub przeniesienia do Leadów.`;
+		}
+		return 'Klienci bez zarejestrowanej zgody RODO — zgodę zapiszesz w edycji danych klienta.';
+	});
+
+	// Filtry
+	let fOpiekun = $state('');
+	let fTu = $state('');
+	let fRodzaj = $state('');
+	let fZrodlo = $state<'' | 'beauty' | 'crm'>('');
+	const towarzystwa = $derived(
+		[...appState.insurers].filter(i => [...portfele.values()].some(p => p.tu.has(i.id)))
+			.sort((a, b) => (a.skrot || a.nazwa).localeCompare(b.skrot || b.nazwa, 'pl'))
+	);
+	const rodzaje = $derived([...new Set([...portfele.values()].flatMap(p => [...p.rodzaje]))].sort((a, b) => a.localeCompare(b, 'pl')));
+	const opiekunowie = $derived([...appState.brokers].sort((a, b) => (a.imie_nazwisko || a.email).localeCompare(b.imie_nazwisko || b.email, 'pl')));
+	const ileFiltrow = $derived([fOpiekun, fTu, fRodzaj, fZrodlo].filter(Boolean).length);
+	function wyczyscFiltry() { fOpiekun = ''; fTu = ''; fRodzaj = ''; fZrodlo = ''; search = ''; }
+
+	const cyfry = (s: string | null | undefined) => (s ?? '').replace(/\D/g, '');
 	const filtered = $derived.by(() => {
 		const q = search.trim().toLowerCase();
-		if (!q) return appState.clients;
-		return appState.clients.filter((c) =>
-			c.nazwa.toLowerCase().includes(q) ||
-			(c.nazwa_skrocona ?? '').toLowerCase().includes(q) ||
-			(c.nip ?? '').toLowerCase().includes(q) ||
-			(c.pesel ?? '').toLowerCase().includes(q) ||
-			(c.regon ?? '').toLowerCase().includes(q) ||
-			(c.krs ?? '').toLowerCase().includes(q) ||
-			(c.email ?? '').toLowerCase().includes(q) ||
-			(c.telefon ?? '').toLowerCase().includes(q) ||
-			(c.ulica ?? '').toLowerCase().includes(q)
-		);
+		const qCyfry = cyfry(q);
+		return wiersze.filter((w) => {
+			const c = w.c;
+			if (!wSegmencie(w, segment)) return false;
+			if (fOpiekun && (fOpiekun === '-' ? !!c.opiekun_id : c.opiekun_id !== fOpiekun)) return false;
+			if (fTu && !w.p?.tu.has(fTu)) return false;
+			if (fRodzaj && !w.p?.rodzaje.has(fRodzaj)) return false;
+			if (fZrodlo && (fZrodlo === 'beauty') !== (c.beauty_id != null)) return false;
+			if (!q) return true;
+			return c.nazwa.toLowerCase().includes(q) ||
+				(c.nazwa_skrocona ?? '').toLowerCase().includes(q) ||
+				(c.nip ?? '').toLowerCase().includes(q) ||
+				(c.pesel ?? '').toLowerCase().includes(q) ||
+				(c.regon ?? '').toLowerCase().includes(q) ||
+				(c.krs ?? '').toLowerCase().includes(q) ||
+				(c.email ?? '').toLowerCase().includes(q) ||
+				(c.telefon ?? '').toLowerCase().includes(q) ||
+				(c.ulica ?? '').toLowerCase().includes(q) ||
+				// NIP / telefon wpisane z kreskami lub spacjami
+				(qCyfry.length >= 4 && (cyfry(c.nip).includes(qCyfry) || cyfry(c.telefon).includes(qCyfry)));
+		});
 	});
+
+	const nazwaKlienta = (c: Client) => c.nazwa_skrocona ?? c.nazwa;
+	const sort = new Sortowanie<Wiersz>({
+		klient: (w) => nazwaKlienta(w.c),
+		nip: (w) => w.c.nip ?? w.c.pesel,
+		polisy: (w) => w.p?.polisy ?? null,
+		skladka: (w) => w.p?.skladka ?? null,
+		odnowienie: (w) => w.p?.odnowienie ?? null,
+		opiekun: (w) => w.opiekun,
+		rodo: (w) => w.c.rodo_zgoda
+	}, { klucz: 'klient' }, 'klienci');
+	const posortowane = $derived(sort.sortuj(filtered));
+
+	// Stronicowanie
+	const NA_STRONE = 50;
+	let strona = $state(0);
+	const stron = $derived(Math.max(1, Math.ceil(posortowane.length / NA_STRONE)));
+	$effect(() => {
+		// Nowy filtr / segment / sortowanie → wracamy na pierwszą stronę.
+		void segment; void search; void fOpiekun; void fTu; void fRodzaj; void fZrodlo; void sort.klucz; void sort.kierunek;
+		strona = 0;
+	});
+	const naStronie = $derived(posortowane.slice(strona * NA_STRONE, (strona + 1) * NA_STRONE));
+	const zakres = $derived(
+		posortowane.length === 0
+			? '0 z 0'
+			: `${strona * NA_STRONE + 1}–${Math.min((strona + 1) * NA_STRONE, posortowane.length)} z ${posortowane.length.toLocaleString('pl-PL')}`
+	);
+
+	// Wiersz: miasto z adresu (po kodzie pocztowym), typ, źródło
+	function podpis(c: Client): string {
+		return [miastoZAdresu(c.ulica), c.typ === 'osoba' ? 'osoba' : 'firma', c.beauty_id != null ? 'import BEAUTY' : null].filter(Boolean).join(' · ');
+	}
+	// PESEL na liście tylko częściowo — pełny jest w profilu klienta.
+	const maskaPesel = (p: string) => (p.length > 4 ? `${p.slice(0, 2)}${'•'.repeat(p.length - 4)}${p.slice(-2)}` : p);
+	const blisko = (d: string) => dateDiffDays(dzis, d) <= 14;
+
+	// Zaznaczanie i akcje zbiorcze
+	let selected = $state<Set<string>>(new Set());
+	$effect(() => {
+		void segment;
+		selected = new Set();
+	});
+	function toggleSelect(id: string) {
+		const n = new Set(selected);
+		if (n.has(id)) n.delete(id); else n.add(id);
+		selected = n;
+	}
+	const wszystkieNaStronie = $derived(naStronie.length > 0 && naStronie.every(w => selected.has(w.c.id)));
+	function toggleStrona() {
+		const n = new Set(selected);
+		if (wszystkieNaStronie) naStronie.forEach(w => n.delete(w.c.id));
+		else naStronie.forEach(w => n.add(w.c.id));
+		selected = n;
+	}
+
+	let toast = $state<{ tekst: string; blad?: boolean; cofnij?: () => void } | null>(null);
+	let nowyOpiekun = $state('');
+
+	async function przypiszOpiekuna() {
+		const ids = [...selected];
+		if (ids.length === 0 || nowyOpiekun === '') return;
+		const opiekunId = nowyOpiekun === '-' ? null : nowyOpiekun;
+		const poprzedni = new Map(appState.clients.filter(c => selected.has(c.id)).map(c => [c.id, c.opiekun_id]));
+		const { error } = await sb.from('crm_clients').update({ opiekun_id: opiekunId } as never).in('id', ids);
+		nowyOpiekun = '';
+		if (error) { toast = { tekst: `Nie udało się zapisać: ${error.message}`, blad: true }; return; }
+		appState.clients = appState.clients.map(c => (poprzedni.has(c.id) ? { ...c, opiekun_id: opiekunId } : c));
+		void logAudit('clients_owner_assigned', 'client', null, odmiana(ids.length, 'klient', 'klientów', 'klientów'), { ids, opiekun_id: opiekunId });
+		selected = new Set();
+		const kto = opiekunId ? opiekunWg.get(opiekunId) ?? 'opiekun' : 'bez opiekuna';
+		toast = {
+			tekst: `${odmiana(ids.length, 'klient', 'klientów', 'klientów')} → ${kto}`,
+			cofnij: async () => {
+				toast = null;
+				// Przywracamy grupami według poprzedniego opiekuna.
+				const grupy = new Map<string | null, string[]>();
+				for (const [id, o] of poprzedni) grupy.set(o, [...(grupy.get(o) ?? []), id]);
+				for (const [o, gIds] of grupy) {
+					const { error: e } = await sb.from('crm_clients').update({ opiekun_id: o } as never).in('id', gIds);
+					if (e) { toast = { tekst: `Nie udało się cofnąć: ${e.message}`, blad: true }; return; }
+				}
+				appState.clients = appState.clients.map(c => (poprzedni.has(c.id) ? { ...c, opiekun_id: poprzedni.get(c.id) ?? null } : c));
+			}
+		};
+	}
+
+	function eksportujCsv() {
+		const wybrane = posortowane.filter(w => selected.has(w.c.id));
+		const pole = (v: string | number | null | undefined) => {
+			const s = v == null ? '' : String(v);
+			return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+		};
+		const naglowek = ['Nazwa', 'Nazwa skrócona', 'Typ', 'NIP', 'PESEL', 'REGON', 'KRS', 'Adres', 'E-mail', 'Telefon', 'Aktywne polisy', 'Składka aktywnych polis', 'Najbliższe odnowienie', 'Opiekun', 'Zgoda RODO'];
+		const linie = wybrane.map(({ c, p, opiekun }) => [
+			c.nazwa, c.nazwa_skrocona, c.typ, c.nip, c.pesel, c.regon, c.krs, c.ulica, c.email, c.telefon,
+			p?.polisy ?? 0, fmtPln(p?.skladka ?? 0), p?.odnowienie ?? '', opiekun ?? '', c.rodo_zgoda ? 'tak' : 'nie'
+		].map(pole).join(';'));
+		// BOM — Excel rozpozna polskie znaki.
+		const blob = new Blob(['﻿' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
+		const a = document.createElement('a');
+		a.href = URL.createObjectURL(blob);
+		a.download = `klienci-${dzis}.csv`;
+		a.click();
+		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+		void logAudit('clients_exported', 'client', null, odmiana(wybrane.length, 'klient', 'klientów', 'klientów'), { ids: wybrane.map(w => w.c.id) });
+		toast = { tekst: `Wyeksportowano: ${odmiana(wybrane.length, 'klient', 'klientów', 'klientów')}` };
+	}
 
 	function openNew(typ: 'firma' | 'osoba') {
 		modalTyp = typ;
@@ -298,120 +489,241 @@
 </script>
 
 <svelte:head><title>Klienci — AuraCRM</title></svelte:head>
+<svelte:window onclick={() => (nowyMenu = false)} />
 
-<div class="flex items-center justify-between mb-6">
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Klienci <span class="text-slate-400 text-lg font-normal">({appState.clients.length})</span></h1>
-		<p class="text-sm text-slate-500 mt-1">Zarządzanie portfelem i statusami RODO</p>
+		<h1 class="text-2xl font-semibold text-ink">Klienci <span class="font-normal text-ink-3 tabular-nums">{appState.clients.length.toLocaleString('pl-PL')}</span></h1>
+		<p class="text-sm text-ink-3 mt-0.5">Portfel, dane kontaktowe i zgody RODO</p>
 	</div>
-	<div class="flex gap-2">
-		<button onclick={() => showDuplicates = true} class="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-100 transition-colors">
-			Sprawdź duplikaty {#if visibleDuplicateGroups.length > 0}<span class="bg-amber-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">{visibleDuplicateGroups.length}</span>{/if}
+	<div class="flex flex-wrap gap-2">
+		<button onclick={() => (showDuplicates = true)} class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
+			Duplikaty
+			{#if visibleDuplicateGroups.length > 0}
+				<span class="px-1.5 rounded-full bg-warn-soft text-warn text-xs font-semibold leading-5 tabular-nums">{visibleDuplicateGroups.length}</span>
+			{/if}
 		</button>
-		<button onclick={() => openNew('firma')} class="flex items-center gap-1.5 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
-			<Building2 size={15} /> Dodaj Firmę
-		</button>
-		<button onclick={() => openNew('osoba')} class="flex items-center gap-1.5 bg-white text-slate-700 border border-line px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors">
-			<User size={15} /> Dodaj Osobę
-		</button>
+		<div class="relative">
+			<button
+				onclick={(e) => { e.stopPropagation(); nowyMenu = !nowyMenu; }}
+				aria-expanded={nowyMenu}
+				aria-haspopup="menu"
+				class="h-9 flex items-center gap-1.5 px-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors"
+			>
+				Nowy klient <ChevronDown size={14} />
+			</button>
+			{#if nowyMenu}
+				<div role="menu" class="absolute right-0 top-full mt-1 w-60 bg-white border border-line rounded-xl shadow-xl z-50 py-1">
+					<button role="menuitem" onclick={() => { nowyMenu = false; openNew('firma'); }} class="w-full flex items-start gap-3 text-left px-4 py-2.5 hover:bg-surface-2">
+						<Building2 size={16} class="text-ink-3 mt-0.5" />
+						<span><span class="block text-sm font-medium text-ink">Firma</span><span class="block text-xs text-ink-3">NIP, REGON, KRS — dane z GUS</span></span>
+					</button>
+					<button role="menuitem" onclick={() => { nowyMenu = false; openNew('osoba'); }} class="w-full flex items-start gap-3 text-left px-4 py-2.5 hover:bg-surface-2">
+						<User size={16} class="text-ink-3 mt-0.5" />
+						<span><span class="block text-sm font-medium text-ink">Osoba prywatna</span><span class="block text-xs text-ink-3">PESEL, adres, kontakt</span></span>
+					</button>
+				</div>
+			{/if}
+		</div>
 	</div>
 </div>
 
-<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-3 border-b border-line flex items-center gap-3">
-		<Search size={16} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, PESEL, REGON, KRS, e-mailu, telefonie lub adresie..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
-		<div class="flex items-center rounded-lg border border-line overflow-hidden shrink-0">
-			<button onclick={() => compactView = false}
-				class="px-3 py-1.5 text-xs font-medium transition-colors {!compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
-				Pełny
-			</button>
-			<button onclick={() => compactView = true}
-				class="px-3 py-1.5 text-xs font-medium border-l border-line transition-colors {compactView ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 hover:bg-slate-50'}">
-				Kompaktowy
-			</button>
-		</div>
+<!-- Segmenty -->
+<div role="tablist" aria-label="Segmenty klientów" class="flex gap-x-5 border-b border-line mb-3 overflow-x-auto">
+	{#each SEGMENTY as [id, label]}
+		<button
+			role="tab"
+			aria-selected={segment === id}
+			onclick={() => (segment = id)}
+			class="h-10 -mb-px shrink-0 border-b-2 whitespace-nowrap text-sm transition-colors
+				{segment === id ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-2 font-medium hover:text-ink'}"
+		>
+			{label} <span class="font-normal text-ink-3 tabular-nums">{liczSeg[id].toLocaleString('pl-PL')}</span>
+		</button>
+	{/each}
+</div>
+
+<!-- Filtry -->
+<div class="flex flex-wrap items-center gap-2 mb-3">
+	<label class="w-full sm:w-auto sm:flex-[1_1_280px] sm:max-w-[420px] h-9 flex items-center gap-2 px-2.5 border border-line rounded-lg bg-white focus-within:border-accent">
+		<Search size={16} class="text-ink-3 shrink-0" />
+		<span class="sr-only">Filtruj listę</span>
+		<input bind:value={search} placeholder="Nazwa, NIP, PESEL, e-mail, telefon…" class="flex-1 min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3" />
+		{#if search}
+			<button onclick={() => (search = '')} aria-label="Wyczyść wyszukiwanie" class="w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={14} /></button>
+		{/if}
+	</label>
+	{#snippet filtr(etykieta: string, tekst: string | null, wyczysc: () => void, opcje: Snippet, wartosc: string, ustaw: (v: string) => void)}
+		<!-- Widoczna etykieta + niewidoczny natywny select na wierzchu: przycisk ma szerokość wybranej wartości, nie najdłuższej opcji. -->
+		<span class="relative inline-flex items-center h-9 rounded-lg text-[13px] font-medium focus-within:ring-2 focus-within:ring-accent/40 {tekst ? 'border border-line bg-white text-ink pr-7' : 'border border-dashed border-[#C4CAD4] text-ink-2 hover:bg-white'}">
+			<span aria-hidden="true" class="px-2.5 max-w-[240px] truncate whitespace-nowrap">{tekst ?? `+ ${etykieta}`}</span>
+			<select
+				aria-label={etykieta}
+				value={wartosc}
+				onchange={(e) => ustaw((e.currentTarget as HTMLSelectElement).value)}
+				class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+			>
+				{@render opcje()}
+			</select>
+			{#if tekst}
+				<button onclick={wyczysc} aria-label="Usuń filtr: {etykieta}" class="absolute right-1 z-10 w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={12} /></button>
+			{/if}
+		</span>
+	{/snippet}
+	{#snippet opcjeOpiekun()}
+		<option value="">Dowolny opiekun</option>
+		{#each opiekunowie as b}<option value={b.id}>{b.imie_nazwisko || b.email}{b.id === appState.profile?.id ? ' (ja)' : ''}</option>{/each}
+		<option value="-">Bez opiekuna</option>
+	{/snippet}
+	{#snippet opcjeTu()}
+		<option value="">Dowolne towarzystwo</option>
+		{#each towarzystwa as t}<option value={t.id}>{t.skrot || t.nazwa}</option>{/each}
+	{/snippet}
+	{#snippet opcjeRodzaj()}
+		<option value="">Dowolny rodzaj polisy</option>
+		{#each rodzaje as r}<option value={r}>{r.replace(/_/g, ' ')}</option>{/each}
+	{/snippet}
+	{#snippet opcjeZrodlo()}
+		<option value="">Dowolne źródło</option>
+		<option value="beauty">import BEAUTY</option>
+		<option value="crm">dodani w CRM</option>
+	{/snippet}
+	{@render filtr('Opiekun', fOpiekun ? (fOpiekun === '-' ? 'Bez opiekuna' : `Opiekun: ${opiekunWg.get(fOpiekun) ?? '—'}`) : null, () => (fOpiekun = ''), opcjeOpiekun, fOpiekun, (v) => (fOpiekun = v))}
+	{@render filtr('Towarzystwo', fTu ? `TU: ${towarzystwa.find(t => t.id === fTu)?.skrot || towarzystwa.find(t => t.id === fTu)?.nazwa || '—'}` : null, () => (fTu = ''), opcjeTu, fTu, (v) => (fTu = v))}
+	{@render filtr('Rodzaj polisy', fRodzaj ? `Rodzaj: ${fRodzaj.replace(/_/g, ' ')}` : null, () => (fRodzaj = ''), opcjeRodzaj, fRodzaj, (v) => (fRodzaj = v))}
+	{@render filtr('Źródło', fZrodlo ? (fZrodlo === 'beauty' ? 'Źródło: import BEAUTY' : 'Źródło: dodani w CRM') : null, () => (fZrodlo = ''), opcjeZrodlo, fZrodlo, (v) => (fZrodlo = v as typeof fZrodlo))}
+	{#if ileFiltrow > 0}
+		<button onclick={wyczyscFiltry} class="h-9 px-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść</button>
+	{/if}
+	<div role="group" aria-label="Gęstość listy" class="hidden md:flex ml-auto p-0.5 rounded-lg bg-surface-2 border border-line-soft">
+		<button aria-pressed={!kompakt} onclick={() => ustawGestosc(false)} class="h-[30px] px-3 rounded-md text-[13px] {!kompakt ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">Komfort</button>
+		<button aria-pressed={kompakt} onclick={() => ustawGestosc(true)} class="h-[30px] px-3 rounded-md text-[13px] {kompakt ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">Kompakt</button>
 	</div>
-	{#if compactView}
-		<div class="divide-y divide-line-soft">
-			{#each filtered as c}
-				<button onclick={() => goto(`/clients/${c.id}`)}
-					use:ctxMenu={{ items: () => clientMenu(c), title: c.nazwa_skrocona ?? c.nazwa }}
-					class="w-full flex items-center gap-2 px-5 py-1 text-left hover:bg-slate-50 transition-colors">
-					{#if c.typ === 'osoba'}
-						<User size={12} class="text-slate-400 shrink-0" />
-					{:else}
-						<Building2 size={12} class="text-slate-400 shrink-0" />
-					{/if}
-					<span class="text-sm text-slate-900 truncate">{c.nazwa_skrocona ?? c.nazwa}</span>
-				</button>
-			{:else}
-				<div class="px-5 py-6 text-center text-slate-400">Brak klientów</div>
-			{/each}
+</div>
+
+<section aria-label="Lista klientów" class="bg-white border border-line rounded-xl overflow-hidden">
+	{#if selected.size > 0}
+		<div class="flex flex-wrap items-center gap-2 px-4 py-2 bg-accent-soft text-accent-text text-[13px]">
+			<span class="font-semibold mr-1">{odmiana(selected.size, 'zaznaczony', 'zaznaczonych', 'zaznaczonych')}</span>
+			<label class="inline-flex">
+				<span class="sr-only">Przypisz opiekuna</span>
+				<select bind:value={nowyOpiekun} onchange={przypiszOpiekuna} class="h-7 pl-2.5 pr-7 border border-blue-300 rounded-lg bg-white font-medium text-accent-text cursor-pointer">
+					<option value="">Przypisz opiekuna…</option>
+					{#each opiekunowie as b}<option value={b.id}>{b.imie_nazwisko || b.email}</option>{/each}
+					<option value="-">— bez opiekuna —</option>
+				</select>
+			</label>
+			<button onclick={eksportujCsv} class="h-7 flex items-center gap-1.5 px-2.5 border border-blue-300 rounded-lg bg-white font-medium hover:bg-blue-50"><Download size={14} /> Eksportuj CSV</button>
+			<button onclick={() => (selected = new Set())} class="ml-auto h-7 px-2 font-semibold hover:underline">Odznacz</button>
+		</div>
+	{/if}
+
+	{#if posortowane.length === 0}
+		<div class="px-4 py-12 text-center">
+			<p class="text-sm text-ink-3">Brak klientów dla wybranych filtrów.</p>
+			{#if ileFiltrow > 0 || search}
+				<button onclick={wyczyscFiltry} class="mt-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść filtry</button>
+			{/if}
 		</div>
 	{:else}
-	<table class="w-full text-left text-sm">
-		<thead>
-			<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-				<th class="px-5 py-3">Nazwa / Adres</th>
-				<th class="px-5 py-3">NIP / PESEL</th>
-				<th class="px-5 py-3">Kontakt</th>
-				<th class="px-5 py-3">RODO</th>
-				<th class="px-5 py-3">Akcje</th>
-			</tr>
-		</thead>
-		<tbody>
-			{#each filtered as c}
-				<tr use:ctxMenu={{ items: () => clientMenu(c), title: c.nazwa_skrocona ?? c.nazwa }}
-					class="border-t border-line-soft hover:bg-slate-50">
-					<td class="px-5 py-3">
-						<div class="flex items-center gap-2">
-							{#if c.typ === 'osoba'}
-								<User size={13} class="text-slate-400 shrink-0" />
-							{:else}
-								<Building2 size={13} class="text-slate-400 shrink-0" />
-							{/if}
-							<div>
-								<div class="font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa}</div>
-								{#if c.nazwa_skrocona}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
-								{#if c.ulica}<div class="text-xs text-slate-400">{c.ulica}</div>{/if}
-							</div>
-						</div>
-					</td>
-					<td class="px-5 py-3 text-xs text-slate-500">
-						{#if c.nip}NIP: {c.nip}<br/>{/if}
-						{#if c.pesel}PESEL: {c.pesel}{/if}
-						{#if c.krs}<br/>KRS: {c.krs}{/if}
-					</td>
-					<td class="px-5 py-3 text-xs text-slate-500">
-						{#if c.telefon}<a href="tel:{c.telefon}" class="hover:text-blue-600 block">📞 {c.telefon}</a>{/if}
-						{#if c.email}<a href="mailto:{c.email}" class="hover:text-blue-600 block">✉ {c.email}</a>{/if}
-					</td>
-					<td class="px-5 py-3">
-						{#if c.rodo_zgoda}
-							<Badge variant="success">OK</Badge>
-						{:else}
-							<Badge variant="error">Brak zgody</Badge>
+		<!-- Telefon: karty -->
+		<ul class="md:hidden divide-y divide-line-soft">
+			{#each naStronie as { c, p, opiekun } (c.id)}
+				<li use:ctxMenu={{ items: () => clientMenu(c), title: nazwaKlienta(c) }} class="flex items-start gap-3 px-4 py-3 {selected.has(c.id) ? 'bg-blue-50' : ''}">
+					<input type="checkbox" checked={selected.has(c.id)} onchange={() => toggleSelect(c.id)} aria-label="Zaznacz {nazwaKlienta(c)}" class="mt-1 w-4 h-4 accent-accent shrink-0" />
+					<a href="/clients/{c.id}" class="flex-1 min-w-0">
+						<span class="flex items-start justify-between gap-2">
+							<span class="font-medium text-ink truncate">{nazwaKlienta(c)}</span>
+							{#if !c.rodo_zgoda}<span class="shrink-0 px-2 rounded-full bg-danger-soft text-danger text-xs font-semibold leading-5">Brak zgody</span>{/if}
+						</span>
+						<span class="block text-xs text-ink-3">{podpis(c)}{opiekun ? ` · ${opiekun}` : ''}</span>
+						{#if p}
+							<span class="block mt-1 text-[13px] text-ink-2 tabular-nums">
+								{odmiana(p.polisy, 'polisa', 'polisy', 'polis')} · {fmtPln(p.skladka)} zł
+								{#if p.odnowienie} · <span class={blisko(p.odnowienie) ? 'text-warn font-semibold' : ''}>odnowienie {fmtDzien(p.odnowienie)}</span>{/if}
+							</span>
 						{/if}
-					</td>
-					<td class="px-5 py-3">
-						<div class="flex items-center gap-1">
-							<button onclick={() => goto(`/clients/${c.id}`)} class="text-xs border border-line rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-50 transition-colors">
-								Profil 360°
-							</button>
-							<button onclick={() => goto(`/clients/${c.id}/edit`)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-								<Pencil size={14} />
-							</button>
-						</div>
-					</td>
-				</tr>
-			{:else}
-				<tr><td colspan="5" class="px-5 py-6 text-center text-slate-400">Brak klientów</td></tr>
+					</a>
+				</li>
 			{/each}
-		</tbody>
-	</table>
+		</ul>
+
+		<!-- Komputer: tabela -->
+		<div class="hidden md:block overflow-x-auto">
+			<table class="w-full min-w-[1000px] text-[13px] text-left">
+				<thead>
+					<tr class="bg-surface-2 text-ink-2">
+						<th class="w-11 pl-4 py-2.5">
+							<input type="checkbox" checked={wszystkieNaStronie} onchange={toggleStrona} aria-label="Zaznacz wszystkich na stronie" class="w-4 h-4 accent-accent cursor-pointer align-middle" />
+						</th>
+						<SortTh s={sort} k="klient" wersaliki={false} class="px-3 py-2.5 font-semibold">Klient</SortTh>
+						<SortTh s={sort} k="nip" wersaliki={false} class="px-3 py-2.5 font-semibold w-[150px]">NIP / PESEL</SortTh>
+						<SortTh s={sort} k="polisy" wersaliki={false} align="right" class="px-3 py-2.5 font-semibold text-right w-[84px]">Polisy</SortTh>
+						<SortTh s={sort} k="skladka" wersaliki={false} align="right" class="px-3 py-2.5 font-semibold text-right w-[140px] whitespace-nowrap">Składka</SortTh>
+						<SortTh s={sort} k="odnowienie" wersaliki={false} class="px-3 py-2.5 font-semibold w-[200px] whitespace-nowrap">Najbliższe odnowienie</SortTh>
+						<SortTh s={sort} k="opiekun" wersaliki={false} class="px-3 py-2.5 font-semibold w-[190px]">Opiekun</SortTh>
+						<SortTh s={sort} k="rodo" wersaliki={false} class="pl-3 pr-4 py-2.5 font-semibold w-[110px]">RODO</SortTh>
+					</tr>
+				</thead>
+				<tbody>
+					{#each naStronie as { c, p, opiekun } (c.id)}
+						{@const checked = selected.has(c.id)}
+						{@const py = kompakt ? 'py-1.5' : 'py-2.5'}
+						<tr use:ctxMenu={{ items: () => clientMenu(c), title: nazwaKlienta(c) }} class="border-t border-line-soft {checked ? 'bg-blue-50' : 'hover:bg-bg'}">
+							<td class="pl-4 {py}">
+								<input type="checkbox" {checked} onchange={() => toggleSelect(c.id)} aria-label="Zaznacz {nazwaKlienta(c)}" class="w-4 h-4 accent-accent cursor-pointer align-middle" />
+							</td>
+							<td class="px-3 {py} max-w-[380px]">
+								<a href="/clients/{c.id}" title={c.nazwa_skrocona ? c.nazwa : undefined} class="block text-ink hover:text-accent-text">
+									<span class="block truncate font-medium">{nazwaKlienta(c)}</span>
+									{#if !kompakt}<span class="block truncate text-xs text-ink-3">{podpis(c)}</span>{/if}
+								</a>
+							</td>
+							<td class="px-3 {py} font-mono text-xs whitespace-nowrap text-ink-2">
+								{#if c.nip}{c.nip}{:else if c.pesel}<span title="PESEL — pełny w profilu klienta">{maskaPesel(c.pesel)}</span>{:else}<span class="text-ink-3">—</span>{/if}
+							</td>
+							<td class="px-3 {py} text-right tabular-nums">{p ? p.polisy : '—'}</td>
+							<td class="px-3 {py} text-right tabular-nums whitespace-nowrap">{p ? `${fmtPln(p.skladka)} zł` : '—'}</td>
+							<td class="px-3 {py} whitespace-nowrap">
+								{#if p?.odnowienie}
+									{fmtDzien(p.odnowienie)}<span class={blisko(p.odnowienie) ? 'text-warn font-semibold' : 'text-ink-2'}>{` · ${fmtTermin(p.odnowienie, dzis)}`}</span>
+								{:else}
+									<span class="text-ink-3">—</span>
+								{/if}
+							</td>
+							<td class="px-3 {py} whitespace-nowrap">
+								<span class="flex items-center gap-2 min-w-0">
+									<span class="w-6 h-6 shrink-0 rounded-full bg-surface-2 text-ink-2 text-xs font-semibold flex items-center justify-center">{inicjaly(opiekun)}</span>
+									{#if opiekun}<span class="truncate">{opiekun}</span>{:else}<span class="italic text-ink-3">bez opiekuna</span>{/if}
+								</span>
+							</td>
+							<td class="pl-3 pr-4 {py}">
+								{#if c.rodo_zgoda}
+									<span class="text-xs font-semibold text-ok">Zgoda</span>
+								{:else}
+									<span class="inline-block px-2 rounded-full bg-danger-soft text-danger text-xs font-semibold leading-5 whitespace-nowrap">Brak zgody</span>
+								{/if}
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
 	{/if}
-</div>
+
+	<div class="flex flex-wrap items-center gap-3 px-4 py-2.5 border-t border-line-soft text-[13px] text-ink-2">
+		<span class="w-full sm:w-auto sm:flex-1 min-w-0">{podpowiedz}</span>
+		<span class="tabular-nums">{zakres}</span>
+		<span class="flex gap-1">
+			<button onclick={() => (strona = Math.max(0, strona - 1))} disabled={strona === 0} aria-label="Poprzednia strona" class="w-8 h-8 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2 disabled:opacity-40 disabled:cursor-default"><ChevronLeft size={14} /></button>
+			<button onclick={() => (strona = Math.min(stron - 1, strona + 1))} disabled={strona >= stron - 1} aria-label="Następna strona" class="w-8 h-8 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2 disabled:opacity-40 disabled:cursor-default"><ChevronRight size={14} /></button>
+		</span>
+	</div>
+</section>
+
+{#if toast}
+	<Toast tekst={toast.tekst} blad={toast.blad} oncofnij={toast.cofnij} onzamknij={() => (toast = null)} />
+{/if}
 
 <Modal title={modalTitle} open={showModal} onclose={closeModal}>
 	{#snippet footer()}

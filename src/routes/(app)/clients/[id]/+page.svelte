@@ -6,12 +6,14 @@
 	import { sb, SB_URL } from '$lib/supabase';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor } from '$lib/utils';
+	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
+	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
+	import { logAudit } from '$lib/utils/audit';
 	import type { Claim, Vehicle, ClientContact, CrmTask, Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
-	import { ArrowLeft, Pencil, Plus, Car, FileText, AlertTriangle, Coins, Users, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip } from 'lucide-svelte';
+	import { Pencil, Plus, Car, FileText, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip, Phone, Ellipsis, ShieldCheck, ShieldAlert, Users, AlertTriangle } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken } from '$lib/utils/apkLink';
@@ -180,15 +182,15 @@
 	}, { klucz: 'nr' }, 'klient-skladki-polisy');
 	const skladkiWiersze = $derived(sortSkladki.sortuj(clientPolicies));
 
-	type TabKey = 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zalaczniki' | 'dziennik' | 'zadania' | 'emaile' | 'mailing';
+	type TabKey = 'przeglad' | 'polisy' | 'pojazdy' | 'gwarancje' | 'szkody' | 'saldo' | 'kontakty' | 'apk' | 'zalaczniki' | 'dziennik' | 'zadania' | 'emaile' | 'mailing';
 	// ?tab=zalaczniki itp. (np. link z e-maila do biura o złożonym wniosku) — tylko znane zakładki.
-	let activeTab = $state<TabKey>('polisy');
+	let activeTab = $state<TabKey>('przeglad');
 	$effect(() => {
 		const t = $page.url.searchParams.get('tab');
 		if (t && untrack(() => (tabs as string[]).includes(t))) untrack(() => (activeTab = t as TabKey));
 	});
 	const tabs = $derived(
-		['polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zalaczniki', 'dziennik', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
+		['przeglad', 'polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zalaczniki', 'dziennik', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
 	);
 
 	// ── Mailing GetResponse (tylko Aura Expert) ───────────────────────────────
@@ -359,7 +361,8 @@
 	}
 
 	$effect(() => {
-		if (activeTab === 'emaile' && clientId && emaileDla !== clientId) {
+		// Przegląd też pokazuje wysłane e-maile na osi zdarzeń.
+		if ((activeTab === 'emaile' || activeTab === 'przeglad') && clientId && emaileDla !== clientId) {
 			emaileDla = clientId;
 			emaile = []; emailOtwarty = null;
 			wczytajEmaile();
@@ -638,7 +641,7 @@
 	}
 
 	// Dashboard modals
-	let dashModal = $state<'polisy' | 'pojazdy' | 'szkody' | 'grupowe' | 'skladki' | null>(null);
+	let dashModal = $state<'grupowe' | 'skladki' | null>(null);
 
 	// Claim edit
 	let editingClaim = $state<Claim | null>(null);
@@ -779,210 +782,532 @@
 	async function saveOpiekun() {
 		savingOpiekun = true;
 		await sb.from('crm_clients').update({ opiekun_id: selectedOpiekun || null }).eq('id', clientId);
+		await logAudit('clients_owner_assigned', 'client', clientId, client?.nazwa ?? null, { ids: [clientId], opiekun_id: selectedOpiekun || null });
+		void wczytajAudyt();
 		const { data } = await wczytajKlientow();
 		appState.clients = (data ?? []) as typeof appState.clients;
 		savingOpiekun = false;
 		editingOpiekun = false;
 	}
+
+	// ── Pasek podsumowania i zakładka Przegląd ──────────────────────────────────
+	const dzis = todayStr();
+	const ugBez = $derived(ugBezRozliczania(appState.policies));
+	const wlasneIds = $derived(new Set(ownPolicies.map(p => p.id)));
+	const polisaPoId = $derived(new Map(appState.policies.map(p => [p.id, p])));
+	// Raty polis, których klient jest ubezpieczającym (bez umów generalnych rozliczanych bez rat) — jak w Płatnościach.
+	const ratyNieoplacone = $derived(
+		appState.payments
+			.filter(r => wlasneIds.has(r.polisa_id) && !ugBez.has(r.polisa_id) && !ROZLICZONE.includes(r.status))
+			.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci))
+	);
+	const ratyPoTerminie = $derived(ratyNieoplacone.filter(r => poTerminie(r, dzis, ugBez)));
+	const doZaplaty = $derived(ratyNieoplacone.reduce((s, r) => s + Number(r.kwota ?? 0), 0));
+	const polisyZZaleglaRata = $derived(new Set(ratyPoTerminie.map(r => r.polisa_id)));
+
+	const aktywneWlasne = $derived(ownPolicies.filter(p => p.data_do === null || p.data_do >= dzis));
+	const skladkaAktywnych = $derived(aktywneWlasne.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
+	const prowizjaAktywnych = $derived(aktywneWlasne.reduce((s, p) => s + Number(p.prowizja_przypisana ?? 0), 0));
+	const najblizszeOdnowienie = $derived(
+		aktywneWlasne
+			.filter(p => p.data_do && !renewedPolicyIds.has(p.id))
+			.sort((a, b) => a.data_do.localeCompare(b.data_do))[0] ?? null
+	);
+	const nazwaRodzaju = (r: string | null | undefined) => (r ?? '').replace(/_/g, ' ');
+	const nazwaTu = (p: Policy) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa || '—';
+	const rodzajeAktywnych = $derived([...new Set(activePolicies.map(p => nazwaRodzaju(p.rodzaj)).filter(Boolean))].join(', '));
+	const blisko = (d: string | null, dni = 14) => !!d && dateDiffDays(dzis, d) <= dni;
+
+	/** Status polisy do chipów (Przegląd i zakładka Polisy). */
+	function statusPolisy(p: Policy): { tekst: string; cls: string } {
+		if (renewedPolicyIds.has(p.id)) return { tekst: 'Wznowiona', cls: 'bg-surface-2 text-ink-2' };
+		if (polisyZZaleglaRata.has(p.id)) return { tekst: 'Rata po terminie', cls: 'bg-danger-soft text-danger' };
+		if (p.renewal_of && p.data_od > dzis) return { tekst: 'Oczekująca', cls: 'bg-accent-soft text-accent-text' };
+		if (p.data_do && p.data_do < dzis) return { tekst: 'Zakończona', cls: 'bg-surface-2 text-ink-2' };
+		if (blisko(p.data_do, 30)) return { tekst: 'Wygasa', cls: 'bg-warn-soft text-warn' };
+		return { tekst: 'Aktywna', cls: 'bg-ok-soft text-ok' };
+	}
+	const aktywneNaPrzeglad = $derived(
+		[...activePolicies].sort((a, b) => (a.data_do ?? '9999').localeCompare(b.data_do ?? '9999')).slice(0, 5)
+	);
+	const otwarteZadania = $derived(
+		clientTasks
+			.filter(t => t.status === 'otwarte' || t.status === 'w_toku')
+			.sort((a, b) => (a.termin ?? '9999').localeCompare(b.termin ?? '9999'))
+	);
+	const opisRaty = (r: { polisa_id: string; nr_raty: number }) => {
+		const p = polisaPoId.get(r.polisa_id);
+		return `rata ${r.nr_raty}${p?.ilosc_rat && Number(p.ilosc_rat) > 1 ? `/${p.ilosc_rat}` : ''}`;
+	};
+
+	// Oś zdarzeń: dane już wczytane (polisy, szkody, zadania, APK, wnioski, e-maile) + dziennik audytu klienta.
+	type WpisAudytu = { id: string; action: string; user_name: string | null; user_email: string | null; entity_label: string | null; details: Record<string, unknown> | null; created_at: string };
+	let audyt = $state<WpisAudytu[]>([]);
+	let audytDla = '';
+	async function wczytajAudyt() {
+		const dla = clientId ?? '';
+		const kolumny = 'id, action, user_name, user_email, entity_label, details, created_at';
+		const [a, b] = await Promise.all([
+			sb.from('crm_audit_log').select(kolumny).eq('entity_type', 'client').eq('entity_id', dla).order('created_at', { ascending: false }).limit(30),
+			// Akcje zbiorcze z listy klientów zapisują identyfikatory w details.ids.
+			sb.from('crm_audit_log').select(kolumny).in('action', ['clients_owner_assigned', 'clients_exported']).contains('details', { ids: [dla] }).order('created_at', { ascending: false }).limit(30)
+		]);
+		if (dla !== clientId) return;
+		const wpisy = new Map<string, WpisAudytu>();
+		for (const w of [...((a.data ?? []) as unknown as WpisAudytu[]), ...((b.data ?? []) as unknown as WpisAudytu[])]) wpisy.set(w.id, w);
+		audyt = [...wpisy.values()];
+	}
+	$effect(() => {
+		if (activeTab === 'przeglad' && clientId && audytDla !== clientId) {
+			audytDla = clientId;
+			audyt = [];
+			untrack(() => wczytajAudyt());
+		}
+	});
+
+	function opisAudytu(w: WpisAudytu): string | null {
+		switch (w.action) {
+			case 'client_created': return 'Dodano klienta do CRM';
+			case 'client_updated': return 'Zmieniono dane klienta';
+			case 'clients_merged': return `Scalono duplikaty klienta${w.entity_label ? ` (${w.entity_label})` : ''}`;
+			case 'clients_owner_assigned': {
+				const id = w.details?.opiekun_id as string | null | undefined;
+				const kto = id ? appState.brokers.find(b => b.id === id) : null;
+				return id ? `Opiekun klienta: ${kto?.imie_nazwisko || kto?.email || 'zmieniony'}` : 'Usunięto opiekuna klienta';
+			}
+			case 'clients_exported': return 'Dane klienta wyeksportowane do CSV';
+			default: return null;
+		}
+	}
+
+	type Zdarzenie = { klucz: string; at: string; tekst: string; kto: string | null; ton: 'danger' | 'accent' | 'neutral'; href?: string };
+	const zdarzeniaKlienta = $derived.by(() => {
+		const teraz = new Date().toISOString();
+		const out: Zdarzenie[] = [];
+		const dodaj = (z: Zdarzenie) => { if (z.at && z.at.slice(0, 10) <= teraz.slice(0, 10)) out.push(z); };
+		for (const p of clientPolicies) {
+			const at = p.data_zawarcia ?? p.created_at ?? p.data_od;
+			dodaj({ klucz: `p-${p.id}`, at, tekst: `${p.renewal_of ? 'Odnowiono' : 'Zawarto'} polisę ${p.nr_polisy} · ${nazwaRodzaju(p.rodzaj)}, ${nazwaTu(p)}`, kto: null, ton: 'accent', href: `/policies/${p.id}` });
+			if (p.data_do && p.data_do < dzis && !renewedPolicyIds.has(p.id)) {
+				dodaj({ klucz: `pk-${p.id}`, at: p.data_do, tekst: `Polisa ${p.nr_polisy} wygasła bez odnowienia`, kto: null, ton: 'neutral', href: `/policies/${p.id}` });
+			}
+		}
+		for (const c of clientClaims) {
+			dodaj({ klucz: `s-${c.id}`, at: c.data_szkody, tekst: `Szkoda ${c.nr_szkody ?? '(zgłoszenie)'}${c.opis_szkody ? ` — ${c.opis_szkody}` : ''} · ${c.status}`, kto: null, ton: 'neutral' });
+		}
+		for (const t of clientTasks) {
+			const kto = t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? null;
+			if (t.created_at) dodaj({ klucz: `t-${t.id}`, at: t.created_at, tekst: `Nowe zadanie: ${t.tytul}`, kto, ton: 'neutral' });
+			if (t.zakonczone_at) dodaj({ klucz: `tz-${t.id}`, at: t.zakonczone_at, tekst: `Zakończono zadanie: ${t.tytul}`, kto, ton: 'neutral' });
+		}
+		for (const f of clientApk) {
+			dodaj({ klucz: `a-${f.id}`, at: f.created_at, tekst: `Utworzono formularz APK ${f.ref_number}`, kto: f.advisor_name, ton: 'accent' });
+			if (f.submitted_at) dodaj({ klucz: `as-${f.id}`, at: f.submitted_at, tekst: f.client_declined ? `Klient odmówił wypełnienia APK ${f.ref_number}` : `Klient wypełnił APK ${f.ref_number}`, kto: null, ton: 'accent' });
+		}
+		for (const w of wnioski) {
+			dodaj({ klucz: `w-${w.id}`, at: w.created_at, tekst: `Wniosek o odnowienie ${nrCertyfikatu(w)} wysłany klientowi`, kto: null, ton: 'accent', href: `/policies/${w.polisa_id}` });
+			if (w.zlozono_at) dodaj({ klucz: `wz-${w.id}`, at: w.zlozono_at, tekst: `Klient złożył wniosek o odnowienie ${nrCertyfikatu(w)}`, kto: null, ton: 'accent', href: `/policies/${w.polisa_id}` });
+		}
+		for (const e of emaile) {
+			dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}`, kto: RODZAJ_EMAILA[e.rodzaj] ?? null, ton: 'accent' });
+		}
+		for (const w of audyt) {
+			const tekst = opisAudytu(w);
+			if (tekst) dodaj({ klucz: `l-${w.id}`, at: w.created_at, tekst, kto: w.user_name ?? w.user_email, ton: 'neutral' });
+		}
+		return out.sort((a, b) => b.at.localeCompare(a.at));
+	});
+	let zdarzeniaLimit = $state(8);
+	function fmtKiedy(at: string): string {
+		if (at.length <= 10) return fmtDzien(at);
+		const d = new Date(at);
+		if (isNaN(d.getTime())) return fmtDzien(at);
+		return `${fmtDzien(at.slice(0, 10))}, ${d.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
+	}
+
+	let wiecejMenu = $state(false);
+	function wyslijApk() {
+		apkAdvisor = appState.profile?.imie_nazwisko ?? '';
+		showNewApk = true;
+	}
 </script>
 
 <svelte:head><title>{client?.nazwa ?? 'Klient'} — AuraCRM</title></svelte:head>
+<svelte:window onclick={() => (wiecejMenu = false)} />
 
 {#if !client}
 	<p class="text-slate-400">Klient nie istnieje lub nie masz dostępu.</p>
 {:else}
+	{@const nazwa = client.nazwa_skrocona ?? client.nazwa}
+	{@const miasto = miastoZAdresu(client.ulica)}
+	{@const opiekun = opiekunNazwa()}
+
+	<nav aria-label="Ścieżka" class="flex items-center gap-1.5 text-[13px] text-ink-3 mb-3 min-w-0">
+		<a href="/clients" class="text-accent-text hover:underline">Klienci</a>
+		<span aria-hidden="true">/</span>
+		<span class="truncate">{nazwa}</span>
+	</nav>
+
 	<!-- Nagłówek -->
-	<div class="flex items-start justify-between mb-4">
-		<div class="flex items-center gap-3">
-			<button onclick={() => goto('/clients')} class="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors">
-				<ArrowLeft size={16} /> Klienci
-			</button>
+	<div class="flex flex-wrap items-start gap-4 mb-4">
+		<span aria-hidden="true" class="hidden sm:flex w-12 h-12 shrink-0 rounded-xl bg-accent-soft text-accent-text font-semibold text-base items-center justify-center">{inicjaly(nazwa)}</span>
+		<div class="flex-[1_1_420px] min-w-0 flex flex-col gap-1.5">
 			<div>
-				<h1 class="text-2xl font-semibold text-slate-900">{client.nazwa_skrocona ?? client.nazwa}</h1>
-				{#if client.nazwa_skrocona}<p class="text-xs text-slate-400">{client.nazwa}</p>{/if}
-				<p class="text-sm text-slate-500 mt-0.5">
-					{#if client.nip}NIP: {client.nip} · {/if}{#if client.pesel}PESEL: {client.pesel} · {/if}{#if client.rodo_zgoda}<span class="text-emerald-600">RODO ✓</span>{:else}<span class="text-red-500">BRAK RODO</span>{/if}
-				</p>
-				{#if client.email || client.telefon}
-				<p class="text-sm text-slate-500 mt-0.5 flex items-center gap-3">
-					{#if client.telefon}<a href="tel:{client.telefon}" class="hover:text-blue-600">📞 {client.telefon}</a>{/if}
-					{#if client.email}<a href="mailto:{client.email}" class="hover:text-blue-600">✉ {client.email}</a>{/if}
-				</p>
+				<h1 class="text-2xl font-semibold text-ink leading-tight">{nazwa}</h1>
+				{#if client.nazwa_skrocona && client.nazwa_skrocona !== client.nazwa}<p class="text-[13px] text-ink-3">{client.nazwa}</p>{/if}
+			</div>
+			<div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[13px] text-ink-2">
+				{#if client.nip}<span class="font-mono text-xs">NIP {client.nip}</span>{/if}
+				{#if client.krs}<span class="font-mono text-xs">KRS {client.krs}</span>{/if}
+				{#if client.pesel}<span class="font-mono text-xs">PESEL {client.pesel}</span>{/if}
+				<span>{client.typ === 'osoba' ? 'Osoba' : 'Firma'}{miasto ? ` · ${miasto}` : ''}{client.beauty_id != null ? ' · import BEAUTY' : ''}</span>
+				{#if client.rodo_zgoda}
+					<span class="flex items-center gap-1.5 text-ok font-semibold">
+						<ShieldCheck size={14} aria-hidden="true" />
+						RODO: zgoda{client.rodo_kanal ? ` ${client.rodo_kanal}` : ''}{client.rodo_data ? ` · ${fmtDzien(client.rodo_data, true)}` : ''}
+					</span>
+				{:else}
+					<a href="/clients/{clientId}/edit" class="flex items-center gap-1.5 text-danger font-semibold hover:underline">
+						<ShieldAlert size={14} aria-hidden="true" /> Brak zgody RODO
+					</a>
 				{/if}
-				<!-- Opiekun klienta -->
-				<div class="flex items-center gap-2 mt-1">
+				<span class="flex items-center gap-1.5">
 					{#if editingOpiekun}
-						<select bind:value={selectedOpiekun} class="border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
-							<option value="">— brak opiekuna —</option>
+						<label class="sr-only" for="opiekun-klienta">Opiekun klienta</label>
+						<select id="opiekun-klienta" bind:value={selectedOpiekun} class="h-8 border border-line rounded-lg px-2 text-[13px] bg-white">
+							<option value="">— bez opiekuna —</option>
 							{#each appState.brokers as b}
 								<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>
 							{/each}
 						</select>
-						<button onclick={saveOpiekun} disabled={savingOpiekun} class="px-2 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60">{savingOpiekun ? '...' : 'Zapisz'}</button>
-						<button onclick={() => editingOpiekun = false} class="px-2 py-1 text-xs border border-line rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
+						<button onclick={saveOpiekun} disabled={savingOpiekun} class="h-8 px-2.5 text-[13px] font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">{savingOpiekun ? 'Zapisywanie…' : 'Zapisz'}</button>
+						<button onclick={() => (editingOpiekun = false)} class="h-8 px-2.5 text-[13px] border border-line rounded-lg text-ink-2 hover:bg-surface-2">Anuluj</button>
 					{:else}
-						<span class="text-xs text-slate-400">Opiekun:</span>
-						<span class="text-xs font-medium text-slate-700">{opiekunNazwa() ?? '— brak —'}</span>
-						<button onclick={() => { selectedOpiekun = client.opiekun_id ?? ''; editingOpiekun = true; }} class="text-xs text-blue-600 hover:underline">zmień</button>
+						<span aria-hidden="true" class="w-[22px] h-[22px] rounded-full bg-surface-2 text-xs font-semibold flex items-center justify-center">{inicjaly(opiekun)}</span>
+						Opiekun: {#if opiekun}<span class="text-ink font-medium">{opiekun}</span>{:else}<span class="italic text-ink-3">brak</span>{/if}
+						<button onclick={() => { selectedOpiekun = client.opiekun_id ?? ''; editingOpiekun = true; }} class="font-semibold text-accent-text hover:underline">zmień</button>
 					{/if}
-				</div>
+				</span>
 			</div>
 		</div>
-		<div class="flex items-center gap-2">
-			<button
-				onclick={openPortal}
-				class="flex items-center gap-1.5 bg-white border px-4 py-2 rounded-lg text-sm font-semibold transition-colors
-					{hasPortal ? 'text-emerald-700 border-emerald-300 hover:bg-emerald-50' : 'text-slate-700 border-line hover:bg-slate-50'}"
-				title="Dostęp do Panelu Klienta"
-			>
-				<Link size={14} /> {hasPortal ? 'Panel klienta ✓' : 'Panel klienta'}
+		<div class="flex flex-wrap gap-2">
+			{#if client.telefon}
+				<a href="tel:{client.telefon}" aria-label="Zadzwoń: {client.telefon}" title="Zadzwoń: {client.telefon}" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Phone size={16} /></a>
+			{/if}
+			{#if client.email}
+				<a href="mailto:{client.email}" aria-label="Napisz e-mail: {client.email}" title="Napisz e-mail: {client.email}" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></a>
+			{/if}
+			<button onclick={wyslijApk} class="h-9 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Wyślij APK</button>
+			<button onclick={() => goto(`/policies/new?klient=${clientId}`)} class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
+				<Plus size={16} /> Nowa polisa
 			</button>
-			<button
-				onclick={() => goto(`/clients/${clientId}/edit`)}
-				class="flex items-center gap-1.5 bg-white text-slate-700 border border-line px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors"
-			>
-				<Pencil size={14} /> Edytuj
-			</button>
-			<button
-				onclick={() => goto(`/policies/new?klient=${clientId}`)}
-				class="flex items-center gap-1.5 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors"
-			>
-				<Plus size={14} /> Dodaj Polisę
-			</button>
+			<div class="relative">
+				<button
+					onclick={(e) => { e.stopPropagation(); wiecejMenu = !wiecejMenu; }}
+					aria-label="Więcej akcji"
+					aria-expanded={wiecejMenu}
+					aria-haspopup="menu"
+					class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"
+				><Ellipsis size={16} /></button>
+				{#if wiecejMenu}
+					<div role="menu" class="absolute right-0 top-full mt-1 w-60 bg-white border border-line rounded-xl shadow-xl z-50 py-1">
+						<button role="menuitem" onclick={() => goto(`/clients/${clientId}/edit`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Pencil size={15} class="text-ink-3" /> Edytuj dane klienta</button>
+						<button role="menuitem" onclick={openPortal} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Link size={15} class="text-ink-3" /> {hasPortal ? 'Panel klienta — dostęp' : 'Nadaj dostęp do panelu klienta'}</button>
+						<div class="my-1 border-t border-line-soft"></div>
+						<button role="menuitem" onclick={openNewTask} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><CheckCircle2 size={15} class="text-ink-3" /> Nowe zadanie</button>
+						<button role="menuitem" onclick={openNewContact} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><UserPlus size={15} class="text-ink-3" /> Dodaj osobę kontaktową</button>
+						<button role="menuitem" onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 
-	<!-- Dashboard KPI cards (tylko jeśli są dane) -->
-	<div class="flex flex-wrap gap-3 mb-5">
-		<!-- Składki — zawsze jeśli są polisy -->
-		{#if clientPolicies.length > 0}
-		<button onclick={() => dashModal = 'skladki'}
-			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
-			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><Coins size={13} /> Składki</div>
-			<div class="text-xl font-bold text-slate-900">{fmtPln(totalPrzyp)}</div>
-			<div class="text-xs text-slate-400">{totalPrzyp - totalOpl > 0 ? `Zaległość: ${fmtPln(totalPrzyp - totalOpl)}` : 'Bez zaległości'}</div>
+	<!-- Podsumowanie -->
+	<section aria-label="Podsumowanie klienta" class="grid grid-cols-2 lg:grid-cols-4 bg-white border border-line rounded-xl overflow-hidden mb-4">
+		<button onclick={() => (activeTab = 'polisy')} class="text-left px-4 py-3.5 flex flex-col gap-0.5 border-r border-b lg:border-b-0 border-line-soft hover:bg-bg">
+			<span class="text-xs text-ink-3">Aktywne polisy</span>
+			<span class="text-xl font-semibold tabular-nums text-ink">{activePolicies.length} <span class="text-[13px] font-normal text-ink-3">z {clientPolicies.length}</span></span>
+			<span class="text-xs text-ink-2 truncate">{rodzajeAktywnych || 'brak aktywnych polis'}</span>
 		</button>
-		{/if}
-
-		<!-- Polisy — zawsze jeśli są polisy -->
-		{#if clientPolicies.length > 0}
-		<button onclick={() => dashModal = 'polisy'}
-			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
-			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><FileText size={13} /> Polisy</div>
-			<div class="text-xl font-bold text-slate-900">{clientPolicies.length}</div>
-			<div class="text-xs text-slate-400">
-				{clientPolicies.filter(p => policyStatus(p.data_do).label === 'Aktywna').length} aktywnych
+		<button onclick={() => (dashModal = 'skladki')} class="text-left px-4 py-3.5 flex flex-col gap-0.5 border-b lg:border-b-0 lg:border-r border-line-soft hover:bg-bg" title="Suma składek przypisanych aktywnych polis, w których klient jest ubezpieczającym">
+			<span class="text-xs text-ink-3">Składka aktywnych polis</span>
+			<span class="text-xl font-semibold tabular-nums text-ink whitespace-nowrap">{fmtPln(skladkaAktywnych)} zł</span>
+			<span class="text-xs text-ink-2 tabular-nums">prowizja {fmtPln(prowizjaAktywnych)} zł</span>
+		</button>
+		<button onclick={() => (activeTab = 'saldo')} class="text-left px-4 py-3.5 flex flex-col gap-0.5 border-r border-line-soft hover:bg-bg">
+			<span class="text-xs text-ink-3">Do zapłaty</span>
+			<span class="text-xl font-semibold tabular-nums text-ink whitespace-nowrap">{fmtPln(doZaplaty)} zł</span>
+			{#if ratyPoTerminie.length > 0}
+				<span class="text-xs font-semibold text-danger">{odmiana(ratyPoTerminie.length, 'rata', 'raty', 'rat')} po terminie</span>
+			{:else}
+				<span class="text-xs text-ink-2">{ratyNieoplacone.length ? odmiana(ratyNieoplacone.length, 'rata oczekująca', 'raty oczekujące', 'rat oczekujących') : 'brak nieopłaconych rat'}</span>
+			{/if}
+		</button>
+		{#if najblizszeOdnowienie}
+			<a href="/policies/{najblizszeOdnowienie.id}" class="px-4 py-3.5 flex flex-col gap-0.5 hover:bg-bg">
+				<span class="text-xs text-ink-3">Najbliższe odnowienie</span>
+				<span class="text-xl font-semibold text-ink whitespace-nowrap">{fmtDzien(najblizszeOdnowienie.data_do)} <span class="text-[13px] {blisko(najblizszeOdnowienie.data_do) ? 'text-warn font-semibold' : 'text-ink-3 font-normal'}">· {fmtTermin(najblizszeOdnowienie.data_do, dzis)}</span></span>
+				<span class="text-xs text-ink-2 truncate">{nazwaTu(najblizszeOdnowienie)} · {nazwaRodzaju(najblizszeOdnowienie.rodzaj)}</span>
+			</a>
+		{:else}
+			<div class="px-4 py-3.5 flex flex-col gap-0.5">
+				<span class="text-xs text-ink-3">Najbliższe odnowienie</span>
+				<span class="text-xl font-semibold text-ink-3">—</span>
+				<span class="text-xs text-ink-2">brak polis do odnowienia</span>
 			</div>
-		</button>
 		{/if}
+	</section>
 
-		<!-- Pojazdy — tylko jeśli ma -->
-		{#if hasVehicles}
-		<button onclick={() => dashModal = 'pojazdy'}
-			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
-			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><Car size={13} /> Pojazdy</div>
-			<div class="text-xl font-bold text-slate-900">{clientVehicles.length}</div>
-			<div class="text-xs text-slate-400">w flocie</div>
-		</button>
-		{/if}
-
-		<!-- Szkody — tylko jeśli ma -->
-		{#if hasClaims}
-		<button onclick={() => dashModal = 'szkody'}
-			class="bg-white border {activeClaims.length > 0 ? 'border-red-200 bg-red-50' : 'border-line'} rounded-xl px-5 py-3 shadow-sm hover:shadow-md transition-all text-left">
-			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><AlertTriangle size={13} /> Szkody</div>
-			<div class="text-xl font-bold {activeClaims.length > 0 ? 'text-red-600' : 'text-slate-900'}">{clientClaims.length}</div>
-			<div class="text-xs text-slate-400">{activeClaims.length} aktywnych</div>
-		</button>
-		{/if}
-
-		<!-- Grupowe — tylko jeśli ma -->
-		{#if hasGrupowe}
-		<button onclick={() => dashModal = 'grupowe'}
-			class="bg-white border border-line rounded-xl px-5 py-3 shadow-sm hover:border-blue-300 hover:shadow-md transition-all text-left">
-			<div class="flex items-center gap-2 text-slate-500 text-xs mb-1"><Users size={13} /> Grupowe</div>
-			<div class="text-xl font-bold text-slate-900">{grupowePolicies.length}</div>
-			<div class="text-xs text-slate-400">ubezpieczenia grupowe</div>
-		</button>
-		{/if}
-	</div>
-
-	<!-- Tabs -->
-	<div class="flex gap-6 border-b border-line mb-4">
+	<!-- Zakładki -->
+	<div role="tablist" aria-label="Sekcje klienta" class="flex gap-x-5 border-b border-line mb-4 overflow-x-auto">
 		{#each tabs as tab}
-			<button onclick={() => (activeTab = tab)}
-				class="pb-3 text-sm font-medium border-b-2 transition-colors
-					{activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}">
-				{tab === 'polisy' ? `Polisy (${clientPolicies.length})` : tab === 'pojazdy' ? `Flota (${clientVehicles.length})` : tab === 'gwarancje' ? `Gwarancje (${clientGwarancje.length})` : tab === 'szkody' ? `Szkody (${clientClaims.length})` : tab === 'kontakty' ? `Kontakty (${clientContacts.length})` : tab === 'apk' ? `APK (${clientApk.length + apkWnioski.length})` : tab === 'zalaczniki' ? (liczbaPlikow != null ? `Załączniki (${liczbaPlikow})` : 'Załączniki') : tab === 'dziennik' ? 'Dziennik zdarzeń' : tab === 'zadania' ? `Zadania (${clientTasks.length})` : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
+			{@const n = tab === 'polisy' ? clientPolicies.length : tab === 'pojazdy' ? clientVehicles.length : tab === 'gwarancje' ? clientGwarancje.length : tab === 'szkody' ? clientClaims.length : tab === 'kontakty' ? clientContacts.length : tab === 'apk' ? clientApk.length + apkWnioski.length : tab === 'zalaczniki' ? liczbaPlikow : tab === 'zadania' ? otwarteZadania.length : null}
+			<button
+				role="tab"
+				aria-selected={activeTab === tab}
+				onclick={() => (activeTab = tab)}
+				class="h-10 -mb-px shrink-0 border-b-2 whitespace-nowrap text-sm transition-colors
+					{activeTab === tab ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-2 font-medium hover:text-ink'}"
+			>
+				{tab === 'przeglad' ? 'Przegląd' : tab === 'polisy' ? 'Polisy' : tab === 'pojazdy' ? 'Flota' : tab === 'gwarancje' ? 'Gwarancje' : tab === 'szkody' ? 'Szkody' : tab === 'kontakty' ? 'Kontakty' : tab === 'apk' ? 'APK' : tab === 'zalaczniki' ? 'Załączniki' : tab === 'dziennik' ? 'Dziennik wniosków' : tab === 'zadania' ? 'Zadania' : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
+				{#if tab === 'saldo' && ratyPoTerminie.length > 0}
+					<span class="ml-0.5 px-1.5 rounded-full bg-danger-soft text-danger text-xs font-semibold leading-5 tabular-nums">{ratyPoTerminie.length}</span>
+				{:else if n != null && n > 0}
+					<span class="font-normal text-ink-3 tabular-nums">{n}</span>
+				{/if}
 			</button>
 		{/each}
 	</div>
 
-	{#if activeTab === 'polisy'}
+	{#if activeTab === 'przeglad'}
+		<div class="flex flex-wrap items-start gap-4">
+			<div class="flex-[2_1_560px] min-w-0 flex flex-col gap-4">
+				<!-- Aktywne polisy -->
+				<section aria-labelledby="przeglad-polisy" class="bg-white border border-line rounded-xl overflow-hidden">
+					<div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line-soft">
+						<h2 id="przeglad-polisy" class="text-[15px] font-semibold text-ink">Aktywne polisy</h2>
+						{#if hasGrupowe}
+							<button onclick={() => (dashModal = 'grupowe')} class="ml-2 inline-flex items-center gap-1 h-6 px-2 rounded-full bg-surface-2 text-xs font-semibold text-ink-2 hover:bg-line-soft"><Users size={12} /> grupowe {grupowePolicies.length}</button>
+						{/if}
+						<button onclick={() => (activeTab = 'polisy')} class="ml-auto h-7 px-1.5 text-[13px] font-semibold text-accent-text hover:underline">Wszystkie {clientPolicies.length} →</button>
+					</div>
+					{#if aktywneNaPrzeglad.length === 0}
+						<div class="px-4 py-8 text-center">
+							<p class="text-sm text-ink-3">Klient nie ma aktywnych polis.</p>
+							<a href="/policies/new?klient={clientId}" class="mt-2 inline-block text-[13px] font-semibold text-accent-text hover:underline">Dodaj polisę →</a>
+						</div>
+					{:else}
+						<ul>
+							{#each aktywneNaPrzeglad as p (p.id)}
+								{@const st = statusPolisy(p)}
+								<li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-t border-line-soft first:border-t-0">
+									<a href="/policies/{p.id}" class="flex-[1_1_220px] min-w-0 group">
+										<span class="block font-medium text-ink truncate group-hover:text-accent-text">{nazwaRodzaju(p.rodzaj)} <span class="font-normal text-ink-3">· {nazwaTu(p)}</span></span>
+										<span class="block font-mono text-xs text-ink-2 truncate">{p.nr_polisy}</span>
+									</a>
+									<!-- Telefon: termin, składka i status w jednym wierszu pod nazwą; od sm — osobne kolumny. -->
+									<span class="w-full sm:w-auto flex flex-wrap items-center gap-x-3 gap-y-1 sm:contents">
+										<span class="sm:w-[170px] text-[13px] whitespace-nowrap">
+											{#if p.data_do}do {fmtDzien(p.data_do)}{#if blisko(p.data_do, 45) && !renewedPolicyIds.has(p.id)}<span class={blisko(p.data_do) ? 'text-warn font-semibold' : 'text-ink-2'}>{` · ${fmtTermin(p.data_do, dzis)}`}</span>{/if}{:else}bezterminowo{/if}
+										</span>
+										<span class="sm:w-[120px] sm:text-right text-[13px] tabular-nums whitespace-nowrap">{fmtPln(p.skladka_przypisana)} zł</span>
+										<span class="ml-auto sm:ml-0 h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {st.cls}">{st.tekst}</span>
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+				</section>
+
+				<!-- Oś zdarzeń -->
+				<section aria-labelledby="przeglad-os" class="bg-white border border-line rounded-xl px-4 pt-3.5 pb-1.5">
+					<h2 id="przeglad-os" class="text-[15px] font-semibold text-ink mb-1">Oś zdarzeń</h2>
+					{#if ratyPoTerminie.length > 0 || zdarzeniaKlienta.length > 0}
+						<ol>
+							{#each ratyPoTerminie.slice(0, 3) as r (r.id)}
+								{@const pol = polisaPoId.get(r.polisa_id)}
+								<li class="flex gap-3 py-2.5 border-t border-line-soft first:border-t-0">
+									<span aria-hidden="true" class="w-2 h-2 mt-1.5 rounded-full shrink-0 bg-danger"></span>
+									<span class="flex-1 min-w-0">
+										<span class="block text-[13px] text-ink">
+											<span class="font-semibold text-danger">Po terminie:</span>
+											{opisRaty(r)} polisy <a href="/policies/{r.polisa_id}" class="font-mono text-xs text-accent-text hover:underline">{pol?.nr_polisy ?? '—'}</a> — {fmtPln(r.kwota)} zł, {fmtTermin(r.data_platnosci, dzis)}
+										</span>
+										<span class="block text-xs text-ink-3">System · termin {fmtDzien(r.data_platnosci)}</span>
+									</span>
+								</li>
+							{/each}
+							{#if ratyPoTerminie.length > 3}
+								<li class="py-2 border-t border-line-soft">
+									<button onclick={() => (activeTab = 'saldo')} class="text-[13px] font-semibold text-accent-text hover:underline">i {odmiana(ratyPoTerminie.length - 3, 'rata', 'raty', 'rat')} więcej po terminie →</button>
+								</li>
+							{/if}
+							{#each zdarzeniaKlienta.slice(0, zdarzeniaLimit) as z (z.klucz)}
+								<li class="flex gap-3 py-2.5 border-t border-line-soft first:border-t-0">
+									<span aria-hidden="true" class="w-2 h-2 mt-1.5 rounded-full shrink-0 {z.ton === 'danger' ? 'bg-danger' : z.ton === 'accent' ? 'bg-accent' : 'bg-[#9AA3B2]'}"></span>
+									<span class="flex-1 min-w-0">
+										{#if z.href}
+											<a href={z.href} class="block text-[13px] text-ink hover:text-accent-text">{z.tekst}</a>
+										{:else}
+											<span class="block text-[13px] text-ink">{z.tekst}</span>
+										{/if}
+										<span class="block text-xs text-ink-3">{z.kto ? `${z.kto} · ` : ''}{fmtKiedy(z.at)}</span>
+									</span>
+								</li>
+							{/each}
+						</ol>
+						{#if zdarzeniaKlienta.length > zdarzeniaLimit}
+							<button onclick={() => (zdarzeniaLimit += 15)} class="mb-2 mt-1 text-[13px] font-semibold text-accent-text hover:underline">Pokaż starsze ({zdarzeniaKlienta.length - zdarzeniaLimit})</button>
+						{/if}
+					{:else}
+						<p class="py-6 text-center text-sm text-ink-3">Brak zdarzeń — pojawią się tu polisy, szkody, zadania, APK i e-maile klienta.</p>
+					{/if}
+				</section>
+			</div>
+
+			<aside class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
+				<!-- Kontakty -->
+				<section aria-labelledby="przeglad-kontakty" class="bg-white border border-line rounded-xl px-4 py-3.5">
+					<div class="flex items-center mb-2">
+						<h2 id="przeglad-kontakty" class="text-[15px] font-semibold text-ink">Kontakty</h2>
+						<button onclick={openNewContact} class="ml-auto h-7 px-1.5 text-[13px] font-semibold text-accent-text hover:underline">Dodaj</button>
+					</div>
+					{#if clientContacts.length === 0}
+						<p class="text-[13px] text-ink-3">Brak osób kontaktowych.</p>
+					{:else}
+						<div class="flex flex-col">
+							{#each clientContacts.slice(0, 3) as cc (cc.id)}
+								<div class="py-2.5 border-t border-line-soft first:border-t-0 first:pt-0">
+									<button onclick={() => openEditContact(cc)} class="block font-medium text-ink text-left hover:text-accent-text">{cc.imie_nazwisko}</button>
+									{#if cc.stanowisko || cc.notatki}<span class="block text-xs text-ink-3">{[cc.stanowisko, cc.notatki].filter(Boolean).join(' · ')}</span>{/if}
+									{#if cc.telefon || cc.email}
+										<span class="flex flex-wrap gap-x-3 text-[13px]">
+											{#if cc.telefon}<a href="tel:{cc.telefon}" class="text-accent-text hover:underline">{cc.telefon}</a>{/if}
+											{#if cc.email}<a href="mailto:{cc.email}" class="text-accent-text hover:underline break-all">{cc.email}</a>{/if}
+										</span>
+									{/if}
+								</div>
+							{/each}
+						</div>
+						{#if clientContacts.length > 3}
+							<button onclick={() => (activeTab = 'kontakty')} class="mt-1 text-[13px] font-semibold text-accent-text hover:underline">Wszystkie {clientContacts.length} →</button>
+						{/if}
+					{/if}
+				</section>
+
+				<!-- Zadania -->
+				<section aria-labelledby="przeglad-zadania" class="bg-white border border-line rounded-xl px-4 py-3.5">
+					<div class="flex items-center mb-2">
+						<h2 id="przeglad-zadania" class="text-[15px] font-semibold text-ink">Zadania</h2>
+						<button onclick={openNewTask} class="ml-auto h-7 px-1.5 text-[13px] font-semibold text-accent-text hover:underline">Nowe</button>
+					</div>
+					{#if otwarteZadania.length === 0}
+						<p class="text-[13px] text-ink-3">Brak otwartych zadań.</p>
+					{:else}
+						<ul class="flex flex-col gap-2.5">
+							{#each otwarteZadania.slice(0, 4) as t (t.id)}
+								{@const po = isOverdue(t)}
+								<li class="flex items-start gap-2.5">
+									<input type="checkbox" checked={false} onchange={() => toggleTaskStatus(t)} aria-label="Oznacz jako zakończone: {t.tytul}" class="mt-0.5 w-4 h-4 accent-accent shrink-0 cursor-pointer" />
+									<span class="min-w-0">
+										<button onclick={() => openEditTask(t)} class="block text-left text-[13px] font-medium text-ink hover:text-accent-text">{t.tytul}</button>
+										<span class="block text-xs {po ? 'text-danger font-semibold' : t.termin && blisko(t.termin, 1) ? 'text-warn font-semibold' : 'text-ink-2'}">
+											{t.termin ? fmtTermin(t.termin, dzis) : 'bez terminu'}{t.assigned_profile ? ` · ${t.assigned_profile.imie_nazwisko ?? t.assigned_profile.email}` : ''}
+										</span>
+									</span>
+								</li>
+							{/each}
+						</ul>
+						{#if otwarteZadania.length > 4}
+							<button onclick={() => (activeTab = 'zadania')} class="mt-2 text-[13px] font-semibold text-accent-text hover:underline">Wszystkie {otwarteZadania.length} →</button>
+						{/if}
+					{/if}
+				</section>
+
+				<!-- Dane klienta -->
+				<section aria-labelledby="przeglad-dane" class="bg-white border border-line rounded-xl px-4 py-3.5">
+					<div class="flex items-center mb-2">
+						<h2 id="przeglad-dane" class="text-[15px] font-semibold text-ink">{client.typ === 'osoba' ? 'Dane osoby' : 'Dane firmy'}</h2>
+						<a href="/clients/{clientId}/edit" class="ml-auto h-7 px-1.5 inline-flex items-center text-[13px] font-semibold text-accent-text hover:underline">Edytuj</a>
+					</div>
+					<dl class="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+						<dt class="text-ink-3">Adres</dt><dd class={client.ulica ? 'text-ink' : 'text-ink-3'}>{client.ulica ?? '—'}</dd>
+						<dt class="text-ink-3">Telefon</dt><dd>{#if client.telefon}<a href="tel:{client.telefon}" class="text-accent-text hover:underline">{client.telefon}</a>{:else}<span class="text-ink-3">—</span>{/if}</dd>
+						<dt class="text-ink-3">E-mail</dt><dd class="break-all">{#if client.email}<a href="mailto:{client.email}" class="text-accent-text hover:underline">{client.email}</a>{:else}<span class="text-ink-3">—</span>{/if}</dd>
+						{#if client.typ !== 'osoba'}
+							<dt class="text-ink-3">REGON</dt><dd class="font-mono text-xs leading-[18px] {client.regon ? '' : 'text-ink-3'}">{client.regon ?? '—'}</dd>
+						{/if}
+						<dt class="text-ink-3">Źródło</dt><dd>{client.beauty_id != null ? 'import BEAUTY' : 'dodany w CRM'}{client.created_at ? ` · ${fmtDzien(client.created_at.slice(0, 10), true)}` : ''}</dd>
+						{#if showGwarancje}
+							<dt class="text-ink-3">Gwarancje</dt><dd>tak — {odmiana(clientGwarancje.length, 'umowa', 'umowy', 'umów')}</dd>
+						{/if}
+						<dt class="text-ink-3">Panel klienta</dt>
+						<dd>
+							{#if hasPortal}
+								<button onclick={openPortal} class="font-semibold text-ok hover:underline">aktywny</button>
+							{:else}
+								<span class="text-ink-3">brak dostępu ·</span> <button onclick={openPortal} class="font-semibold text-accent-text hover:underline">nadaj</button>
+							{/if}
+						</dd>
+					</dl>
+				</section>
+			</aside>
+		</div>
+
+	{:else if activeTab === 'polisy'}
 		{@const today = new Date().toISOString().slice(0,10)}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
+			<table class="w-full min-w-[720px] text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-						<SortTh s={sortAktywne} k="nr">Nr Polisy</SortTh>
-						<SortTh s={sortAktywne} k="tu">TU</SortTh>
-						<SortTh s={sortAktywne} k="rodzaj">Rodzaj</SortTh>
-						<SortTh s={sortAktywne} k="od">OD</SortTh>
-						<SortTh s={sortAktywne} k="do">DO</SortTh>
-						<SortTh s={sortAktywne} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
-						<SortTh s={sortAktywne} k="status">Status</SortTh>
+					<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
+						<SortTh wersaliki={false} s={sortAktywne} k="nr" class="px-4 py-2.5">Nr polisy</SortTh>
+						<SortTh wersaliki={false} s={sortAktywne} k="tu" class="px-4 py-2.5">TU</SortTh>
+						<SortTh wersaliki={false} s={sortAktywne} k="rodzaj" class="px-4 py-2.5">Rodzaj</SortTh>
+						<SortTh wersaliki={false} s={sortAktywne} k="od" class="px-4 py-2.5">Od</SortTh>
+						<SortTh wersaliki={false} s={sortAktywne} k="do" class="px-4 py-2.5">Do</SortTh>
+						<SortTh wersaliki={false} s={sortAktywne} k="skladka" class="px-4 py-2.5 text-right" align="right">Składka</SortTh>
+						<SortTh wersaliki={false} s={sortAktywne} k="status" class="px-4 py-2.5">Status</SortTh>
 					</tr>
 				</thead>
 				<tbody>
 					{#each aktywneWiersze as p}
-						{@const st = policyStatus(p.data_do)}
+						{@const st = statusPolisy(p)}
 						{@const daysLeft = p.data_do ? dateDiffDays(today, p.data_do) : 999}
 						{@const isRenewed = renewedPolicyIds.has(p.id)}
-						{@const isPendingRenewal = !!p.renewal_of && p.data_od > today}
 						{@const canRenew = !isRenewed && daysLeft >= 0 && daysLeft <= 45}
-						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3">
+						<tr class="border-t border-line-soft hover:bg-bg text-[13px]">
+							<td class="px-4 py-2.5">
 								<div class="flex items-center gap-1.5 flex-wrap">
-									<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
+									<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{p.nr_polisy}</a>
 									{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
-										<span class="text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
-									{/if}
-									{#if isRenewed}
-										<span class="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
-									{:else if isPendingRenewal}
-										<span class="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5">Oczekująca</span>
+										<span class="text-xs font-semibold text-violet-700 bg-violet-50 rounded-full px-2 leading-5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">jako ubezpieczony</span>
 									{/if}
 								</div>
 							</td>
-							<td class="px-5 py-3">
-								{#if p.crm_insurers?.skrot}
-									<span class="font-mono font-semibold text-blue-700 text-xs" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
-								{:else}
-									{p.crm_insurers?.nazwa ?? '—'}
-								{/if}
-							</td>
-							<td class="px-5 py-3"><Badge variant="neutral">{p.rodzaj}</Badge></td>
-							<td class="px-5 py-3 text-xs">{p.data_od}</td>
-							<td class="px-5 py-3 text-xs">{p.data_do}</td>
-							<td class="px-5 py-3 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
-							<td class="px-5 py-3">
+							<td class="px-4 py-2.5 whitespace-nowrap" title={p.crm_insurers?.nazwa ?? undefined}>{nazwaTu(p)}</td>
+							<td class="px-4 py-2.5">{nazwaRodzaju(p.rodzaj)}</td>
+							<td class="px-4 py-2.5 whitespace-nowrap tabular-nums">{fmtDzien(p.data_od, true)}</td>
+							<td class="px-4 py-2.5 whitespace-nowrap tabular-nums">{p.data_do ? fmtDzien(p.data_do, true) : 'bezterminowo'}</td>
+							<td class="px-4 py-2.5 text-right tabular-nums whitespace-nowrap font-medium">{fmtPln(p.skladka_przypisana)} zł</td>
+							<td class="px-4 py-2.5">
 								<div class="flex flex-col gap-1 items-start">
-									<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+									<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {st.cls}">{st.tekst}</span>
 									{#if canRenew}
 										<!-- Certyfikat OC beauty: karta polisy z otwartym menu odnowienia (wniosek dla klienta);
 										     pozostałe polisy — formularz z przeniesionymi danymi. -->
 										<a href={wProgramieOcBeauty(p, appState.policies)
 												? `/policies/${p.id}?odnow=1`
 												: `/policies/new?klient=${p.klient_id}&rodzaj=${encodeURIComponent(p.rodzaj)}&przedmiot=${encodeURIComponent(p.przedmiot ?? '')}&renewal_of=${p.id}${p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}`}
-										   class="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors">
-											<RefreshCw size={10} /> Odnów polisę
+										   class="inline-flex items-center gap-1 text-xs font-semibold text-accent-text hover:underline">
+											<RefreshCw size={12} /> Odnów polisę
 										</a>
 									{/if}
 								</div>
 							</td>
 						</tr>
 					{:else}
-						<tr><td colspan="7" class="px-5 py-6 text-center text-slate-400">Brak polis</td></tr>
+						<tr><td colspan="7" class="px-4 py-8 text-center text-ink-3">Brak aktywnych polis</td></tr>
 					{/each}
 				</tbody>
 			</table>
@@ -991,52 +1316,42 @@
 		{#if archivedPolicies.length > 0}
 		<div class="mt-4">
 			<details class="group">
-				<summary class="cursor-pointer text-sm font-semibold text-slate-500 flex items-center gap-2 py-2">
+				<summary class="cursor-pointer text-sm font-semibold text-ink-2 flex items-center gap-2 py-2">
 					<span class="group-open:rotate-90 transition-transform">▶</span>
 					Archiwum polis ({archivedPolicies.length})
 				</summary>
-				<div class="mt-2 bg-white border border-line rounded-xl shadow-sm overflow-hidden opacity-70">
-					<table class="w-full text-left text-sm">
+				<div class="mt-2 bg-white border border-line rounded-xl overflow-x-auto">
+					<table class="w-full min-w-[720px] text-left text-sm">
 						<thead>
-							<tr class="bg-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-								<SortTh s={sortArchiwum} k="nr">Nr Polisy</SortTh>
-								<SortTh s={sortArchiwum} k="tu">TU</SortTh>
-								<SortTh s={sortArchiwum} k="rodzaj">Rodzaj</SortTh>
-								<SortTh s={sortArchiwum} k="od">OD</SortTh>
-								<SortTh s={sortArchiwum} k="do">DO</SortTh>
-								<SortTh s={sortArchiwum} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
-								<SortTh s={sortArchiwum} k="status">Status</SortTh>
+							<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
+								<SortTh wersaliki={false} s={sortArchiwum} k="nr" class="px-4 py-2.5">Nr polisy</SortTh>
+								<SortTh wersaliki={false} s={sortArchiwum} k="tu" class="px-4 py-2.5">TU</SortTh>
+								<SortTh wersaliki={false} s={sortArchiwum} k="rodzaj" class="px-4 py-2.5">Rodzaj</SortTh>
+								<SortTh wersaliki={false} s={sortArchiwum} k="od" class="px-4 py-2.5">Od</SortTh>
+								<SortTh wersaliki={false} s={sortArchiwum} k="do" class="px-4 py-2.5">Do</SortTh>
+								<SortTh wersaliki={false} s={sortArchiwum} k="skladka" class="px-4 py-2.5 text-right" align="right">Składka</SortTh>
+								<SortTh wersaliki={false} s={sortArchiwum} k="status" class="px-4 py-2.5">Status</SortTh>
 							</tr>
 						</thead>
 						<tbody>
 							{#each archiwumWiersze as p}
-								{@const st = policyStatus(p.data_do)}
-								{@const isRenewed = renewedPolicyIds.has(p.id)}
-								<tr class="border-t border-line-soft hover:bg-slate-50">
-									<td class="px-5 py-3">
-										<div class="flex items-center gap-1.5">
-											<a href="/policies/{p.id}" class="font-medium text-slate-500 hover:underline">{p.nr_polisy}</a>
+								{@const st = statusPolisy(p)}
+								<tr class="border-t border-line-soft hover:bg-bg text-[13px] text-ink-2">
+									<td class="px-4 py-2.5">
+										<div class="flex items-center gap-1.5 flex-wrap">
+											<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-ink-2 hover:text-accent-text hover:underline">{p.nr_polisy}</a>
 											{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
-												<span class="text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
-											{/if}
-											{#if isRenewed}
-												<span class="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
+												<span class="text-xs font-semibold text-violet-700 bg-violet-50 rounded-full px-2 leading-5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">jako ubezpieczony</span>
 											{/if}
 										</div>
 									</td>
-									<td class="px-5 py-3 text-slate-400">
-										{#if p.crm_insurers?.skrot}
-											<span class="font-mono font-semibold text-slate-400 text-xs" title={p.crm_insurers.nazwa}>{p.crm_insurers.skrot}</span>
-										{:else}
-											{p.crm_insurers?.nazwa ?? '—'}
-										{/if}
-									</td>
-									<td class="px-5 py-3"><Badge variant="neutral">{p.rodzaj}</Badge></td>
-									<td class="px-5 py-3 text-xs text-slate-400">{p.data_od}</td>
-									<td class="px-5 py-3 text-xs text-slate-400">{p.data_do}</td>
-									<td class="px-5 py-3 text-right font-medium text-slate-400">{fmtPln(p.skladka_przypisana)}</td>
-									<td class="px-5 py-3">
-										<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+									<td class="px-4 py-2.5 whitespace-nowrap" title={p.crm_insurers?.nazwa ?? undefined}>{nazwaTu(p)}</td>
+									<td class="px-4 py-2.5">{nazwaRodzaju(p.rodzaj)}</td>
+									<td class="px-4 py-2.5 whitespace-nowrap tabular-nums">{fmtDzien(p.data_od, true)}</td>
+									<td class="px-4 py-2.5 whitespace-nowrap tabular-nums">{fmtDzien(p.data_do, true)}</td>
+									<td class="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmtPln(p.skladka_przypisana)} zł</td>
+									<td class="px-4 py-2.5">
+										<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {st.cls}">{st.tekst}</span>
 									</td>
 								</tr>
 							{/each}
@@ -1053,10 +1368,10 @@
 				<Plus size={14} /> Dodaj pojazd
 			</button>
 		</div>
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
+			<table class="w-full min-w-[720px] text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
 						<th class="px-5 py-3">Nr Rejestracyjny</th>
 						<th class="px-5 py-3">Marka / Model</th>
 						<th class="px-5 py-3">VIN</th>
@@ -1132,16 +1447,16 @@
 			</div>
 		</div>
 		{/if}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
+			<table class="w-full min-w-[720px] text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-						<SortTh s={sortGwarancje} k="nr">Nr / Umowa</SortTh>
-						<SortTh s={sortGwarancje} k="typ">Typ</SortTh>
-						<SortTh s={sortGwarancje} k="beneficjent">Beneficjent / Kontrakt</SortTh>
-						<SortTh s={sortGwarancje} k="od">OD</SortTh>
-						<SortTh s={sortGwarancje} k="do">DO</SortTh>
-						<SortTh s={sortGwarancje} k="limit" class="px-5 py-3 text-right" align="right">Limit / Suma</SortTh>
+					<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
+						<SortTh wersaliki={false} s={sortGwarancje} k="nr">Nr / Umowa</SortTh>
+						<SortTh wersaliki={false} s={sortGwarancje} k="typ">Typ</SortTh>
+						<SortTh wersaliki={false} s={sortGwarancje} k="beneficjent">Beneficjent / Kontrakt</SortTh>
+						<SortTh wersaliki={false} s={sortGwarancje} k="od">OD</SortTh>
+						<SortTh wersaliki={false} s={sortGwarancje} k="do">DO</SortTh>
+						<SortTh wersaliki={false} s={sortGwarancje} k="limit" class="px-5 py-3 text-right" align="right">Limit / Suma</SortTh>
 					</tr>
 				</thead>
 				<tbody>
@@ -1162,10 +1477,10 @@
 		</div>
 
 	{:else if activeTab === 'szkody'}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
+			<table class="w-full min-w-[720px] text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
 						<th class="px-5 py-3">Nr Szkody</th>
 						<th class="px-5 py-3">Data</th>
 						<th class="px-5 py-3">Z polisy</th>
@@ -1214,10 +1529,10 @@
 				<UserPlus size={14} /> Dodaj osobę kontaktową
 			</button>
 		</div>
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-			<table class="w-full text-left text-sm">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
+			<table class="w-full min-w-[720px] text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
 						<th class="px-5 py-3">Imię i Nazwisko</th>
 						<th class="px-5 py-3">Stanowisko</th>
 						<th class="px-5 py-3">Telefon</th>
@@ -1249,20 +1564,69 @@
 		</div>
 
 	{:else if activeTab === 'saldo'}
-		<div class="grid grid-cols-3 gap-4">
-			<div class="bg-white border border-line rounded-xl p-5 shadow-sm">
-				<p class="text-sm font-medium text-slate-500 mb-2">Składka Przypisana</p>
-				<p class="text-2xl font-semibold text-slate-900">{fmtPln(totalPrzyp)}</p>
+		{@const zaleglosc = totalPrzyp - totalOpl}
+		<section aria-label="Saldo składek" class="grid grid-cols-1 sm:grid-cols-3 bg-white border border-line rounded-xl overflow-hidden mb-4">
+			<div class="px-4 py-3.5 border-b sm:border-b-0 sm:border-r border-line-soft">
+				<p class="text-xs text-ink-3">Składka przypisana</p>
+				<p class="text-xl font-semibold tabular-nums text-ink">{fmtPln(totalPrzyp)} zł</p>
+				<p class="text-xs text-ink-2">polisy, w których klient jest ubezpieczającym</p>
 			</div>
-			<div class="bg-white border border-line rounded-xl p-5 shadow-sm">
-				<p class="text-sm font-medium text-slate-500 mb-2">Składka Zainkasowana</p>
-				<p class="text-2xl font-semibold text-emerald-600">{fmtPln(totalOpl)}</p>
+			<div class="px-4 py-3.5 border-b sm:border-b-0 sm:border-r border-line-soft">
+				<p class="text-xs text-ink-3">Składka zainkasowana</p>
+				<p class="text-xl font-semibold tabular-nums text-ok">{fmtPln(totalOpl)} zł</p>
 			</div>
-			<div class="bg-{totalPrzyp - totalOpl > 0 ? 'red-50 border-red-200' : 'white border-line'} border rounded-xl p-5 shadow-sm">
-				<p class="text-sm font-medium text-{totalPrzyp - totalOpl > 0 ? 'red-500' : 'slate-500'} mb-2">Zaległości</p>
-				<p class="text-2xl font-semibold text-{totalPrzyp - totalOpl > 0 ? 'red-600' : 'slate-900'}">{fmtPln(totalPrzyp - totalOpl)}</p>
+			<div class="px-4 py-3.5">
+				<p class="text-xs text-ink-3">Różnica</p>
+				<p class="text-xl font-semibold tabular-nums {zaleglosc > 0 ? 'text-danger' : 'text-ink'}">{fmtPln(zaleglosc)} zł</p>
+				<p class="text-xs text-ink-2">przypisana minus zainkasowana</p>
 			</div>
-		</div>
+		</section>
+
+		<section aria-labelledby="raty-klienta" class="bg-white border border-line rounded-xl overflow-hidden">
+			<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-3 border-b border-line-soft">
+				<h2 id="raty-klienta" class="text-[15px] font-semibold text-ink">Raty do zapłaty</h2>
+				<span class="text-[13px] text-ink-2 tabular-nums">{odmiana(ratyNieoplacone.length, 'rata', 'raty', 'rat')} · {fmtPln(doZaplaty)} zł</span>
+				<a href="/payments" class="ml-auto text-[13px] font-semibold text-accent-text hover:underline">Płatności →</a>
+			</div>
+			{#if ratyNieoplacone.length === 0}
+				<p class="px-4 py-8 text-center text-sm text-ink-3">Wszystkie raty klienta są rozliczone.</p>
+			{:else}
+				<div class="overflow-x-auto">
+					<table class="w-full min-w-[640px] text-[13px] text-left">
+						<thead>
+							<tr class="bg-surface-2 text-ink-2">
+								<th class="px-4 py-2.5 font-semibold">Termin</th>
+								<th class="px-4 py-2.5 font-semibold">Polisa</th>
+								<th class="px-4 py-2.5 font-semibold">Rata</th>
+								<th class="px-4 py-2.5 font-semibold text-right">Kwota</th>
+								<th class="px-4 py-2.5 font-semibold">Status</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each ratyNieoplacone as r (r.id)}
+								{@const po = poTerminie(r, dzis, ugBez)}
+								{@const pol = polisaPoId.get(r.polisa_id)}
+								<tr class="border-t border-line-soft">
+									<td class="px-4 py-2 whitespace-nowrap">
+										<span class="block">{fmtDzien(r.data_platnosci)}</span>
+										<span class="block text-xs {po ? 'text-danger font-semibold' : 'text-ink-2'}">{fmtTermin(r.data_platnosci, dzis)}</span>
+									</td>
+									<td class="px-4 py-2">
+										<a href="/policies/{r.polisa_id}" class="font-mono text-xs text-accent-text hover:underline">{pol?.nr_polisy ?? '—'}</a>
+										{#if pol}<span class="block text-xs text-ink-3">{nazwaRodzaju(pol.rodzaj)} · {nazwaTu(pol)}</span>{/if}
+									</td>
+									<td class="px-4 py-2 tabular-nums whitespace-nowrap">{opisRaty(r)}</td>
+									<td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtPln(r.kwota)} zł</td>
+									<td class="px-4 py-2">
+										<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {po ? 'bg-danger-soft text-danger' : 'bg-surface-2 text-ink-2'}">{po ? 'Po terminie' : 'Oczekująca'}</span>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+		</section>
 
 	{:else if activeTab === 'apk'}
 		<div class="flex items-center justify-between mb-4">
@@ -1283,8 +1647,8 @@
 				Brak formularzy APK dla tego klienta
 			</div>
 		{:else}
-			<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-				<table class="w-full text-sm text-left">
+			<div class="bg-white border border-line rounded-xl overflow-x-auto">
+				<table class="w-full min-w-[720px] text-sm text-left">
 					<thead class="bg-slate-50 border-b border-line">
 						<tr>
 							<th class="px-5 py-3 font-semibold text-slate-600">Ref</th>
@@ -1370,8 +1734,8 @@
 				{#if plikBlad}
 					<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{plikBlad}</div>
 				{/if}
-				<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-					<table class="w-full text-sm text-left">
+				<div class="bg-white border border-line rounded-xl overflow-x-auto">
+					<table class="w-full min-w-[720px] text-sm text-left">
 						<thead class="bg-slate-50 border-b border-line">
 							<tr>
 								<th class="px-5 py-3 font-semibold text-slate-600">Data</th>
@@ -1437,7 +1801,7 @@
 			<div class="space-y-4" data-testid="client-renewal-files">
 				{#each wnioski as w (w.id)}
 					{@const lista = plikiWniosku(w)}
-					<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden" data-testid="renewal-files-group">
+					<div class="bg-white border border-line rounded-xl overflow-x-auto" data-testid="renewal-files-group">
 						<div class="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-line-soft bg-slate-50">
 							<a href="/policies/{w.polisa_id}" class="text-sm font-semibold text-blue-700 hover:underline">{nrCertyfikatu(w)}</a>
 							<CrmRenewalBadge status={w.status} decyzja={w.decyzja} />
@@ -1471,7 +1835,7 @@
 			</div>
 		{/if}
 	{:else if activeTab === 'dziennik'}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden" data-testid="client-renewal-log">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto" data-testid="client-renewal-log">
 			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
 				<div class="flex items-center gap-2">
 					<History size={16} class="text-slate-400" />
@@ -1494,7 +1858,7 @@
 			{:else}
 				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+						<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
 							<th class="px-4 py-2">Kiedy</th>
 							<th class="px-4 py-2">Certyfikat</th>
 							<th class="px-4 py-2">Zdarzenie</th>
@@ -1533,7 +1897,7 @@
 				<Plus size={14} /> Nowe zadanie
 			</button>
 		</div>
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
 			{#if clientTasks.length === 0}
 				<div class="px-5 py-10 text-center text-slate-400 text-sm">Brak zadań dla tego klienta</div>
 			{:else}
@@ -1585,7 +1949,7 @@
 		</div>
 
 	{:else if activeTab === 'emaile'}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
 			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
 				<div class="flex items-center gap-2">
 					<Mail size={16} class="text-slate-400" />
@@ -1606,11 +1970,11 @@
 			{:else}
 				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-							<SortTh s={sortEmaile} k="data" class="px-4 py-2">Wysłano</SortTh>
-							<SortTh s={sortEmaile} k="rodzaj" class="px-4 py-2">Rodzaj</SortTh>
-							<SortTh s={sortEmaile} k="temat" class="px-4 py-2">Temat</SortTh>
-							<SortTh s={sortEmaile} k="adres" class="px-4 py-2">Do</SortTh>
+						<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
+							<SortTh wersaliki={false} s={sortEmaile} k="data" class="px-4 py-2">Wysłano</SortTh>
+							<SortTh wersaliki={false} s={sortEmaile} k="rodzaj" class="px-4 py-2">Rodzaj</SortTh>
+							<SortTh wersaliki={false} s={sortEmaile} k="temat" class="px-4 py-2">Temat</SortTh>
+							<SortTh wersaliki={false} s={sortEmaile} k="adres" class="px-4 py-2">Do</SortTh>
 							<th class="px-4 py-2">Polisy</th>
 						</tr>
 					</thead>
@@ -1640,7 +2004,7 @@
 			{/if}
 		</div>
 	{:else if activeTab === 'mailing'}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+		<div class="bg-white border border-line rounded-xl overflow-x-auto">
 			<div class="flex items-center justify-between px-5 py-3 border-b border-line-soft">
 				<div class="flex items-center gap-2">
 					<Mail size={16} class="text-slate-400" />
@@ -1673,7 +2037,7 @@
 					{:else}
 						<table class="w-full text-left text-sm">
 							<thead>
-								<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+								<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
 									<th class="px-4 py-2">Temat</th>
 									<th class="px-4 py-2">Wysłano</th>
 									<th class="px-4 py-2">Otwarcie</th>
@@ -1782,7 +2146,7 @@
 			</div>
 		</div>
 		<table class="w-full text-sm">
-			<thead><tr class="text-xs text-slate-500 uppercase"><SortTh s={sortSkladki} k="nr" class="py-2 text-left">Polisa</SortTh><SortTh s={sortSkladki} k="skladka" class="py-2 text-right" align="right">Składka</SortTh></tr></thead>
+			<thead><tr class="text-[13px] font-semibold text-ink-2"><SortTh wersaliki={false} s={sortSkladki} k="nr" class="py-2 text-left">Polisa</SortTh><SortTh wersaliki={false} s={sortSkladki} k="skladka" class="py-2 text-right" align="right">Składka</SortTh></tr></thead>
 			<tbody>
 				{#each skladkiWiersze as p}
 					<tr class="border-t border-line-soft">
@@ -1792,63 +2156,6 @@
 				{/each}
 			</tbody>
 		</table>
-	</div>
-</Modal>
-
-<Modal title="Polisy klienta ({clientPolicies.length})" open={dashModal === 'polisy'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
-	<div class="space-y-2">
-		{#each clientPolicies as p}
-			{@const st = policyStatus(p.data_do)}
-			<div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-				<div>
-					<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
-					<p class="text-xs text-slate-500">{p.rodzaj} · {p.data_od} – {p.data_do}</p>
-				</div>
-				<div class="text-right">
-					<p class="font-medium text-sm">{fmtPln(p.skladka_przypisana)}</p>
-					<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
-				</div>
-			</div>
-		{/each}
-	</div>
-</Modal>
-
-<Modal title="Flota klienta ({clientVehicles.length} poj.)" open={dashModal === 'pojazdy'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
-	<div class="space-y-2">
-		{#each clientVehicles as v}
-			{@const assigned = assignedPolicyFor(v.id, appState.policies)}
-			<div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-				<div>
-					<p class="font-medium">{v.nr_rejestracyjny}</p>
-					<p class="text-xs text-slate-500">{v.marka_model}{v.rok_produkcji ? ` · ${v.rok_produkcji}` : ''}</p>
-				</div>
-				<div class="text-right">
-					{#if v.vin}<p class="text-xs text-slate-400 font-mono">{v.vin}</p>{/if}
-					{#if assigned}
-						<p class="text-xs text-emerald-700">Przypisany: {assigned.nr_polisy}</p>
-					{:else}
-						<p class="text-xs text-slate-400">Wolny</p>
-					{/if}
-				</div>
-			</div>
-		{/each}
-	</div>
-</Modal>
-
-<Modal title="Rejestr szkód ({clientClaims.length})" open={dashModal === 'szkody'} onclose={() => dashModal = null}>
-	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
-	<div class="space-y-2">
-		{#each clientClaims as cl}
-			<div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-				<div>
-					<p class="font-medium">{cl.nr_szkody ?? 'Zgłoszenie'}</p>
-					<p class="text-xs text-slate-500">{cl.data_szkody} · {cl.opis_szkody ?? '—'}</p>
-				</div>
-				<Badge variant={cl.status === 'Wypłacona' || cl.status === 'Zakończona' ? 'success' : cl.status === 'Odmowa' ? 'error' : 'warning'}>{cl.status}</Badge>
-			</div>
-		{/each}
 	</div>
 </Modal>
 

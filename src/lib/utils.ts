@@ -85,6 +85,20 @@ export function fmtDzien(iso: string | null | undefined, zRokiem?: boolean): str
 	return `${Number(d)} ${MIESIACE_KROTKO[Number(m) - 1]}${rok ? ` ${r}` : ''}`;
 }
 
+/** Miasto z adresu zapisanego jednym polem („ul. Długa 5, 99-300 Kutno” → „Kutno”); bez kodu pocztowego — null. */
+export function miastoZAdresu(adres: string | null | undefined): string | null {
+	const m = adres?.match(/\b\d{2}-\d{3}\s+([^,]+)/);
+	return m ? m[1].trim() : null;
+}
+
+/** Inicjały do kółka/awatara: „Anna Nowak” → „AN”, „jan.kowalski@firma.pl” → „JK”; brak → „—”. */
+export function inicjaly(nazwa: string | null | undefined): string {
+	if (!nazwa) return '—';
+	const cz = nazwa.replace(/@.*/, '').split(/[\s.\-_]+/).filter((s) => /\p{L}|\d/u.test(s));
+	const pierwsza = (s: string | undefined) => s?.match(/\p{L}|\d/u)?.[0] ?? '';
+	return (pierwsza(cz[0]) + (cz.length > 1 ? pierwsza(cz[cz.length - 1]) : '')).toUpperCase() || '—';
+}
+
 /** Termin względem dziś: „dziś”, „jutro”, „za 5 dni”, „1 dzień po terminie”, „12 dni po terminie”. */
 export function fmtTermin(iso: string, today = todayStr()): string {
 	const n = dateDiffDays(today, iso);
