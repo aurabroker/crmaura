@@ -297,7 +297,7 @@
 	const modalTitle = $derived(modalTyp === 'firma' ? 'Nowa Firma' : 'Nowa Osoba');
 </script>
 
-<svelte:head><title>Klienci — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Klienci — AuraCRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
@@ -306,9 +306,9 @@
 	</div>
 	<div class="flex gap-2">
 		<button onclick={() => showDuplicates = true} class="flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-300 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-100 transition-colors">
-			Sprawdź duplikaty {#if visibleDuplicateGroups.length > 0}<span class="bg-amber-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-[11px]">{visibleDuplicateGroups.length}</span>{/if}
+			Sprawdź duplikaty {#if visibleDuplicateGroups.length > 0}<span class="bg-amber-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs">{visibleDuplicateGroups.length}</span>{/if}
 		</button>
-		<button onclick={() => openNew('firma')} class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+		<button onclick={() => openNew('firma')} class="flex items-center gap-1.5 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 			<Building2 size={15} /> Dodaj Firmę
 		</button>
 		<button onclick={() => openNew('osoba')} class="flex items-center gap-1.5 bg-white text-slate-700 border border-line px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-50 transition-colors">
@@ -352,7 +352,7 @@
 	{:else}
 	<table class="w-full text-left text-sm">
 		<thead>
-			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+			<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 				<th class="px-5 py-3">Nazwa / Adres</th>
 				<th class="px-5 py-3">NIP / PESEL</th>
 				<th class="px-5 py-3">Kontakt</th>
@@ -416,7 +416,7 @@
 <Modal title={modalTitle} open={showModal} onclose={closeModal}>
 	{#snippet footer()}
 		<button onclick={closeModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : (modalTyp === 'firma' ? 'Zapisz Firmę' : 'Zapisz Osobę')}
 		</button>
 	{/snippet}
@@ -500,7 +500,7 @@
 				<div class="bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center justify-between">
 					<span>{group.reason}</span>
 					<button onclick={() => dismissGroup(group)} disabled={dismissing === dedupeKey(group)}
-						class="text-[11px] font-medium text-amber-700 border border-amber-300 rounded px-2 py-0.5 hover:bg-amber-100 disabled:opacity-60 normal-case">
+						class="text-xs font-medium text-amber-700 border border-amber-300 rounded px-2 py-0.5 hover:bg-amber-100 disabled:opacity-60 normal-case">
 						{dismissing === dedupeKey(group) ? 'Zapisywanie...' : 'To nie są duplikaty'}
 					</button>
 				</div>
@@ -518,7 +518,7 @@
 								<div class="text-sm font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa}</div>
 								{#if c.nazwa_skrocona}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
 								{#if pCount > 0 || aCount > 0}
-									<div class="text-[11px] text-emerald-600 mt-0.5">
+									<div class="text-xs text-emerald-600 mt-0.5">
 										{#if pCount > 0}{pCount} polis{pCount === 1 ? 'a' : ''}{/if}
 										{#if pCount > 0 && aCount > 0} · {/if}
 										{#if aCount > 0}{aCount} APK złożone{/if}
@@ -535,10 +535,10 @@
 						<div class="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{mergeError[group.reason]}</div>
 					{/if}
 					<button onclick={() => mergeGroup(group)} disabled={merging === group.reason}
-						class="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+						class="text-xs bg-accent text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 						{merging === group.reason ? 'Scalanie...' : 'Scal i usuń pozostałe'}
 					</button>
-					<span class="text-[11px] text-slate-400 ml-2">Wybierz rekord do zachowania, pozostałe zostaną scalone i usunięte.</span>
+					<span class="text-xs text-slate-400 ml-2">Wybierz rekord do zachowania, pozostałe zostaną scalone i usunięte.</span>
 				</div>
 			</div>
 			{/each}

@@ -72,7 +72,7 @@
 	}
 </script>
 
-<svelte:head><title>Raport KNF — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Raport KNF — AuraCRM</title></svelte:head>
 
 <h1 class="text-2xl font-semibold text-amber-600 mb-1">Oficjalny Raport KNF</h1>
 <p class="text-sm text-slate-500 mb-6">
@@ -113,7 +113,7 @@
 	</div>
 	<table class="w-full text-left text-sm">
 		<thead>
-			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+			<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 				<SortTh s={sort} k="nr">Nr Polisy</SortTh>
 				<SortTh s={sort} k="tu">TU</SortTh>
 				<SortTh s={sort} k="od">Data Od</SortTh>

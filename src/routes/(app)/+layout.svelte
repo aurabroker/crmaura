@@ -14,23 +14,14 @@
 	} from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { page } from '$app/stores';
 	import { sb } from '$lib/supabase';
-	import { appState, isAdmin, isFinance, isBroker } from '$lib/stores/app.svelte';
-	import {
-		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList,
-		Settings, Plus, LogOut, ShieldCheck, ChevronDown,
-		AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield, CalendarCheck, Upload, Car
-	} from 'lucide-svelte';
-
+	import { appState } from '$lib/stores/app.svelte';
 	import { logAudit } from '$lib/utils/audit';
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
+	import AppShell from '$lib/components/shell/AppShell.svelte';
 
 	let { children } = $props();
-	let addMenuOpen = $state(false);
-	let adminMenuOpen = $state(false);
-	let insuranceMenuOpen = $state(false);
 	let initialized = $state(false);
 	let refreshing = $state(false);
 	let loginLogged = false;
@@ -40,35 +31,6 @@
 		await loadData();
 		refreshing = false;
 	}
-
-	const navItems = $derived([
-		{ href: '/dashboard', label: 'Pulpit', icon: LayoutDashboard, always: true },
-		{ href: '/clients', label: 'Klienci', icon: Users, always: true },
-		{ href: '/ubezpieczenia', label: 'Ubezpieczenia', icon: FileText, always: true },
-		{ href: '/calendar', label: 'Kalendarz', icon: CalendarCheck, show: !!appState.tenantFeatures['kalendarz'] },
-		{ href: '/prospects', label: 'Prospects', icon: Target, always: true },
-		{ href: '/payments', label: 'Płatności', icon: Calculator, always: true },
-		{ href: '/commission', label: 'Prowizja', icon: Coins, always: true },
-		{ href: '/finance', label: 'Rozliczenia', icon: Calculator, show: isFinance(appState.profile), adminOnly: true },
-		{ href: '/knf-report', label: 'Raporty', icon: Scale, show: isAdmin(appState.profile) && isBroker(), adminOnly: true },
-		{ href: '/kosz', label: 'Kosz', icon: Trash2, show: ['ADMIN GOD','ADMIN BROKER'].includes(appState.profile?.rola ?? ''), adminOnly: true }
-	]);
-
-	const activeClaims = $derived(
-		appState.claims.filter((c) => c.status === 'W toku' || c.status === 'Zgłoszona').length
-	);
-
-	// Wnioski o dodanie pojazdu czekające na decyzję — widoczne tylko dla admina,
-	// bo tylko on je rozpatruje.
-	const pendingVehicleRequests = $derived(
-		isAdmin(appState.profile) ? appState.vehicleRequests.length : 0
-	);
-
-	const currentPath = $derived($page.url.pathname);
-
-	const insuranceActive = $derived(
-		['/policies', '/claims', '/bonds', '/apk', '/renewals', '/vehicles'].some(p => currentPath.startsWith(p))
-	);
 
 	async function loadData() {
 		const { data: { user } } = await sb.auth.getUser();
@@ -151,207 +113,16 @@
 		goto('/login');
 	}
 
-	$effect(() => {
-		if (addMenuOpen) {
-			const close = () => (addMenuOpen = false);
-			window.addEventListener('click', close, { once: true });
-		}
-	});
-
-	$effect(() => {
-		if (adminMenuOpen) {
-			const close = () => (adminMenuOpen = false);
-			window.addEventListener('click', close, { once: true });
-		}
-	});
-
-	$effect(() => {
-		if (insuranceMenuOpen) {
-			const close = () => (insuranceMenuOpen = false);
-			window.addEventListener('click', close, { once: true });
-		}
-	});
 </script>
 
 {#if !initialized}
-	<div class="min-h-screen flex items-center justify-center bg-slate-50">
-		<div class="text-slate-400 text-sm">Ładowanie...</div>
+	<div class="min-h-screen flex items-center justify-center bg-bg">
+		<div class="text-ink-3 text-sm">Ładowanie…</div>
 	</div>
 {:else}
-<div class="min-h-screen flex flex-col bg-slate-50" style="font-family: 'Inter', sans-serif">
-
-	<header class="h-16 bg-white border-b border-line flex items-center justify-between px-6 sticky top-0 z-40 shadow-sm">
-		<div class="flex items-center gap-6">
-			<a href="/dashboard" class="flex items-center gap-2 font-bold text-xl text-slate-900">
-				<ShieldCheck size={22} class="text-blue-500" />
-				FRANK67 CRM
-			</a>
-			<nav class="flex items-center gap-1">
-				{#each navItems as item}
-					{#if item.always || item.show}
-						{#if item.href === '/ubezpieczenia'}
-							<div class="relative">
-								<button
-									onclick={(e) => { e.stopPropagation(); insuranceMenuOpen = !insuranceMenuOpen; }}
-									class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
-										{insuranceActive ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}"
-								>
-									<FileText size={15} />
-									Ubezpieczenia
-									<ChevronDown size={12} />
-									{#if activeClaims > 0 && isBroker()}
-										<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-											{activeClaims > 9 ? '9+' : activeClaims}
-										</span>
-									{/if}
-								</button>
-								{#if insuranceMenuOpen}
-									<div class="absolute left-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-52 overflow-hidden z-50">
-										<a href="/policies" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath === '/policies' ? 'font-semibold text-blue-700' : ''}">
-											<FileText size={14} /> Polisy
-										</a>
-										<a href="/policies/import" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/policies/import') ? 'font-semibold text-blue-700' : ''}">
-											<Upload size={14} /> Import polis
-										</a>
-										{#if appState.tenantFeatures['gwarancje']}
-										<a href="/bonds" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/bonds') ? 'font-semibold text-blue-700' : ''}">
-											<Shield size={14} /> Gwarancje
-										</a>
-										{/if}
-										<a href="/policies?typ=generalna" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
-											<ClipboardList size={14} /> Umowy Generalne
-										</a>
-										<a href="/vehicles" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath === '/vehicles' ? 'font-semibold text-blue-700' : ''}">
-											<Car size={14} /> Pojazdy
-										</a>
-										<a href="/renewals" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/renewals') ? 'font-semibold text-blue-700' : ''}">
-											<RefreshCw size={14} /> Odnowienia
-										</a>
-										<a href="/apk" onclick={() => insuranceMenuOpen = false}
-											class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft {currentPath.startsWith('/apk') ? 'font-semibold text-blue-700' : ''}">
-											<ClipboardList size={14} /> APK
-										</a>
-										{#if isBroker()}
-										<a href="/claims" onclick={() => insuranceMenuOpen = false}
-											class="relative flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 {currentPath.startsWith('/claims') ? 'font-semibold text-blue-700' : ''}">
-											<AlertTriangle size={14} /> Szkody
-											{#if activeClaims > 0}
-												<span class="ml-auto bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5">{activeClaims}</span>
-											{/if}
-										</a>
-										{/if}
-									</div>
-								{/if}
-							</div>
-						{:else}
-							<a
-								href={item.href}
-								class="relative flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors
-									{item.adminOnly ? 'border ' : ''}
-									{item.adminOnly && currentPath.startsWith(item.href)
-										? 'bg-amber-600 text-white border-amber-600'
-										: item.adminOnly
-										? 'text-amber-700 border-amber-300 hover:bg-amber-50 hover:border-amber-400'
-										: currentPath.startsWith(item.href)
-										? 'bg-slate-900 text-white'
-										: 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'}"
-							>
-								<item.icon size={15} />
-								{item.label}
-							</a>
-						{/if}
-					{/if}
-				{/each}
-			</nav>
-		</div>
-
-		<div class="flex items-center gap-4">
-			<div class="relative">
-				<button
-					onclick={(e) => { e.stopPropagation(); addMenuOpen = !addMenuOpen; }}
-					class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors"
-				>
-					<Plus size={15} />
-					DODAJ
-					<ChevronDown size={14} />
-				</button>
-				{#if addMenuOpen}
-					<div class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl w-56 overflow-hidden z-50">
-						<a href="/policies/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
-							<FileText size={15} /> Nowa Polisa / UG
-						</a>
-						<a href="/policies/import" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
-							<Upload size={15} /> Import polisy z PDF
-						</a>
-						<a href="/clients?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
-							<Users size={15} /> Nowy Klient (RODO)
-						</a>
-						{#if isBroker()}
-						<a href="/claims?new=1" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
-							<AlertTriangle size={15} /> Zgłoś Szkodę
-						</a>
-						{/if}
-						<a href="/vehicles/new" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft">
-							<Plus size={15} /> Dodaj Pojazd
-						</a>
-						{#if appState.tenantFeatures['gwarancje']}
-						<a href="/bonds" class="flex items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50">
-							<Plus size={15} /> Dodaj Gwarancję
-						</a>
-						{/if}
-					</div>
-				{/if}
-			</div>
-
-			<div class="h-8 w-px bg-slate-200"></div>
-
-			{#if appState.profile?.rola === 'ADMIN GOD'}
-				<a href="/saas-admin" class="text-slate-400 hover:text-slate-700 transition-colors" title="SAAS Admin">
-					<ShieldCheck size={18} />
-				</a>
-			{/if}
-			<button onclick={refreshData} disabled={refreshing} class="text-slate-400 hover:text-slate-700 transition-colors disabled:opacity-40" title="Odśwież dane">
-				<RotateCcw size={16} class={refreshing ? 'animate-spin' : ''} />
-			</button>
-			<a
-				href={pendingVehicleRequests > 0 ? '/settings?tab=pojazdy' : '/settings'}
-				class="relative text-slate-400 hover:text-slate-700 transition-colors"
-				title={pendingVehicleRequests > 0
-					? `Ustawienia — ${pendingVehicleRequests} ${pendingVehicleRequests === 1 ? 'wniosek' : 'wnioski'} o pojazd do rozpatrzenia`
-					: 'Ustawienia'}
-			>
-				<Settings size={18} />
-				{#if pendingVehicleRequests > 0}
-					<span class="absolute -top-1.5 -right-1.5 bg-amber-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-						{pendingVehicleRequests > 9 ? '9+' : pendingVehicleRequests}
-					</span>
-				{/if}
-			</a>
-
-			<div class="h-8 w-px bg-slate-200"></div>
-
-			<div class="text-right leading-tight">
-				<div class="text-sm font-semibold text-slate-900">{appState.profile?.imie_nazwisko ?? appState.profile?.email}</div>
-				<div class="text-[11px] text-slate-400 uppercase">{appState.profile?.rola}</div>
-			</div>
-			<button onclick={logout} class="text-slate-400 hover:text-slate-700 transition-colors" title="Wyloguj">
-				<LogOut size={18} />
-			</button>
-		</div>
-	</header>
-
-	<main class="flex-1">
-		<div class="max-w-[1800px] mx-auto px-8 py-6">
-			{@render children()}
-		</div>
-	</main>
-</div>
+<AppShell {refreshing} onrefresh={refreshData} onlogout={logout}>
+	{@render children()}
+</AppShell>
 
 <ContextMenu />
 <ConfirmDialog />

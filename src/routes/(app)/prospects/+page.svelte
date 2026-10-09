@@ -401,7 +401,7 @@
 				<LayoutGrid size={15} /> Kanban
 			</button>
 		</div>
-		<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+		<button onclick={openNew} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 			+ Nowy Prospect
 		</button>
 	</div>
@@ -443,7 +443,7 @@
 	<div class="overflow-x-auto">
 		<table class="w-full text-left text-sm">
 			<thead>
-				<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide select-none">
+				<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide select-none">
 					{#snippet thSort(col: SortCol, label: string, cls?: string)}
 						<th class="px-4 py-3 {cls ?? ''}">
 							<button onclick={() => toggleSort(col)} class="flex items-center gap-1 hover:text-slate-800 transition-colors group">
@@ -488,7 +488,7 @@
 								class="block font-medium text-blue-700 hover:text-blue-900 hover:underline text-left leading-snug"
 							>{p.nazwa}</a>
 							<div class="flex items-center gap-2 mt-0.5 flex-wrap">
-								{#if p.nip}<span class="text-[11px] text-slate-400">NIP: {p.nip}</span>{/if}
+								{#if p.nip}<span class="text-xs text-slate-400">NIP: {p.nip}</span>{/if}
 							</div>
 						</td>
 						<td class="px-4 py-2.5 text-sm text-slate-700">
@@ -562,13 +562,13 @@
 									</button>
 								</div>
 							</div>
-							{#if p.nip}<div class="text-[11px] text-slate-400 mt-1">NIP: {p.nip}</div>{/if}
-							<div class="flex items-center gap-2 mt-1.5 flex-wrap text-[11px] text-slate-500">
+							{#if p.nip}<div class="text-xs text-slate-400 mt-1">NIP: {p.nip}</div>{/if}
+							<div class="flex items-center gap-2 mt-1.5 flex-wrap text-xs text-slate-500">
 								{#if p.branza}<span class="truncate max-w-[140px]">{p.branza}</span>{/if}
 								{#if zatrud != null}<span class="text-slate-400">· {zatrud} os.</span>{/if}
 							</div>
 							{#if p.telefon || p.email}
-								<div class="mt-1.5 space-y-0.5 text-[11px]">
+								<div class="mt-1.5 space-y-0.5 text-xs">
 									{#if p.telefon}<div class="text-slate-500 truncate">{p.telefon}</div>{/if}
 									{#if p.email}<div class="text-blue-600 truncate">{p.email}</div>{/if}
 								</div>
@@ -589,7 +589,7 @@
 <Modal title={editingProspect ? `Edytuj — ${editingProspect.nazwa}` : 'Nowy Prospect'} open={showModal} onclose={closeModal}>
 	{#snippet footer()}
 		<button onclick={closeModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : editingProspect ? 'Zapisz zmiany' : 'Zapisz Prospect'}
 		</button>
 	{/snippet}

@@ -218,7 +218,7 @@
 	const lbl = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>APK — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>APK — AuraCRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
@@ -226,7 +226,7 @@
 		<p class="text-sm text-slate-500 mt-1">Formularze APK zgodne z KNF art. 8 UDU</p>
 	</div>
 	<button onclick={() => showNew = true}
-		class="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700">
+		class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover">
 		<Plus size={15} /> Nowy APK
 	</button>
 </div>
@@ -342,10 +342,10 @@
 <Modal title="Nowy formularz APK" open={showNew} onclose={closeNew}>
 	{#snippet footer()}
 		{#if createdFormId}
-			<button onclick={closeNew} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Gotowe</button>
+			<button onclick={closeNew} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover">Gotowe</button>
 		{:else}
 			<button onclick={closeNew} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-			<button onclick={createApk} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			<button onclick={createApk} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 				{saving ? 'Tworzenie...' : (clientDeclined ? 'Zapisz odmowę' : 'Utwórz i wygeneruj link')}
 			</button>
 		{/if}
@@ -406,7 +406,7 @@
 					{/if}
 				</div>
 				{#if fKlient && !fKlientOpen}
-					<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedClientName}</p>
+					<p class="text-xs text-emerald-600 mt-1">✓ {selectedClientName}</p>
 				{/if}
 			</div>
 

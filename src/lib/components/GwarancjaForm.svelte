@@ -138,7 +138,7 @@
 		<div>
 			<label class={lbl}>Nr certyfikatu/gwarancji *</label>
 			<input bind:value={fpNr} class={inp} placeholder="np. G/2026/001" />
-			<p class="text-[11px] text-slate-400 mt-1">TU: {parentUg.crm_insurers?.skrot ?? parentUg.tu_id}</p>
+			<p class="text-xs text-slate-400 mt-1">TU: {parentUg.crm_insurers?.skrot ?? parentUg.tu_id}</p>
 		</div>
 		<div>
 			<label class={lbl}>Stawka (%)</label>
@@ -168,7 +168,7 @@
 			<label class={lbl}>Data do *</label>
 			<input type="date" bind:value={fpDo} min="2024-01-01" class={inp} />
 			{#if daysTotal() > 0}
-				<p class="text-[11px] text-slate-400 mt-1">Okres: {daysTotal()} dni</p>
+				<p class="text-xs text-slate-400 mt-1">Okres: {daysTotal()} dni</p>
 			{/if}
 		</div>
 	</div>

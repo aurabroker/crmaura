@@ -484,7 +484,7 @@
 					<div class="col-span-2"><label class={labelCls}>Notatki</label><textarea bind:value={fNotatki} rows="2" class={inputCls}></textarea></div>
 				</div>
 				<div class="flex gap-2 pt-1">
-					<button onclick={saveEdit} disabled={saving} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+					<button onclick={saveEdit} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 						{saving ? 'Zapisuję...' : 'Zapisz'}
 					</button>
 					<button onclick={() => editingProspect = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
@@ -562,7 +562,7 @@
 			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
 				<Shield size={15} class="text-indigo-500" /> Ubezpieczenia
 			</h2>
-			<button onclick={saveUbez} disabled={ubezSaving} class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">
+			<button onclick={saveUbez} disabled={ubezSaving} class="px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">
 				{ubezSaving ? 'Zapisywanie...' : ubezSaved ? 'Zapisano ✓' : 'Zapisz'}
 			</button>
 		</div>
@@ -600,7 +600,7 @@
 			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
 				<CheckCircle2 size={15} class="text-blue-500" /> Zadania
 				{#if tasks.filter(t => t.status !== 'zakonczone').length > 0}
-					<span class="bg-blue-100 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded-full">{tasks.filter(t => t.status !== 'zakonczone').length}</span>
+					<span class="bg-blue-100 text-blue-700 text-xs font-bold px-1.5 py-0.5 rounded-full">{tasks.filter(t => t.status !== 'zakonczone').length}</span>
 				{/if}
 			</h2>
 			{#if showTaskForm}
@@ -608,7 +608,7 @@
 					<X size={12} /> Zamknij
 				</button>
 			{:else}
-				<button onclick={openNewTask} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700">
+				<button onclick={openNewTask} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover">
 					<Plus size={12} /> Nowe zadanie
 				</button>
 			{/if}
@@ -623,11 +623,11 @@
 
 				<div class="grid grid-cols-2 gap-2">
 					<div>
-						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Termin</label>
+						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Termin</label>
 						<input type="date" bind:value={tfTermin} class={inputCls} />
 					</div>
 					<div>
-						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Priorytet</label>
+						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Priorytet</label>
 						<select bind:value={tfPriorytet} class={inputCls}>
 							<option value="niski">Niski</option>
 							<option value="normalny">Normalny</option>
@@ -636,7 +636,7 @@
 						</select>
 					</div>
 					<div>
-						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Status</label>
+						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</label>
 						<select bind:value={tfStatus} class={inputCls}>
 							<option value="otwarte">Otwarte</option>
 							<option value="w_toku">W toku</option>
@@ -645,14 +645,14 @@
 						</select>
 					</div>
 					<div>
-						<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Czas trwania (dni)</label>
+						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Czas trwania (dni)</label>
 						<input type="number" min="1" bind:value={tfCzasTrwania} placeholder="np. 7" class={inputCls} />
 					</div>
 				</div>
 
 				<!-- Typ zadania -->
 				<div>
-					<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Typ</label>
+					<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Typ</label>
 					<div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
 						{#each taskTypeOptions as opt}
 							<label class="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700">
@@ -665,7 +665,7 @@
 
 				<!-- Przypisz do (max 3) -->
 				<div>
-					<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						Przypisz do <span class="normal-case font-normal text-slate-400">(max 3 — wybrano {tfAssignees.length})</span>
 					</label>
 					<div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
@@ -682,12 +682,12 @@
 
 				<!-- Postęp -->
 				<div>
-					<label class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Postęp: {tfPostep}%</label>
+					<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Postęp: {tfPostep}%</label>
 					<input type="range" min="0" max="100" step="5" bind:value={tfPostep} class="w-full accent-blue-600" />
 				</div>
 
 				<div class="flex items-center gap-2 pt-1">
-					<button onclick={saveTaskInline} disabled={tfSaving} class="px-3 py-1.5 text-xs font-semibold bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">
+					<button onclick={saveTaskInline} disabled={tfSaving} class="px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">
 						{tfSaving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
 					</button>
 					<button onclick={cancelTaskForm} class="px-3 py-1.5 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
@@ -719,18 +719,18 @@
 							{#if t.typy && t.typy.length > 0}
 								<div class="flex flex-wrap items-center gap-1 mt-0.5">
 									{#each t.typy as ty}
-										<span class="text-[10px] bg-indigo-50 text-indigo-600 border border-indigo-100 px-1.5 py-0.5 rounded">{taskTypeLabels[ty] ?? ty}</span>
+										<span class="text-xs bg-indigo-50 text-indigo-600 border border-indigo-100 px-1.5 py-0.5 rounded">{taskTypeLabels[ty] ?? ty}</span>
 									{/each}
 								</div>
 							{/if}
 							{#if t.assigned_profile || (t.extra_assignees && t.extra_assignees.length > 0)}
 								<div class="flex flex-wrap items-center gap-1 mt-0.5">
 									{#if t.assigned_profile}
-										<span class="text-[10px] bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{t.assigned_profile.imie_nazwisko ?? t.assigned_profile.email}</span>
+										<span class="text-xs bg-blue-50 text-blue-600 border border-blue-100 px-1.5 py-0.5 rounded">{t.assigned_profile.imie_nazwisko ?? t.assigned_profile.email}</span>
 									{/if}
 									{#each (t.extra_assignees ?? []) as uid}
 										{@const p = appState.brokers.find(b => b.id === uid)}
-										{#if p}<span class="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{p.imie_nazwisko ?? p.email}</span>{/if}
+										{#if p}<span class="text-xs bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">{p.imie_nazwisko ?? p.email}</span>{/if}
 									{/each}
 								</div>
 							{/if}
@@ -740,7 +740,7 @@
 									<div class="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
 										<div class="h-full rounded-full bg-blue-500" style="width:{pct}%"></div>
 									</div>
-									<span class="text-[10px] text-slate-400">{pct}%</span>
+									<span class="text-xs text-slate-400">{pct}%</span>
 								</div>
 							{/if}
 						</div>
@@ -788,8 +788,8 @@
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 mb-1 flex-wrap">
 							<span class="text-xs font-semibold text-slate-700">{act.crm_profiles?.imie_nazwisko ?? 'Użytkownik'}</span>
-							<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border {typColors[act.typ]}">{typLabels[act.typ]}</span>
-							<span class="text-[11px] text-slate-400">{formatDate(act.created_at)}</span>
+							<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold border {typColors[act.typ]}">{typLabels[act.typ]}</span>
+							<span class="text-xs text-slate-400">{formatDate(act.created_at)}</span>
 						</div>
 						<p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{act.tresc}</p>
 					</div>
@@ -814,7 +814,7 @@
 				<button
 					onclick={addActivity}
 					disabled={sending || !newText.trim()}
-					class="inline-flex items-center gap-2 px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-40 transition-colors"
+					class="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-40 transition-colors"
 				>
 					<Send size={13} /> Dodaj {typLabels[activeTab]}
 				</button>

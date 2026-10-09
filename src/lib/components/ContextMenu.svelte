@@ -93,7 +93,7 @@
 			{placed ? 'opacity-100' : 'opacity-0'}"
 	>
 		{#if ctxMenuState.title}
-			<div class="px-3 py-2 text-[11px] font-bold uppercase tracking-wide text-white text-center truncate border-b border-white/10">
+			<div class="px-3 py-2 text-xs font-bold uppercase tracking-wide text-white text-center truncate border-b border-white/10">
 				{ctxMenuState.title}
 			</div>
 		{/if}
@@ -119,7 +119,7 @@
 					{/if}
 					<span class="flex-1 truncate">{item.label}</span>
 					{#if item.hint}
-						<span class="text-[10px] text-blue-300/60 shrink-0">{item.hint}</span>
+						<span class="text-xs text-blue-300/60 shrink-0">{item.hint}</span>
 					{/if}
 				</button>
 			{/if}

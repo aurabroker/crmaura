@@ -63,7 +63,7 @@
 	const TYPY = ['osobowy','ciężarowy','ciągnik siodłowy','przyczepka','naczepa','autobus'];
 </script>
 
-<svelte:head><title>Dodaj Pojazd — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Dodaj Pojazd — AuraCRM</title></svelte:head>
 
 <div class="max-w-2xl">
 	<button onclick={() => history.back()} class="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 mb-4 transition-colors">
@@ -148,7 +148,7 @@
 			<button onclick={() => history.back()} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 				Anuluj
 			</button>
-			<button onclick={save} disabled={saving} class="px-5 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			<button onclick={save} disabled={saving} class="px-5 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 				{saving ? 'Zapisywanie...' : 'Dodaj Pojazd'}
 			</button>
 		</div>

@@ -206,7 +206,7 @@
 	}
 </script>
 
-<svelte:head><title>Gwarancje — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Gwarancje — AuraCRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
@@ -289,7 +289,7 @@
 	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		<table class="w-full text-sm text-left">
 			<thead>
-				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-b border-line-soft bg-slate-50">
+				<tr class="text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-line-soft bg-slate-50">
 					<th class="px-4 py-2.5">Nr / Typ</th>
 					<th class="px-4 py-2.5">Podmiot / TU</th>
 					<th class="px-4 py-2.5">Kontrakt / Beneficjent</th>
@@ -308,8 +308,8 @@
 						class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-4 py-2.5">
 							<div class="font-medium text-slate-800">{b.bond_nr}</div>
-							<span class="text-[10px] px-2 py-0.5 rounded-full font-semibold {bondRodzajCls(b.bond_rodzaj)}">{bondRodzajLabel[b.bond_rodzaj] ?? b.bond_rodzaj}</span>
-							{#if b.bond_bez_limitu}<span class="text-[10px] text-amber-600 ml-1">poza limitem</span>{/if}
+							<span class="text-xs px-2 py-0.5 rounded-full font-semibold {bondRodzajCls(b.bond_rodzaj)}">{bondRodzajLabel[b.bond_rodzaj] ?? b.bond_rodzaj}</span>
+							{#if b.bond_bez_limitu}<span class="text-xs text-amber-600 ml-1">poza limitem</span>{/if}
 						</td>
 						<td class="px-4 py-2.5">
 							<div class="text-slate-700">{tenantName(b)}</div>
@@ -404,7 +404,7 @@
 								<div class="w-full bg-slate-200 rounded-full h-2">
 									<div class="h-2 rounded-full {pct > 90 ? 'bg-red-500' : pct > 70 ? 'bg-amber-500' : 'bg-emerald-500'}" style="width:{pct}%"></div>
 								</div>
-								<div class="flex items-center justify-between text-[11px] text-slate-400 mt-1">
+								<div class="flex items-center justify-between text-xs text-slate-400 mt-1">
 									<span>{pct}% · {fmtPln(zaang)} / {fmtPln(limit)} PLN</span>
 									<span>stawka {u.bond_stawka_bazowa ?? '—'}%{u.bond_stawka_negocjowana ? ' (neg.)' : ''} · min {u.bond_skladka_min != null ? fmtPln(u.bond_skladka_min) : '—'}</span>
 								</div>
@@ -424,7 +424,7 @@
 	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		<table class="w-full text-sm text-left">
 			<thead>
-				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide border-b border-line-soft bg-slate-50">
+				<tr class="text-xs font-semibold text-slate-500 uppercase tracking-wide border-b border-line-soft bg-slate-50">
 					<th class="px-4 py-2.5">Kiedy</th>
 					<th class="px-4 py-2.5">Operacja</th>
 					<th class="px-4 py-2.5">Tabela</th>
@@ -440,7 +440,7 @@
 							<Badge variant={a.operation === 'INSERT' ? 'success' : a.operation === 'DELETE' ? 'error' : 'info'}>{a.operation}</Badge>
 						</td>
 						<td class="px-4 py-2.5 font-mono text-xs text-slate-600">{a.table_name}</td>
-						<td class="px-4 py-2.5 font-mono text-[11px] text-slate-400">{a.record_id ?? '—'}</td>
+						<td class="px-4 py-2.5 font-mono text-xs text-slate-400">{a.record_id ?? '—'}</td>
 						<td class="px-4 py-2.5 text-slate-500">{a.actor_role ?? '—'}</td>
 					</tr>
 				{/each}
@@ -498,5 +498,5 @@
 			<option value={c.id}>{c.nazwa_skrocona ?? c.nazwa}{c.nip ? ` · NIP ${c.nip}` : ''}</option>
 		{/each}
 	</select>
-	<p class="text-[11px] text-slate-400 mt-2">Podmiot zostanie utworzony z danych klienta i powiązany przez <code>crm_client_id</code>.</p>
+	<p class="text-xs text-slate-400 mt-2">Podmiot zostanie utworzony z danych klienta i powiązany przez <code>crm_client_id</code>.</p>
 </Modal>

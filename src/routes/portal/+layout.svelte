@@ -70,7 +70,7 @@
 			<ShieldCheck size={28} class="text-slate-400 mx-auto mb-3" />
 			<p class="text-slate-700 font-semibold mb-1">To konto nie ma dostępu do Panelu Klienta</p>
 			<p class="text-sm text-slate-500 mb-5">Zaloguj się danymi przekazanymi przez Twojego doradcę.</p>
-			<button onclick={logout} class="w-full bg-slate-900 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<button onclick={logout} class="w-full bg-accent text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-accent-hover transition-colors">
 				Wyloguj i wróć do logowania
 			</button>
 		</div>
@@ -88,7 +88,7 @@
 						<div class="text-sm font-semibold text-slate-900">
 							{portalState.client?.nazwa_skrocona ?? portalState.client?.nazwa}
 						</div>
-						<div class="text-[11px] text-slate-400">{portalState.client?.email ?? ''}</div>
+						<div class="text-xs text-slate-400">{portalState.client?.email ?? ''}</div>
 					</div>
 					<button onclick={logout} title="Wyloguj" class="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
 						<LogOut size={16} /> <span class="hidden sm:inline">Wyloguj</span>

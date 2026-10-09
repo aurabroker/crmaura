@@ -378,7 +378,7 @@
 	}
 </script>
 
-<svelte:head><title>{policy?.nr_polisy ?? 'Polisa'} — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>{policy?.nr_polisy ?? 'Polisa'} — AuraCRM</title></svelte:head>
 
 {#if !policy}
 	<p class="text-slate-400">Polisa nie istnieje lub nie masz dostępu.</p>
@@ -430,7 +430,7 @@
 								<Pencil size={14} class="mt-0.5 shrink-0 text-slate-400" />
 								<span>
 									Ręcznie
-									<span class="block text-[11px] text-slate-400">formularz z przeniesionymi danymi</span>
+									<span class="block text-xs text-slate-400">formularz z przeniesionymi danymi</span>
 								</span>
 							</a>
 							<a
@@ -441,7 +441,7 @@
 								<Upload size={14} class="mt-0.5 shrink-0 text-slate-400" />
 								<span>
 									Z pliku polisy
-									<span class="block text-[11px] text-slate-400">wgraj PDF nowej polisy</span>
+									<span class="block text-xs text-slate-400">wgraj PDF nowej polisy</span>
 								</span>
 							</a>
 							{#if wProgramie}
@@ -455,7 +455,7 @@
 									<Mail size={14} class="mt-0.5 shrink-0 text-slate-400" />
 									<span class="min-w-0">
 										Wyślij klientowi wniosek o odnowienie (e-mail)
-										<span class="block text-[11px] {klientEmail && !appState.tenantFeatures?.odnowienia_test ? 'text-slate-400' : 'text-amber-600'} break-all">
+										<span class="block text-xs {klientEmail && !appState.tenantFeatures?.odnowienia_test ? 'text-slate-400' : 'text-amber-600'} break-all">
 											{!klientEmail
 												? 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta albo utwórz link'
 												: appState.tenantFeatures?.odnowienia_test
@@ -472,7 +472,7 @@
 									<Link2 size={14} class="mt-0.5 shrink-0 text-slate-400" />
 									<span>
 										Utwórz link do wniosku
-										<span class="block text-[11px] text-slate-400">skopiujesz go i przekażesz klientowi sam</span>
+										<span class="block text-xs text-slate-400">skopiujesz go i przekażesz klientowi sam</span>
 									</span>
 								</button>
 							{/if}
@@ -492,7 +492,7 @@
 			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-line rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
 				<FilePlus2 size={14} /> Aneks
 			</button>
-			<a href="/policies/{policyId}/edit" class="flex items-center gap-1.5 text-sm bg-slate-900 text-white rounded-lg px-3 py-2 hover:bg-slate-700">
+			<a href="/policies/{policyId}/edit" class="flex items-center gap-1.5 text-sm bg-accent text-white rounded-lg px-3 py-2 hover:bg-accent-hover">
 				<Pencil size={14} /> Edytuj
 			</a>
 			<button onclick={() => { showDelete = true; deletionReason = ''; deleteError = ''; }} class="flex items-center gap-1.5 text-sm border border-red-200 text-red-600 rounded-lg px-3 py-2 hover:bg-red-50">
@@ -545,7 +545,7 @@
 			<p class="text-xs text-slate-500 mb-0.5 flex items-center justify-between">
 				<span>Kontakt TU</span>
 				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; poprzedniOpiekunUg = policy?.tu_contact_id ?? null; }}
-					class="text-[10px] text-slate-400 hover:text-blue-600 transition-colors">
+					class="text-xs text-slate-400 hover:text-blue-600 transition-colors">
 					{policy.tu_contact_id ? 'Zmień' : '+ Przypisz'}
 				</button>
 			</p>
@@ -667,7 +667,7 @@
 					{/if}
 
 					{#if di.zrodlo}
-						<p class="text-[11px] text-slate-400">
+						<p class="text-xs text-slate-400">
 							Odczytane z pliku{di.zrodlo.plik ? ` ${di.zrodlo.plik}` : ''}{di.zrodlo
 								.ubezpieczyciel
 								? ` — ${di.zrodlo.ubezpieczyciel}`
@@ -758,7 +758,7 @@
 		</div>
 		<table class="w-full text-sm text-left">
 			<thead>
-				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+				<tr class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
 					<SortTh s={sortUg} k="nr" class="px-5 py-2">Nr polisy</SortTh>
 					<SortTh s={sortUg} k="klient" class="px-5 py-2">Klient</SortTh>
 					<SortTh s={sortUg} k="od" class="px-5 py-2">OD</SortTh>
@@ -801,7 +801,7 @@
 		</div>
 		<table class="w-full text-sm text-left">
 			<thead>
-				<tr class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+				<tr class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
 					<th class="px-5 py-2">Nr</th>
 					<th class="px-5 py-2">Data</th>
 					<th class="px-5 py-2">Typ</th>
@@ -962,7 +962,7 @@
 			<input type="number" min="0" max="100" step="1" bind:value={pbUdzial} class={inputCls} />
 		</div>
 		{/if}
-		<button onclick={addBroker} disabled={savingPB} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60 shrink-0">
+		<button onclick={addBroker} disabled={savingPB} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60 shrink-0">
 			{savingPB ? '...' : '+ Dodaj'}
 		</button>
 	</div>
@@ -1002,7 +1002,7 @@
 <Modal title="Osoba kontaktowa TU — {policy.crm_insurers?.skrot ?? policy.crm_insurers?.nazwa ?? ''}" open={showContact} onclose={() => showContact = false}>
 	{#snippet footer()}
 		<button onclick={() => showContact = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveContact} disabled={savingContact} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveContact} disabled={savingContact} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingContact ? 'Zapisywanie...' : 'Przypisz osobę'}
 		</button>
 	{/snippet}
@@ -1038,7 +1038,7 @@
 <Modal title="Edytuj płatność — Rata {editingPayment.nr_raty}" open={showEditPayment} onclose={() => { showEditPayment = false; editingPayment = null; }}>
 	{#snippet footer()}
 		<button onclick={() => { showEditPayment = false; editingPayment = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveEditPayment} disabled={savingEp} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveEditPayment} disabled={savingEp} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingEp ? 'Zapisywanie...' : 'Zapisz zmiany'}
 		</button>
 	{/snippet}
@@ -1066,7 +1066,7 @@
 <Modal title="Dodaj płatność — {policy.nr_polisy}" open={showAddPayment} onclose={() => showAddPayment = false}>
 	{#snippet footer()}
 		<button onclick={() => showAddPayment = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveAddPayment} disabled={savingAp} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveAddPayment} disabled={savingAp} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingAp ? 'Zapisywanie...' : 'Dodaj płatność'}
 		</button>
 	{/snippet}

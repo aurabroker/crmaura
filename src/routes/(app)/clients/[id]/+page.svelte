@@ -786,7 +786,7 @@
 	}
 </script>
 
-<svelte:head><title>{client?.nazwa ?? 'Klient'} — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>{client?.nazwa ?? 'Klient'} — AuraCRM</title></svelte:head>
 
 {#if !client}
 	<p class="text-slate-400">Klient nie istnieje lub nie masz dostępu.</p>
@@ -845,7 +845,7 @@
 			</button>
 			<button
 				onclick={() => goto(`/policies/new?klient=${clientId}`)}
-				class="flex items-center gap-1.5 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors"
+				class="flex items-center gap-1.5 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors"
 			>
 				<Plus size={14} /> Dodaj Polisę
 			</button>
@@ -923,7 +923,7 @@
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<SortTh s={sortAktywne} k="nr">Nr Polisy</SortTh>
 						<SortTh s={sortAktywne} k="tu">TU</SortTh>
 						<SortTh s={sortAktywne} k="rodzaj">Rodzaj</SortTh>
@@ -945,12 +945,12 @@
 								<div class="flex items-center gap-1.5 flex-wrap">
 									<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
 									{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
-										<span class="text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
+										<span class="text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
 									{/if}
 									{#if isRenewed}
-										<span class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
+										<span class="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
 									{:else if isPendingRenewal}
-										<span class="text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5">Oczekująca</span>
+										<span class="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1 py-0.5">Oczekująca</span>
 									{/if}
 								</div>
 							</td>
@@ -974,7 +974,7 @@
 										<a href={wProgramieOcBeauty(p, appState.policies)
 												? `/policies/${p.id}?odnow=1`
 												: `/policies/new?klient=${p.klient_id}&rodzaj=${encodeURIComponent(p.rodzaj)}&przedmiot=${encodeURIComponent(p.przedmiot ?? '')}&renewal_of=${p.id}${p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}`}
-										   class="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors">
+										   class="inline-flex items-center gap-1 text-xs px-2 py-0.5 bg-amber-50 border border-amber-300 text-amber-700 rounded hover:bg-amber-100 transition-colors">
 											<RefreshCw size={10} /> Odnów polisę
 										</a>
 									{/if}
@@ -998,7 +998,7 @@
 				<div class="mt-2 bg-white border border-line rounded-xl shadow-sm overflow-hidden opacity-70">
 					<table class="w-full text-left text-sm">
 						<thead>
-							<tr class="bg-slate-50 text-[11px] font-semibold text-slate-400 uppercase tracking-wide">
+							<tr class="bg-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wide">
 								<SortTh s={sortArchiwum} k="nr">Nr Polisy</SortTh>
 								<SortTh s={sortArchiwum} k="tu">TU</SortTh>
 								<SortTh s={sortArchiwum} k="rodzaj">Rodzaj</SortTh>
@@ -1017,10 +1017,10 @@
 										<div class="flex items-center gap-1.5">
 											<a href="/policies/{p.id}" class="font-medium text-slate-500 hover:underline">{p.nr_polisy}</a>
 											{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
-												<span class="text-[10px] font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
+												<span class="text-xs font-semibold text-violet-700 bg-violet-50 border border-violet-200 rounded px-1 py-0.5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">Jako ubezpieczony</span>
 											{/if}
 											{#if isRenewed}
-												<span class="text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
+												<span class="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1 py-0.5">Odnowiona</span>
 											{/if}
 										</div>
 									</td>
@@ -1049,14 +1049,14 @@
 
 	{:else if activeTab === 'pojazdy'}
 		<div class="flex justify-end mb-3">
-			<button onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<button onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 				<Plus size={14} /> Dodaj pojazd
 			</button>
 		</div>
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<th class="px-5 py-3">Nr Rejestracyjny</th>
 						<th class="px-5 py-3">Marka / Model</th>
 						<th class="px-5 py-3">VIN</th>
@@ -1135,7 +1135,7 @@
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<SortTh s={sortGwarancje} k="nr">Nr / Umowa</SortTh>
 						<SortTh s={sortGwarancje} k="typ">Typ</SortTh>
 						<SortTh s={sortGwarancje} k="beneficjent">Beneficjent / Kontrakt</SortTh>
@@ -1165,7 +1165,7 @@
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<th class="px-5 py-3">Nr Szkody</th>
 						<th class="px-5 py-3">Data</th>
 						<th class="px-5 py-3">Z polisy</th>
@@ -1193,7 +1193,7 @@
 							<td class="px-5 py-3">
 								{#if editingClaim?.id === cl.id}
 									<div class="flex gap-1">
-										<button onclick={saveClaim} disabled={savingClaim} class="px-2 py-1 text-xs bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-60">{savingClaim ? '...' : 'Zapisz'}</button>
+										<button onclick={saveClaim} disabled={savingClaim} class="px-2 py-1 text-xs bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">{savingClaim ? '...' : 'Zapisz'}</button>
 										<button onclick={() => editingClaim = null} class="px-2 py-1 text-xs border border-line rounded-lg hover:bg-slate-50">Anuluj</button>
 									</div>
 								{:else}
@@ -1210,14 +1210,14 @@
 
 	{:else if activeTab === 'kontakty'}
 		<div class="flex justify-end mb-3">
-			<button onclick={openNewContact} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<button onclick={openNewContact} class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 				<UserPlus size={14} /> Dodaj osobę kontaktową
 			</button>
 		</div>
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 			<table class="w-full text-left text-sm">
 				<thead>
-					<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 						<th class="px-5 py-3">Imię i Nazwisko</th>
 						<th class="px-5 py-3">Stanowisko</th>
 						<th class="px-5 py-3">Telefon</th>
@@ -1268,7 +1268,7 @@
 		<div class="flex items-center justify-between mb-4">
 			<p class="text-sm text-slate-500">Formularze APK dla tego klienta</p>
 			<button onclick={() => { apkAdvisor = appState.profile?.imie_nazwisko ?? ''; showNewApk = true; }}
-				class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700">
+				class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover">
 				<Plus size={14} /> Nowy APK
 			</button>
 		</div>
@@ -1454,7 +1454,7 @@
 										{/if}
 										<div class="min-w-0 flex-1">
 											<p class="text-slate-800 truncate">{f.tytul}</p>
-											<p class="text-[11px] text-slate-400 truncate">{[f.opis, rozmiarPliku(f.rozmiar), f.at ? fmtDateTime(f.at) : ''].filter(Boolean).join(' · ')}</p>
+											<p class="text-xs text-slate-400 truncate">{[f.opis, rozmiarPliku(f.rozmiar), f.at ? fmtDateTime(f.at) : ''].filter(Boolean).join(' · ')}</p>
 										</div>
 										<button type="button" onclick={() => otworzPlikWniosku(f.path, f.zalacznik ? f.opis : f.tytul)}
 											class="shrink-0 inline-flex items-center gap-1.5 text-xs border border-line rounded-lg px-2.5 py-1.5 text-slate-600 bg-white hover:bg-slate-50">
@@ -1494,7 +1494,7 @@
 			{:else}
 				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 							<th class="px-4 py-2">Kiedy</th>
 							<th class="px-4 py-2">Certyfikat</th>
 							<th class="px-4 py-2">Zdarzenie</th>
@@ -1516,7 +1516,7 @@
 								<td class="px-4 py-2.5">
 									<p class="text-slate-800">{opisZdarzenia(e)}</p>
 									{#if e.ip || przegladarka}
-										<p class="text-[11px] text-slate-400" title={e.user_agent ?? ''}>
+										<p class="text-xs text-slate-400" title={e.user_agent ?? ''}>
 											{#if e.ip}IP <span class="font-mono">{e.ip}</span>{/if}{#if e.ip && przegladarka}&nbsp;·&nbsp;{/if}{przegladarka}
 										</p>
 									{/if}
@@ -1529,7 +1529,7 @@
 		</div>
 	{:else if activeTab === 'zadania'}
 		<div class="flex justify-end mb-3">
-			<button onclick={openNewTask} class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+			<button onclick={openNewTask} class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 				<Plus size={14} /> Nowe zadanie
 			</button>
 		</div>
@@ -1561,7 +1561,7 @@
 										<div class="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden">
 											<div class="h-full rounded-full bg-blue-500" style="width:{pct}%"></div>
 										</div>
-										<span class="text-[10px] text-slate-400">{pct}%</span>
+										<span class="text-xs text-slate-400">{pct}%</span>
 									</div>
 								{/if}
 							</div>
@@ -1606,7 +1606,7 @@
 			{:else}
 				<table class="w-full text-left text-sm">
 					<thead>
-						<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+						<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 							<SortTh s={sortEmaile} k="data" class="px-4 py-2">Wysłano</SortTh>
 							<SortTh s={sortEmaile} k="rodzaj" class="px-4 py-2">Rodzaj</SortTh>
 							<SortTh s={sortEmaile} k="temat" class="px-4 py-2">Temat</SortTh>
@@ -1673,7 +1673,7 @@
 					{:else}
 						<table class="w-full text-left text-sm">
 							<thead>
-								<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+								<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 									<th class="px-4 py-2">Temat</th>
 									<th class="px-4 py-2">Wysłano</th>
 									<th class="px-4 py-2">Otwarcie</th>
@@ -1712,7 +1712,7 @@
 						{#if grEditEmail}
 							<div class="flex items-center gap-2 mt-3">
 								<input type="email" bind:value={grEmailInput} placeholder="adres e-mail w GetResponse" class="flex-1 border border-line rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-								<button onclick={saveGrEmail} disabled={grSaving} class="px-3 py-1.5 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">Zapisz</button>
+								<button onclick={saveGrEmail} disabled={grSaving} class="px-3 py-1.5 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">Zapisz</button>
 								<button onclick={() => grEditEmail = false} class="px-3 py-1.5 text-sm border border-line rounded-lg text-slate-500 hover:bg-slate-50">Anuluj</button>
 							</div>
 						{:else}
@@ -1732,7 +1732,7 @@
 <Modal title={editingContact ? 'Edytuj Kontakt' : 'Dodaj Osobę Kontaktową'} open={showContact} onclose={() => { showContact = false; editingContact = null; }}>
 	{#snippet footer()}
 		<button onclick={() => { showContact = false; editingContact = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveContact} disabled={savingCC} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveContact} disabled={savingCC} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingCC ? 'Zapisywanie...' : editingContact ? 'Zapisz zmiany' : 'Dodaj kontakt'}
 		</button>
 	{/snippet}
@@ -1750,7 +1750,7 @@
 <Modal title={editingVehicle ? 'Edytuj Pojazd' : 'Dodaj Pojazd'} open={showVehicle} onclose={() => { showVehicle = false; editingVehicle = null; }}>
 	{#snippet footer()}
 		<button onclick={() => { showVehicle = false; editingVehicle = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveVehicle} disabled={savingV} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={saveVehicle} disabled={savingV} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingV ? 'Zapisywanie...' : editingVehicle ? 'Zapisz zmiany' : 'Dodaj pojazd'}
 		</button>
 	{/snippet}
@@ -1782,7 +1782,7 @@
 			</div>
 		</div>
 		<table class="w-full text-sm">
-			<thead><tr class="text-[11px] text-slate-500 uppercase"><SortTh s={sortSkladki} k="nr" class="py-2 text-left">Polisa</SortTh><SortTh s={sortSkladki} k="skladka" class="py-2 text-right" align="right">Składka</SortTh></tr></thead>
+			<thead><tr class="text-xs text-slate-500 uppercase"><SortTh s={sortSkladki} k="nr" class="py-2 text-left">Polisa</SortTh><SortTh s={sortSkladki} k="skladka" class="py-2 text-right" align="right">Składka</SortTh></tr></thead>
 			<tbody>
 				{#each skladkiWiersze as p}
 					<tr class="border-t border-line-soft">
@@ -1827,9 +1827,9 @@
 				<div class="text-right">
 					{#if v.vin}<p class="text-xs text-slate-400 font-mono">{v.vin}</p>{/if}
 					{#if assigned}
-						<p class="text-[11px] text-emerald-700">Przypisany: {assigned.nr_polisy}</p>
+						<p class="text-xs text-emerald-700">Przypisany: {assigned.nr_polisy}</p>
 					{:else}
-						<p class="text-[11px] text-slate-400">Wolny</p>
+						<p class="text-xs text-slate-400">Wolny</p>
 					{/if}
 				</div>
 			</div>
@@ -1885,10 +1885,10 @@
 <Modal title="Nowy formularz APK" open={showNewApk} onclose={closeApkModal}>
 	{#snippet footer()}
 		{#if apkToken}
-			<button onclick={closeApkModal} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">Gotowe</button>
+			<button onclick={closeApkModal} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover">Gotowe</button>
 		{:else}
 			<button onclick={closeApkModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-			<button onclick={createApk} disabled={savingApk} class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+			<button onclick={createApk} disabled={savingApk} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 				{savingApk ? 'Tworzenie...' : 'Utwórz i wygeneruj link'}
 			</button>
 		{/if}
@@ -1967,7 +1967,7 @@
 		{/if}
 		<button onclick={() => (showPortal = false)} class="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">Zamknij</button>
 		<button onclick={savePortalAccess} disabled={portalSaving}
-			class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60">
+			class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-60">
 			{portalSaving ? 'Zapisywanie…' : hasPortal ? 'Zmień hasło' : 'Utwórz dostęp'}
 		</button>
 	{/snippet}

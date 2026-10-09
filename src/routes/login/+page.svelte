@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
-	import { ShieldCheck } from 'lucide-svelte';
 	import Turnstile from '$lib/components/Turnstile.svelte';
 	import { turnstileEnabled as useTurnstile, isCaptchaError, captchaErrorMessage } from '$lib/utils/turnstile';
 
@@ -32,14 +31,16 @@
 	}
 </script>
 
-<svelte:head><title>Logowanie — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Logowanie — AuraCRM</title></svelte:head>
 
 <div class="min-h-screen flex items-center justify-center bg-slate-50">
 	<div class="bg-white border border-line rounded-2xl shadow-xl p-8 w-full max-w-sm">
 
 		<div class="flex items-center justify-center gap-2 mb-8">
-			<ShieldCheck size={28} class="text-blue-500" />
-			<span class="text-2xl font-bold text-slate-900">FRANK67 CRM</span>
+			<span class="w-9 h-9 rounded-lg bg-accent text-white flex items-center justify-center">
+				<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></svg>
+			</span>
+			<span class="text-2xl font-semibold text-slate-900">AuraCRM</span>
 		</div>
 
 		{#if error}
@@ -79,7 +80,7 @@
 			<button
 				type="submit"
 				disabled={loading || (useTurnstile && !turnstileToken)}
-				class="w-full bg-slate-900 text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-60"
+				class="w-full bg-accent text-white rounded-lg py-2.5 text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-60"
 			>
 				{loading ? 'Logowanie...' : 'Zaloguj do systemu'}
 			</button>

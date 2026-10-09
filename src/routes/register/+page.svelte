@@ -65,14 +65,14 @@
 </script>
 
 <svelte:head>
-	<title>Rejestracja — FRANK67 CRM</title>
+	<title>Rejestracja — AuraCRM</title>
 </svelte:head>
 
-<div class="min-h-screen bg-slate-50 flex items-center justify-center px-4" style="font-family: 'Inter', sans-serif">
+<div class="min-h-screen bg-slate-50 flex items-center justify-center px-4">
 	<div class="w-full max-w-md">
 		<div class="text-center mb-8">
 			<a href="/login" class="inline-flex items-center gap-2 font-bold text-2xl text-slate-900">
-				FRANK67 CRM
+				AuraCRM
 			</a>
 			<p class="text-slate-500 text-sm mt-2">Utwórz konto dla swojej kancelarii</p>
 		</div>
@@ -82,7 +82,7 @@
 				<div class="text-center space-y-4">
 					<div class="text-green-600 text-lg font-semibold">Konto utworzone!</div>
 					<p class="text-slate-600 text-sm">Możesz się teraz zalogować.</p>
-					<a href="/login" class="inline-block px-5 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700">
+					<a href="/login" class="inline-block px-5 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover">
 						Przejdź do logowania
 					</a>
 				</div>
@@ -134,7 +134,7 @@
 					<button
 						type="submit"
 						disabled={loading || (turnstileEnabled && !turnstileToken)}
-						class="w-full px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50"
+						class="w-full px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50"
 					>
 						{loading ? 'Tworzenie konta...' : 'Utwórz konto'}
 					</button>

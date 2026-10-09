@@ -183,7 +183,7 @@
 	}
 </script>
 
-<svelte:head><title>Pojazdy — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Pojazdy — AuraCRM</title></svelte:head>
 
 <div class="max-w-6xl">
 	<div class="flex flex-wrap items-center justify-between gap-3 mb-6">
@@ -197,7 +197,7 @@
 		</div>
 		<button
 			onclick={nowy}
-			class="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700"
+			class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover"
 		>
 			<Plus size={15} /> Dodaj pojazd
 		</button>
@@ -234,7 +234,7 @@
 	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 		<div class="overflow-x-auto">
 			<table class="w-full text-sm min-w-[860px]">
-				<thead class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+				<thead class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 					<tr>
 						<th class="px-4 py-3 text-left w-8"></th>
 						<th class="px-4 py-3 text-left">Nr rej.</th>
@@ -293,12 +293,12 @@
 							<tr class="bg-slate-50/60">
 								<td colspan="9" class="px-4 py-4">
 									{#if historia.length}
-										<p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">
+										<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
 											Historia ochrony
 										</p>
 										<div class="bg-white border border-line rounded-lg overflow-x-auto">
 											<table class="w-full text-left text-sm">
-												<thead class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+												<thead class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
 													<tr>
 														<SortTh s={sortHistorii} k="nr" class="px-3 py-2">Nr polisy</SortTh>
 														<SortTh s={sortHistorii} k="od" class="px-3 py-2">Od</SortTh>
@@ -323,7 +323,7 @@
 															<td class="px-3 py-2">
 																<div class="flex flex-wrap items-center gap-3">
 																	{#if p.renewal_of}
-																		<span class="text-[11px] text-slate-400 flex items-center gap-1">
+																		<span class="text-xs text-slate-400 flex items-center gap-1">
 																			<RefreshCw size={11} /> odnowienie
 																		</span>
 																	{/if}
@@ -438,7 +438,7 @@
 				<button
 					onclick={zapisz}
 					disabled={zapisywanie}
-					class="px-4 py-2 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-50"
+					class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50"
 				>
 					{zapisywanie ? 'Zapisywanie…' : 'Zapisz'}
 				</button>

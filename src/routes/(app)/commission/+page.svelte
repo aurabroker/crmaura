@@ -167,7 +167,7 @@
 	const statusLabel = (s: string) => (s === 'zamkniety' ? 'Rozliczony' : 'Otwarty');
 </script>
 
-<svelte:head><title>Twoja Prowizja — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Twoja Prowizja — AuraCRM</title></svelte:head>
 
 <div class="mb-6">
 	<h1 class="text-2xl font-semibold text-slate-900">Twoja Prowizja</h1>
@@ -204,7 +204,7 @@
 				{#if canSettle}
 					<button
 						onclick={() => (showConfirmModal = true)}
-						class="flex items-center gap-2 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors"
+						class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors"
 					>
 						<CheckCircle size={15} /> Rozlicz prowizję
 					</button>
@@ -318,7 +318,7 @@
 			<button
 				onclick={settleCommission}
 				disabled={settling}
-				class="px-4 py-2 text-sm font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-700 disabled:opacity-50"
+				class="px-4 py-2 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
 			>
 				{settling ? 'Rozliczam...' : 'Rozlicz'}
 			</button>

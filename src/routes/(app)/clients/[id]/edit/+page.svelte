@@ -71,7 +71,7 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Edytuj klienta — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Edytuj klienta — AuraCRM</title></svelte:head>
 
 {#if !client}
 	<p class="text-slate-400">Klient nie istnieje lub nie masz dostępu.</p>
@@ -143,7 +143,7 @@
 		<button onclick={() => goto(`/clients/${client.id}`)} class="px-5 py-2.5 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">
 			Anuluj
 		</button>
-		<button onclick={save} disabled={saving} class="px-6 py-2.5 text-sm bg-slate-900 text-white rounded-lg font-semibold hover:bg-slate-700 disabled:opacity-60">
+		<button onclick={save} disabled={saving} class="px-6 py-2.5 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{saving ? 'Zapisywanie...' : 'Zapisz zmiany'}
 		</button>
 	</div>

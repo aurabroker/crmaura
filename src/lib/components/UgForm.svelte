@@ -213,7 +213,7 @@
 	<div>
 		<label class={lbl}>Limit gwarancyjny (PLN) *</label>
 		<input type="number" step="0.01" bind:value={fpUgLimit} class={inp} placeholder="np. 5 000 000" />
-		<p class="text-[11px] text-slate-400 mt-1">Maksymalna łączna suma aktywnych gwarancji w ramach tej UG.</p>
+		<p class="text-xs text-slate-400 mt-1">Maksymalna łączna suma aktywnych gwarancji w ramach tej UG.</p>
 	</div>
 	{/if}
 
@@ -248,7 +248,7 @@
 				{/if}
 			</div>
 			{#if fpKlient && !clientOpen}
-				<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedClientName}</p>
+				<p class="text-xs text-emerald-600 mt-1">✓ {selectedClientName}</p>
 			{/if}
 		</div>
 
@@ -259,7 +259,7 @@
 					<span class="text-xs text-slate-400">🔒</span>
 					{selectedTUName || '—'}
 				</div>
-				<p class="text-[11px] text-slate-400 mt-1">Polisa podatkowa — TU: Colonnade (stałe)</p>
+				<p class="text-xs text-slate-400 mt-1">Polisa podatkowa — TU: Colonnade (stałe)</p>
 			{:else}
 				<div class="relative"
 					onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { tuOpen = false; tuSearch = ''; } }}>
@@ -287,7 +287,7 @@
 					{/if}
 				</div>
 				{#if fpTu && !tuOpen}
-					<p class="text-[11px] text-emerald-600 mt-1">✓ {selectedTUName}</p>
+					<p class="text-xs text-emerald-600 mt-1">✓ {selectedTUName}</p>
 				{/if}
 			{/if}
 		</div>

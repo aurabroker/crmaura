@@ -121,14 +121,14 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
-<svelte:head><title>Szkody — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Szkody — AuraCRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
 		<h1 class="text-2xl font-semibold text-slate-900">Rejestr Szkód</h1>
 		<p class="text-sm text-slate-500 mt-1">Wszystkie zgłoszenia w portfelu</p>
 	</div>
-	<button onclick={openNew} class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors">
+	<button onclick={openNew} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
 		+ Zgłoś Szkodę
 	</button>
 </div>
@@ -150,7 +150,7 @@
 <div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
 	<table class="w-full text-left text-sm">
 		<thead>
-			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+			<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
 				<th class="px-5 py-3">Nr Szkody</th>
 				<th class="px-5 py-3">Klient</th>
 				<th class="px-5 py-3">Z polisy</th>

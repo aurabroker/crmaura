@@ -291,7 +291,7 @@
 	);
 </script>
 
-<svelte:head><title>Import polisy — FRANK67 CRM</title></svelte:head>
+<svelte:head><title>Import polisy — AuraCRM</title></svelte:head>
 
 <div class="max-w-5xl">
 	<div class="flex items-center gap-3 mb-6">
@@ -359,7 +359,7 @@
 					{/each}
 				</select>
 				{#if product && !product.parse}
-					<p class="text-[11px] text-amber-700 mt-1">{product.todo}</p>
+					<p class="text-xs text-amber-700 mt-1">{product.todo}</p>
 				{/if}
 			</div>
 
@@ -389,7 +389,7 @@
 									class="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-line-soft last:border-0"
 								>
 									<div class="font-medium text-slate-800">{c.nazwa}</div>
-									<div class="text-[11px] text-slate-400">
+									<div class="text-xs text-slate-400">
 										{#if c.nip || c.regon}
 											{c.nip ? `NIP ${c.nip}` : ''}{c.nip && c.regon ? ' · ' : ''}{c.regon ? `REGON ${c.regon}` : ''}
 										{:else}
@@ -404,7 +404,7 @@
 					{/if}
 				</div>
 				{#if client && !client.nip && !client.regon}
-					<p class="text-[11px] text-red-600 mt-1">
+					<p class="text-xs text-red-600 mt-1">
 						Klient nie ma NIP ani REGON — nie da się potwierdzić, że polisa należy do niego.
 					</p>
 				{/if}
@@ -611,7 +611,7 @@
 								<dt class="text-slate-500">Ubezpieczony</dt>
 								<dd class="font-medium text-slate-900 text-right">
 									{e.ubezpieczony_nazwa}
-									<span class="block text-[11px] text-slate-400">
+									<span class="block text-xs text-slate-400">
 										{e.ubezpieczony_nip ?? e.ubezpieczony_regon} —
 										{draft.ubezpieczony ? 'powiązany z kartoteką' : 'poza kartoteką'}
 									</span>
@@ -623,7 +623,7 @@
 								<dt class="text-slate-500">Finansujący</dt>
 								<dd class="font-medium text-slate-900 text-right">
 									{draft.leasing?.nazwa ?? e.leasing?.nazwa}
-									<span class="block text-[11px] text-slate-400">
+									<span class="block text-xs text-slate-400">
 										{draft.leasing
 											? 'ze słownika leasingów'
 											: 'zostanie dopisany do słownika leasingów'}
@@ -813,7 +813,7 @@
 				<button
 					onclick={save}
 					disabled={!moznaZapisac}
-					class="flex items-center gap-2 bg-slate-900 text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					class="flex items-center gap-2 bg-accent text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
 				>
 					{#if saving}
 						<Loader2 size={15} class="animate-spin" /> Zapisuję…
