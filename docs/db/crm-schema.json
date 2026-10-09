@@ -1,0 +1,6697 @@
+{
+  "meta": {
+    "nazwa": "AuraCRM — schemat bazy danych",
+    "opis": "Pełna konstrukcja tabel SQL obsługujących CRM (crmaura) w formacie JSON. Wygenerowane przez introspekcję produkcyjnej bazy, nie z plików migracji — migracje w repo pokrywają wyłącznie zmiany od 2026-06-05, a większość tabel powstała wcześniej w panelu Supabase.",
+    "silnik": "PostgreSQL 17.6 (Supabase)",
+    "projekt_supabase": "aurabroker (ref: kukvgsjrmrqtzhkszzum, region eu-west-1)",
+    "schemat": "public",
+    "wygenerowano": "2026-08-17",
+    "zakres": "Tabele z prefiksami crm_, bond_ i apk_. Baza hostuje też inne produkty (ud_*, izba_*, pakiety, salons, hub_*, ads_*, life_*) — są poza tym dokumentem.",
+    "liczba_tabel": 49,
+    "liczba_widokow": 1,
+    "jak_odswiezyc": "docs/db/introspect.sql — komplet zapytań introspekcyjnych do uruchomienia na bazie."
+  },
+  "konwencje": {
+    "klucz_glowny": "uuid, DEFAULT gen_random_uuid(). Wyjątki: crm_companies / crm_contacts / crm_events / crm_history / crm_reminders (integer + sekwencja, tabele legacy), apk_audit i bond_audit_log (bigint + sekwencja), crm_dashboard_prefs (PK = user_id), crm_settings (PK = key), moduł bond_* (PK nazywa się bond_id).",
+    "izolacja_najemcow": "Kolumna tenant_id uuid → crm_tenants(id) plus polityka RLS opierająca się na funkcji get_my_tenant_id(). Moduł bond_* ma własny wymiar najemcy (bond_tenants) mapowany na CRM przez bond_tenants.crm_tenant_id.",
+    "nazewnictwo": "Nazwy kolumn po polsku bez znaków diakrytycznych w identyfikatorach (klient_id, polisa_id, tu_id, skladka_przypisana). tu_id = towarzystwo ubezpieczeniowe. Wartości słownikowe bywają po polsku Z diakrytykami (np. status płatności 'Oczekująca').",
+    "znaczniki_czasu": "created_at timestamptz DEFAULT now(); updated_at tylko tam, gdzie faktycznie jest aktualizowany (crm_tasks, crm_getresponse_links, apk_forms).",
+    "kwoty": "numeric(12,2) dla kwot, numeric(5,2) dla procentów, numeric(8,4) dla stawek gwarancji. Moduł bond_* używa numeric bez precyzji.",
+    "usuwanie": "crm_policies ma soft-delete (deleted_at + deletion_reason, moduł „Kosz”). Pozostałe tabele kasują twardo.",
+    "typy_wyliczeniowe": "Brak typów ENUM w Postgresie — wszystkie słowniki to text + CHECK (część słowników istnieje wyłącznie po stronie aplikacji, patrz sekcja slowniki)."
+  },
+  "moduly": {
+    "rdzen": {
+      "opis": "Najemcy, użytkownicy, ustawienia globalne",
+      "tabele": [
+        "crm_tenants",
+        "crm_profiles",
+        "crm_settings"
+      ]
+    },
+    "klienci": {
+      "opis": "Kartoteka klientów, kontakty, pojazdy, RODO",
+      "tabele": [
+        "crm_clients",
+        "crm_client_contacts",
+        "crm_vehicles",
+        "crm_vehicle_requests",
+        "crm_rodo_texts",
+        "crm_getresponse_links",
+        "crm_dismissed_duplicates"
+      ]
+    },
+    "ubezpieczyciele": {
+      "opis": "Towarzystwa ubezpieczeniowe, oddziały, osoby kontaktowe, leasingodawcy",
+      "tabele": [
+        "crm_insurers",
+        "crm_insurer_branches",
+        "crm_insurer_contacts",
+        "crm_leasings"
+      ]
+    },
+    "polisy": {
+      "opis": "Polisy, umowy generalne, aneksy, opiekunowie, rejestr APK",
+      "tabele": [
+        "crm_policies",
+        "crm_policy_annexes",
+        "crm_policy_brokers",
+        "crm_apk_logs"
+      ]
+    },
+    "platnosci": {
+      "opis": "Raty składek i noty rozliczeniowe od TU",
+      "tabele": [
+        "crm_policy_payments",
+        "crm_noty"
+      ]
+    },
+    "prowizje": {
+      "opis": "Miesięczne rozliczenia prowizji brokerów",
+      "tabele": [
+        "crm_commission_settlements",
+        "crm_commission_items"
+      ]
+    },
+    "szkody": {
+      "opis": "Rejestr szkód i reklamacji",
+      "tabele": [
+        "crm_claims",
+        "crm_complaints"
+      ]
+    },
+    "sprzedaz": {
+      "opis": "Leady / prospekci i historia kontaktu",
+      "tabele": [
+        "crm_prospects",
+        "crm_prospect_activities"
+      ]
+    },
+    "zadania": {
+      "opis": "Zadania zespołu i ich historia",
+      "tabele": [
+        "crm_tasks",
+        "crm_task_history"
+      ]
+    },
+    "pulpit": {
+      "opis": "Personalizacja dashboardu per użytkownik",
+      "tabele": [
+        "crm_dashboard_prefs"
+      ]
+    },
+    "audyt": {
+      "opis": "Dziennik operacji, alerty systemowe, log synchronizacji",
+      "tabele": [
+        "crm_audit_log",
+        "crm_alerts",
+        "crm_sync_log"
+      ]
+    },
+    "zgodnosc": {
+      "opis": "Szkolenia IDD brokerów",
+      "tabele": [
+        "crm_idd_trainings"
+      ]
+    },
+    "apk": {
+      "opis": "Analiza Potrzeb Klienta — formularz publiczny + tokeny dostępu",
+      "tabele": [
+        "apk_forms",
+        "apk_tokens",
+        "apk_audit"
+      ]
+    },
+    "gwarancje": {
+      "opis": "Osobny moduł gwarancji ubezpieczeniowych (bond_*) z własnym wymiarem najemcy i własnym audytem",
+      "tabele": [
+        "bond_tenants",
+        "bond_insurers",
+        "bond_bonds",
+        "bond_tu_dict",
+        "bond_profiles",
+        "bond_analytics",
+        "bond_audit_log",
+        "bond_limits_view"
+      ]
+    },
+    "legacy": {
+      "opis": "Pozostałość po starszym CRM firmowym — izolacja per użytkownik (assigned_user_id), nie per najemca. Nieużywane przez aplikację SvelteKit.",
+      "tabele": [
+        "crm_companies",
+        "crm_contacts",
+        "crm_events",
+        "crm_history",
+        "crm_reminders",
+        "crm_users"
+      ]
+    }
+  },
+  "slowniki": {
+    "_uwaga": "zrodlo = 'CHECK' → ograniczenie wymuszone w bazie; 'aplikacja' → lista istnieje tylko w kodzie Svelte, baza przyjmie dowolny text.",
+    "crm_profiles.rola": {
+      "zrodlo": "aplikacja",
+      "default": "Broker",
+      "wartosci": [
+        "ADMIN GOD",
+        "ADMIN BROKER",
+        "BOARD",
+        "ADMINISTRACJA",
+        "BROKER"
+      ],
+      "opis": "Role administracyjne (ADMIN GOD / ADMIN BROKER / BOARD / ADMINISTRACJA) są traktowane jako 'admin' przez funkcję bp_get_role(). Zmiana roli możliwa wyłącznie przez service_role (trigger crm_profiles_guard)."
+    },
+    "crm_tenants.typ": {
+      "zrodlo": "aplikacja",
+      "default": "broker",
+      "wartosci": [
+        "broker",
+        "agent"
+      ]
+    },
+    "crm_clients.typ": {
+      "zrodlo": "aplikacja",
+      "default": "firma",
+      "wartosci": [
+        "firma",
+        "osoba"
+      ]
+    },
+    "crm_clients.rodo_kanal": {
+      "zrodlo": "aplikacja",
+      "wartosci": [
+        "email",
+        "papier",
+        "telefon",
+        "osobiscie"
+      ]
+    },
+    "crm_insurers.dzial": {
+      "zrodlo": "aplikacja",
+      "wartosci": [
+        "Majątkowy",
+        "Życiowy"
+      ]
+    },
+    "crm_policies.typ_umowy": {
+      "zrodlo": "CHECK",
+      "default": "jednostkowa",
+      "wartosci": [
+        "jednostkowa",
+        "generalna"
+      ]
+    },
+    "crm_policies.ug_podtyp": {
+      "zrodlo": "CHECK",
+      "wartosci": [
+        "flota",
+        "gwarancje",
+        "cpm",
+        "car_ear",
+        "oc_beauty",
+        "beauty_tax"
+      ],
+      "opis": "Podtyp Umowy Generalnej; wypełniany tylko gdy typ_umowy = 'generalna'."
+    },
+    "crm_policies.rodzaj": {
+      "zrodlo": "aplikacja",
+      "uwaga": "Migracja 20260605000001 definiuje CHECK dla tej kolumny, ale w produkcyjnej bazie ograniczenie NIE istnieje — patrz niespojnosci[0].",
+      "wartosci": [
+        "majątkowa",
+        "życie",
+        "grupowe_medyczne",
+        "grupowe_życie",
+        "utrata_dochodu",
+        "komunikacja",
+        "flota",
+        "finansowa",
+        "OC",
+        "techniczna",
+        "karno_skarbowa",
+        "polisa_obca",
+        "umowa_generalna_flota",
+        "umowa_generalna_gwarancje",
+        "umowa_generalna_cpm",
+        "umowa_generalna_car_ear",
+        "umowa_generalna_oc_beauty",
+        "umowa_generalna_beauty_tax"
+      ]
+    },
+    "crm_policies.rozliczenie_status": {
+      "zrodlo": "aplikacja",
+      "default": "nierozliczona",
+      "wartosci": [
+        "nierozliczona",
+        "czesciowo",
+        "rozliczona"
+      ]
+    },
+    "crm_policies.gwarancja_typ": {
+      "zrodlo": "aplikacja",
+      "wartosci": [
+        "wadialna",
+        "nalezytego_wykonania",
+        "usuniecia_wad",
+        "zwrotu_zaliczki"
+      ]
+    },
+    "crm_policies.ilosc_rat": {
+      "zrodlo": "aplikacja",
+      "typ_kolumny": "text",
+      "default": "1",
+      "wartosci": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "6",
+        "12",
+        "24"
+      ]
+    },
+    "crm_policy_annexes.typ": {
+      "zrodlo": "CHECK",
+      "default": "korekta",
+      "wartosci": [
+        "korekta",
+        "doubezpieczenie",
+        "zmiana_zakresu",
+        "inne"
+      ]
+    },
+    "crm_policy_brokers.rola": {
+      "zrodlo": "CHECK",
+      "wartosci": [
+        "akwizycja",
+        "obsługa",
+        "opiekun"
+      ]
+    },
+    "crm_policy_payments.status": {
+      "zrodlo": "CHECK",
+      "default": "Oczekująca",
+      "wartosci": [
+        "Oczekująca",
+        "Opłacona",
+        "Zaległa",
+        "Częściowo opłacona"
+      ]
+    },
+    "crm_claims.status": {
+      "zrodlo": "aplikacja",
+      "default": "Zgłoszona",
+      "wartosci": [
+        "Zgłoszona",
+        "W toku",
+        "Wypłacona",
+        "Zakończona",
+        "Odmowa"
+      ]
+    },
+    "crm_complaints.status": {
+      "zrodlo": "aplikacja",
+      "default": "Otwarte"
+    },
+    "crm_prospects.status": {
+      "zrodlo": "aplikacja",
+      "default": "nowy",
+      "wartosci": [
+        "nowy",
+        "w_kontakcie",
+        "oferta_wyslana",
+        "wygrany",
+        "przegrany"
+      ]
+    },
+    "crm_prospects.ubez_*": {
+      "zrodlo": "CHECK",
+      "wartosci": [
+        "maja",
+        "nie_maja"
+      ],
+      "opis": "Sześć par kolumn ubez_<obszar> / ubez_<obszar>_opis: zycie, medyczne, flota, majatek, gwarancje, inne."
+    },
+    "crm_prospect_activities.typ": {
+      "zrodlo": "CHECK",
+      "wartosci": [
+        "notatka",
+        "komentarz",
+        "wiadomosc"
+      ]
+    },
+    "crm_tasks.status": {
+      "zrodlo": "aplikacja",
+      "default_w_bazie": "Oczekujące",
+      "wartosci": [
+        "otwarte",
+        "w_toku",
+        "zakonczone",
+        "anulowane"
+      ],
+      "uwaga": "DEFAULT w bazie ('Oczekujące') nie należy do zbioru używanego przez aplikację — patrz niespojnosci[1]."
+    },
+    "crm_tasks.priorytet": {
+      "zrodlo": "CHECK",
+      "default": "normalny",
+      "wartosci": [
+        "niski",
+        "normalny",
+        "wysoki",
+        "pilny"
+      ]
+    },
+    "crm_tasks.typy": {
+      "zrodlo": "aplikacja",
+      "typ_kolumny": "text[]",
+      "wartosci": [
+        "spotkanie",
+        "email",
+        "telefon",
+        "oferta"
+      ]
+    },
+    "crm_alerts.typ": {
+      "zrodlo": "CHECK",
+      "wartosci": [
+        "prowizja_rozjazd",
+        "ujemna_prowizja",
+        "aneks_wymagany"
+      ]
+    },
+    "crm_vehicle_requests.status": {
+      "zrodlo": "CHECK",
+      "default": "oczekuje",
+      "wartosci": [
+        "oczekuje",
+        "zaakceptowany",
+        "odrzucony"
+      ]
+    },
+    "crm_commission_settlements.status": {
+      "zrodlo": "aplikacja",
+      "default": "otwarty"
+    },
+    "crm_audit_log.action": {
+      "zrodlo": "aplikacja",
+      "wartosci_spotykane": [
+        "login",
+        "client_created",
+        "client_updated",
+        "clients_merged",
+        "policy_created",
+        "policy_imported",
+        "leasing_created",
+        "vehicle_created",
+        "vehicle_request_created",
+        "vehicle_request_accepted"
+      ]
+    },
+    "crm_audit_log.entity_type": {
+      "zrodlo": "aplikacja",
+      "wartosci_spotykane": [
+        "client",
+        "policy",
+        "leasing",
+        "vehicle",
+        "vehicle_request",
+        "user"
+      ]
+    },
+    "crm_rodo_texts.key": {
+      "zrodlo": "aplikacja",
+      "wartosci_spotykane": [
+        "przetwarzanie",
+        "marketing",
+        "profilowanie"
+      ]
+    },
+    "crm_settings.key": {
+      "zrodlo": "aplikacja",
+      "wartosci_spotykane": [
+        "pipeline_stages"
+      ]
+    },
+    "crm_dashboard_prefs.widgets": {
+      "zrodlo": "aplikacja",
+      "typ_kolumny": "jsonb (tablica identyfikatorów)",
+      "default": [
+        "renewals",
+        "claims",
+        "clients",
+        "renewal_rate",
+        "payments"
+      ],
+      "wartosci": [
+        "renewals",
+        "claims",
+        "clients",
+        "renewal_rate",
+        "payments",
+        "policy_count",
+        "top_clients",
+        "expiring_payments",
+        "policies_by_insurer",
+        "monthly_premium",
+        "claims_stats",
+        "premium_chart",
+        "dynamika",
+        "zadania"
+      ]
+    },
+    "crm_tenants.features": {
+      "zrodlo": "aplikacja",
+      "typ_kolumny": "jsonb",
+      "klucze_spotykane": [
+        "gwarancje",
+        "kalendarz"
+      ],
+      "opis": "Przełączniki modułów per najemca. Moduł gwarancji ma dodatkowo osobną kolumnę bond_module_enabled."
+    },
+    "apk_forms.status": {
+      "zrodlo": "CHECK",
+      "default": "draft",
+      "wartosci": [
+        "draft",
+        "submitted",
+        "archived"
+      ]
+    },
+    "apk_forms.mode": {
+      "zrodlo": "CHECK",
+      "default": "client",
+      "wartosci": [
+        "client",
+        "advisor"
+      ]
+    },
+    "apk_tokens.status": {
+      "zrodlo": "CHECK",
+      "default": "pending",
+      "wartosci": [
+        "pending",
+        "used",
+        "expired"
+      ]
+    },
+    "bond_bonds.bond_rodzaj": {
+      "zrodlo": "CHECK",
+      "wartosci": [
+        "WADIUM",
+        "NWK",
+        "UWU",
+        "ZAL"
+      ],
+      "opis": "WADIUM = wadialna, NWK = należytego wykonania kontraktu, UWU = usunięcia wad i usterek, ZAL = zwrotu zaliczki."
+    },
+    "bond_audit_log.operation": {
+      "zrodlo": "CHECK",
+      "wartosci": [
+        "INSERT",
+        "UPDATE",
+        "DELETE"
+      ]
+    },
+    "bond_profiles.bond_rola": {
+      "zrodlo": "aplikacja",
+      "default": "user"
+    },
+    "crm_users.role": {
+      "zrodlo": "CHECK",
+      "default": "user",
+      "wartosci": [
+        "admin",
+        "user"
+      ],
+      "opis": "Tabela legacy, nieużywana przez aplikację."
+    }
+  },
+  "tabele": {
+    "crm_tenants": {
+      "modul": "rdzen",
+      "opis": "Firma brokerska / agencyjna. Korzeń izolacji danych — każda tabela biznesowa wskazuje na ten rekord przez tenant_id.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 4,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "nazwa",
+          "typ": "text",
+          "null": false,
+          "opis": "Nazwa firmy"
+        },
+        {
+          "nazwa": "typ",
+          "typ": "text",
+          "null": false,
+          "default": "'broker'",
+          "opis": "broker | agent"
+        },
+        {
+          "nazwa": "nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "bond_module_enabled",
+          "typ": "boolean",
+          "null": false,
+          "default": "false",
+          "opis": "Przełącznik modułu gwarancji (bond_*)"
+        },
+        {
+          "nazwa": "features",
+          "typ": "jsonb",
+          "null": true,
+          "default": "'{}'",
+          "opis": "Przełączniki modułów, np. {\"gwarancje\":true,\"kalendarz\":true}"
+        },
+        {
+          "nazwa": "resend_api_key",
+          "typ": "text",
+          "null": true,
+          "opis": "Klucz API Resend do wysyłki e-maili w imieniu najemcy. SEKRET — trzymany w kolumnie chronionej wyłącznie przez RLS."
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "id = get_my_tenant_id()",
+          "with_check": "id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_profiles": {
+      "modul": "rdzen",
+      "opis": "Użytkownik systemu. PK = auth.users.id (1:1 z kontem Supabase Auth). Nośnik roli i przypisania do najemcy — źródło prawdy dla get_my_tenant_id().",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 4,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "= auth.users.id, bez DEFAULT"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Nullable — konto bez przypisania do firmy nie zobaczy żadnych danych"
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "imie_nazwisko",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "telefon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "stanowisko",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "szczebel",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ma_zespol",
+          "typ": "boolean",
+          "null": true,
+          "default": "false"
+        },
+        {
+          "nazwa": "rola",
+          "typ": "text",
+          "null": false,
+          "default": "'Broker'",
+          "opis": "Patrz slowniki.crm_profiles.rola"
+        },
+        {
+          "nazwa": "pesel",
+          "typ": "text",
+          "null": true,
+          "opis": "Do matchowania brokera na nocie prowizyjnej TU (Leadenhall). DANE WRAŻLIWE."
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "id",
+          "do": "auth.users(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "crm_profiles_guard_trg",
+          "kiedy": "BEFORE INSERT OR UPDATE",
+          "funkcja": "crm_profiles_guard()",
+          "opis": "Blokuje zmianę rola i tenant_id oraz zakładanie kont uprzywilejowanych z poziomu klienta — przechodzi tylko service_role."
+        }
+      ]
+    },
+    "crm_settings": {
+      "modul": "rdzen",
+      "opis": "Ustawienia klucz→wartość. Globalne, BEZ tenant_id.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 1,
+      "rls": true,
+      "klucz_glowny": [
+        "key"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "key",
+          "typ": "text",
+          "null": false,
+          "opis": "Spotykane: pipeline_stages"
+        },
+        {
+          "nazwa": "value",
+          "typ": "jsonb",
+          "null": false
+        },
+        {
+          "nazwa": "updated_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [],
+      "wyzwalacze": [],
+      "uwagi": [
+        "RLS włączone, ale nie ma ANI JEDNEJ polityki — tabela jest nieczytelna i niezapisywalna dla ról anon/authenticated (dostęp tylko service_role)."
+      ]
+    },
+    "crm_clients": {
+      "modul": "klienci",
+      "opis": "Klient — firma lub osoba fizyczna. Centrum panelu 360°.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 1329,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "opiekun_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Broker prowadzący (crm_profiles)"
+        },
+        {
+          "nazwa": "typ",
+          "typ": "text",
+          "null": false,
+          "default": "'firma'",
+          "opis": "firma | osoba"
+        },
+        {
+          "nazwa": "nazwa",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "nazwa_skrocona",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ulica",
+          "typ": "text",
+          "null": true,
+          "opis": "Pełny adres w jednym polu"
+        },
+        {
+          "nazwa": "nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "regon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "krs",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "pesel",
+          "typ": "text",
+          "null": true,
+          "opis": "Dla typ = 'osoba'. DANE WRAŻLIWE."
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "telefon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "auth_user_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Konto Supabase Auth klienta — daje mu wgląd we własne polisy, płatności, pojazdy i szkody przez polityki *_client_select"
+        },
+        {
+          "nazwa": "rodo_zgoda",
+          "typ": "boolean",
+          "null": true,
+          "default": "false"
+        },
+        {
+          "nazwa": "rodo_kanal",
+          "typ": "text",
+          "null": true,
+          "opis": "email | papier | telefon | osobiscie"
+        },
+        {
+          "nazwa": "rodo_data",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "gwarancje",
+          "typ": "boolean",
+          "null": false,
+          "default": "false",
+          "opis": "Klient objęty modułem gwarancji"
+        },
+        {
+          "nazwa": "beauty_id",
+          "typ": "integer",
+          "null": true,
+          "opis": "Identyfikator z zewnętrznego systemu BEAUTY (synchronizacja crm_sync_log)"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "opiekun_id",
+          "do": "crm_profiles(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "auth_user_id",
+          "do": "auth.users(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [
+        {
+          "nazwa": "crm_clients_auth_user_id_key",
+          "kolumny": [
+            "auth_user_id"
+          ]
+        },
+        {
+          "nazwa": "crm_clients_beauty_id_tenant_unique",
+          "kolumny": [
+            "beauty_id",
+            "tenant_id"
+          ]
+        }
+      ],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "idx_crm_clients_auth_user_id",
+          "definicja": "btree (auth_user_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "crm_clients_self_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "auth_user_id = auth.uid()",
+          "opis": "Klient widzi własny rekord"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_client_contacts": {
+      "modul": "klienci",
+      "opis": "Osoby kontaktowe po stronie klienta.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 7,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "imie_nazwisko",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "stanowisko",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "telefon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "notatki",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "beauty_id",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "crm_client_contacts_beauty_id_tenant_unique",
+          "definicja": "UNIQUE btree (tenant_id, beauty_id) WHERE beauty_id IS NOT NULL",
+          "opis": "Indeks częściowy — deduplikacja importu z systemu BEAUTY"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_vehicles": {
+      "modul": "klienci",
+      "opis": "Pojazd w kartotece klienta. Wiązany z polisą przez crm_policies.pojazd_id.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 9,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "nr_rejestracyjny",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "marka_model",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "vin",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "rok_produkcji",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "rodzaj_pojazdu",
+          "typ": "text",
+          "null": true,
+          "default": "'osobowy'",
+          "opis": "Pole swobodne — w danych występują też nazwy rodzajów wprost z polis TU"
+        },
+        {
+          "nazwa": "moc",
+          "typ": "integer",
+          "null": true,
+          "opis": "kW/KM wg dokumentu źródłowego"
+        },
+        {
+          "nazwa": "pojemnosc_silnika",
+          "typ": "integer",
+          "null": true,
+          "opis": "cm3"
+        },
+        {
+          "nazwa": "ladownosc",
+          "typ": "integer",
+          "null": true,
+          "opis": "kg"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "crm_vehicles_client_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "klient_id IN (SELECT id FROM crm_clients WHERE auth_user_id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_vehicle_requests": {
+      "modul": "klienci",
+      "opis": "Wniosek brokera o dodanie pojazdu do kartoteki — powstaje przy imporcie polisy z PDF, gdy dokument nie niesie numeru rejestracyjnego. Rozpatruje administrator.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 1,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Polisa, z której import wygenerował wniosek"
+        },
+        {
+          "nazwa": "nr_rejestracyjny",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "vin",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "marka_model",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "rok_produkcji",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "rodzaj_pojazdu",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "pojemnosc_silnika",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "moc",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "ladownosc",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "zrodlo",
+          "typ": "text",
+          "null": true,
+          "opis": "Nazwa pliku PDF, z którego odczytano dane"
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": false,
+          "default": "'oczekuje'",
+          "opis": "oczekuje | zaakceptowany | odrzucony"
+        },
+        {
+          "nazwa": "powod",
+          "typ": "text",
+          "null": true,
+          "opis": "Uzasadnienie decyzji administratora"
+        },
+        {
+          "nazwa": "pojazd_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Pojazd utworzony po akceptacji wniosku"
+        },
+        {
+          "nazwa": "created_by",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        },
+        {
+          "nazwa": "rozpatrzony_przez",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "rozpatrzony_at",
+          "typ": "timestamptz",
+          "null": true
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "SET NULL"
+        },
+        {
+          "kolumna": "pojazd_id",
+          "do": "crm_vehicles(id)",
+          "on_delete": "SET NULL"
+        },
+        {
+          "kolumna": "created_by",
+          "do": "crm_profiles(id)",
+          "on_delete": "SET NULL"
+        },
+        {
+          "kolumna": "rozpatrzony_przez",
+          "do": "crm_profiles(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_vehicle_requests_status_check",
+          "definicja": "status IN ('oczekuje','zaakceptowany','odrzucony')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "idx_crm_vehicle_requests_tenant_status",
+          "definicja": "btree (tenant_id, status)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "crm_vehicle_requests_tenant",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_rodo_texts": {
+      "modul": "klienci",
+      "opis": "Redagowalne klauzule zgód RODO per najemca.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 3,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "key",
+          "typ": "text",
+          "null": false,
+          "opis": "przetwarzanie | marketing | profilowanie"
+        },
+        {
+          "nazwa": "label",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "tresc",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "required",
+          "typ": "boolean",
+          "null": true,
+          "default": "false"
+        },
+        {
+          "nazwa": "aktywna",
+          "typ": "boolean",
+          "null": true,
+          "default": "true"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [
+        {
+          "nazwa": "crm_rodo_texts_tenant_id_key_key",
+          "kolumny": [
+            "tenant_id",
+            "key"
+          ]
+        }
+      ],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_rodo_texts",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = (SELECT tenant_id FROM crm_profiles WHERE id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_getresponse_links": {
+      "modul": "klienci",
+      "opis": "Powiązanie klienta CRM z kontaktem w GetResponse: nadpisany e-mail do dopasowania oraz flaga wyciszenia ostrzeżenia o rozjeździe.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 2,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "gr_email",
+          "typ": "text",
+          "null": true,
+          "opis": "E-mail nadpisujący adres klienta przy dopasowaniu w GetResponse"
+        },
+        {
+          "nazwa": "ignored",
+          "typ": "boolean",
+          "null": false,
+          "default": "false"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        },
+        {
+          "nazwa": "updated_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [
+        {
+          "nazwa": "crm_getresponse_links_klient_id_key",
+          "kolumny": [
+            "klient_id"
+          ]
+        }
+      ],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation_getresponse_links",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "updated_at nie jest utrzymywany wyzwalaczem — musi ustawiać go aplikacja."
+      ]
+    },
+    "crm_dismissed_duplicates": {
+      "modul": "klienci",
+      "opis": "Pary klientów odrzucone ręcznie jako „to nie duplikat” — wyciszają podpowiedź scalania.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "dedupe_key",
+          "typ": "text",
+          "null": false,
+          "opis": "Klucz pary klientów wyliczany przez aplikację"
+        },
+        {
+          "nazwa": "dismissed_by",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "dismissed_by",
+          "do": "crm_profiles(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [
+        {
+          "nazwa": "crm_dismissed_duplicates_tenant_id_dedupe_key_key",
+          "kolumny": [
+            "tenant_id",
+            "dedupe_key"
+          ]
+        }
+      ],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation_dismissed_duplicates",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_insurers": {
+      "modul": "ubezpieczyciele",
+      "opis": "Towarzystwo Ubezpieczeniowe (TU). Słownik prowadzony per najemca, nie globalnie.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 33,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "nazwa",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "skrot",
+          "typ": "text",
+          "null": true,
+          "opis": "Skrót używany w listach i przy dopasowaniu not (crm_noty.tu_skrot)"
+        },
+        {
+          "nazwa": "dzial",
+          "typ": "text",
+          "null": false,
+          "opis": "Majątkowy | Życiowy (w danych występuje też pusty string)"
+        },
+        {
+          "nazwa": "ulica",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "regon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "krs",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_insurer_branches": {
+      "modul": "ubezpieczyciele",
+      "opis": "Oddział / placówka towarzystwa.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 8,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "tu_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "nazwa",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "adres",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "telefon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "tu_id",
+          "do": "crm_insurers(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "idx_crm_insurer_branches_tu",
+          "definicja": "btree (tu_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "crm_insurer_branches_tenant",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_insurer_contacts": {
+      "modul": "ubezpieczyciele",
+      "opis": "Osoba kontaktowa po stronie TU. Przypinana do polisy przez crm_policies.tu_contact_id.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 11,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "tu_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "branch_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "imie_nazwisko",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "stanowisko",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "telefon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "notatki",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "tu_id",
+          "do": "crm_insurers(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "branch_id",
+          "do": "crm_insurer_branches(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "idx_crm_insurer_contacts_branch",
+          "definicja": "btree (branch_id)"
+        },
+        {
+          "nazwa": "idx_crm_insurer_contacts_tu",
+          "definicja": "btree (tu_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "crm_insurer_contacts_tenant",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_leasings": {
+      "modul": "ubezpieczyciele",
+      "opis": "Leasingodawca — właściciel pojazdu / przedmiotu ubezpieczenia. Wiązany z polisą przez leasing_id + nr_umowy_leasingowej.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 3,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "BEZ klucza obcego do crm_tenants — patrz niespojnosci[3]"
+        },
+        {
+          "nazwa": "nazwa",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "adres",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "crm_leasings_tenant",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = (SELECT tenant_id FROM crm_profiles WHERE id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_policies": {
+      "modul": "polisy",
+      "opis": "Polisa ubezpieczeniowa. Jedna tabela obsługuje trzy poziomy hierarchii: Umowa Generalna (typ_umowy = 'generalna') → polisa podrzędna (parent_id → UG) → aneksy w crm_policy_annexes. Dodatkowo łańcuch wznowień przez renewal_of. Największa tabela schematu — 44 kolumny.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 107,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "Ubezpieczający (płatnik składki)"
+        },
+        {
+          "nazwa": "ubezpieczony_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Ubezpieczony, gdy inny niż ubezpieczający"
+        },
+        {
+          "nazwa": "tu_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Towarzystwo. Nullable mimo że w praktyce zawsze wypełniane."
+        },
+        {
+          "nazwa": "tu_contact_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Opiekun polisy po stronie TU"
+        },
+        {
+          "nazwa": "nr_polisy",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "rodzaj",
+          "typ": "text",
+          "null": false,
+          "opis": "Rodzaj produktu — patrz slowniki.crm_policies.rodzaj. BRAK CHECK w bazie."
+        },
+        {
+          "nazwa": "przedmiot",
+          "typ": "text",
+          "null": true,
+          "opis": "Opis przedmiotu ubezpieczenia (tekst swobodny)"
+        },
+        {
+          "nazwa": "data_zawarcia",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "data_od",
+          "typ": "date",
+          "null": false,
+          "opis": "Początek ochrony"
+        },
+        {
+          "nazwa": "data_do",
+          "typ": "date",
+          "null": false,
+          "opis": "Koniec ochrony — podstawa listy wznowień"
+        },
+        {
+          "nazwa": "skladka_przypisana",
+          "typ": "numeric(12,2)",
+          "null": false,
+          "default": "0"
+        },
+        {
+          "nazwa": "skladka_zainkasowana",
+          "typ": "numeric(12,2)",
+          "null": false,
+          "default": "0",
+          "opis": "WYLICZANE — przeliczane wyzwalaczem trg_recalc_zainkasowane z sum opłaconych rat. Nie zapisywać ręcznie."
+        },
+        {
+          "nazwa": "skladka_zaliczkowa",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0",
+          "opis": "Składka zaliczkowa dla Umów Generalnych"
+        },
+        {
+          "nazwa": "prowizja_pct",
+          "typ": "numeric(5,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "prowizja_przypisana",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "prowizja_zainkasowana",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0",
+          "opis": "WYLICZANE przez trg_recalc_zainkasowane (prowizja_z_noty albo kwota × prowizja_pct)"
+        },
+        {
+          "nazwa": "ilosc_rat",
+          "typ": "text",
+          "null": true,
+          "default": "'1'",
+          "opis": "Liczba rat trzymana jako text: 1|2|3|4|6|12|24"
+        },
+        {
+          "nazwa": "daty_rat",
+          "typ": "text",
+          "null": true,
+          "opis": "Terminy rat serializowane do tekstu przez aplikację"
+        },
+        {
+          "nazwa": "kwoty_rat",
+          "typ": "text",
+          "null": true,
+          "opis": "Kwoty rat serializowane do tekstu przez aplikację"
+        },
+        {
+          "nazwa": "typ_umowy",
+          "typ": "text",
+          "null": false,
+          "default": "'jednostkowa'",
+          "opis": "jednostkowa | generalna"
+        },
+        {
+          "nazwa": "ug_podtyp",
+          "typ": "text",
+          "null": true,
+          "opis": "flota | gwarancje | cpm | car_ear | oc_beauty | beauty_tax"
+        },
+        {
+          "nazwa": "ug_default_prowizja_pct",
+          "typ": "numeric(5,2)",
+          "null": true,
+          "opis": "Domyślna prowizja dziedziczona przez polisy podrzędne UG"
+        },
+        {
+          "nazwa": "ug_limit",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "opis": "Limit UG (dla gwarancji)"
+        },
+        {
+          "nazwa": "parent_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Umowa Generalna nadrzędna (samoreferencja)"
+        },
+        {
+          "nazwa": "renewal_of",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Polisa wznawiana (samoreferencja) — podstawa wskaźnika skuteczności odnowień"
+        },
+        {
+          "nazwa": "pojazd_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Powiązany pojazd — zastąpiło dopasowanie po tekście w przedmiot"
+        },
+        {
+          "nazwa": "leasing_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "nr_umowy_leasingowej",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "gwarancja_typ",
+          "typ": "text",
+          "null": true,
+          "opis": "wadialna | nalezytego_wykonania | usuniecia_wad | zwrotu_zaliczki"
+        },
+        {
+          "nazwa": "gwarancja_beneficjent_nazwa",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "gwarancja_beneficjent_nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "gwarancja_kontrakt",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "gwarancja_stawka_pct",
+          "typ": "numeric(8,4)",
+          "null": true
+        },
+        {
+          "nazwa": "rozliczenie_status",
+          "typ": "text",
+          "null": true,
+          "default": "'nierozliczona'",
+          "opis": "nierozliczona | czesciowo | rozliczona"
+        },
+        {
+          "nazwa": "rozliczenie_kwota_tu",
+          "typ": "numeric(12,2)",
+          "null": true
+        },
+        {
+          "nazwa": "rozliczenie_data",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "rozliczenie_plik",
+          "typ": "text",
+          "null": true,
+          "opis": "Ścieżka w buckecie settlement-files"
+        },
+        {
+          "nazwa": "rozliczaj_platnosci",
+          "typ": "boolean",
+          "null": true,
+          "default": "false",
+          "opis": "Czy generować raty dla Umowy Generalnej"
+        },
+        {
+          "nazwa": "deleted_at",
+          "typ": "timestamptz",
+          "null": true,
+          "opis": "Soft-delete — moduł „Kosz”"
+        },
+        {
+          "nazwa": "deletion_reason",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "dane_importu",
+          "typ": "jsonb",
+          "null": true,
+          "opis": "Dane odczytane z PDF przez moduł importu: {zrodlo, ryzyka[], konto_do_wplat, owu, dodatkowe{}}. Wypełniane wyłącznie przy imporcie."
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "ubezpieczony_id",
+          "do": "crm_clients(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "tu_id",
+          "do": "crm_insurers(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "tu_contact_id",
+          "do": "crm_insurer_contacts(id)",
+          "on_delete": "SET NULL"
+        },
+        {
+          "kolumna": "parent_id",
+          "do": "crm_policies(id)",
+          "on_delete": "SET NULL"
+        },
+        {
+          "kolumna": "renewal_of",
+          "do": "crm_policies(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "pojazd_id",
+          "do": "crm_vehicles(id)",
+          "on_delete": "SET NULL"
+        },
+        {
+          "kolumna": "leasing_id",
+          "do": "crm_leasings(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_policies_typ_umowy_check",
+          "definicja": "typ_umowy IN ('jednostkowa','generalna')"
+        },
+        {
+          "nazwa": "crm_policies_ug_podtyp_check",
+          "definicja": "ug_podtyp IN ('flota','gwarancje','cpm','car_ear','oc_beauty','beauty_tax')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "idx_crm_policies_deleted",
+          "definicja": "btree (deleted_at) WHERE deleted_at IS NOT NULL"
+        },
+        {
+          "nazwa": "idx_crm_policies_pojazd_id",
+          "definicja": "btree (pojazd_id)"
+        },
+        {
+          "nazwa": "idx_policies_parent",
+          "definicja": "btree (parent_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "crm_policies_client_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "klient_id IN (SELECT id FROM crm_clients WHERE auth_user_id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "Brak indeksów na tenant_id, klient_id, data_do i deleted_at IS NULL — przy wzroście liczby polis listy i wznowienia będą skanować całą tabelę.",
+        "Kolumny skladka_zainkasowana i prowizja_zainkasowana są utrzymywane wyzwalaczem na crm_policy_payments."
+      ]
+    },
+    "crm_policy_annexes": {
+      "modul": "polisy",
+      "opis": "Aneks do polisy. Nowe wartości (new_*) nadpisują dane polisy nadrzędnej, delta_* niosą różnicę składki i prowizji.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "nr_aneksu",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "typ",
+          "typ": "text",
+          "null": false,
+          "default": "'korekta'",
+          "opis": "korekta | doubezpieczenie | zmiana_zakresu | inne"
+        },
+        {
+          "nazwa": "data_aneksu",
+          "typ": "date",
+          "null": false
+        },
+        {
+          "nazwa": "opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "delta_skladka",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "delta_prowizja",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "new_data_do",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "new_skladka_przypisana",
+          "typ": "numeric(12,2)",
+          "null": true
+        },
+        {
+          "nazwa": "new_prowizja_pct",
+          "typ": "numeric(5,2)",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_policy_annexes_typ_check",
+          "definicja": "typ IN ('korekta','doubezpieczenie','zmiana_zakresu','inne')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "idx_annexes_polisa",
+          "definicja": "btree (polisa_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "crm_policy_annexes_client_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "polisa_id IN (SELECT p.id FROM crm_policies p WHERE p.klient_id IN (SELECT c.id FROM crm_clients c WHERE c.auth_user_id = auth.uid()))"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "README opisuje typy aneksów jako korekta/zmiana/rozszerzenie/wypowiedzenie — baza wymusza inny zbiór (korekta/doubezpieczenie/zmiana_zakresu/inne). Wiążący jest CHECK."
+      ]
+    },
+    "crm_policy_brokers": {
+      "modul": "polisy",
+      "opis": "Podział polisy między brokerów (akwizycja / obsługa / opiekun) z udziałem procentowym — podstawa naliczania prowizji.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "BEZ klucza obcego do crm_tenants"
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "broker_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "rola",
+          "typ": "text",
+          "null": false,
+          "opis": "akwizycja | obsługa | opiekun"
+        },
+        {
+          "nazwa": "udzial_pct",
+          "typ": "numeric(5,2)",
+          "null": false,
+          "default": "100"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "broker_id",
+          "do": "crm_profiles(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_policy_brokers_rola_check",
+          "definicja": "rola IN ('akwizycja','obsługa','opiekun')"
+        }
+      ],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = (SELECT tenant_id FROM crm_profiles WHERE id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "Brak ograniczenia unikalności na (polisa_id, broker_id, rola) i brak kontroli, czy suma udzial_pct = 100."
+      ]
+    },
+    "crm_apk_logs": {
+      "modul": "polisy",
+      "opis": "Rejestr APK (Analiza Potrzeb Klienta) w ujęciu „czy podpisano dla tej polisy”. Osobny, lżejszy byt niż moduł formularzy apk_forms.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "czy_podpisane",
+          "typ": "boolean",
+          "null": true,
+          "default": "false"
+        },
+        {
+          "nazwa": "data_podpisu",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_policy_payments": {
+      "modul": "platnosci",
+      "opis": "Rata składki. Zmiana statusu, kwoty lub prowizji z noty automatycznie przelicza skladka_zainkasowana i prowizja_zainkasowana na polisie.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 209,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "nr_raty",
+          "typ": "integer",
+          "null": false,
+          "default": "1"
+        },
+        {
+          "nazwa": "data_platnosci",
+          "typ": "date",
+          "null": false,
+          "opis": "Termin płatności"
+        },
+        {
+          "nazwa": "kwota",
+          "typ": "numeric(12,2)",
+          "null": false
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": false,
+          "default": "'Oczekująca'",
+          "opis": "Oczekująca | Opłacona | Zaległa | Częściowo opłacona"
+        },
+        {
+          "nazwa": "data_oplacenia",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "notatka",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "powod",
+          "typ": "text",
+          "null": true,
+          "opis": "Powód ręcznego dodania raty (aneks, korekta rozliczenia)"
+        },
+        {
+          "nazwa": "nota_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Nota prowizyjna TU, na której rata została rozliczona"
+        },
+        {
+          "nazwa": "prowizja_z_noty",
+          "typ": "numeric",
+          "null": true,
+          "opis": "Faktyczna prowizja z noty; gdy NULL, wyzwalacz liczy kwota × prowizja_pct polisy"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "nota_id",
+          "do": "crm_noty(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_policy_payments_status_check",
+          "definicja": "status IN ('Oczekująca','Opłacona','Zaległa','Częściowo opłacona')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "idx_payments_data",
+          "definicja": "btree (data_platnosci)"
+        },
+        {
+          "nazwa": "idx_payments_polisa",
+          "definicja": "btree (polisa_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "crm_policy_payments_client_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "polisa_id IN (SELECT id FROM crm_policies WHERE klient_id IN (SELECT id FROM crm_clients WHERE auth_user_id = auth.uid()))"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "trg_recalc_zainkasowane",
+          "kiedy": "AFTER INSERT OR DELETE OR UPDATE OF status, kwota, prowizja_z_noty",
+          "funkcja": "recalc_policy_zainkasowane()",
+          "opis": "Przelicza skladka_zainkasowana i prowizja_zainkasowana na crm_policies z rat o statusie 'Opłacona' lub 'Częściowo opłacona'."
+        }
+      ],
+      "uwagi": [
+        "Brak ograniczenia unikalności na (polisa_id, nr_raty) — ta sama rata może zostać zduplikowana."
+      ]
+    },
+    "crm_noty": {
+      "modul": "platnosci",
+      "opis": "Nota prowizyjna / zestawienie od TU zaimportowane z pliku. Rata wskazuje na notę przez crm_policy_payments.nota_id.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 4,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "BEZ klucza obcego do crm_tenants"
+        },
+        {
+          "nazwa": "numer_noty",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "tu_skrot",
+          "typ": "text",
+          "null": true,
+          "opis": "Skrót TU (tekst, nie FK do crm_insurers)"
+        },
+        {
+          "nazwa": "data_zestawienia",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "data_importu",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        },
+        {
+          "nazwa": "razem_skladka",
+          "typ": "numeric",
+          "null": true
+        },
+        {
+          "nazwa": "razem_prowizja",
+          "typ": "numeric",
+          "null": true
+        },
+        {
+          "nazwa": "pozycji_count",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "file_url",
+          "typ": "text",
+          "null": true,
+          "opis": "Plik noty w buckecie settlement-files"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "tenant_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "public"
+          ],
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_commission_settlements": {
+      "modul": "prowizje",
+      "opis": "Miesięczne rozliczenie prowizji brokera (nagłówek).",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "broker_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "miesiac",
+          "typ": "text",
+          "null": false,
+          "opis": "Okres rozliczeniowy jako tekst (np. '2026-08')"
+        },
+        {
+          "nazwa": "kwota_przypisana",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "kwota_rozliczona",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": false,
+          "default": "'otwarty'"
+        },
+        {
+          "nazwa": "zamkniete_at",
+          "typ": "timestamptz",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "broker_id",
+          "do": "crm_profiles(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "Brak ograniczenia unikalności na (broker_id, miesiac) — możliwe dwa rozliczenia za ten sam miesiąc."
+      ]
+    },
+    "crm_commission_items": {
+      "modul": "prowizje",
+      "opis": "Pozycja rozliczenia prowizji — jedna polisa w ramach rozliczenia miesięcznego.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "settlement_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "policy_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "skladka",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "prowizja_pct",
+          "typ": "numeric(5,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "prowizja_kwota",
+          "typ": "numeric(12,2)",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "settlement_id",
+          "do": "crm_commission_settlements(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "policy_id",
+          "do": "crm_policies(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "settlement_id nie kasuje kaskadowo — usunięcie rozliczenia z pozycjami zostanie zablokowane przez FK."
+      ]
+    },
+    "crm_claims": {
+      "modul": "szkody",
+      "opis": "Szkoda / roszczenie zgłoszone do TU.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "tu_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "nr_szkody",
+          "typ": "text",
+          "null": true,
+          "opis": "Numer nadany przez TU"
+        },
+        {
+          "nazwa": "data_szkody",
+          "typ": "date",
+          "null": false
+        },
+        {
+          "nazwa": "opis_szkody",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "wartosc_roszczenia",
+          "typ": "numeric(12,2)",
+          "null": true
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": true,
+          "default": "'Zgłoszona'",
+          "opis": "Zgłoszona | W toku | Wypłacona | Zakończona | Odmowa (bez CHECK)"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "tu_id",
+          "do": "crm_insurers(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "crm_claims_client_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "klient_id IN (SELECT id FROM crm_clients WHERE auth_user_id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_complaints": {
+      "modul": "szkody",
+      "opis": "Reklamacja klienta z ustawowym terminem odpowiedzi (wymóg KNF).",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "BEZ klucza obcego do crm_tenants"
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "BEZ klucza obcego do crm_clients"
+        },
+        {
+          "nazwa": "zglaszajacy",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "tu_nazwa",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "data_wplywu",
+          "typ": "date",
+          "null": false
+        },
+        {
+          "nazwa": "termin_ustawowy",
+          "typ": "date",
+          "null": false
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": true,
+          "default": "'Otwarte'"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_prospects": {
+      "modul": "sprzedaz",
+      "opis": "Lead / prospekt przed konwersją na klienta. Sześć par kolumn ubez_* opisuje, jakie ubezpieczenia firma już posiada.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 6148,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "nazwa",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "adres",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "telefon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "branza",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "zatrudnienie",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "notatki",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "broker_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Broker prowadzący leada"
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": false,
+          "default": "'nowy'",
+          "opis": "nowy | w_kontakcie | oferta_wyslana | wygrany | przegrany (bez CHECK)"
+        },
+        {
+          "nazwa": "ubez_zycie",
+          "typ": "text",
+          "null": true,
+          "opis": "maja | nie_maja"
+        },
+        {
+          "nazwa": "ubez_zycie_opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_medyczne",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_medyczne_opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_flota",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_flota_opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_majatek",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_majatek_opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_gwarancje",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_gwarancje_opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_inne",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ubez_inne_opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "broker_id",
+          "do": "crm_profiles(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_prospects_ubez_zycie_check",
+          "definicja": "ubez_zycie IN ('maja','nie_maja')"
+        },
+        {
+          "nazwa": "crm_prospects_ubez_medyczne_check",
+          "definicja": "ubez_medyczne IN ('maja','nie_maja')"
+        },
+        {
+          "nazwa": "crm_prospects_ubez_flota_check",
+          "definicja": "ubez_flota IN ('maja','nie_maja')"
+        },
+        {
+          "nazwa": "crm_prospects_ubez_majatek_check",
+          "definicja": "ubez_majatek IN ('maja','nie_maja')"
+        },
+        {
+          "nazwa": "crm_prospects_ubez_gwarancje_check",
+          "definicja": "ubez_gwarancje IN ('maja','nie_maja')"
+        },
+        {
+          "nazwa": "crm_prospects_ubez_inne_check",
+          "definicja": "ubez_inne IN ('maja','nie_maja')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "crm_prospects_tenant_created_idx",
+          "definicja": "btree (tenant_id, created_at DESC, id DESC)",
+          "opis": "Paginacja kursorowa listy leadów"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_prospect_activities": {
+      "modul": "sprzedaz",
+      "opis": "Historia kontaktu z leadem: notatki, komentarze, wiadomości.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 129,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "prospect_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "author_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "typ",
+          "typ": "text",
+          "null": false,
+          "opis": "notatka | komentarz | wiadomosc"
+        },
+        {
+          "nazwa": "tresc",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "prospect_id",
+          "do": "crm_prospects(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "author_id",
+          "do": "crm_profiles(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_prospect_activities_typ_check",
+          "definicja": "typ IN ('notatka','komentarz','wiadomosc')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "crm_prospect_activities_prospect_idx",
+          "definicja": "btree (prospect_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant isolation",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = (SELECT tenant_id FROM crm_profiles WHERE id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_tasks": {
+      "modul": "zadania",
+      "opis": "Zadanie zespołu. Może dotyczyć klienta, polisy albo leada. Obsługuje wielu wykonawców (assigned_to + extra_assignees[]), postęp procentowy i kategorie (typy[]).",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 46,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "created_by",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "assigned_to",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Główny wykonawca (constraint nazywa się jeszcze crm_tasks_przypisany_id_fkey)"
+        },
+        {
+          "nazwa": "extra_assignees",
+          "typ": "uuid[]",
+          "null": true,
+          "default": "'{}'",
+          "opis": "Dodatkowi wykonawcy — tablica bez klucza obcego, aplikacja ogranicza do 3 osób"
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "prospect_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "tytul",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "opis",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "termin",
+          "typ": "date",
+          "null": false,
+          "opis": "NOT NULL w bazie, choć typ TypeScript dopuszcza null"
+        },
+        {
+          "nazwa": "godzina",
+          "typ": "time",
+          "null": true,
+          "opis": "Godzina zdarzenia w kalendarzu"
+        },
+        {
+          "nazwa": "czas_trwania_dni",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "typy",
+          "typ": "text[]",
+          "null": true,
+          "default": "'{}'",
+          "opis": "spotkanie | email | telefon | oferta"
+        },
+        {
+          "nazwa": "priorytet",
+          "typ": "text",
+          "null": false,
+          "default": "'normalny'",
+          "opis": "niski | normalny | wysoki | pilny"
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": true,
+          "default": "'Oczekujące'",
+          "opis": "Aplikacja używa otwarte | w_toku | zakonczone | anulowane — DEFAULT w bazie do nich nie należy"
+        },
+        {
+          "nazwa": "postep_pct",
+          "typ": "integer",
+          "null": true,
+          "default": "0",
+          "opis": "0–100"
+        },
+        {
+          "nazwa": "zakonczone_at",
+          "typ": "timestamptz",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        },
+        {
+          "nazwa": "updated_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "created_by",
+          "do": "crm_profiles(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "assigned_to",
+          "do": "crm_profiles(id)",
+          "on_delete": "NO ACTION",
+          "nazwa_constraintu": "crm_tasks_przypisany_id_fkey"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "prospect_id",
+          "do": "crm_prospects(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_tasks_priorytet_check",
+          "definicja": "priorytet IN ('niski','normalny','wysoki','pilny')"
+        },
+        {
+          "nazwa": "crm_tasks_postep_pct_check",
+          "definicja": "postep_pct >= 0 AND postep_pct <= 100"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "crm_tasks_prospect_idx",
+          "definicja": "btree (prospect_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "tenant_isolation_tasks",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "opis": "Duplikat polityki powyżej — obie są permisywne i sumują się przez OR"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "updated_at ma NOT NULL i DEFAULT, ale nie jest odświeżany wyzwalaczem — musi ustawiać go aplikacja."
+      ]
+    },
+    "crm_task_history": {
+      "modul": "zadania",
+      "opis": "Dziennik zmian zadania. Denormalizuje tytul_zadania, klient_id i prospect_id, żeby wpis przeżył kasowanie kontekstu.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "task_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "tytul_zadania",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "zmiana",
+          "typ": "text",
+          "null": false,
+          "opis": "Opis zmiany"
+        },
+        {
+          "nazwa": "stary_status",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "nowy_status",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "autor_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "prospect_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "task_id",
+          "do": "crm_tasks(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "autor_id",
+          "do": "crm_profiles(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "prospect_id",
+          "do": "crm_prospects(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation_task_history",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "task_id kasuje kaskadowo razem z zadaniem — historia nie przeżywa usunięcia zadania, mimo denormalizacji pozostałych pól."
+      ]
+    },
+    "crm_dashboard_prefs": {
+      "modul": "pulpit",
+      "opis": "Układ widżetów pulpitu per użytkownik. PK = user_id, brak tenant_id (preferencja osobista).",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 2,
+      "rls": true,
+      "klucz_glowny": [
+        "user_id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "user_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "= auth.users.id"
+        },
+        {
+          "nazwa": "widgets",
+          "typ": "jsonb",
+          "null": false,
+          "default": "'[\"renewals\",\"claims\",\"clients\",\"renewal_rate\",\"payments\"]'",
+          "opis": "Uporządkowana tablica identyfikatorów widżetów (kolejność = układ drag & drop)"
+        },
+        {
+          "nazwa": "updated_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "user_id",
+          "do": "auth.users(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "self_only",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "user_id = auth.uid()",
+          "with_check": "user_id = auth.uid()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_audit_log": {
+      "modul": "audyt",
+      "opis": "Dziennik operacji użytkowników CRM (logowania, utworzenie/zmiana klienta, import polisy itd.). Zapisywany z poziomu aplikacji, nie wyzwalaczem.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 277,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "BEZ klucza obcego do crm_tenants"
+        },
+        {
+          "nazwa": "user_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "user_email",
+          "typ": "text",
+          "null": true,
+          "opis": "Denormalizacja — wpis przeżywa usunięcie konta"
+        },
+        {
+          "nazwa": "user_name",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "action",
+          "typ": "text",
+          "null": false,
+          "opis": "np. login, client_created, policy_imported"
+        },
+        {
+          "nazwa": "entity_type",
+          "typ": "text",
+          "null": true,
+          "opis": "client | policy | leasing | vehicle | vehicle_request | user"
+        },
+        {
+          "nazwa": "entity_id",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "entity_label",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "details",
+          "typ": "jsonb",
+          "null": true
+        },
+        {
+          "nazwa": "ip_address",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "idx_audit_created",
+          "definicja": "btree (created_at DESC)"
+        },
+        {
+          "nazwa": "idx_audit_tenant",
+          "definicja": "btree (tenant_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "Tenant members can view audit log",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = (SELECT tenant_id FROM crm_profiles WHERE id = auth.uid())"
+        },
+        {
+          "nazwa": "Tenant members can insert audit log",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "Brak polityk UPDATE i DELETE — wpisy są w praktyce niemodyfikowalne z poziomu klienta, co jest pożądane dla dziennika."
+      ]
+    },
+    "crm_alerts": {
+      "modul": "audyt",
+      "opis": "Alert systemowy o niespójności prowizji lub braku aneksu, prezentowany na pulpicie.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 2,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "typ",
+          "typ": "text",
+          "null": false,
+          "opis": "prowizja_rozjazd | ujemna_prowizja | aneks_wymagany"
+        },
+        {
+          "nazwa": "polisa_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "nr_polisy",
+          "typ": "text",
+          "null": true,
+          "opis": "Denormalizacja — alert czytelny po usunięciu polisy"
+        },
+        {
+          "nazwa": "opis",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "resolved",
+          "typ": "boolean",
+          "null": true,
+          "default": "false"
+        },
+        {
+          "nazwa": "resolved_at",
+          "typ": "timestamptz",
+          "null": true
+        },
+        {
+          "nazwa": "resolved_by",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "polisa_id",
+          "do": "crm_policies(id)",
+          "on_delete": "SET NULL"
+        },
+        {
+          "kolumna": "resolved_by",
+          "do": "crm_profiles(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "crm_alerts_typ_check",
+          "definicja": "typ IN ('prowizja_rozjazd','ujemna_prowizja','aneks_wymagany')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "idx_crm_alerts_tenant_resolved",
+          "definicja": "btree (tenant_id, resolved)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "crm_alerts_tenant",
+          "polecenie": "ALL",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_sync_log": {
+      "modul": "audyt",
+      "opis": "Log przebiegów synchronizacji z systemami zewnętrznymi (obecnie beauty.crm_companies).",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 39,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "BEZ klucza obcego do crm_tenants"
+        },
+        {
+          "nazwa": "source",
+          "typ": "text",
+          "null": false,
+          "opis": "Identyfikator źródła, np. beauty.crm_companies"
+        },
+        {
+          "nazwa": "started_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        },
+        {
+          "nazwa": "finished_at",
+          "typ": "timestamptz",
+          "null": true
+        },
+        {
+          "nazwa": "records_synced",
+          "typ": "integer",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": true,
+          "default": "'running'"
+        },
+        {
+          "nazwa": "error",
+          "typ": "text",
+          "null": true
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [],
+      "wyzwalacze": [],
+      "uwagi": [
+        "RLS włączone bez żadnej polityki — dostęp wyłącznie przez service_role."
+      ]
+    },
+    "crm_idd_trainings": {
+      "modul": "zgodnosc",
+      "opis": "Ewidencja godzin szkoleń IDD brokera w danym roku (obowiązek ustawowy).",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "BEZ klucza obcego do crm_tenants"
+        },
+        {
+          "nazwa": "broker_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "BEZ klucza obcego do crm_profiles"
+        },
+        {
+          "nazwa": "rok",
+          "typ": "integer",
+          "null": false
+        },
+        {
+          "nazwa": "przepracowane_godziny",
+          "typ": "integer",
+          "null": true,
+          "default": "0"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [
+        {
+          "nazwa": "crm_idd_trainings_broker_id_rok_key",
+          "kolumny": [
+            "broker_id",
+            "rok"
+          ]
+        }
+      ],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tenant_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "apk_forms": {
+      "modul": "apk",
+      "opis": "Formularz Analizy Potrzeb Klienta. Wypełniany przez klienta z linku publicznego (rola anon) albo przez doradcę. Treść odpowiedzi trzymana w jsonb.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 4,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "NULL dla formularzy założonych anonimowo, zanim doradca je przypisze"
+        },
+        {
+          "nazwa": "klient_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "ref_number",
+          "typ": "text",
+          "null": false,
+          "opis": "Numer referencyjny widoczny dla klienta"
+        },
+        {
+          "nazwa": "client_name",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "advisor_name",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "form_date",
+          "typ": "date",
+          "null": false,
+          "default": "CURRENT_DATE"
+        },
+        {
+          "nazwa": "mode",
+          "typ": "text",
+          "null": false,
+          "default": "'client'",
+          "opis": "client | advisor"
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": false,
+          "default": "'draft'",
+          "opis": "draft | submitted | archived"
+        },
+        {
+          "nazwa": "form_data",
+          "typ": "jsonb",
+          "null": false,
+          "default": "'{}'",
+          "opis": "Wszystkie odpowiedzi formularza"
+        },
+        {
+          "nazwa": "submitted_at",
+          "typ": "timestamptz",
+          "null": true
+        },
+        {
+          "nazwa": "pdf_url",
+          "typ": "text",
+          "null": true,
+          "opis": "Wygenerowany PDF w buckecie apk-pdfs"
+        },
+        {
+          "nazwa": "client_declined",
+          "typ": "boolean",
+          "null": false,
+          "default": "false",
+          "opis": "Klient świadomie odmówił wypełnienia APK"
+        },
+        {
+          "nazwa": "client_declined_reason",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        },
+        {
+          "nazwa": "updated_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "klient_id",
+          "do": "crm_clients(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [
+        {
+          "nazwa": "apk_forms_ref_number_key",
+          "kolumny": [
+            "ref_number"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "nazwa": "apk_forms_mode_check",
+          "definicja": "mode IN ('client','advisor')"
+        },
+        {
+          "nazwa": "apk_forms_status_check",
+          "definicja": "status IN ('draft','submitted','archived')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "apk_forms_client_idx",
+          "definicja": "gin (to_tsvector('simple', client_name))",
+          "opis": "Wyszukiwanie pełnotekstowe po nazwie klienta"
+        },
+        {
+          "nazwa": "apk_forms_form_date_idx",
+          "definicja": "btree (form_date DESC)"
+        },
+        {
+          "nazwa": "apk_forms_status_idx",
+          "definicja": "btree (status)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "apk_forms_select_auth",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "true",
+          "opis": "UWAGA: brak filtra po najemcy — patrz niespojnosci[2]"
+        },
+        {
+          "nazwa": "apk_tenant_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id() OR tenant_id IS NULL"
+        },
+        {
+          "nazwa": "apk_forms_insert_anon",
+          "polecenie": "INSERT",
+          "role": [
+            "anon",
+            "authenticated"
+          ],
+          "with_check": "true"
+        },
+        {
+          "nazwa": "apk_tenant_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "public"
+          ],
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "apk_forms_update_anon",
+          "polecenie": "UPDATE",
+          "role": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "status = 'draft'",
+          "with_check": "status = 'draft'"
+        },
+        {
+          "nazwa": "apk_tenant_update",
+          "polecenie": "UPDATE",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "apk_forms_delete_tenant",
+          "polecenie": "DELETE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "apk_forms_updated_at",
+          "kiedy": "BEFORE UPDATE",
+          "funkcja": "apk_set_updated_at()"
+        },
+        {
+          "nazwa": "apk_forms_anon_guard_trg",
+          "kiedy": "BEFORE UPDATE",
+          "funkcja": "apk_forms_anon_guard()",
+          "opis": "Rola anon nie może podmienić id, tenant_id, klient_id, ref_number, client_name ani advisor_name."
+        }
+      ]
+    },
+    "apk_tokens": {
+      "modul": "apk",
+      "opis": "Jednorazowy token dostępu do publicznego formularza APK. Domyślnie ważny 30 dni.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 4,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "tenant_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "token",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "form_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "advisor_name",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": false,
+          "default": "'pending'",
+          "opis": "pending | used | expired"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        },
+        {
+          "nazwa": "expires_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now() + interval '30 days'"
+        },
+        {
+          "nazwa": "used_at",
+          "typ": "timestamptz",
+          "null": true
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "form_id",
+          "do": "apk_forms(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [
+        {
+          "nazwa": "apk_tokens_token_key",
+          "kolumny": [
+            "token"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "nazwa": "apk_tokens_status_check",
+          "definicja": "status IN ('pending','used','expired')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "apk_tokens_token_idx",
+          "definicja": "btree (token)"
+        },
+        {
+          "nazwa": "apk_tokens_status_idx",
+          "definicja": "btree (status)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "apk_tokens_select",
+          "polecenie": "SELECT",
+          "role": [
+            "public"
+          ],
+          "using": "tenant_id = get_my_tenant_id() OR tenant_id IS NULL"
+        },
+        {
+          "nazwa": "apk_tokens_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "public"
+          ],
+          "with_check": "tenant_id = get_my_tenant_id()"
+        },
+        {
+          "nazwa": "apk_tokens_insert_auth",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "true"
+        },
+        {
+          "nazwa": "apk_tokens_update_anon",
+          "polecenie": "UPDATE",
+          "role": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "status <> 'used'",
+          "with_check": "status <> 'used'"
+        },
+        {
+          "nazwa": "apk_tokens_update_tenant",
+          "polecenie": "UPDATE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "tenant_id = get_my_tenant_id()",
+          "with_check": "tenant_id = get_my_tenant_id()"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "apk_tokens_anon_guard_trg",
+          "kiedy": "BEFORE UPDATE",
+          "funkcja": "apk_tokens_anon_guard()",
+          "opis": "Rola anon nie może podmienić id, token, form_id, tenant_id, advisor_name ani expires_at."
+        }
+      ],
+      "uwagi": [
+        "apk_tokens_update_anon ma WITH CHECK status <> 'used', więc anon nie oznaczy tokenu jako zużytego — zamknięcie tokenu musi wykonać sesja uwierzytelniona lub service_role."
+      ]
+    },
+    "apk_audit": {
+      "modul": "apk",
+      "opis": "Log zdarzeń formularza APK (otwarcie, zapis, wysyłka).",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 4,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "bigint",
+          "null": false,
+          "default": "nextval('apk_audit_id_seq')"
+        },
+        {
+          "nazwa": "form_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "event",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "actor",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "ip_hint",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "meta",
+          "typ": "jsonb",
+          "null": true,
+          "default": "'{}'"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "form_id",
+          "do": "apk_forms(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "apk_audit_form_id_idx",
+          "definicja": "btree (form_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "apk_audit_select_auth",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "true",
+          "opis": "UWAGA: brak filtra po najemcy — patrz niespojnosci[2]"
+        },
+        {
+          "nazwa": "apk_audit_insert_auth",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "true"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "bond_tenants": {
+      "modul": "gwarancje",
+      "opis": "Podmiot korzystający z gwarancji — własny wymiar najemcy modułu bond_*, mapowany na CRM przez crm_tenant_id i crm_client_id.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 2,
+      "rls": true,
+      "klucz_glowny": [
+        "bond_id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "bond_id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "bond_slug",
+          "typ": "text",
+          "null": false,
+          "opis": "Identyfikator w adresie URL"
+        },
+        {
+          "nazwa": "bond_nazwa",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "bond_aktywny",
+          "typ": "boolean",
+          "null": false,
+          "default": "true"
+        },
+        {
+          "nazwa": "bond_nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "bond_regon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "bond_krs",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "crm_tenant_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Most do najemcy CRM — podstawa działania bp_get_tenant()"
+        },
+        {
+          "nazwa": "crm_client_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Most do klienta CRM"
+        },
+        {
+          "nazwa": "bond_created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "crm_tenant_id",
+          "do": "crm_tenants(id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "crm_client_id",
+          "do": "crm_clients(id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [
+        {
+          "nazwa": "bond_tenants_bond_slug_key",
+          "kolumny": [
+            "bond_slug"
+          ]
+        }
+      ],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "bond_tenants_bond_slug_idx",
+          "definicja": "btree (bond_slug)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "tenants_select",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bond_id = bp_get_tenant() OR bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "tenants_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "tenants_update",
+          "polecenie": "UPDATE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'",
+          "with_check": "bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "tenants_delete",
+          "polecenie": "DELETE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "trg_audit_bond_tenants",
+          "kiedy": "AFTER INSERT OR DELETE OR UPDATE",
+          "funkcja": "fn_audit_log()"
+        }
+      ]
+    },
+    "bond_insurers": {
+      "modul": "gwarancje",
+      "opis": "Umowa Limitowa (UL) zawarta z konkretnym TU: limit zaangażowania, stawka bazowa i składka minimalna. Stawka bazowa jest obowiązkowa, bo z niej wyzwalacz liczy składkę gwarancji.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 2,
+      "rls": true,
+      "klucz_glowny": [
+        "bond_id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "bond_id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "bond_tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "bond_nazwa",
+          "typ": "text",
+          "null": false,
+          "opis": "Nazwa towarzystwa"
+        },
+        {
+          "nazwa": "bond_nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "bond_ul_nr",
+          "typ": "text",
+          "null": true,
+          "opis": "Numer Umowy Limitowej"
+        },
+        {
+          "nazwa": "bond_ul_data_od",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "bond_ul_data_do",
+          "typ": "date",
+          "null": true
+        },
+        {
+          "nazwa": "bond_limit",
+          "typ": "numeric",
+          "null": true,
+          "opis": "Limit zaangażowania; NULL = brak limitu"
+        },
+        {
+          "nazwa": "bond_stawka_bazowa",
+          "typ": "numeric",
+          "null": false,
+          "opis": "% w skali roku — NOT NULL, gwarantuje że składka nigdy nie wyjdzie NULL"
+        },
+        {
+          "nazwa": "bond_skladka_min",
+          "typ": "numeric",
+          "null": true,
+          "opis": "Składka minimalna — podłoga wyliczenia"
+        },
+        {
+          "nazwa": "bond_stawka_negocjowana",
+          "typ": "boolean",
+          "null": false,
+          "default": "false"
+        },
+        {
+          "nazwa": "bond_created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "bond_tenant_id",
+          "do": "bond_tenants(bond_id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "ul_limit_nonneg",
+          "definicja": "bond_limit IS NULL OR bond_limit >= 0"
+        },
+        {
+          "nazwa": "ul_min_nonneg",
+          "definicja": "bond_skladka_min IS NULL OR bond_skladka_min >= 0"
+        },
+        {
+          "nazwa": "ul_stawka_nonneg",
+          "definicja": "bond_stawka_bazowa IS NULL OR bond_stawka_bazowa >= 0"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "bond_insurers_bond_tenant_id_idx",
+          "definicja": "btree (bond_tenant_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "insurers_select",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bond_tenant_id = bp_get_tenant() OR bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "insurers_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()"
+        },
+        {
+          "nazwa": "insurers_update",
+          "polecenie": "UPDATE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()",
+          "with_check": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()"
+        },
+        {
+          "nazwa": "insurers_delete",
+          "polecenie": "DELETE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "trg_audit_bond_insurers",
+          "kiedy": "AFTER INSERT OR DELETE OR UPDATE",
+          "funkcja": "fn_audit_log()"
+        }
+      ]
+    },
+    "bond_bonds": {
+      "modul": "gwarancje",
+      "opis": "Pojedyncza gwarancja ubezpieczeniowa wystawiona w ramach Umowy Limitowej. Składka jest liczona w bazie wyzwalaczem — kolumna bond_skladka nie powinna być ustawiana z aplikacji.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 11,
+      "rls": true,
+      "klucz_glowny": [
+        "bond_id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "bond_id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "bond_tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "bond_insurer_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Umowa Limitowa, z której korzysta gwarancja"
+        },
+        {
+          "nazwa": "bond_nr",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "bond_rodzaj",
+          "typ": "text",
+          "null": false,
+          "opis": "WADIUM | NWK | UWU | ZAL"
+        },
+        {
+          "nazwa": "bond_kontrakt",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "bond_inwestor",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "bond_beneficjent",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "bond_data_od",
+          "typ": "date",
+          "null": false
+        },
+        {
+          "nazwa": "bond_data_do",
+          "typ": "date",
+          "null": false
+        },
+        {
+          "nazwa": "bond_suma",
+          "typ": "numeric",
+          "null": false,
+          "opis": "Suma gwarancyjna, musi być > 0"
+        },
+        {
+          "nazwa": "bond_stawka",
+          "typ": "numeric",
+          "null": true,
+          "opis": "Stawka indywidualna — brana pod uwagę tylko przy bond_stawka_override = true"
+        },
+        {
+          "nazwa": "bond_skladka",
+          "typ": "numeric",
+          "null": true,
+          "opis": "WYLICZANE przez trg_bond_calc_skladka: suma × stawka% × dni/365, nie mniej niż składka minimalna UL. Było kolumną GENERATED — zamienione na trigger, bo generated column nie może sięgnąć do bond_insurers."
+        },
+        {
+          "nazwa": "bond_bez_limitu",
+          "typ": "boolean",
+          "null": false,
+          "default": "false",
+          "opis": "Gwarancja poza limitem UL — nie obciąża bond_limits_view"
+        },
+        {
+          "nazwa": "bond_stawka_override",
+          "typ": "boolean",
+          "null": false,
+          "default": "false"
+        },
+        {
+          "nazwa": "bond_created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "bond_tenant_id",
+          "do": "bond_tenants(bond_id)",
+          "on_delete": "NO ACTION"
+        },
+        {
+          "kolumna": "bond_insurer_id",
+          "do": "bond_insurers(bond_id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "bond_rodzaj_check",
+          "definicja": "bond_rodzaj IN ('WADIUM','NWK','UWU','ZAL')"
+        },
+        {
+          "nazwa": "bond_dates_chk",
+          "definicja": "bond_data_do >= bond_data_od"
+        },
+        {
+          "nazwa": "bond_suma_pos_chk",
+          "definicja": "bond_suma > 0"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "bond_bonds_bond_tenant_id_idx",
+          "definicja": "btree (bond_tenant_id)"
+        },
+        {
+          "nazwa": "bond_bonds_bond_insurer_id_idx",
+          "definicja": "btree (bond_insurer_id)"
+        },
+        {
+          "nazwa": "bond_bonds_bond_data_do_idx",
+          "definicja": "btree (bond_data_do)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "bonds_select",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bond_tenant_id = bp_get_tenant() OR bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "bonds_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()"
+        },
+        {
+          "nazwa": "bonds_update",
+          "polecenie": "UPDATE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()",
+          "with_check": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()"
+        },
+        {
+          "nazwa": "bonds_delete",
+          "polecenie": "DELETE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "trg_bond_calc_skladka",
+          "kiedy": "BEFORE INSERT OR UPDATE",
+          "funkcja": "fn_bond_calc_skladka()"
+        },
+        {
+          "nazwa": "trg_audit_bond_bonds",
+          "kiedy": "AFTER INSERT OR DELETE OR UPDATE",
+          "funkcja": "fn_audit_log()"
+        }
+      ]
+    },
+    "bond_tu_dict": {
+      "modul": "gwarancje",
+      "opis": "Globalny słownik towarzystw dla modułu gwarancji (bez wymiaru najemcy) — czytelny dla każdego zalogowanego, edytowalny tylko przez admina.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 10,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "name",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "short_name",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "krs",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "is_active",
+          "typ": "boolean",
+          "null": true,
+          "default": "true"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [
+        {
+          "nazwa": "bond_tu_dict_name_key",
+          "kolumny": [
+            "name"
+          ]
+        }
+      ],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "tu_dict_select",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "true"
+        },
+        {
+          "nazwa": "tu_dict_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "tu_dict_update",
+          "polecenie": "UPDATE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'",
+          "with_check": "bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "tu_dict_delete",
+          "polecenie": "DELETE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "bond_profiles": {
+      "modul": "gwarancje",
+      "opis": "Profil użytkownika modułu gwarancji (PK = auth.users.id). Zastąpiony w praktyce przez crm_profiles — role wyznacza bp_get_role() czytając rolę z CRM.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 1,
+      "rls": true,
+      "klucz_glowny": [
+        "bond_id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "bond_id",
+          "typ": "uuid",
+          "null": false,
+          "opis": "= auth.users.id"
+        },
+        {
+          "nazwa": "bond_tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "bond_imie_nazwisko",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "bond_rola",
+          "typ": "text",
+          "null": true,
+          "default": "'user'"
+        },
+        {
+          "nazwa": "bond_is_admin",
+          "typ": "boolean",
+          "null": true,
+          "default": "false"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "bond_id",
+          "do": "auth.users(id)",
+          "on_delete": "CASCADE"
+        },
+        {
+          "kolumna": "bond_tenant_id",
+          "do": "bond_tenants(bond_id)",
+          "on_delete": "NO ACTION"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [
+        {
+          "nazwa": "bond_profiles_bond_tenant_id_idx",
+          "definicja": "btree (bond_tenant_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "profiles_select",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bond_id = auth.uid() OR bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "profiles_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "profiles_update",
+          "polecenie": "UPDATE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'",
+          "with_check": "bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "profiles_delete",
+          "polecenie": "DELETE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'"
+        }
+      ],
+      "wyzwalacze": [
+        {
+          "nazwa": "trg_audit_bond_profiles",
+          "kiedy": "AFTER INSERT OR DELETE OR UPDATE",
+          "funkcja": "fn_audit_log()"
+        }
+      ]
+    },
+    "bond_analytics": {
+      "modul": "gwarancje",
+      "opis": "Ocena finansowa podmiotu (scoring) na potrzeby gwarancji.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 1,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "bond_tenant_id",
+          "typ": "uuid",
+          "null": false
+        },
+        {
+          "nazwa": "score_grade",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "score_desc",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "financial_data",
+          "typ": "jsonb",
+          "null": false
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "timezone('utc', now())"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "bond_tenant_id",
+          "do": "bond_tenants(bond_id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "analytics_select",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bond_tenant_id = bp_get_tenant() OR bp_get_role() = 'admin'"
+        },
+        {
+          "nazwa": "analytics_insert",
+          "polecenie": "INSERT",
+          "role": [
+            "authenticated"
+          ],
+          "with_check": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()"
+        },
+        {
+          "nazwa": "analytics_update",
+          "polecenie": "UPDATE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()",
+          "with_check": "bp_get_role() = 'admin' OR bond_tenant_id = bp_get_tenant()"
+        },
+        {
+          "nazwa": "analytics_delete",
+          "polecenie": "DELETE",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "bond_audit_log": {
+      "modul": "gwarancje",
+      "opis": "Dziennik audytu modułu gwarancji wypełniany wyzwalaczami fn_audit_log() — trzyma pełny obraz wiersza przed i po zmianie. Czytelny wyłącznie dla admina.",
+      "uzywana_w_aplikacji": true,
+      "wierszy": 17,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "bigint",
+          "null": false,
+          "default": "nextval('bond_audit_log_id_seq')"
+        },
+        {
+          "nazwa": "occurred_at",
+          "typ": "timestamptz",
+          "null": false,
+          "default": "now()"
+        },
+        {
+          "nazwa": "actor_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "actor_role",
+          "typ": "text",
+          "null": true,
+          "opis": "Rola wyliczona przez bp_get_role() — spójna z regułami RLS"
+        },
+        {
+          "nazwa": "operation",
+          "typ": "text",
+          "null": false,
+          "opis": "INSERT | UPDATE | DELETE"
+        },
+        {
+          "nazwa": "table_name",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "record_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "old_data",
+          "typ": "jsonb",
+          "null": true
+        },
+        {
+          "nazwa": "new_data",
+          "typ": "jsonb",
+          "null": true
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "actor_id",
+          "do": "auth.users(id)",
+          "on_delete": "SET NULL"
+        }
+      ],
+      "unikalne": [],
+      "check": [
+        {
+          "nazwa": "bond_audit_log_operation_check",
+          "definicja": "operation IN ('INSERT','UPDATE','DELETE')"
+        }
+      ],
+      "indeksy": [
+        {
+          "nazwa": "idx_audit_log_time",
+          "definicja": "btree (occurred_at DESC)"
+        },
+        {
+          "nazwa": "idx_audit_log_actor",
+          "definicja": "btree (actor_id)"
+        },
+        {
+          "nazwa": "idx_audit_log_record",
+          "definicja": "btree (table_name, record_id)"
+        }
+      ],
+      "polityki_rls": [
+        {
+          "nazwa": "audit_log_select",
+          "polecenie": "SELECT",
+          "role": [
+            "authenticated"
+          ],
+          "using": "bp_get_role() = 'admin'"
+        }
+      ],
+      "wyzwalacze": [],
+      "uwagi": [
+        "Brak polityki INSERT — wpisy dodaje wyłącznie fn_audit_log() działający jako SECURITY DEFINER."
+      ]
+    },
+    "crm_companies": {
+      "modul": "legacy",
+      "opis": "LEGACY. Firmy ze starszego CRM sprzedażowego. Izolacja per użytkownik (assigned_user_id), nie per najemca. Nieużywane przez aplikację SvelteKit; pozostaje jako korzeń dla crm_contacts/events/history/reminders i cel synchronizacji beauty.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "integer",
+          "null": false,
+          "default": "nextval('crm_companies_id_seq1')"
+        },
+        {
+          "nazwa": "company",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "contact",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "title",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "phone",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "city",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "state",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "industry",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "revenue",
+          "typ": "bigint",
+          "null": true
+        },
+        {
+          "nazwa": "employees",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "url",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "status",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "assigned_to",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "assigned_user_id",
+          "typ": "uuid",
+          "null": true,
+          "opis": "Podstawa RLS w tym module"
+        },
+        {
+          "nazwa": "nip",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "regon",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "notes",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        },
+        {
+          "nazwa": "updated_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "user_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "assigned_user_id = auth.uid()",
+          "with_check": "assigned_user_id = auth.uid()"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_contacts": {
+      "modul": "legacy",
+      "opis": "LEGACY. Osoby kontaktowe firm z crm_companies.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "integer",
+          "null": false,
+          "default": "nextval('crm_contacts_id_seq')"
+        },
+        {
+          "nazwa": "company_id",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "name",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "title",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "phone",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "assigned_user_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "company_id",
+          "do": "crm_companies(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "user_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "company_id IN (SELECT id FROM crm_companies WHERE assigned_user_id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_events": {
+      "modul": "legacy",
+      "opis": "LEGACY. Zdarzenia na firmie ze starszego CRM.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "integer",
+          "null": false,
+          "default": "nextval('crm_events_id_seq')"
+        },
+        {
+          "nazwa": "company_id",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "type",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "description",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "event_date",
+          "typ": "timestamptz",
+          "null": true
+        },
+        {
+          "nazwa": "assigned_user_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "company_id",
+          "do": "crm_companies(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "user_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "company_id IN (SELECT id FROM crm_companies WHERE assigned_user_id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_history": {
+      "modul": "legacy",
+      "opis": "LEGACY. Historia działań na firmie ze starszego CRM.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "integer",
+          "null": false,
+          "default": "nextval('crm_history_id_seq')"
+        },
+        {
+          "nazwa": "company_id",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "action",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "details",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "assigned_user_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "company_id",
+          "do": "crm_companies(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "user_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "company_id IN (SELECT id FROM crm_companies WHERE assigned_user_id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_reminders": {
+      "modul": "legacy",
+      "opis": "LEGACY. Przypomnienia powiązane z firmą ze starszego CRM.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 0,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "integer",
+          "null": false,
+          "default": "nextval('crm_reminders_id_seq')"
+        },
+        {
+          "nazwa": "company_id",
+          "typ": "integer",
+          "null": true
+        },
+        {
+          "nazwa": "remind_at",
+          "typ": "timestamptz",
+          "null": true
+        },
+        {
+          "nazwa": "note",
+          "typ": "text",
+          "null": true
+        },
+        {
+          "nazwa": "done",
+          "typ": "boolean",
+          "null": true,
+          "default": "false"
+        },
+        {
+          "nazwa": "assigned_user_id",
+          "typ": "uuid",
+          "null": true
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [
+        {
+          "kolumna": "company_id",
+          "do": "crm_companies(id)",
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unikalne": [],
+      "check": [],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "user_isolation",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "company_id IN (SELECT id FROM crm_companies WHERE assigned_user_id = auth.uid())"
+        }
+      ],
+      "wyzwalacze": []
+    },
+    "crm_users": {
+      "modul": "legacy",
+      "opis": "LEGACY. Lista użytkowników starszego CRM z własnym kolorem na kalendarzu. Rolę użytkownika w bieżącym systemie trzyma crm_profiles.",
+      "uzywana_w_aplikacji": false,
+      "wierszy": 1,
+      "rls": true,
+      "klucz_glowny": [
+        "id"
+      ],
+      "kolumny": [
+        {
+          "nazwa": "id",
+          "typ": "uuid",
+          "null": false,
+          "default": "gen_random_uuid()"
+        },
+        {
+          "nazwa": "name",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "email",
+          "typ": "text",
+          "null": false
+        },
+        {
+          "nazwa": "role",
+          "typ": "text",
+          "null": true,
+          "default": "'user'",
+          "opis": "admin | user"
+        },
+        {
+          "nazwa": "color",
+          "typ": "text",
+          "null": true,
+          "default": "'#6b7280'"
+        },
+        {
+          "nazwa": "active",
+          "typ": "boolean",
+          "null": true,
+          "default": "true"
+        },
+        {
+          "nazwa": "created_at",
+          "typ": "timestamptz",
+          "null": true,
+          "default": "now()"
+        }
+      ],
+      "klucze_obce": [],
+      "unikalne": [
+        {
+          "nazwa": "crm_users_email_key",
+          "kolumny": [
+            "email"
+          ]
+        }
+      ],
+      "check": [
+        {
+          "nazwa": "crm_users_role_check",
+          "definicja": "role IN ('admin','user')"
+        }
+      ],
+      "indeksy": [],
+      "polityki_rls": [
+        {
+          "nazwa": "self_only",
+          "polecenie": "ALL",
+          "role": [
+            "authenticated"
+          ],
+          "using": "id = auth.uid()",
+          "with_check": "id = auth.uid()"
+        }
+      ],
+      "wyzwalacze": []
+    }
+  },
+  "widoki": {
+    "bond_limits_view": {
+      "modul": "gwarancje",
+      "opis": "Wykorzystanie limitu Umowy Limitowej: suma czynnych gwarancji obciążających limit i limit wolny. Wyklucza gwarancje wygasłe (bond_data_do < CURRENT_DATE) oraz oznaczone jako bond_bez_limitu.",
+      "uzywany_w_aplikacji": true,
+      "kolumny": [
+        {
+          "nazwa": "bond_insurer_id",
+          "typ": "uuid",
+          "opis": "= bond_insurers.bond_id"
+        },
+        {
+          "nazwa": "bond_tenant_id",
+          "typ": "uuid"
+        },
+        {
+          "nazwa": "bond_insurer_nazwa",
+          "typ": "text"
+        },
+        {
+          "nazwa": "bond_limit",
+          "typ": "numeric"
+        },
+        {
+          "nazwa": "bond_zaangazowane",
+          "typ": "numeric",
+          "opis": "Suma bond_suma czynnych gwarancji w limicie"
+        },
+        {
+          "nazwa": "bond_wolny_limit",
+          "typ": "numeric",
+          "opis": "bond_limit - bond_zaangazowane"
+        }
+      ],
+      "definicja": "SELECT i.bond_id AS bond_insurer_id, i.bond_tenant_id, i.bond_nazwa AS bond_insurer_nazwa, i.bond_limit, COALESCE(sum(CASE WHEN b.bond_data_do >= CURRENT_DATE AND b.bond_bez_limitu IS NOT TRUE THEN b.bond_suma ELSE 0 END), 0) AS bond_zaangazowane, i.bond_limit - COALESCE(sum(CASE WHEN b.bond_data_do >= CURRENT_DATE AND b.bond_bez_limitu IS NOT TRUE THEN b.bond_suma ELSE 0 END), 0) AS bond_wolny_limit FROM bond_insurers i LEFT JOIN bond_bonds b ON b.bond_insurer_id = i.bond_id GROUP BY i.bond_id, i.bond_tenant_id, i.bond_nazwa, i.bond_limit",
+      "uwagi": [
+        "Widok ma security_invoker = on — czytany z uprawnieniami wywołującego, więc obowiązują go polityki RLS tabel bond_insurers i bond_bonds."
+      ]
+    }
+  },
+  "funkcje": [
+    {
+      "nazwa": "get_my_tenant_id()",
+      "zwraca": "uuid",
+      "jezyk": "sql",
+      "wlasciwosci": [
+        "STABLE",
+        "SECURITY DEFINER",
+        "search_path = public"
+      ],
+      "opis": "Fundament izolacji najemców — zwraca tenant_id zalogowanego użytkownika. Używana w niemal każdej polityce RLS. SECURITY DEFINER, więc użytkownik nie może jej obejść przez własne uprawnienia do crm_profiles.",
+      "cialo": "SELECT tenant_id FROM crm_profiles WHERE id = auth.uid()"
+    },
+    {
+      "nazwa": "bp_get_role()",
+      "zwraca": "text",
+      "jezyk": "sql",
+      "wlasciwosci": [
+        "STABLE",
+        "SECURITY DEFINER"
+      ],
+      "opis": "Mapuje rolę z crm_profiles na dwie role modułu gwarancji: 'admin' (ADMIN GOD, ADMIN BROKER, BOARD, ADMINISTRACJA) albo 'klient'.",
+      "cialo": "SELECT CASE WHEN rola IN ('ADMIN GOD','ADMIN BROKER','BOARD','ADMINISTRACJA') THEN 'admin' ELSE 'klient' END FROM crm_profiles WHERE id = auth.uid()"
+    },
+    {
+      "nazwa": "bp_get_tenant()",
+      "zwraca": "uuid",
+      "jezyk": "sql",
+      "wlasciwosci": [
+        "STABLE",
+        "SECURITY DEFINER"
+      ],
+      "opis": "Tłumaczy najemcę CRM na najemcę modułu gwarancji przez bond_tenants.crm_tenant_id.",
+      "cialo": "SELECT bt.bond_id FROM crm_profiles cp JOIN bond_tenants bt ON bt.crm_tenant_id = cp.tenant_id WHERE cp.id = auth.uid() LIMIT 1"
+    },
+    {
+      "nazwa": "recalc_policy_zainkasowane()",
+      "zwraca": "trigger",
+      "jezyk": "plpgsql",
+      "uzyta_w": [
+        "crm_policy_payments.trg_recalc_zainkasowane"
+      ],
+      "opis": "Po każdej zmianie raty przelicza na polisie skladka_zainkasowana (suma kwot rat o statusie 'Opłacona' / 'Częściowo opłacona') oraz prowizja_zainkasowana (prowizja_z_noty, a gdy jej brak — kwota × prowizja_pct polisy)."
+    },
+    {
+      "nazwa": "fn_bond_calc_skladka()",
+      "zwraca": "trigger",
+      "jezyk": "plpgsql",
+      "uzyta_w": [
+        "bond_bonds.trg_bond_calc_skladka"
+      ],
+      "opis": "Liczy składkę gwarancji: suma × stawka% × dni/365, gdzie stawka = indywidualna (przy bond_stawka_override) albo bazowa z UL; wynik podnoszony do bond_skladka_min i zaokrąglany do 2 miejsc. Zastąpiła kolumnę GENERATED, która zwracała NULL, bo nie mogła sięgnąć do bond_insurers."
+    },
+    {
+      "nazwa": "fn_audit_log()",
+      "zwraca": "trigger",
+      "jezyk": "plpgsql",
+      "wlasciwosci": [
+        "SECURITY DEFINER",
+        "search_path = public"
+      ],
+      "uzyta_w": [
+        "bond_bonds",
+        "bond_insurers",
+        "bond_tenants",
+        "bond_profiles"
+      ],
+      "opis": "Zapisuje INSERT/UPDATE/DELETE do bond_audit_log wraz z pełnym to_jsonb(OLD) i to_jsonb(NEW) oraz rolą z bp_get_role(). Zakłada, że tabela audytowana ma kolumnę bond_id."
+    },
+    {
+      "nazwa": "crm_profiles_guard()",
+      "zwraca": "trigger",
+      "jezyk": "plpgsql",
+      "wlasciwosci": [
+        "search_path = public"
+      ],
+      "uzyta_w": [
+        "crm_profiles.crm_profiles_guard_trg"
+      ],
+      "opis": "Blokuje eskalację uprawnień z poziomu klienta: zmianę rola i tenant_id przy UPDATE oraz zakładanie kont z rolą ADMIN GOD / ADMIN BROKER / BOARD przy INSERT. Przepuszcza wyłącznie service_role (endpointy /api/admin/*)."
+    },
+    {
+      "nazwa": "apk_forms_anon_guard()",
+      "zwraca": "trigger",
+      "jezyk": "plpgsql",
+      "wlasciwosci": [
+        "search_path = public"
+      ],
+      "uzyta_w": [
+        "apk_forms.apk_forms_anon_guard_trg"
+      ],
+      "opis": "Dla roli anon blokuje zmianę id, tenant_id, klient_id, ref_number, client_name i advisor_name — anonim może edytować tylko treść formularza."
+    },
+    {
+      "nazwa": "apk_tokens_anon_guard()",
+      "zwraca": "trigger",
+      "jezyk": "plpgsql",
+      "wlasciwosci": [
+        "search_path = public"
+      ],
+      "uzyta_w": [
+        "apk_tokens.apk_tokens_anon_guard_trg"
+      ],
+      "opis": "Dla roli anon blokuje zmianę id, token, form_id, tenant_id, advisor_name i expires_at."
+    },
+    {
+      "nazwa": "apk_set_updated_at()",
+      "zwraca": "trigger",
+      "jezyk": "plpgsql",
+      "uzyta_w": [
+        "apk_forms.apk_forms_updated_at"
+      ],
+      "opis": "Ustawia NEW.updated_at = now()."
+    }
+  ],
+  "storage": [
+    {
+      "bucket": "apk-pdfs",
+      "publiczny": true,
+      "limit_pliku_bajty": 10485760,
+      "opis": "PDF-y formularzy APK. Publiczne odczytywanie po URL; anonimowe listowanie zawartości zostało wyłączone migracją 20260618000000."
+    },
+    {
+      "bucket": "settlement-files",
+      "publiczny": false,
+      "opis": "Pliki rozliczeń i not prowizyjnych (crm_policies.rozliczenie_plik, crm_noty.file_url)."
+    }
+  ],
+  "relacje": [
+    {
+      "z": "crm_profiles.id",
+      "do": "auth.users.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_profiles.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_clients.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_clients.opiekun_id",
+      "do": "crm_profiles.id"
+    },
+    {
+      "z": "crm_clients.auth_user_id",
+      "do": "auth.users.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_client_contacts.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_client_contacts.klient_id",
+      "do": "crm_clients.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_vehicles.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_vehicles.klient_id",
+      "do": "crm_clients.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_vehicle_requests.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_vehicle_requests.klient_id",
+      "do": "crm_clients.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_vehicle_requests.polisa_id",
+      "do": "crm_policies.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_vehicle_requests.pojazd_id",
+      "do": "crm_vehicles.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_vehicle_requests.created_by",
+      "do": "crm_profiles.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_vehicle_requests.rozpatrzony_przez",
+      "do": "crm_profiles.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_rodo_texts.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_getresponse_links.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_getresponse_links.klient_id",
+      "do": "crm_clients.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_dismissed_duplicates.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_dismissed_duplicates.dismissed_by",
+      "do": "crm_profiles.id"
+    },
+    {
+      "z": "crm_insurers.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_insurer_branches.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_insurer_branches.tu_id",
+      "do": "crm_insurers.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_insurer_contacts.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_insurer_contacts.tu_id",
+      "do": "crm_insurers.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_insurer_contacts.branch_id",
+      "do": "crm_insurer_branches.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_policies.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_policies.klient_id",
+      "do": "crm_clients.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_policies.ubezpieczony_id",
+      "do": "crm_clients.id"
+    },
+    {
+      "z": "crm_policies.tu_id",
+      "do": "crm_insurers.id"
+    },
+    {
+      "z": "crm_policies.tu_contact_id",
+      "do": "crm_insurer_contacts.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_policies.parent_id",
+      "do": "crm_policies.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_policies.renewal_of",
+      "do": "crm_policies.id"
+    },
+    {
+      "z": "crm_policies.pojazd_id",
+      "do": "crm_vehicles.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_policies.leasing_id",
+      "do": "crm_leasings.id"
+    },
+    {
+      "z": "crm_policy_annexes.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_policy_annexes.polisa_id",
+      "do": "crm_policies.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_policy_brokers.polisa_id",
+      "do": "crm_policies.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_policy_brokers.broker_id",
+      "do": "crm_profiles.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_policy_payments.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_policy_payments.polisa_id",
+      "do": "crm_policies.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_policy_payments.nota_id",
+      "do": "crm_noty.id"
+    },
+    {
+      "z": "crm_apk_logs.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_apk_logs.polisa_id",
+      "do": "crm_policies.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_claims.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_claims.klient_id",
+      "do": "crm_clients.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_claims.polisa_id",
+      "do": "crm_policies.id"
+    },
+    {
+      "z": "crm_claims.tu_id",
+      "do": "crm_insurers.id"
+    },
+    {
+      "z": "crm_commission_settlements.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_commission_settlements.broker_id",
+      "do": "crm_profiles.id"
+    },
+    {
+      "z": "crm_commission_items.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_commission_items.settlement_id",
+      "do": "crm_commission_settlements.id"
+    },
+    {
+      "z": "crm_commission_items.policy_id",
+      "do": "crm_policies.id"
+    },
+    {
+      "z": "crm_prospects.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_prospects.broker_id",
+      "do": "crm_profiles.id"
+    },
+    {
+      "z": "crm_prospect_activities.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_prospect_activities.prospect_id",
+      "do": "crm_prospects.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_prospect_activities.author_id",
+      "do": "crm_profiles.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_tasks.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_tasks.created_by",
+      "do": "crm_profiles.id"
+    },
+    {
+      "z": "crm_tasks.assigned_to",
+      "do": "crm_profiles.id"
+    },
+    {
+      "z": "crm_tasks.klient_id",
+      "do": "crm_clients.id"
+    },
+    {
+      "z": "crm_tasks.polisa_id",
+      "do": "crm_policies.id"
+    },
+    {
+      "z": "crm_tasks.prospect_id",
+      "do": "crm_prospects.id"
+    },
+    {
+      "z": "crm_task_history.tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "crm_task_history.task_id",
+      "do": "crm_tasks.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_task_history.autor_id",
+      "do": "crm_profiles.id"
+    },
+    {
+      "z": "crm_task_history.klient_id",
+      "do": "crm_clients.id"
+    },
+    {
+      "z": "crm_task_history.prospect_id",
+      "do": "crm_prospects.id"
+    },
+    {
+      "z": "crm_dashboard_prefs.user_id",
+      "do": "auth.users.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_alerts.tenant_id",
+      "do": "crm_tenants.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_alerts.polisa_id",
+      "do": "crm_policies.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_alerts.resolved_by",
+      "do": "crm_profiles.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "apk_forms.klient_id",
+      "do": "crm_clients.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "apk_tokens.form_id",
+      "do": "apk_forms.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "apk_audit.form_id",
+      "do": "apk_forms.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "bond_tenants.crm_tenant_id",
+      "do": "crm_tenants.id"
+    },
+    {
+      "z": "bond_tenants.crm_client_id",
+      "do": "crm_clients.id"
+    },
+    {
+      "z": "bond_insurers.bond_tenant_id",
+      "do": "bond_tenants.bond_id"
+    },
+    {
+      "z": "bond_bonds.bond_tenant_id",
+      "do": "bond_tenants.bond_id"
+    },
+    {
+      "z": "bond_bonds.bond_insurer_id",
+      "do": "bond_insurers.bond_id"
+    },
+    {
+      "z": "bond_profiles.bond_id",
+      "do": "auth.users.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "bond_profiles.bond_tenant_id",
+      "do": "bond_tenants.bond_id"
+    },
+    {
+      "z": "bond_analytics.bond_tenant_id",
+      "do": "bond_tenants.bond_id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "bond_audit_log.actor_id",
+      "do": "auth.users.id",
+      "on_delete": "SET NULL"
+    },
+    {
+      "z": "crm_contacts.company_id",
+      "do": "crm_companies.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_events.company_id",
+      "do": "crm_companies.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_history.company_id",
+      "do": "crm_companies.id",
+      "on_delete": "CASCADE"
+    },
+    {
+      "z": "crm_reminders.company_id",
+      "do": "crm_companies.id",
+      "on_delete": "CASCADE"
+    }
+  ],
+  "niespojnosci": [
+    {
+      "id": 0,
+      "waga": "srednia",
+      "obszar": "crm_policies.rodzaj",
+      "opis": "Migracja supabase/migrations/20260605000001_update_ug_podtyp_check.sql dodaje CHECK na kolumnie rodzaj, ale w produkcyjnej bazie takie ograniczenie NIE istnieje (ug_podtyp z tej samej migracji jest obecne). Kolumna przyjmuje dowolny tekst.",
+      "skutek": "Literówka w rodzaju polisy przechodzi do bazy i wypada z filtrów oraz raportów.",
+      "sugestia": "Zweryfikować, czy ADD CONSTRAINT nie został cofnięty; obecne dane mieszczą się w dozwolonym zbiorze, więc ograniczenie da się nałożyć bez czyszczenia."
+    },
+    {
+      "id": 1,
+      "waga": "srednia",
+      "obszar": "crm_tasks.status",
+      "opis": "DEFAULT kolumny to 'Oczekujące', a aplikacja i migracja 20260607000000 operują na zbiorze otwarte | w_toku | zakonczone | anulowane. CHECK nie istnieje.",
+      "skutek": "Zadanie wstawione bez jawnego statusu dostaje wartość, której interfejs nie rozpoznaje (wypada z filtrów i liczników).",
+      "sugestia": "Ustawić DEFAULT 'otwarte' i dołożyć CHECK po znormalizowaniu istniejących danych."
+    },
+    {
+      "id": 2,
+      "waga": "wysoka",
+      "obszar": "apk_forms, apk_audit — RLS",
+      "opis": "Polityki apk_forms_select_auth i apk_audit_select_auth mają USING true dla roli authenticated. Polityki permisywne sumują się przez OR, więc szczelniejsza apk_tenant_select nie ogranicza odczytu.",
+      "skutek": "Dowolny zalogowany użytkownik dowolnego najemcy odczyta wszystkie formularze APK (form_data zawiera dane osobowe klientów) i cały log apk_audit.",
+      "sugestia": "Usunąć obie polityki USING true i zostawić wyłącznie warianty filtrujące po tenant_id (z dopuszczeniem tenant_id IS NULL tylko tam, gdzie faktycznie potrzebne dla przepływu anonimowego)."
+    },
+    {
+      "id": 3,
+      "waga": "niska",
+      "obszar": "Brakujące klucze obce na tenant_id",
+      "opis": "Kolumna tenant_id bez FK do crm_tenants w tabelach: crm_leasings, crm_noty, crm_policy_brokers, crm_complaints, crm_idd_trainings, crm_audit_log, crm_sync_log. Dodatkowo crm_complaints.klient_id i crm_idd_trainings.broker_id też nie mają FK.",
+      "skutek": "Osierocone rekordy po usunięciu najemcy, klienta lub brokera; brak kaskad.",
+      "sugestia": "Dodać brakujące klucze obce po sprawdzeniu, czy dane nie zawierają już sierot."
+    },
+    {
+      "id": 4,
+      "waga": "niska",
+      "obszar": "crm_settings, crm_sync_log — RLS bez polityk",
+      "opis": "Obie tabele mają włączone RLS, ale zero polityk.",
+      "skutek": "Są całkowicie niedostępne dla ról anon i authenticated — działają tylko przez service_role. Dla crm_sync_log to zgodne z zamysłem, dla crm_settings (pipeline_stages) prawdopodobnie nie.",
+      "sugestia": "Jeśli ustawienia mają być czytane przez aplikację, dodać politykę SELECT dla authenticated."
+    },
+    {
+      "id": 5,
+      "waga": "niska",
+      "obszar": "Brakujące ograniczenia unikalności",
+      "opis": "crm_policy_payments nie ma UNIQUE (polisa_id, nr_raty), crm_commission_settlements nie ma UNIQUE (broker_id, miesiac), crm_policy_brokers nie ma UNIQUE (polisa_id, broker_id, rola).",
+      "skutek": "Możliwe duplikaty rat, podwójne rozliczenie miesiąca i zdublowany udział brokera w polisie.",
+      "sugestia": "Dodać ograniczenia po deduplikacji istniejących danych."
+    },
+    {
+      "id": 6,
+      "waga": "niska",
+      "obszar": "crm_policies — indeksy",
+      "opis": "Brak indeksów na tenant_id, klient_id i data_do przy 44 kolumnach i rosnącej liczbie polis. Podobnie crm_policy_payments nie ma indeksu na tenant_id, a crm_prospects na broker_id i status.",
+      "skutek": "Listy, wznowienia i kalendarz płatności skanują całą tabelę.",
+      "sugestia": "Dodać idx na crm_policies(tenant_id, data_do) WHERE deleted_at IS NULL oraz crm_policies(klient_id)."
+    },
+    {
+      "id": 7,
+      "waga": "informacyjna",
+      "obszar": "crm_tasks — zdublowana polityka RLS",
+      "opis": "Dwie polityki o tym samym warunku: tenant_isolation (authenticated, z WITH CHECK) i tenant_isolation_tasks (public, bez WITH CHECK).",
+      "skutek": "Brak luki bezpieczeństwa — obie sprawdzają ten sam warunek — ale utrudnia audyt i podwaja koszt sprawdzenia.",
+      "sugestia": "Usunąć starszą tenant_isolation_tasks."
+    },
+    {
+      "id": 8,
+      "waga": "informacyjna",
+      "obszar": "updated_at bez wyzwalacza",
+      "opis": "crm_tasks.updated_at i crm_getresponse_links.updated_at mają NOT NULL i DEFAULT now(), ale nie są odświeżane przy UPDATE (w przeciwieństwie do apk_forms, gdzie robi to apk_set_updated_at()).",
+      "skutek": "Kolumna pokazuje moment utworzenia, nie ostatniej modyfikacji.",
+      "sugestia": "Dodać wyzwalacz BEFORE UPDATE albo konsekwentnie ustawiać kolumnę w aplikacji."
+    },
+    {
+      "id": 9,
+      "waga": "informacyjna",
+      "obszar": "Migracje w repo vs. baza",
+      "opis": "26 plików w supabase/migrations ma znaczniki 2026060500000x…, a supabase_migrations.schema_migrations zawiera 130 innych wersji. Repozytorium nie odwzorowuje historii bazy — część zmian nakładano bezpośrednio w panelu Supabase.",
+      "skutek": "Odtworzenie bazy z samych migracji w repo nie jest możliwe; ten plik JSON jest bliższy prawdzie niż katalog migracji.",
+      "sugestia": "Zrzucić bieżący schemat jako migrację bazową (supabase db dump) i dalej prowadzić zmiany przez CLI."
+    },
+    {
+      "id": 10,
+      "waga": "informacyjna",
+      "obszar": "Dokumentacja typów aneksów",
+      "opis": "README wymienia typy aneksu jako korekta / zmiana / rozszerzenie / wypowiedzenie, a CHECK w bazie dopuszcza korekta / doubezpieczenie / zmiana_zakresu / inne (tak samo jak typ TypeScript).",
+      "skutek": "Mylący opis w dokumentacji.",
+      "sugestia": "Poprawić README pod stan bazy."
+    }
+  ]
+}
