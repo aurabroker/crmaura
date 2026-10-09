@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPlatnosci, wczytajPojazdy, wczytajPolisy } from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 	import { sb } from '$lib/supabase';
@@ -33,6 +34,8 @@
 	let utworzPojazd = $state(false);
 	let wnioskujPojazd = $state(false);
 	let potwierdzOdnowienie = $state(false);
+	// Umowa Generalna wybrana ręcznie, gdy program ma w CRM kilka umów (null = wybór automatyczny).
+	let ugId = $state<string | null>(null);
 
 	// Wejście z karty polisy: /policies/import?renewal_of=<id> — import od razu
 	// wiąże nową polisę jako odnowienie wskazanej.
@@ -95,7 +98,8 @@
 					utworzPojazd,
 					wnioskujPojazd,
 					potwierdzOdnowienie,
-					renewalOf
+					renewalOf,
+					ugId
 				})
 			: null
 	);
@@ -109,6 +113,7 @@
 		utworzPojazd = false;
 		wnioskujPojazd = false;
 		potwierdzOdnowienie = false;
+		ugId = null;
 	}
 
 	function insurerLabel(i: Insurer): string {
@@ -139,6 +144,7 @@
 		parsing = true;
 		parseError = '';
 		extracted = null;
+		ugId = null;
 		try {
 			const doc: PdfDoc = await readPdf(file);
 			if (product.detect) {
@@ -261,21 +267,13 @@
 		});
 
 		const [rP, rPay, rV, rL, rVR] = await Promise.all([
-			sb
-				.from('crm_policies')
-				.select(
-					'*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))'
-				)
-				.is('deleted_at', null),
-			sb
-				.from('crm_policy_payments')
-				.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))')
-				.order('data_platnosci'),
-			sb.from('crm_vehicles').select('*'),
+			wczytajPolisy(),
+			wczytajPlatnosci(),
+			wczytajPojazdy(),
 			sb.from('crm_leasings').select('*'),
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje')
 		]);
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.leasings = (rL.data ?? []) as typeof appState.leasings;
@@ -498,6 +496,29 @@
 								</label>
 							</div>
 						</div>
+					</div>
+				{/if}
+
+				<!-- Program przedłużany z tym samym numerem: kilka Umów Generalnych do wyboru -->
+				{#if draft.ugKandydaci.length > 1}
+					<div class="bg-slate-50 border border-line rounded-lg px-4 py-3">
+						<label for="import-ug" class={lbl}>Umowa Generalna</label>
+						<select
+							id="import-ug"
+							class={inp}
+							value={draft.ug?.id ?? ''}
+							onchange={(ev) => (ugId = (ev.currentTarget as HTMLSelectElement).value || null)}
+						>
+							{#each draft.ugKandydaci as u (u.id)}
+								<option value={u.id}>
+									{u.nr_polisy} — zawarta {u.data_zawarcia ?? '—'}, okres {u.data_od} — {u.data_do}
+								</option>
+							{/each}
+						</select>
+						<p class="text-xs text-slate-500 mt-1">
+							Domyślnie umowa obowiązująca w dniu zawarcia polisy (liczy się od zawarcia umowy do końca jej okresu).
+							Zmień tylko, gdy polisa należy do innego roku programu.
+						</p>
 					</div>
 				{/if}
 

@@ -71,6 +71,11 @@
 	}
 
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
+	let fpSumaGw = $state(policy?.suma_gwarancyjna?.toString() ?? '');
+	// Kolumna suma_gwarancyjna dochodzi migracją odnowień. Wiersz wczytany po migracji ma ten klucz —
+	// wtedy wolno wysłać null (wyczyszczenie pola); wcześniej klucz idzie tylko z wpisaną kwotą,
+	// żeby zapis polisy nie padał na nieistniejącej kolumnie.
+	const maKolumneSumy = !!policy && 'suma_gwarancyjna' in policy;
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
 	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
 	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
@@ -164,10 +169,26 @@
 		}
 	}
 
+	// Nowa polisa z UG podaną w adresie (dodanie do UG, odnowienie certyfikatu): TU jest wtedy
+	// zablokowane, więc TU i domyślną prowizję bierzemy z umowy raz, gdy dane się wczytają.
+	let presetUgUstawiona = false;
+	$effect(() => {
+		if (presetUgUstawiona || !presetParentId || policy?.tu_id) return;
+		if (!appState.policies.some(p => p.id === presetParentId)) return;
+		presetUgUstawiona = true;
+		untrack(onParentUgChange);
+	});
+
+	function sumaGw(): number | null {
+		const v = String(fpSumaGw ?? '').trim();
+		return v === '' ? null : parseFloat(v.replace(',', '.'));
+	}
+
 	export function getValues() {
 		const sklPrzyp = parseFloat(fpSklPrzyp) || 0;
 		const prowPct = parseFloat(fpProwPct) || 0;
 		const prowPrzyp = parseFloat(fpProwPrzyp) || (sklPrzyp * prowPct / 100);
+		const suma = sumaGw();
 		return {
 			klient_id: fpKlient, tu_id: fpTu, nr_polisy: fpNr,
 			rozliczaj_platnosci: null,
@@ -191,7 +212,8 @@
 			skladka_zaliczkowa: parseFloat(fpSklZaliczkowa) || 0,
 			prowizja_pct: prowPct,
 			prowizja_przypisana: prowPrzyp,
-			prowizja_zainkasowana: 0
+			prowizja_zainkasowana: 0,
+			...(suma != null || maKolumneSumy ? { suma_gwarancyjna: suma } : {})
 		};
 	}
 
@@ -215,6 +237,8 @@
 		if (!fpOd || !fpDo) return 'Podaj daty obowiązywania';
 		if (fpOd < '2024-01-01') return 'Data od nie może być wcześniejsza niż 2024-01-01';
 		if (isKomunikacja && availableVehicles.length > 0 && !fpPojazdId) return 'Wybierz pojazd dla polisy komunikacyjnej';
+		const suma = sumaGw();
+		if (suma != null && !(suma > 0)) return 'Suma gwarancyjna musi być kwotą większą od zera';
 		return null;
 	}
 
@@ -541,6 +565,12 @@
 			<div>
 				<label class={lbl}>Prowizja przypisana (PLN)</label>
 				<input type="number" step="0.01" bind:value={fpProwPrzyp} placeholder="Auto z %" class={inp} />
+			</div>
+		</div>
+		<div class="grid grid-cols-3 gap-4 mt-4">
+			<div>
+				<label class={lbl} for="fp-suma-gw">Suma gwarancyjna (zł)</label>
+				<input id="fp-suma-gw" type="number" step="1000" min="0" bind:value={fpSumaGw} placeholder="opcjonalnie, np. 200000" class={inp} />
 			</div>
 		</div>
 	</div>

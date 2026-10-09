@@ -4,6 +4,28 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<meta name="text-scale" content="scale" />
+		<script>
+			// Po wdrożeniu nowej wersji strona z pamięci przeglądarki prosi o pliki startowe, których już nie ma
+			// (404 jako text/html → „niedozwolony typ MIME”) i aplikacja w ogóle nie rusza. Wtedy jedno przeładowanie.
+			// Tylko przed startem aplikacji: później brakujące moduły obsługuje SvelteKit (sprawdzenie wersji
+			// i pełne przejście), a przeładowanie np. przy najechaniu myszką skasowałoby niezapisany formularz.
+			(function () {
+				var KLUCZ = 'crm-przeladowanie-po-wdrozeniu';
+				function przeladuj() {
+					try {
+						var ostatnio = Number(sessionStorage.getItem(KLUCZ) || 0);
+						if (Date.now() - ostatnio < 60000) return;
+						sessionStorage.setItem(KLUCZ, String(Date.now()));
+					} catch (e) {}
+					location.reload();
+				}
+				window.addEventListener('unhandledrejection', function (e) {
+					if (window.__crmStart) return;
+					var m = String((e.reason && e.reason.message) || e.reason || '');
+					if (/dynamically imported module|Importing a module script failed|error loading dynamically imported/i.test(m)) przeladuj();
+				});
+			})();
+		</script>
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">

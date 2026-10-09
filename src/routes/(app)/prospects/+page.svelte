@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajKlientow } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import Badge from '$lib/components/Badge.svelte';
@@ -322,7 +323,7 @@
 		if (insertError) { alert('Błąd: ' + insertError.message); return; }
 		await sb.from('crm_prospects').update({ status: 'wygrany' }).eq('id', p.id);
 		await loadProspects();
-		const { data } = await sb.from('crm_clients').select('*');
+		const { data } = await wczytajKlientow();
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
 

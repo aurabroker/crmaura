@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajFormularzeApk, wczytajKlientow } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { ApkForm } from '$lib/types/database';
@@ -7,24 +8,36 @@
 	import { todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
+	import { apkTokenLink, apkOpenLink, newApkToken } from '$lib/utils/apkLink';
+	import { openStoredFile, copyStoredFileLink } from '$lib/utils/storageLink';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
 	let pdfSaving = $state<string | null>(null); // form.id currently saving
+	let pdfError = $state('');
 
+	// Generuje PDF: pobiera go przeglądarką, zapisuje na serwerze i pokazuje link do zapisanego pliku.
 	async function handlePdf(f: ApkForm) {
-		pdfSaving = f.id;
+		pdfSaving = f.id; pdfError = '';
 		try {
-			await saveApkPdf(f);
-			// refresh pdf_url in local state
-			appState.apkForms = appState.apkForms.map(x => x.id === f.id ? { ...x, pdf_url: f.pdf_url } : x);
+			const url = await saveApkPdf(f, { download: true });
+			appState.apkForms = appState.apkForms.map(x => x.id === f.id ? { ...x, pdf_url: url } : x);
+		} catch (e) {
+			pdfError = 'Nie udało się zapisać PDF na serwerze: ' + ((e as { message?: string })?.message ?? String(e));
 		} finally {
 			pdfSaving = null;
 		}
 	}
 
-	const APK_APP_URL = 'https://apk.aurabroker.pl'; // adres React app
+	async function openPdf(f: ApkForm) {
+		pdfError = '';
+		try {
+			await openStoredFile('apk-pdfs', f.pdf_url);
+		} catch (e) {
+			pdfError = 'Nie udało się otworzyć PDF: ' + ((e as { message?: string })?.message ?? String(e));
+		}
+	}
 
 	let showNew = $state(false);
 	let saving = $state(false);
@@ -58,13 +71,10 @@
 	let createdFormId = $state('');
 	let copied = $state(false);
 
-	const tokenLink = $derived(createdToken ? `${APK_APP_URL}?token=${createdToken}` : '');
+	const tokenLink = $derived(createdToken ? apkTokenLink(createdToken) : '');
 
 	function genRef(): string {
 		return 'APK-' + Math.random().toString(36).slice(2, 10).toUpperCase();
-	}
-	function genToken(): string {
-		return Math.random().toString(36).slice(2, 8).toUpperCase() + Math.random().toString(36).slice(2, 8).toUpperCase();
 	}
 
 	async function createApk() {
@@ -73,7 +83,7 @@
 		saving = true; err = '';
 		const client = appState.clients.find(c => c.id === fKlient)!;
 		const ref = genRef();
-		const token = genToken();
+		const token = newApkToken();
 		const today = todayStr();
 
 		const { data: form, error: e1 } = await sb.from('apk_forms').insert([{
@@ -110,7 +120,7 @@
 		await sb.from('apk_audit').insert([{ form_id: form!.id, event: clientDeclined ? 'client_declined' : 'created', actor: fAdvisor || 'system' }]);
 
 		// refresh
-		const { data } = await sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false });
+		const { data } = await wczytajFormularzeApk();
 		appState.apkForms = (data ?? []) as typeof appState.apkForms;
 
 		// Jeśli zebrano RODO — zapisz na kliencie
@@ -120,7 +130,7 @@
 				rodo_data: rodoData || todayStr(),
 				rodo_kanal: rodoKanal
 			}).eq('id', fKlient);
-			const { data: cls } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+			const { data: cls } = await wczytajKlientow();
 			if (cls) appState.clients = cls as typeof appState.clients;
 		}
 
@@ -140,7 +150,8 @@
 			{
 				label: 'Otwórz formularz APK',
 				icon: ExternalLink,
-				onSelect: () => window.open(`${APK_APP_URL}?form_id=${f.id}`, '_blank', 'noopener')
+				disabled: !apkOpenLink(f),
+				onSelect: () => { const u = apkOpenLink(f); if (u) window.open(u, '_blank', 'noopener'); }
 			},
 			{
 				label: 'Generuj PDF',
@@ -152,7 +163,7 @@
 				label: 'Otwórz zapisany PDF',
 				icon: Download,
 				disabled: !f.pdf_url,
-				onSelect: () => window.open(f.pdf_url!, '_blank', 'noopener')
+				onSelect: () => openPdf(f)
 			},
 			{ separator: true },
 			{
@@ -167,7 +178,7 @@
 				label: 'Kopiuj link do PDF',
 				icon: Copy,
 				disabled: !f.pdf_url,
-				onSelect: () => ctxCopy(f.pdf_url, 'link do PDF')
+				onSelect: () => copyStoredFileLink('apk-pdfs', f.pdf_url, 'link do PDF')
 			}
 		];
 	}
@@ -251,6 +262,10 @@
 	</div>
 </div>
 
+{#if pdfError}
+	<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{pdfError}</div>
+{/if}
+
 <!-- Lista -->
 {#if filtered.length === 0}
 	<div class="bg-white border border-line rounded-xl p-10 text-center text-slate-400">
@@ -298,19 +313,21 @@
 						<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
 						<td class="px-5 py-3">
 							<div class="flex items-center gap-2">
-								<a href="{APK_APP_URL}?form_id={f.id}" target="_blank"
-									class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
-									<ExternalLink size={12} /> Otwórz
-								</a>
+								{#if apkOpenLink(f)}
+									<a href={apkOpenLink(f)} target="_blank" rel="noopener"
+										class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
+										<ExternalLink size={12} /> Otwórz
+									</a>
+								{/if}
 								<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
 									class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
 									<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
 								</button>
 								{#if f.pdf_url}
-									<a href={f.pdf_url} target="_blank" title="Ostatni zapisany PDF"
+									<button onclick={() => openPdf(f)} title="Ostatni zapisany PDF"
 										class="text-blue-500 hover:text-blue-700 flex items-center">
 										<Download size={12} />
-									</a>
+									</button>
 								{/if}
 							</div>
 						</td>

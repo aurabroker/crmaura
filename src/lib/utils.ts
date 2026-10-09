@@ -66,3 +66,11 @@ export function assignedPolicyFor<T extends { id: string; pojazd_id: string | nu
 ): T | null {
 	return policies.find(p => p.pojazd_id === vehicleId && !p.deleted_at && p.id !== excludePolicyId) ?? null;
 }
+
+/** Polska odmiana po liczbie: odmiana(1, 'polisa', 'polisy', 'polis') → „1 polisa”, 3 → „3 polisy”, 5 → „5 polis”. */
+export function odmiana(n: number, jeden: string, kilka: string, wiele: string): string {
+	const d = Math.abs(n) % 10;
+	const s = Math.abs(n) % 100;
+	const slowo = n === 1 ? jeden : d >= 2 && d <= 4 && (s < 12 || s > 14) ? kilka : wiele;
+	return `${n} ${slowo}`;
+}

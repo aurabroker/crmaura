@@ -5,6 +5,7 @@
 import type { Client, Leasing, Policy, PolicyImportData, Vehicle } from '$lib/types/database';
 import type { ExtractedPolicy, ProductTemplate } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
+import { poczatekUmowy, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
 
 export type IssueLevel = 'error' | 'warn' | 'info';
 
@@ -18,6 +19,8 @@ export interface Draft {
 	issues: Issue[];
 	/** Umowa Generalna rozpoznana po numerze programu z polisy. */
 	ug: Policy | null;
+	/** Wszystkie Umowy Generalne tego programu (program przedłużany z tym samym numerem). */
+	ugKandydaci: Policy[];
 	/** Polisa, której to jest wznowienie. */
 	poprzednia: Policy | null;
 	/** Propozycja odnowienia rozpoznana po pojeździe — czeka na potwierdzenie. */
@@ -59,6 +62,8 @@ export interface BuildInput {
 	potwierdzOdnowienie?: boolean;
 	/** Odnowienie wskazane wprost (wejście z karty polisy). */
 	renewalOf?: string | null;
+	/** Umowa Generalna wybrana przez operatora spośród umów programu. */
+	ugId?: string | null;
 }
 
 export function buildDraft(input: BuildInput): Draft {
@@ -82,13 +87,23 @@ export function buildDraft(input: BuildInput): Draft {
 			text: `Polisa o numerze ${extracted.nr_polisy} już istnieje w CRM.`
 		});
 
-	// Umowa Generalna po numerze programu wskazanym na polisie.
+	// Umowa Generalna po numerze programu wskazanym na polisie. Program przedłużany z tym samym
+	// numerem ma w CRM kilka umów — polisa trafia pod umowę obowiązującą w dniu jej zawarcia.
 	let ug: Policy | null = null;
+	let ugKandydaci: Policy[] = [];
 	if (extracted.program_ug) {
-		const szukany = normNr(extracted.program_ug);
-		ug =
-			policies.find((p) => p.typ_umowy === 'generalna' && normNr(p.nr_polisy) === szukany) ?? null;
-		if (ug)
+		ugKandydaci = umowyProgramu(policies, extracted.program_ug);
+		const dzien = extracted.data_zawarcia ?? extracted.data_od;
+		const wskazana = input.ugId ? (ugKandydaci.find((u) => u.id === input.ugId) ?? null) : null;
+		ug = wskazana ?? wybierzUmowe(ugKandydaci, dzien);
+		if (ug && ugKandydaci.length > 1)
+			issues.push({
+				level: 'info',
+				text: wskazana
+					? `Polisa zostanie podpięta pod Umowę Generalną ${ug.nr_polisy} — wybraną ręcznie spośród ${ugKandydaci.length} umów programu ${extracted.program_ug}.`
+					: `Polisa zostanie podpięta pod Umowę Generalną ${ug.nr_polisy} (od ${poczatekUmowy(ug) ?? '—'}) — umowę programu ${extracted.program_ug} obowiązującą w dniu zawarcia polisy${dzien ? ` (${dzien})` : ''}.`
+			});
+		else if (ug)
 			issues.push({
 				level: 'info',
 				text: `Polisa zostanie podpięta pod Umowę Generalną ${ug.nr_polisy} (program ${extracted.program_ug}).`
@@ -179,6 +194,8 @@ export function buildDraft(input: BuildInput): Draft {
 		ug_podtyp: null,
 		ug_default_prowizja_pct: null,
 		parent_id: ug?.id ?? null,
+		// Opiekun TU domyślnie ten sam co na Umowie Generalnej.
+		tu_contact_id: ug && ug.tu_id === insurerId ? (ug.tu_contact_id ?? null) : null,
 		renewal_of: poprzednia?.id ?? null,
 		ubezpieczony_id: ubezpieczony?.id ?? null,
 		przedmiot: extracted.przedmiot,
@@ -207,6 +224,7 @@ export function buildDraft(input: BuildInput): Draft {
 		payload,
 		issues,
 		ug,
+		ugKandydaci,
 		poprzednia,
 		kandydatOdnowienia,
 		raty,

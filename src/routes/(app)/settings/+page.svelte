@@ -1,6 +1,7 @@
 <svelte:head><title>Ustawienia — FRANK67 CRM</title></svelte:head>
 
 <script lang="ts">
+	import { wczytajPojazdy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import type { Vehicle } from '$lib/types/database';
@@ -9,6 +10,8 @@
 	import AdminSettings from '$lib/components/AdminSettings.svelte';
 	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark } from 'lucide-svelte';
 	import { fmtPln, validateVin, assignedPolicyFor } from '$lib/utils';
+	import { openStoredFile } from '$lib/utils/storageLink';
+	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 
@@ -66,6 +69,14 @@
 		const { data } = await sb.from('crm_noty').select('*').order('data_importu', { ascending: false }).limit(100);
 		noty = (data ?? []) as Nota[];
 		notyLoading = false;
+	}
+
+	async function openNotaFile(n: Nota) {
+		try {
+			await openStoredFile('settlement-files', n.file_url);
+		} catch {
+			ctxToast('Nie udało się otworzyć pliku zestawienia');
+		}
 	}
 
 	// --- RODO texts ---
@@ -268,12 +279,8 @@
 		}
 
 		// Reload vehicles
-		const { data } = await sb
-			.from('crm_vehicles')
-			.select('*')
-			.eq('tenant_id', appState.profile!.tenant_id)
-			.order('nr_rejestracyjny');
-		if (data) appState.vehicles = data;
+		const { data } = await wczytajPojazdy();
+		if (data) appState.vehicles = data as typeof appState.vehicles;
 
 		vehicleSaving = false;
 		closeVehicleModal();
@@ -685,7 +692,7 @@
 						<td class="px-5 py-3 text-center">{n.pozycji_count ?? '—'}</td>
 						<td class="px-5 py-3">
 							{#if n.file_url}
-								<a href={n.file_url} target="_blank" class="flex items-center gap-1 text-blue-600 hover:underline text-xs"><FileText size={13} /> Pobierz</a>
+								<button onclick={() => openNotaFile(n)} class="flex items-center gap-1 text-blue-600 hover:underline text-xs"><FileText size={13} /> Pobierz</button>
 							{:else}
 								<span class="text-slate-300 text-xs">brak</span>
 							{/if}

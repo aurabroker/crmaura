@@ -18,6 +18,12 @@
 | Excel import | SheetJS (`xlsx`) — ładowany dynamicznie (`await import('xlsx')`) |
 | Email | Resend API — per tenant, klucz w `crm_tenants.resend_api_key` |
 
+### Wersja
+
+Numer wersji CRM jest w `package.json` (`version`) i widać go przy nagłówku „Pulpit …” (po najechaniu:
+data builda i commit). **Każde wdrożenie na main podnosi wersję**; środkowa liczba = numer PR
+(np. PR #31 → `1.31.0`, kolejna poprawka w tym samym PR → `1.31.1`). Plik `package-lock.json` ma ten sam numer.
+
 ---
 
 ## Struktura projektu
@@ -188,28 +194,69 @@ Strona `/payments` obsługuje import rozliczenia prowizyjnego z TU ERGO:
 
 Supabase Edge Function `send-payment-reminders` wysyła przypomnienia przez Resend API.
 
-- Uruchamiana automatycznie **codziennie o 8:00** (cron w `supabase/config.toml`)
-- Dla każdego tenanta z ustawionym `resend_api_key`:
-  - Szuka płatności `status = 'Oczekująca'` z `data_platnosci` w ciągu najbliższych 7 dni
-  - Grupuje po kliencie (email z `crm_clients.email`)
-  - Wysyła jeden zbiorczy mail na klienta z listą rat
-- Klucz Resend ustawiany przez ADMIN GOD w panelu SaaS Admin per tenant
-- `from`: `onboarding@resend.dev` (działa bez własnej domeny)
+- Uruchamia ją pg_cron codziennie o 6:05 UTC (8:05 latem, 7:05 zimą) przez funkcję SQL
+  `public.crm_send_payment_reminders()` z nagłówkiem `x-cron-token` (sekret `edge_cron_token` w Vault,
+  sprawdzany przez `edge_cron_token_matches`). Bez poprawnego tokenu funkcja nic nie czyta.
+- Wysyła tylko firma, która ma w SAAS Admin **klucz Resend** i **adres nadawcy** (`crm_tenants.email_from`,
+  domena zweryfikowana w Resend tej firmy).
+- Bierze raty `status = 'Oczekująca'` z terminem od dziś do +7 dni (czas polski), z nieusuniętych polis,
+  bez `przypomnienie_wyslane_at`. Jedna wiadomość na adres klienta, z listą jego rat.
+- Każda rata dostaje przypomnienie raz: znacznik `przypomnienie_wyslane_at` ustawiany przed wysyłką,
+  zdejmowany, gdy Resend odmówi. Zaległych rat automat nie przypomina.
+- Próba bez wysyłki: `select public.crm_send_payment_reminders(true);`, wynik w `net._http_response`.
+- Migracja: `supabase/migrations/20261007000002_payment_reminders.sql`.
 
 ---
 
 ## APK — Analiza Potrzeb Klienta
 
-System APK działa na dwóch poziomach:
-- **React app** (zewnętrzna, `https://apk.aurabroker.pl`) — klient wypełnia formularz przez link z tokenem
-- **FRANK67 CRM** — zarządzanie formularzami, generowanie linków, PDF
+Cały system APK mieszka w CRM (domena `portal.beautypolisa.eu`):
+- **Publiczny formularz** — trasa `/form?token=…` (`src/routes/form/+page.svelte`); czyta i zapisuje
+  wyłącznie przez funkcje bazy `get_apk_by_token` i `submit_apk`, tabele `apk_*` nie są publicznie dostępne
+- **CRM** — zarządzanie formularzami, generowanie linków, PDF
+
+Adres linków jest w jednym miejscu: `src/lib/utils/apkLink.ts` (`APK_FORM_URL`, nadpisywany zmienną
+`VITE_APK_FORM_URL`). Dawna aplikacja `apk.aurabroker.pl` nie istnieje.
 
 ### Przepływ
 1. Doradca tworzy APK w CRM (`/apk` lub zakładka APK w profilu klienta)
-2. CRM generuje token (`apk_tokens`) i link `https://apk.aurabroker.pl?token=XXXXX`
-3. Klient wypełnia formularz w React app → dane zapisują się w `apk_forms.form_data`
+2. CRM generuje token (`apk_tokens`) i link `https://portal.beautypolisa.eu/form?token=XXXXX`
+3. Klient wypełnia formularz → dane zapisują się w `apk_forms.form_data` (funkcja `submit_apk`)
 4. Status zmienia się na `submitted`
 5. Doradca może wygenerować PDF → uploadowany do `apk-pdfs` bucket, URL zapisany w `apk_forms.pdf_url`
+
+---
+
+## Odnowienia polis OC beauty
+
+Program ERGO Hestia WA50/003353/24/A (certyfikaty = polisy z `parent_id` wskazującym umowę generalną
+z `ug_podtyp = 'oc_beauty'`). Klient dostaje link do wniosku, wypełnia APK (albo świadomie jej odmawia),
+wybiera: odnowienie bez zmian / ze zmianami / rezygnacja; przy zabiegach z listy wyłączeń — ankieta ERGO Hestii
+z załącznikami (dyplom, certyfikat szkolenia z ostatnich 12 miesięcy, wzory zgód).
+
+- **Link**: `/odnowienie/<id>.<podpis HMAC>` — podpis liczy serwer (`src/lib/server/renewals.ts`), w bazie go nie ma.
+  Ważny do końca ochrony (min. 14 dni). Anulowanie/zastąpienie wniosku unieważnia link.
+- **Strona klienta**: `src/routes/odnowienie/[klucz]` ↔ `src/routes/api/odnowienie/[klucz]` (kontrakt: `src/lib/renewals/api.ts`).
+  Klient nie ma konta ani dostępu do bazy; pliki wgrywa przez jednorazowe podpisane adresy do bucketu `renewal-files`.
+- **Reguły programu** (taryfa, listy zabiegów, pytania APK, walidacja, wycena): `src/lib/renewals/program.ts` — wspólne
+  dla strony i serwera. Wyższa suma: składka z tabeli programu wg rodzaju gabinetu (z APK) i liczby osób (+25% przy 6–8,
+  powyżej 8 — wycena indywidualna); ochrona prawna +92 zł.
+- **Po złożeniu**: PDF (`renewalDocs.ts`, czcionka Roboto) w `renewal-files/<tenant>/<id>/wniosek-odnowienia.pdf`, e-mail do
+  klienta i do biura (`RENEWAL_OFFICE_EMAIL`, domyślnie odnowienia@auraexpert.pl) z PDF i załącznikami, zadanie w CRM dla
+  opiekuna klienta. Dziennik: `crm_renewal_events` (otwarcie, APK/odmowa z IP i przeglądarką, złożenie, wysyłki, błędy).
+- **CRM**: karta polisy → „Odnów polisę” → wysyłka e-mailem albo link; panel statusu wniosku; kolumna na liście wznowień.
+- **Automat**: pg_cron `crm-renewals` (codziennie 6:20 UTC) → `https://crmaura.pages.dev/api/cron/renewals` z `x-cron-token`
+  (nie przez portal.beautypolisa.eu — ochrona Cloudflare przed botami zwraca bazie 403; linki w e-mailach i tak na portal): wygaszanie,
+  zaproszenia 45 dni przed końcem (moduł `odnowienia_auto` w SAAS Admin), jedno przypomnienie po 7 dniach.
+- **Wysyłka**: klucz Resend firmy (SAAS Admin), nadawca `RENEWAL_EMAIL_FROM` (domyślnie BeautyPolisa <odnowienia@beautypolisa.eu>).
+- **Tryb testowy**: moduł `odnowienia_test` (SAAS Admin) — każdy e-mail odnowień (zaproszenie, przypomnienie,
+  potwierdzenie, kopia do biura) idzie na `RENEWAL_TEST_EMAIL` (domyślnie zarzad@auraexpert.pl) z „[TEST]” w temacie;
+  zadanie w CRM też ma „[TEST]”. Wniosek utworzony w trybie testowym ma adres testowy zamiast adresu klienta (zdarzenie
+  `tryb_testowy`), więc nie napisze do klienta także po wyłączeniu trybu. W trybie testowym automat 45 dni nie zakłada
+  nowych wniosków (ponawia tylko niewysłane — na adres testowy). Karta CRM otwarta przy włączonym trybie wysyła
+  `oczekiwany_test: true`; gdy tryb wyłączono w międzyczasie, serwer odpowiada 409 („odśwież stronę”).
+  Po testach: wyłączyć moduł i usunąć wnioski testowe (`email` = adres testowy) — inaczej automat pominie te certyfikaty.
+- Migracje: `supabase/migrations/20261007000003_renewals.sql`, `20261008000002_renewals_cron_url.sql` (obie zastosowane 2026-10-08).
 
 ---
 

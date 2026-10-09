@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajSzkody } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Claim } from '$lib/types/database';
@@ -70,7 +71,7 @@
 		saving = false;
 		if (error) { formError = error.message; return; }
 		showModal = false;
-		const { data } = await sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)');
+		const { data } = await wczytajSzkody();
 		appState.claims = (data ?? []) as typeof appState.claims;
 	}
 

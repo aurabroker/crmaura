@@ -1,4 +1,17 @@
 <script lang="ts">
+	import {
+		wczytajAneksy,
+		wczytajApkLogi,
+		wczytajFormularzeApk,
+		wczytajKlientow,
+		wczytajKontakty,
+		wczytajPlatnosci,
+		wczytajPodzialProwizji,
+		wczytajPojazdy,
+		wczytajPolisy,
+		wczytajSzkody,
+		wczytajZadania
+	} from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
@@ -85,24 +98,25 @@
 		// Dzięki temu aplikacja "wstaje" szybciej, m.in. przy otwieraniu w nowej karcie.
 		initialized = true;
 
+		// Kolekcje, które mogą mieć ponad 1000 wierszy (limit jednego zapytania), idą stronami ($lib/kolekcje).
 		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL, rVR, rTasks, rLeasings] = await Promise.all([
-			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
-			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
-			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))').order('data_platnosci'),
-			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
-			sb.from('crm_vehicles').select('*'),
-			sb.from('crm_apk_logs').select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))'),
+			wczytajKlientow(),
+			wczytajPolisy(),
+			wczytajAneksy(),
+			wczytajPlatnosci(),
+			wczytajSzkody(),
+			wczytajPojazdy(),
+			wczytajApkLogi(),
 			sb.from('crm_insurers').select('*').order('nazwa'),
 			sb.from('crm_profiles').select('*').eq('tenant_id', profile.tenant_id),
-			sb.from('crm_policy_brokers').select('*, crm_profiles(imie_nazwisko, email)'),
-			sb.from('crm_client_contacts').select('*'),
-			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona), apk_tokens(status, used_at)').eq('tenant_id', profile.tenant_id).order('created_at', { ascending: false }),
+			wczytajPodzialProwizji(),
+			wczytajKontakty(),
+			wczytajFormularzeApk(profile.tenant_id),
 			sb.from('crm_insurer_branches').select('*').order('nazwa'),
 			sb.from('crm_insurer_contacts').select('*, crm_insurer_branches(nazwa)').order('imie_nazwisko'),
 			sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje').order('created_at', { ascending: false }),
-			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false }),
+			wczytajZadania(),
 			sb.from('crm_leasings').select('*').order('nazwa')
 		]);
 

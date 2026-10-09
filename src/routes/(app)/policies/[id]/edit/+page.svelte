@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { wczytajAneksy, wczytajPlatnosci, wczytajPolisy } from '$lib/kolekcje';
+	import { opiekunZUmowy } from '$lib/policyImport/umowaGeneralna';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
@@ -26,7 +28,13 @@
 		const err = form.isValid();
 		if (err) { formError = err; return; }
 		saving = true; formError = '';
-		const vals = form.getValues();
+		const vals: Record<string, unknown> = form.getValues();
+		// Polisa bez opiekuna TU podpinana właśnie pod Umowę Generalną: opiekun domyślnie z umowy
+		// (przy zwykłej edycji nie przywracamy opiekuna usuniętego celowo).
+		if (!isUg && !policy.tu_contact_id && vals.parent_id && vals.parent_id !== policy.parent_id) {
+			const opiekun = opiekunZUmowy(appState.policies, vals.parent_id as string | null, vals.tu_id as string | null);
+			if (opiekun) vals.tu_contact_id = opiekun;
+		}
 
 		const { error } = await sb.from('crm_policies').update(vals).eq('id', policy.id);
 		if (error) { saving = false; formError = error.message; return; }
@@ -67,12 +75,12 @@
 		}
 
 		const [rP, rA, rPay] = await Promise.all([
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
-			sb.from('crm_policy_annexes').select('*').order('data_aneksu'),
-			sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))').order('data_platnosci')
+			wczytajPolisy(),
+			wczytajAneksy(),
+			wczytajPlatnosci()
 		]);
 		saving = false;
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.annexes = (rA.data ?? []) as typeof appState.annexes;
 		appState.payments = (rPay.data ?? []) as typeof appState.payments;
 		goto(`/policies/${policyId}`);

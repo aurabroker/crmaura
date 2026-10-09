@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPojazdy } from '$lib/kolekcje';
 	// Panel zarządzania pojazdami: pełna kartoteka, historia polis na pojeździe
 	// i obsługa przerejestrowania. Zakładka w Ustawieniach pokazywała tylko
 	// część pól i nie dawała wglądu w to, czym pojazd był ubezpieczony.
@@ -9,7 +10,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
-	import type { Vehicle } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
+	import type { Policy, Vehicle } from '$lib/types/database';
 	import { Car, Plus, Search, Pencil, Trash2, ChevronRight, RefreshCw, Upload } from 'lucide-svelte';
 
 	const inp =
@@ -56,6 +59,20 @@
 
 	const bezOchrony = $derived(appState.vehicles.filter((v) => !aktywnaPolisa(v.id)).length);
 
+	// Sortowanie historii polis rozwiniętego pojazdu (rozwinięty jest zawsze jeden).
+	// Domyślnie jak dotąd: najnowsze (data_od) pierwsze.
+	const czynnaPolisa = (p: Policy) => p.data_od <= today && p.data_do >= today;
+	const sortHistorii = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		od: (p) => p.data_od,
+		do: (p) => p.data_do,
+		tu: (p) => p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0),
+		// czynna, potem odnowienia, reszta
+		status: (p) => (czynnaPolisa(p) ? 0 : p.renewal_of ? 1 : 2)
+	}, { klucz: 'od', kierunek: 'desc' }, 'pojazd-historia-polis');
+	const historiaWidok = $derived(rozwiniety ? sortHistorii.sortuj(polisyPojazdu(rozwiniety)) : []);
+
 	// --- Formularz pojazdu ---
 	let showForm = $state(false);
 	let edytowany = $state<Vehicle | null>(null);
@@ -96,7 +113,7 @@
 	}
 
 	async function odswiezPojazdy() {
-		const { data } = await sb.from('crm_vehicles').select('*');
+		const { data } = await wczytajPojazdy();
 		appState.vehicles = (data ?? []) as typeof appState.vehicles;
 	}
 
@@ -279,25 +296,46 @@
 										<p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">
 											Historia ochrony
 										</p>
-										<div class="space-y-1">
-											{#each historia as p}
-												<div class="flex flex-wrap items-center gap-3 bg-white border border-line rounded-lg px-3 py-2">
-													<a href="/policies/{p.id}" class="text-sm font-medium text-blue-600 hover:underline">
-														{p.nr_polisy}
-													</a>
-													<span class="text-xs text-slate-500">{p.data_od} — {p.data_do}</span>
-													<span class="text-xs text-slate-500">{p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? ''}</span>
-													<span class="text-xs text-slate-700">{fmtPln(p.skladka_przypisana)} zł</span>
-													{#if p.renewal_of}
-														<span class="text-[11px] text-slate-400 flex items-center gap-1">
-															<RefreshCw size={11} /> odnowienie
-														</span>
-													{/if}
-													{#if p.data_od <= today && p.data_do >= today}
-														<Badge variant="success">czynna</Badge>
-													{/if}
-												</div>
-											{/each}
+										<div class="bg-white border border-line rounded-lg overflow-x-auto">
+											<table class="w-full text-left text-sm">
+												<thead class="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
+													<tr>
+														<SortTh s={sortHistorii} k="nr" class="px-3 py-2">Nr polisy</SortTh>
+														<SortTh s={sortHistorii} k="od" class="px-3 py-2">Od</SortTh>
+														<SortTh s={sortHistorii} k="do" class="px-3 py-2">Do</SortTh>
+														<SortTh s={sortHistorii} k="tu" class="px-3 py-2">TU</SortTh>
+														<SortTh s={sortHistorii} k="skladka" class="px-3 py-2 text-right" align="right">Składka</SortTh>
+														<SortTh s={sortHistorii} k="status" class="px-3 py-2">Status</SortTh>
+													</tr>
+												</thead>
+												<tbody>
+													{#each historiaWidok as p (p.id)}
+														<tr class="border-t border-line-soft">
+															<td class="px-3 py-2">
+																<a href="/policies/{p.id}" class="text-sm font-medium text-blue-600 hover:underline">
+																	{p.nr_polisy}
+																</a>
+															</td>
+															<td class="px-3 py-2 text-xs text-slate-500">{p.data_od}</td>
+															<td class="px-3 py-2 text-xs text-slate-500">{p.data_do}</td>
+															<td class="px-3 py-2 text-xs text-slate-500">{p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? ''}</td>
+															<td class="px-3 py-2 text-xs text-slate-700 text-right">{fmtPln(p.skladka_przypisana)} zł</td>
+															<td class="px-3 py-2">
+																<div class="flex flex-wrap items-center gap-3">
+																	{#if p.renewal_of}
+																		<span class="text-[11px] text-slate-400 flex items-center gap-1">
+																			<RefreshCw size={11} /> odnowienie
+																		</span>
+																	{/if}
+																	{#if czynnaPolisa(p)}
+																		<Badge variant="success">czynna</Badge>
+																	{/if}
+																</div>
+															</td>
+														</tr>
+													{/each}
+												</tbody>
+											</table>
 										</div>
 										{@const ostatnia = historia[0]}
 										{#if !czynna}

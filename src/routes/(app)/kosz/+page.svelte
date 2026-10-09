@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPolisy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln } from '$lib/utils';
@@ -6,6 +7,8 @@
 	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { RotateCcw, Trash2 } from 'lucide-svelte';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	onMount(() => {
 		const rola = appState.profile?.rola ?? '';
@@ -29,11 +32,23 @@
 	let deletedPolicies = $state<DeletedPolicy[]>([]);
 	let loading = $state(true);
 
+	// Sortowanie kolumn — domyślnie jak dotąd: ostatnio usunięte na górze
+	const sort = new Sortowanie<DeletedPolicy>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		tu: (p) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
+		rodzaj: (p) => p.rodzaj,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0),
+		usunieto: (p) => p.deleted_at,
+		uzasadnienie: (p) => p.deletion_reason
+	}, { klucz: 'usunieto', kierunek: 'desc' }, 'kosz-polisy');
+	const wiersze = $derived(sort.sortuj(deletedPolicies));
+
 	async function loadDeleted() {
 		loading = true;
 		const { data } = await sb
 			.from('crm_policies')
-			.select('id, nr_polisy, rodzaj, data_od, data_do, skladka_przypisana, deleted_at, deletion_reason, crm_clients(nazwa), crm_insurers(nazwa, skrot)')
+			.select('id, nr_polisy, rodzaj, data_od, data_do, skladka_przypisana, deleted_at, deletion_reason, crm_clients!klient_id(nazwa), crm_insurers(nazwa, skrot)')
 			.not('deleted_at', 'is', null)
 			.order('deleted_at', { ascending: false });
 		deletedPolicies = (data ?? []) as DeletedPolicy[];
@@ -57,10 +72,8 @@
 		if (error) { restoreError = error.message; return; }
 		showRestore = false;
 		// Reload policies in app state
-		const { data } = await sb.from('crm_policies')
-			.select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))')
-			.is('deleted_at', null);
-		appState.policies = (data ?? []) as typeof appState.policies;
+		const { data, error: bladPolis } = await wczytajPolisy();
+		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
 		await loadDeleted();
 	}
 
@@ -111,18 +124,18 @@
 	<table class="w-full text-left text-sm">
 		<thead>
 			<tr class="bg-slate-50 text-[11px] font-semibold text-slate-500 uppercase tracking-wide">
-				<th class="px-5 py-3">Nr Polisy</th>
-				<th class="px-5 py-3">Klient</th>
-				<th class="px-5 py-3">TU</th>
-				<th class="px-5 py-3">Rodzaj</th>
-				<th class="px-5 py-3">Składka</th>
-				<th class="px-5 py-3">Usunięto</th>
-				<th class="px-5 py-3">Uzasadnienie</th>
+				<SortTh s={sort} k="nr">Nr Polisy</SortTh>
+				<SortTh s={sort} k="klient">Klient</SortTh>
+				<SortTh s={sort} k="tu">TU</SortTh>
+				<SortTh s={sort} k="rodzaj">Rodzaj</SortTh>
+				<SortTh s={sort} k="skladka">Składka</SortTh>
+				<SortTh s={sort} k="usunieto">Usunięto</SortTh>
+				<SortTh s={sort} k="uzasadnienie">Uzasadnienie</SortTh>
 				<th class="px-5 py-3">Akcje</th>
 			</tr>
 		</thead>
 		<tbody>
-			{#each deletedPolicies as p}
+			{#each wiersze as p}
 				<tr class="border-t border-line-soft hover:bg-slate-50 bg-red-50/30">
 					<td class="px-5 py-3 font-medium text-slate-700">{p.nr_polisy}</td>
 					<td class="px-5 py-3 text-slate-600">{p.crm_clients?.nazwa ?? '—'}</td>

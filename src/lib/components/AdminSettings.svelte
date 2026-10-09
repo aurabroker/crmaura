@@ -1,12 +1,15 @@
 <script lang="ts">
+	import { wczytajPojazdy, wczytajPolisy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState, isAdmin, teamLabel } from '$lib/stores/app.svelte';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import type { Insurer, Profile, InsurerBranch, InsurerContact, Leasing, VehicleRequest } from '$lib/types/database';
+	import type { Insurer, Profile, InsurerBranch, InsurerContact, Leasing, VehicleRequest, Policy } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users, ScrollText, Landmark, Car } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
@@ -62,14 +65,14 @@
 	let vrError = $state('');
 
 	async function reloadVehicleRequests() {
-		const [{ data: wnioski }, { data: pojazdy }, { data: polisy }] = await Promise.all([
+		const [{ data: wnioski }, { data: pojazdy }, { data: polisy, error: bladPolis }] = await Promise.all([
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje').order('created_at', { ascending: false }),
-			sb.from('crm_vehicles').select('*'),
-			sb.from('crm_policies').select('*, crm_clients!klient_id(nazwa), ubezpieczony:crm_clients!ubezpieczony_id(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null)
+			wczytajPojazdy(),
+			wczytajPolisy()
 		]);
 		appState.vehicleRequests = (wnioski ?? []) as typeof appState.vehicleRequests;
 		appState.vehicles = (pojazdy ?? []) as typeof appState.vehicles;
-		appState.policies = (polisy ?? []) as typeof appState.policies;
+		if (!bladPolis && polisy) appState.policies = polisy as typeof appState.policies;
 	}
 
 	async function acceptVehicleRequest(w: VehicleRequest) {
@@ -181,6 +184,22 @@
 
 	// Widok polis brokera
 	let viewingBroker = $state<Profile | null>(null);
+	const brokerPolicies = $derived.by(() => {
+		const b = viewingBroker;
+		if (!b) return [] as Policy[];
+		const ids = new Set(appState.policyBrokers.filter(pb => pb.broker_id === b.id).map(pb => pb.polisa_id));
+		return appState.policies.filter(p => ids.has(p.id));
+	});
+	const brokerSort = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		tu: (p) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
+		rodzaj: (p) => p.rodzaj,
+		od: (p) => p.data_od,
+		do: (p) => p.data_do,
+		skladka: (p) => Number(p.skladka_przypisana ?? 0)
+	}, { klucz: 'nr' }, 'admin-broker-polisy');
+	const brokerWiersze = $derived(brokerSort.sortuj(brokerPolicies));
 
 	// 'ADMIN GOD' (super-admin SaaS) widoczny do nadania tylko dla istniejącego ADMIN GOD.
 	// Serwer i tak egzekwuje to w assertAssignableRole() — tu chodzi o spójność UI.
@@ -542,8 +561,6 @@
 
 		<!-- Widok polis wybranego brokera -->
 		{#if viewingBroker}
-		{@const brokerPolicyIds = new Set(appState.policyBrokers.filter(pb => pb.broker_id === viewingBroker!.id).map(pb => pb.polisa_id))}
-		{@const brokerPolicies = appState.policies.filter(p => brokerPolicyIds.has(p.id))}
 		<div class="bg-white border border-blue-200 rounded-xl shadow-sm overflow-hidden">
 			<div class="px-5 py-4 border-b border-blue-200 flex items-center justify-between">
 				<h2 class="font-semibold text-blue-800 text-sm">Polisy — {viewingBroker.imie_nazwisko ?? viewingBroker.email} <span class="font-normal text-blue-400">({brokerPolicies.length})</span></h2>
@@ -555,17 +572,17 @@
 				<table class="w-full text-left text-xs">
 					<thead>
 						<tr class="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-							<th class="px-4 py-2">Nr Polisy</th>
-							<th class="px-4 py-2">Klient</th>
-							<th class="px-4 py-2">TU</th>
-							<th class="px-4 py-2">Rodzaj</th>
-							<th class="px-4 py-2">Data od</th>
-							<th class="px-4 py-2">Data do</th>
-							<th class="px-4 py-2 text-right">Składka</th>
+							<SortTh s={brokerSort} k="nr" class="px-4 py-2">Nr Polisy</SortTh>
+							<SortTh s={brokerSort} k="klient" class="px-4 py-2">Klient</SortTh>
+							<SortTh s={brokerSort} k="tu" class="px-4 py-2">TU</SortTh>
+							<SortTh s={brokerSort} k="rodzaj" class="px-4 py-2">Rodzaj</SortTh>
+							<SortTh s={brokerSort} k="od" class="px-4 py-2">Data od</SortTh>
+							<SortTh s={brokerSort} k="do" class="px-4 py-2">Data do</SortTh>
+							<SortTh s={brokerSort} k="skladka" class="px-4 py-2 text-right" align="right">Składka</SortTh>
 						</tr>
 					</thead>
 					<tbody>
-						{#each brokerPolicies as p}
+						{#each brokerWiersze as p}
 							<tr class="border-t border-line-soft hover:bg-slate-50">
 								<td class="px-4 py-2 font-medium text-blue-700">
 									<a href="/policies/{p.id}" class="hover:underline">{p.nr_polisy}</a>

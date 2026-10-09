@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajZadania } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, dateDiffDays, todayStr } from '$lib/utils';
@@ -10,6 +11,9 @@
 	import { goto } from '$app/navigation';
 	import { isBroker, roleLabel } from '$lib/stores/app.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
+	import type { Policy } from '$lib/types/database';
+	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
+	import SortTh from '$lib/components/SortTh.svelte';
 
 	let taskModalOpen = $state(false);
 	let editingTask = $state<(typeof appState.tasks)[0] | null>(null);
@@ -32,6 +36,15 @@
 			return d >= 0 && d <= 30;
 		})
 	);
+
+	// Sortowanie tabeli wznowień (całej listy, przed obcięciem do 8 wierszy)
+	const sortWznowienia = new Sortowanie<Policy>({
+		nr: (p) => p.nr_polisy,
+		klient: (p) => p.crm_clients?.nazwa,
+		tu: (p) => p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa,
+		do: (p) => p.data_do
+	}, { klucz: 'do' }, 'pulpit-wznowienia');
+	const renewalsRows = $derived(sortWznowienia.sortuj(renewals));
 
 	const activeClaims = $derived(
 		appState.claims.filter((c) => c.status === 'W toku' || c.status === 'Zgłoszona')
@@ -351,13 +364,21 @@
 		if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
 		return String(Math.round(v));
 	}
+
+	// Numer wersji CRM przy nagłówku pulpitu (vite.config.ts; podnoszony przy każdym wdrożeniu).
+	const WERSJA = __APP_VERSION__;
+	const BUILD_DATA = new Date(__APP_BUILD__.data).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw', dateStyle: 'short', timeStyle: 'short' });
 </script>
 
 <svelte:head><title>Pulpit — FRANK67 CRM</title></svelte:head>
 
 <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Pulpit {roleLabel()}a</h1>
+		<h1 class="text-2xl font-semibold text-slate-900">
+			Pulpit {roleLabel()}a
+			<span class="ml-2 align-middle text-xs font-medium text-slate-400 bg-slate-100 border border-line rounded-full px-2 py-0.5"
+				title="Wersja CRM {WERSJA} · build {BUILD_DATA}{__APP_BUILD__.commit ? ` · ${__APP_BUILD__.commit}` : ''}">v{WERSJA}</span>
+		</h1>
 		<p class="text-sm text-slate-500 mt-1">Przegląd kluczowych wskaźników</p>
 	</div>
 	<div class="flex items-center gap-3">
@@ -572,14 +593,14 @@
 		<table class="w-full text-left text-xs">
 			<thead>
 				<tr class="bg-slate-50 text-[10px] font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-4 py-2">Nr Polisy</th>
-					<th class="px-4 py-2">Klient</th>
-					<th class="px-4 py-2">TU</th>
-					<th class="px-4 py-2">Koniec</th>
+					<SortTh s={sortWznowienia} k="nr" class="px-4 py-2">Nr Polisy</SortTh>
+					<SortTh s={sortWznowienia} k="klient" class="px-4 py-2">Klient</SortTh>
+					<SortTh s={sortWznowienia} k="tu" class="px-4 py-2">TU</SortTh>
+					<SortTh s={sortWznowienia} k="do" class="px-4 py-2">Koniec</SortTh>
 				</tr>
 			</thead>
 			<tbody>
-				{#each renewals.slice(0, 8) as p}
+				{#each renewalsRows.slice(0, 8) as p}
 					<tr class="border-t border-line-soft hover:bg-slate-50">
 						<td class="px-4 py-2 font-medium text-blue-700"><a href="/policies/{p.id}" class="hover:underline">{p.nr_polisy}</a></td>
 						<td class="px-4 py-2 truncate max-w-[100px]">{p.crm_clients?.nazwa ?? '—'}</td>
@@ -907,7 +928,7 @@
 	onclose={() => { taskModalOpen = false; editingTask = null; }}
 	onsaved={async () => {
 		taskModalOpen = false; editingTask = null;
-		const { data } = await sb.from('crm_tasks').select('*,crm_clients(nazwa),crm_prospects(nazwa),crm_policies(nr_polisy),assigned_profile:crm_profiles!assigned_to(imie_nazwisko,email)').order('termin', { ascending: true, nullsFirst: false });
+		const { data } = await wczytajZadania();
 		appState.tasks = (data ?? []) as typeof appState.tasks;
 	}}
 />

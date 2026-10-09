@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajFormularzeApk, wczytajKlientow, wczytajKontakty, wczytajPojazdy, wczytajPolisy, wczytajSzkody, wczytajZadania } from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
@@ -155,6 +156,30 @@
 		mergeError[group.reason] = '';
 		const otherIds = others.map(c => c.id);
 
+		// Wnioski o odnowienie i historia e-maili należą do klienta (usunięcie kasuje je razem z nim),
+		// a pracownik nie może ich przepiąć — rekord z nimi musi zostać jako docelowy.
+		const [{ count: nWnioskow }, { count: nEmaili }] = await Promise.all([
+			sb.from('crm_renewals').select('id', { count: 'exact', head: true }).in('klient_id', otherIds),
+			sb.from('crm_client_emails').select('id', { count: 'exact', head: true }).in('klient_id', otherIds)
+		]);
+		if ((nWnioskow ?? 0) > 0 || (nEmaili ?? 0) > 0) {
+			mergeError[group.reason] = 'Usuwany rekord ma wnioski o odnowienie albo historię e-maili — wybierz go jako rekord docelowy.';
+			merging = null;
+			return;
+		}
+
+		// Identyfikator firmy z BEAUTY przechodzi na zachowany rekord, gdy ten go nie ma — inaczej
+		// synchronizacja nie znajdzie odpowiednika usuniętego duplikatu. Stan z bazy, bo lista mogła
+		// się zestarzeć (synchronizacja działa w tle).
+		const { data: bidRows } = await sb.from('crm_clients').select('id, beauty_id').in('id', [targetId, ...otherIds]);
+		const bidZ = (id: string) => {
+			const row = (bidRows as { id: string; beauty_id: number | string | null }[] | null)?.find(r => r.id === id);
+			return row ? row.beauty_id : group.clients.find(c => c.id === id)?.beauty_id ?? null;
+		};
+		const beautyId = bidZ(targetId) == null
+			? otherIds.map(bidZ).find(b => b != null) ?? null
+			: null;
+
 		for (const table of KLIENT_ID_TABLES) {
 			await sb.from(table).update({ klient_id: targetId }).in('klient_id', otherIds);
 		}
@@ -167,19 +192,36 @@
 			merging = null;
 			return;
 		}
-		await logAudit('clients_merged', 'client', targetId, group.reason, { merged_ids: otherIds });
+		// Dopiero po usunięciu duplikatów: (beauty_id, tenant_id) jest unikalne.
+		let beautyPrzeniesiony = false;
+		if (beautyId != null) {
+			const { error: bidError } = await sb.from('crm_clients').update({ beauty_id: beautyId } as never).eq('id', targetId);
+			if (bidError) {
+				// Grupa po scaleniu znika z listy, więc komunikat przy niej nie byłby widoczny.
+				alert(`Duplikaty scalone, ale nie udało się przenieść identyfikatora BEAUTY (${beautyId}): ${bidError.message}\nSynchronizacja może odtworzyć usunięty rekord — zgłoś to administratorowi.`);
+			} else beautyPrzeniesiony = true;
+		}
+		await logAudit('clients_merged', 'client', targetId, group.reason, {
+			merged_ids: otherIds,
+			...(beautyId != null ? (beautyPrzeniesiony ? { beauty_id: beautyId } : { beauty_id_blad: beautyId }) : {})
+		});
 
 		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
-			sb.from('crm_clients').select('*').order('created_at', { ascending: false }),
-			sb.from('crm_policies').select('*, crm_clients(nazwa), crm_insurers(nazwa, skrot), crm_insurer_contacts(imie_nazwisko, stanowisko, crm_insurer_branches(nazwa))').is('deleted_at', null),
-			sb.from('crm_claims').select('*, crm_clients(nazwa), crm_policies(nr_polisy)'),
-			sb.from('crm_vehicles').select('*'),
-			sb.from('apk_forms').select('*, crm_clients(nazwa, nazwa_skrocona)').order('created_at', { ascending: false }),
-			sb.from('crm_tasks').select('*, crm_clients(nazwa), crm_prospects(nazwa), crm_policies(nr_polisy), assigned_profile:crm_profiles!assigned_to(imie_nazwisko, email)').order('termin', { ascending: true, nullsFirst: false }),
-			sb.from('crm_client_contacts').select('*')
+			wczytajKlientow(),
+			wczytajPolisy(),
+			wczytajSzkody(),
+			wczytajPojazdy(),
+			wczytajFormularzeApk(),
+			wczytajZadania(),
+			wczytajKontakty()
 		]);
-		appState.clients = (rC.data ?? []) as typeof appState.clients;
-		appState.policies = (rP.data ?? []) as typeof appState.policies;
+		// Lista z bazy ma już beauty_id zachowanego rekordu; gdy odczyt zawiedzie, poprawiamy ją lokalnie.
+		appState.clients = !rC.error && rC.data
+			? rC.data as typeof appState.clients
+			: appState.clients
+				.filter(c => !otherIds.includes(c.id))
+				.map(c => (beautyPrzeniesiony && c.id === targetId ? { ...c, beauty_id: beautyId } : c));
+		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
 		appState.claims = (rCl.data ?? []) as typeof appState.claims;
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.apkForms = (rA.data ?? []) as typeof appState.apkForms;
@@ -240,7 +282,7 @@
 		if (error) { formError = error.message; return; }
 		await logAudit('client_created', 'client', undefined, payload.nazwa as string);
 		closeModal();
-		const { data } = await sb.from('crm_clients').select('*').order('created_at', { ascending: false });
+		const { data } = await wczytajKlientow();
 		appState.clients = (data ?? []) as typeof appState.clients;
 	}
 

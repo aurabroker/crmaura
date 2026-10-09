@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { wczytajPlatnosci } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { PolicyPayment } from '$lib/types/database';
@@ -249,20 +250,14 @@
 
 		const tuSkrot = importMode === 'ergo' ? 'ERGO' : 'LEADENHALL';
 
-		// Upload source file to storage
+		// Plik źródłowy do prywatnego bucketu; w nocie zapisujemy ścieżkę, a link do pobrania
+		// powstaje przy kliknięciu (storageLink.ts).
 		let fileUrl: string | null = null;
 		if (importFile) {
 			const ext = importFile.name.split('.').pop() ?? 'xlsx';
 			const path = `${appState.profile!.tenant_id}/${tuSkrot}_${importNumerNoty.replace(/\//g, '-')}_${Date.now()}.${ext}`;
 			const { data: upData } = await sb.storage.from('settlement-files').upload(path, importFile, { upsert: true });
-			if (upData) {
-				const { data: urlData } = sb.storage.from('settlement-files').getPublicUrl(path);
-				fileUrl = urlData?.publicUrl ?? null;
-				if (!fileUrl) {
-					const { data: signedData } = await sb.storage.from('settlement-files').createSignedUrl(path, 60 * 60 * 24 * 365);
-					fileUrl = signedData?.signedUrl ?? null;
-				}
-			}
+			if (upData) fileUrl = path;
 		}
 
 		const { data: nota, error: notaErr } = await sb.from('crm_noty').insert([{
@@ -327,9 +322,8 @@
 		}
 
 		// Refresh
-		const { data: pays } = await sb.from('crm_policy_payments')
-			.select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))').order('data_platnosci');
-		appState.payments = (pays ?? []) as typeof appState.payments;
+		const { data: pays, error: bladPlatnosci } = await wczytajPlatnosci();
+		if (!bladPlatnosci && pays) appState.payments = pays as typeof appState.payments;
 		const { data: alts } = await sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false });
 		appState.alerts = (alts ?? []) as typeof appState.alerts;
 
@@ -393,7 +387,7 @@
 	});
 
 	async function reloadPayments() {
-		const { data } = await sb.from('crm_policy_payments').select('*, crm_policies(nr_polisy, crm_clients!klient_id(nazwa))').order('data_platnosci');
+		const { data } = await wczytajPlatnosci();
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
 

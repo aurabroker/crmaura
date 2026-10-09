@@ -1,29 +1,66 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { KeyRound, RefreshCw, Plus } from 'lucide-svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 
-	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_api_key?: string | null };
+	// Klucz Resend nie trafia do przeglądarki — serwer zwraca tylko jego końcówkę (resend_key_hint).
+	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null; email_from?: string | null };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
 
 	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
 		{ key: 'gwarancje', label: 'Gwarancje ubezpieczeniowe' },
 		{ key: 'kalendarz', label: 'Kalendarz / Zadania' },
+		{ key: 'odnowienia_auto', label: 'Odnowienia OC beauty — automatyczna wysyłka 45 dni przed końcem' },
+		{ key: 'odnowienia_test', label: 'Odnowienia OC beauty — TRYB TESTOWY: wszystkie e-maile odnowień na zarzad@auraexpert.pl (nie do klientów)' },
 	];
 
 	function hasFeature(tenant: Tenant, key: string): boolean {
 		return !!(tenant.features?.[key]);
 	}
 
-	async function toggleFeature(tenant: Tenant, key: string) {
-		const current = tenant.features ?? {};
-		const next = { ...current, [key]: !current[key] };
-		await sb.from('crm_tenants').update({ features: next }).eq('id', tenant.id);
-		tenant.features = next;
-		tenants = [...tenants]; // trigger reactivity
+	// Wszystkie odczyty i zapisy firm idą przez serwer (/api/saas-admin/tenants) po sprawdzeniu roli
+	// ADMIN GOD — z przeglądarki RLS dopuszcza zapis tylko do własnej firmy, więc zmiany cudzych
+	// firm wcześniej po cichu się nie zapisywały.
+	async function authHeaders() {
+		const { data: { session } } = await sb.auth.getSession();
+		return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` };
+	}
+
+	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null }) {
+		try {
+			const res = await fetch('/api/saas-admin/tenants', {
+				method: 'PATCH', headers: await authHeaders(),
+				body: JSON.stringify({ tenant_id: tenantId, ...patch })
+			});
+			const d = await res.json().catch(() => ({}));
+			if (!res.ok) return { ok: false as const, message: (d.message as string) ?? 'Błąd serwera' };
+			return {
+				ok: true as const,
+				features: (d.features ?? {}) as Record<string, boolean>,
+				resend_key_hint: (d.resend_key_hint ?? null) as string | null,
+				email_from: (d.email_from ?? null) as string | null
+			};
+		} catch {
+			return { ok: false as const, message: 'Błąd połączenia' };
+		}
+	}
+
+	async function loadTenants(): Promise<boolean> {
+		try {
+			const res = await fetch('/api/saas-admin/tenants', { headers: await authHeaders() });
+			if (!res.ok) return false;
+			const d = await res.json();
+			tenants = d.tenants as Tenant[];
+			allProfiles = d.profiles as ProfileRow[];
+			// Panel szczegółów trzyma obiekt ze starej listy — wskazujemy go ponownie po id.
+			if (selectedTenant) selectedTenant = tenants.find((t) => t.id === selectedTenant!.id) ?? null;
+			return true;
+		} catch {
+			return false;
+		}
 	}
 
 	let tenants = $state<Tenant[]>([]);
@@ -70,9 +107,9 @@
 		}
 		ntLoading = true;
 		try {
-			const res = await fetch('/api/register', {
+			const res = await fetch('/api/saas-admin/tenants', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: await authHeaders(),
 				body: JSON.stringify({
 					nazwa_firmy: ntNazwa.trim(),
 					typ: ntTyp,
@@ -86,18 +123,7 @@
 				ntError = err.message ?? 'Błąd serwera';
 			} else {
 				ntSuccess = 'Firma i konto admina zostały utworzone.';
-				// Reload tenants list
-				const { data: { session } } = await sb.auth.getSession();
-				const r = await fetch('/api/saas-admin/tenants', {
-					headers: { 'Authorization': `Bearer ${session?.access_token}` }
-				});
-				if (r.ok) {
-					const d = await r.json();
-					const { data: tenantData } = await sb.from('crm_tenants').select('id, features, resend_api_key');
-					const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean>; resend_api_key?: string | null }) => [t.id, { features: t.features ?? {}, resend_api_key: t.resend_api_key ?? null }]));
-					tenants = d.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id)?.features ?? {}, resend_api_key: featuresMap.get(t.id)?.resend_api_key ?? null }));
-					allProfiles = d.profiles;
-				}
+				if (!(await loadTenants())) ntSuccess += ' Nie udało się odświeżyć listy — odśwież stronę.';
 			}
 		} catch {
 			ntError = 'Błąd połączenia';
@@ -108,57 +134,82 @@
 
 	// Selected tenant detail panel
 	let selectedTenant = $state<Tenant | null>(null);
-	let savingFeature = $state<string | null>(null);
 	let localFeatures = $state<Record<string, boolean>>({});
 	let savingFeatures = $state(false);
 	let featureError = $state('');
 	let featureSaved = $state(false);
 
+	// Pola formularza odświeżamy tylko przy zmianie WYBRANEJ FIRMY (po id). Samo podmienienie obiektu
+	// po zapisie nie może ich zerować — inaczej znika komunikat „Zapisano” i wpisane zmiany.
+	let syncedTenantId: string | null = null;
 	$effect(() => {
-		if (selectedTenant) {
-			localFeatures = { ...(selectedTenant.features ?? {}) };
+		const t = selectedTenant;
+		const id = t?.id ?? null;
+		if (id === syncedTenantId) return;
+		syncedTenantId = id;
+		untrack(() => {
+			localFeatures = { ...(t?.features ?? {}) };
 			featureError = '';
 			featureSaved = false;
-		}
+		});
 	});
 
-	async function saveFeatures() {
-		if (!selectedTenant) return;
-		savingFeatures = true; featureError = '';
-		const { error } = await sb.from('crm_tenants')
-			.update({ features: localFeatures })
-			.eq('id', selectedTenant.id);
-		savingFeatures = false;
-		if (error) { featureError = error.message; return; }
-		selectedTenant = { ...selectedTenant, features: { ...localFeatures } };
-		tenants = tenants.map(t => t.id === selectedTenant!.id ? { ...t, features: { ...localFeatures } } : t);
-		featureSaved = true;
-		setTimeout(() => featureSaved = false, 2000);
+	// Wynik zapisu przypisujemy firmie, którą zapisywaliśmy, a nie tej, która jest wybrana w chwili
+	// odpowiedzi — użytkownik mógł w międzyczasie przełączyć panel na inną firmę.
+	function applyToTenant(id: string, patch: Partial<Tenant>) {
+		tenants = tenants.map((t) => (t.id === id ? { ...t, ...patch } : t));
+		if (selectedTenant?.id === id) selectedTenant = tenants.find((t) => t.id === id) ?? null;
 	}
 
-	async function setFeature(tenant: Tenant, key: string, value: boolean) {
-		savingFeature = key;
-		const next = { ...(tenant.features ?? {}), [key]: value };
-		await sb.from('crm_tenants').update({ features: next }).eq('id', tenant.id);
-		tenant.features = next;
-		tenants = [...tenants];
-		if (selectedTenant?.id === tenant.id) selectedTenant = { ...tenant, features: next };
-		savingFeature = null;
+	async function saveFeatures() {
+		const t = selectedTenant;
+		if (!t) return;
+		savingFeatures = true; featureError = '';
+		const r = await patchTenant(t.id, { features: { ...localFeatures } });
+		savingFeatures = false;
+		if (!r.ok) { featureError = r.message; return; }
+		applyToTenant(t.id, { features: { ...r.features } });
+		featureSaved = true;
+		setTimeout(() => featureSaved = false, 2000);
 	}
 
 	// Resend API key state
 	let editingResend = $state<string | null>(null);
 	let resendInput = $state('');
 	let savingResend = $state(false);
+	let resendError = $state('');
 
-	async function saveResendKey(tenant: Tenant) {
-		savingResend = true;
-		const val = resendInput.trim() || null;
-		await sb.from('crm_tenants').update({ resend_api_key: val }).eq('id', tenant.id);
-		tenant.resend_api_key = val;
-		tenants = [...tenants];
-		editingResend = null;
+	// Usunięcie klucza wymaga osobnej, potwierdzonej akcji — puste pole nie kasuje klucza.
+	async function saveResendKey(tenant: Tenant, remove = false) {
+		const key = resendInput.trim();
+		if (!remove && !key) { resendError = 'Wpisz klucz albo użyj „Usuń klucz”.'; return; }
+		savingResend = true; resendError = '';
+		const r = await patchTenant(tenant.id, { resend_api_key: remove ? null : key });
 		savingResend = false;
+		if (!r.ok) { resendError = r.message; return; }
+		applyToTenant(tenant.id, { resend_key_hint: r.resend_key_hint });
+		resendInput = '';
+		editingResend = null;
+	}
+
+	// Adres nadawcy e-maili firmy (np. „Aura Expert <platnosci@auraexpert.pl>”).
+	let editingFrom = $state<string | null>(null);
+	let fromInput = $state('');
+	let savingFrom = $state(false);
+	let fromError = $state('');
+
+	async function saveEmailFrom(tenant: Tenant) {
+		savingFrom = true; fromError = '';
+		const r = await patchTenant(tenant.id, { email_from: fromInput.trim() || null });
+		savingFrom = false;
+		if (!r.ok) { fromError = r.message; return; }
+		applyToTenant(tenant.id, { email_from: r.email_from });
+		editingFrom = null;
+	}
+
+	function removeResendKey(tenant: Tenant) {
+		if (!confirm(`Usunąć klucz Resend firmy „${tenant.nazwa}”? Przypomnienia e-mail dla tej firmy przestaną być wysyłane.`)) return;
+		saveResendKey(tenant, true);
 	}
 
 	// Sync state
@@ -174,22 +225,11 @@
 		const { data: { session } } = await sb.auth.getSession();
 		if (!session) { goto('/login'); return; }
 
-		const res = await fetch('/api/saas-admin/tenants', {
-			headers: { 'Authorization': `Bearer ${session.access_token}` }
-		});
-
-		if (!res.ok) {
+		if (!(await loadTenants())) {
 			loadError = 'Brak uprawnień lub błąd serwera';
 			loading = false;
 			return;
 		}
-
-		const data = await res.json();
-		// Enrich with features from crm_tenants (direct query since ADMIN GOD)
-		const { data: tenantData } = await sb.from('crm_tenants').select('id, features, resend_api_key');
-		const featuresMap = new Map((tenantData ?? []).map((t: { id: string; features: Record<string,boolean>; resend_api_key?: string | null }) => [t.id, { features: t.features ?? {}, resend_api_key: t.resend_api_key ?? null }]));
-		tenants = data.tenants.map((t: Tenant) => ({ ...t, features: featuresMap.get(t.id)?.features ?? {}, resend_api_key: featuresMap.get(t.id)?.resend_api_key ?? null }));
-		allProfiles = data.profiles;
 		loading = false;
 		loadSyncLog();
 	});
@@ -382,15 +422,41 @@
 					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-3">Resend API (email)</p>
 					{#if editingResend === st.id}
 						<div class="flex items-center gap-2">
-							<input type="text" bind:value={resendInput} placeholder="re_..." class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-							<button onclick={() => saveResendKey(st)} disabled={savingResend} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingResend ? '…' : 'Zapisz'}</button>
-							<button onclick={() => { editingResend = null; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+							<input type="password" autocomplete="off" bind:value={resendInput} placeholder={st.resend_key_hint ? 'Nowy klucz (zastąpi obecny)' : 're_...'} class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<button onclick={() => saveResendKey(st)} disabled={savingResend || !resendInput.trim()} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingResend ? '…' : 'Zapisz'}</button>
+							<button onclick={() => { editingResend = null; resendError = ''; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+							{#if st.resend_key_hint}
+								<button onclick={() => removeResendKey(st)} disabled={savingResend} class="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50">Usuń klucz</button>
+							{/if}
 						</div>
+						{#if resendError}<p class="mt-2 text-sm text-red-600">{resendError}</p>{/if}
 					{:else}
 						<div class="flex items-center gap-3">
-							<span class="text-sm text-slate-600 font-mono">{st.resend_api_key ? `re_****…${st.resend_api_key.slice(-4)}` : '— nie ustawiony —'}</span>
-							<button onclick={() => { editingResend = st.id; resendInput = st.resend_api_key ?? ''; }} class="text-xs text-blue-600 hover:underline">
-								{st.resend_api_key ? 'Zmień' : 'Dodaj'}
+							<span class="text-sm text-slate-600 font-mono">{st.resend_key_hint ? `re_****${st.resend_key_hint}` : '— nie ustawiony —'}</span>
+							<button onclick={() => { editingResend = st.id; resendInput = ''; resendError = ''; }} class="text-xs text-blue-600 hover:underline">
+								{st.resend_key_hint ? 'Zmień' : 'Dodaj'}
+							</button>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Nadawca e-maili -->
+				<div class="mb-5 border-t border-line-soft pt-4">
+					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Nadawca e-maili do klientów</p>
+					<p class="text-xs text-slate-500 mb-3">Przypomnienia o płatnościach wychodzą tylko, gdy firma ma klucz Resend i adres nadawcy w domenie zweryfikowanej w Resend.</p>
+					{#if editingFrom === st.id}
+						<div class="flex items-center gap-2">
+							<input bind:value={fromInput} placeholder="Aura Expert <platnosci@auraexpert.pl>" class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<button onclick={() => saveEmailFrom(st)} disabled={savingFrom} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingFrom ? '…' : 'Zapisz'}</button>
+							<button onclick={() => { editingFrom = null; fromError = ''; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+						</div>
+						<p class="mt-1 text-xs text-slate-400">Puste pole i „Zapisz” usuwa adres — e-maile tej firmy przestaną wychodzić.</p>
+						{#if fromError}<p class="mt-2 text-sm text-red-600">{fromError}</p>{/if}
+					{:else}
+						<div class="flex items-center gap-3">
+							<span class="text-sm text-slate-600 font-mono">{st.email_from ?? '— nie ustawiony —'}</span>
+							<button onclick={() => { editingFrom = st.id; fromInput = st.email_from ?? ''; fromError = ''; }} class="text-xs text-blue-600 hover:underline">
+								{st.email_from ? 'Zmień' : 'Dodaj'}
 							</button>
 						</div>
 					{/if}
