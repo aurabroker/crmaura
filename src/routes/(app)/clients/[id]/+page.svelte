@@ -9,6 +9,8 @@
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
+	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
+	import type { Szablon } from '$lib/szablonyEmail';
 	import { logAudit } from '$lib/utils/audit';
 	import type { Claim, Vehicle, ClientContact, CrmTask, Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
@@ -325,8 +327,20 @@
 	}
 
 	// ── E-maile wysłane klientowi z CRM (przypomnienia o płatnościach, odnowienia) ──
-	type EmailKlienta = { id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[] };
-	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', inne: 'Inne' };
+	type EmailKlienta = { id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[]; autor_id?: string | null; zalaczniki?: string[] | null };
+	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', recznie: 'Wysłany z CRM', inne: 'Inne' };
+	const autorEmaila = (e: EmailKlienta) => (e.autor_id ? appState.brokers.find((b) => b.id === e.autor_id)?.imie_nazwisko ?? null : null);
+
+	// „Napisz e-mail” (okno z szablonami); szablon i polisa ustawiane np. z przypomnienia o racie.
+	let pisanieEmaila = $state(false);
+	let emailSzablon = $state<Szablon>('wlasny');
+	let emailPolisa = $state<string | null>(null);
+	const adresyEmail = $derived(!!client?.email || clientContacts.some((c) => !!c.email));
+	function napiszEmail(szablon: Szablon = 'wlasny', polisaId: string | null = null) {
+		emailSzablon = szablon;
+		emailPolisa = polisaId;
+		pisanieEmaila = true;
+	}
 	let emaile = $state<EmailKlienta[]>([]);
 	let emaileLadowanie = $state(false);
 	let emaileBlad = $state('');
@@ -345,7 +359,7 @@
 		const dla = clientId ?? '';
 		emaileLadowanie = true; emaileBlad = '';
 		const { data, error } = await sb.from('crm_client_emails')
-			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids')
+			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids, autor_id, zalaczniki')
 			.eq('klient_id', dla)
 			.order('wyslano_at', { ascending: false })
 			.limit(200);
@@ -901,7 +915,7 @@
 			if (w.zlozono_at) dodaj({ klucz: `wz-${w.id}`, at: w.zlozono_at, tekst: `Klient złożył wniosek o odnowienie ${nrCertyfikatu(w)}`, kto: null, ton: 'accent', href: `/policies/${w.polisa_id}` });
 		}
 		for (const e of emaile) {
-			dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}`, kto: RODZAJ_EMAILA[e.rodzaj] ?? null, ton: 'accent' });
+			dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}${e.zalaczniki?.length ? ` (załączniki: ${e.zalaczniki.length})` : ''}`, kto: autorEmaila(e) ?? RODZAJ_EMAILA[e.rodzaj] ?? null, ton: 'accent' });
 		}
 		for (const w of audyt) {
 			const tekst = opisAudytu(w);
@@ -986,8 +1000,8 @@
 			{#if client.telefon}
 				<a href="tel:{client.telefon}" aria-label="Zadzwoń: {client.telefon}" title="Zadzwoń: {client.telefon}" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Phone size={16} /></a>
 			{/if}
-			{#if client.email}
-				<a href="mailto:{client.email}" aria-label="Napisz e-mail: {client.email}" title="Napisz e-mail: {client.email}" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></a>
+			{#if adresyEmail}
+				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
 			{/if}
 			<button onclick={wyslijApk} class="h-9 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Wyślij APK</button>
 			<button onclick={() => goto(`/policies/new?klient=${clientId}`)} class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
@@ -1005,6 +1019,9 @@
 					<div role="menu" class="absolute right-0 top-full mt-1 w-60 bg-white border border-line rounded-xl shadow-xl z-50 py-1">
 						<button role="menuitem" onclick={() => goto(`/clients/${clientId}/edit`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Pencil size={15} class="text-ink-3" /> Edytuj dane klienta</button>
 						<button role="menuitem" onclick={openPortal} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Link size={15} class="text-ink-3" /> {hasPortal ? 'Panel klienta — dostęp' : 'Nadaj dostęp do panelu klienta'}</button>
+						{#if adresyEmail}
+							<button role="menuitem" onclick={() => napiszEmail()} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Mail size={15} class="text-ink-3" /> Napisz e-mail</button>
+						{/if}
 						<div class="my-1 border-t border-line-soft"></div>
 						<button role="menuitem" onclick={openNewTask} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><CheckCircle2 size={15} class="text-ink-3" /> Nowe zadanie</button>
 						<button role="menuitem" onclick={openNewContact} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><UserPlus size={15} class="text-ink-3" /> Dodaj osobę kontaktową</button>
@@ -1126,7 +1143,10 @@
 											<span class="font-semibold text-danger">Po terminie:</span>
 											{opisRaty(r)} polisy <a href="/policies/{r.polisa_id}" class="font-mono text-xs text-accent-text hover:underline">{pol?.nr_polisy ?? '—'}</a> — {fmtPln(r.kwota)} zł, {fmtTermin(r.data_platnosci, dzis)}
 										</span>
-										<span class="block text-xs text-ink-3">System · termin {fmtDzien(r.data_platnosci)}</span>
+										<span class="block text-xs text-ink-3">
+											System · termin {fmtDzien(r.data_platnosci)}
+											{#if adresyEmail}· <button onclick={() => napiszEmail('rata', r.polisa_id)} class="font-semibold text-accent-text hover:underline">Przypomnij e-mailem</button>{/if}
+										</span>
 									</span>
 								</li>
 							{/each}
@@ -1987,7 +2007,12 @@
 							</tr>
 							{#if emailOtwarty === e.id && e.tresc}
 								<tr class="bg-slate-50/70">
-									<td colspan="5" class="px-4 py-3"><pre class="whitespace-pre-wrap font-sans text-sm text-slate-700">{e.tresc}</pre></td>
+									<td colspan="5" class="px-4 py-3">
+										{#if autorEmaila(e) || e.zalaczniki?.length}
+											<p class="mb-2 text-xs text-ink-3">{autorEmaila(e) ? `Wysłał(a): ${autorEmaila(e)}` : ''}{autorEmaila(e) && e.zalaczniki?.length ? ' · ' : ''}{e.zalaczniki?.length ? `Załączniki: ${e.zalaczniki.join(', ')}` : ''}</p>
+										{/if}
+										<pre class="whitespace-pre-wrap font-sans text-sm text-slate-700">{e.tresc}</pre>
+									</td>
 								</tr>
 							{/if}
 						{/each}
@@ -2169,6 +2194,20 @@
 		{/each}
 	</div>
 </Modal>
+
+<!-- Okno: e-mail do klienta -->
+{#if client}
+	<EmailKlienta
+		open={pisanieEmaila}
+		klient={client}
+		polisy={clientPolicies}
+		kontakty={clientContacts}
+		szablonStartowy={emailSzablon}
+		polisaStartowa={emailPolisa}
+		onclose={() => (pisanieEmaila = false)}
+		onwyslano={() => { emaileDla = clientId ?? ''; void wczytajEmaile(); }}
+	/>
+{/if}
 
 <!-- Modal: Zadanie -->
 <TaskModal

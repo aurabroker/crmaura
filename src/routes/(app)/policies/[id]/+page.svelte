@@ -16,6 +16,7 @@
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalPanel from '$lib/components/renewal/CrmRenewalPanel.svelte';
+	import DokumentyPolisy from '$lib/components/DokumentyPolisy.svelte';
 	import { wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
 	import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
 
@@ -588,6 +589,9 @@
 	{#if wProgramie}
 		<CrmRenewalPanel bind:this={renewalPanel} {policy} email={klientEmail} odnowiona={!!renewalPolicy} />
 	{/if}
+
+	<!-- Dokumenty polisy (PDF w Cloudflare R2) -->
+	<DokumentyPolisy polisaId={policy.id} />
 
 	<!-- Parametry odczytane z pliku polisy (import z PDF) -->
 	{#if policy.dane_importu}

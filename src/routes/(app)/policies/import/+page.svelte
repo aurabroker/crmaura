@@ -5,6 +5,8 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { logAudit } from '$lib/utils/audit';
+	import { magazynDostepny, wyslijPdfPolisy } from '$lib/plikiPolis';
+	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { fmtPln } from '$lib/utils';
 	import { readPdf, type PdfDoc } from '$lib/policyImport/pdf';
 	import { templatesFor } from '$lib/policyImport/templates';
@@ -255,6 +257,16 @@
 				(draft.wniosekPojazd.vin as string) ?? null,
 				{ polisa: payload.nr_polisy, plik: file?.name }
 			);
+		}
+
+		// Plik polisy do magazynu (Cloudflare R2) — błąd nie cofa zapisu polisy, tylko o nim mówi.
+		const nowaId = (inserted as { id?: string } | null)?.id;
+		if (file && nowaId && (await magazynDostepny())) {
+			try {
+				await wyslijPdfPolisy(nowaId, file, { rodzaj: 'polisa', zrodlo: 'import_pdf' });
+			} catch (e) {
+				ctxToast(`Polisa zapisana, ale PDF nie trafił do magazynu: ${(e as Error).message}`);
+			}
 		}
 
 		await logAudit('policy_imported', 'policy', inserted?.id, payload.nr_polisy as string, {
