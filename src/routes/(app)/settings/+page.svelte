@@ -8,9 +8,10 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import AdminSettings from '$lib/components/AdminSettings.svelte';
-	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark } from 'lucide-svelte';
+	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark, Upload } from 'lucide-svelte';
 	import { fmtPln, validateVin, assignedPolicyFor } from '$lib/utils';
 	import { openStoredFile } from '$lib/utils/storageLink';
+	import { magazynDostepny, otworzPlikNoty, wyslijPlikNoty } from '$lib/plikiPolis';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
@@ -60,7 +61,10 @@
 	}
 
 	// --- Dokumenty rozliczeniowe ---
-	type Nota = { id: string; numer_noty: string; tu_skrot: string | null; data_zestawienia: string | null; data_importu: string; razem_skladka: number | null; razem_prowizja: number | null; pozycji_count: number | null; file_url?: string | null };
+	type Nota = {
+		id: string; numer_noty: string; tu_skrot: string | null; data_zestawienia: string | null; data_importu: string; razem_skladka: number | null; razem_prowizja: number | null; pozycji_count: number | null; file_url?: string | null;
+		plik_klucz?: string | null; plik_nazwa?: string | null; plik_rozmiar?: number | null; plik_typ?: string | null;
+	};
 	let noty = $state<Nota[]>([]);
 	let notyLoading = $state(false);
 
@@ -73,9 +77,32 @@
 
 	async function openNotaFile(n: Nota) {
 		try {
-			await openStoredFile('settlement-files', n.file_url);
+			// Nowe pliki w magazynie R2, starsze w buckecie Supabase settlement-files.
+			if (n.plik_klucz) await otworzPlikNoty(n.id, n.plik_nazwa ?? null, n.plik_typ ?? null);
+			else await openStoredFile('settlement-files', n.file_url);
 		} catch {
 			ctxToast('Nie udało się otworzyć pliku zestawienia');
+		}
+	}
+
+	// Dołożenie pliku do noty bez pliku (np. nota rozliczona bez importu z pliku) — tylko do magazynu R2.
+	let r2Dostepny = $state(false);
+	let wysylanaNota = $state<string | null>(null);
+	$effect(() => { if (activeTab === 'dokumenty') void magazynDostepny().then((ok) => (r2Dostepny = ok)); });
+	async function dodajPlikNoty(n: Nota, e: Event) {
+		const input = e.currentTarget as HTMLInputElement;
+		const plik = input.files?.[0];
+		input.value = '';
+		if (!plik) return;
+		wysylanaNota = n.id;
+		try {
+			const z = await wyslijPlikNoty(n.id, plik);
+			noty = noty.map((x) => (x.id === n.id ? { ...x, ...z, plik_klucz: 'r2' } : x));
+			ctxToast(`Dodano plik: ${z.plik_nazwa}`);
+		} catch (err) {
+			ctxToast(`Nie udało się dodać pliku: ${(err as Error).message}`);
+		} finally {
+			wysylanaNota = null;
 		}
 	}
 
@@ -691,8 +718,13 @@
 						<td class="px-5 py-3 text-right font-semibold text-emerald-700">{n.razem_prowizja != null ? fmtPln(n.razem_prowizja) : '—'}</td>
 						<td class="px-5 py-3 text-center">{n.pozycji_count ?? '—'}</td>
 						<td class="px-5 py-3">
-							{#if n.file_url}
-								<button onclick={() => openNotaFile(n)} class="flex items-center gap-1 text-blue-600 hover:underline text-xs"><FileText size={13} /> Pobierz</button>
+							{#if n.plik_klucz || n.file_url}
+								<button onclick={() => openNotaFile(n)} title={n.plik_nazwa ?? undefined} class="flex items-center gap-1 text-blue-600 hover:underline text-xs"><FileText size={13} /> Pobierz</button>
+							{:else if r2Dostepny}
+								<label class="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-accent-text hover:underline cursor-pointer {wysylanaNota === n.id ? 'opacity-60 pointer-events-none' : ''}">
+									<Upload size={13} /> {wysylanaNota === n.id ? 'Wysyłanie…' : 'Dodaj plik'}
+									<input type="file" accept=".xlsx,.xls,.csv,.pdf,application/pdf" onchange={(e) => dodajPlikNoty(n, e)} class="sr-only" />
+								</label>
 							{:else}
 								<span class="text-slate-300 text-xs">brak</span>
 							{/if}

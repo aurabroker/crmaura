@@ -16,6 +16,7 @@
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { dekodujCsv, parseErgoCsv } from '$lib/commissionImport/ergoCsv';
 	import { parseColonnade } from '$lib/commissionImport/colonnadeXlsx';
+	import { magazynDostepny, wyslijPlikNoty } from '$lib/plikiPolis';
 	const today = todayStr();
 	type Filtr = 'wszystkie' | 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone';
 	let filtr = $state<Filtr>('wszystkie');
@@ -358,8 +359,10 @@
 
 		const tuSkrot = TU_NOTY[importMode];
 
-		// Plik źródłowy do prywatnego bucketu; w nocie zapisujemy ścieżkę, a link do pobrania
-		// powstaje przy kliknięciu (storageLink.ts).
+		// Plik źródłowy: do magazynu R2 (po zapisaniu noty, przez serwer); gdy magazyn nie jest podpięty —
+		// jak dawniej do prywatnego bucketu Supabase (w nocie ścieżka, link powstaje przy kliknięciu).
+		const doR2 = !!importFile && !importPoprzednia && (await magazynDostepny());
+		let uwagaPliku = '';
 		const pozycji = importPreview.filter(r => r.payment_id && r.operator_action === 'settle').length;
 		let notaId: string;
 		if (importPoprzednia) {
@@ -371,7 +374,7 @@
 			notaId = importPoprzednia.id;
 		} else {
 			let fileUrl: string | null = null;
-			if (importFile) {
+			if (importFile && !doR2) {
 				const ext = importFile.name.split('.').pop() ?? 'xlsx';
 				const path = `${appState.profile!.tenant_id}/${tuSkrot}_${importNumerNoty.replace(/\//g, '-')}_${Date.now()}.${ext}`;
 				const { data: upData } = await sb.storage.from('settlement-files').upload(path, importFile, { upsert: true });
@@ -391,6 +394,13 @@
 
 			if (notaErr) { importSaving = false; importError = notaErr.message; return; }
 			notaId = nota!.id;
+			if (doR2 && importFile) {
+				try {
+					await wyslijPlikNoty(notaId, importFile);
+				} catch (e) {
+					uwagaPliku = `\n\nUwaga: plik zestawienia nie trafił do magazynu (${(e as Error).message}). Dodasz go w Ustawieniach → Dokumenty rozliczeniowe.`;
+				}
+			}
 		}
 
 		// Rows to settle
@@ -453,7 +463,8 @@
 		importSummary = `Rozliczono ${settled} rat. Nota ${importNumerNoty} zapisana.`
 			+ (notFound.length ? `\n\nNie znaleziono: ${notFound.join(', ')}` : '')
 			+ (skipped.length ? `\n\nPominięto (aneks): ${skipped.join(', ')}` : '')
-			+ (alertsToCreate.length ? `\n\n⚠ Utworzono ${alertsToCreate.length} alert(ów) do sprawdzenia.` : '');
+			+ (alertsToCreate.length ? `\n\n⚠ Utworzono ${alertsToCreate.length} alert(ów) do sprawdzenia.` : '')
+			+ uwagaPliku;
 	}
 
 	function openImport(mode: ImportMode) {

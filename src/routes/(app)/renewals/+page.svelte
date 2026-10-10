@@ -14,6 +14,7 @@
 	import { sb } from '$lib/supabase';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
 	import { czyAktywny, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
+	import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
 	import { nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
 	import { logAudit } from '$lib/utils/audit';
 
@@ -23,14 +24,16 @@
 
 	// Wnioski o odnowienie (program OC beauty): najnowszy na polisę. Przed migracją tabeli
 	// zapytanie zwraca błąd — wtedy kolumna i filtr się nie pokazują.
-	type WniosekSkrot = Pick<RenewalRow, 'polisa_id' | 'status' | 'decyzja' | 'wyslano_at' | 'zlozono_at' | 'created_at'>;
+	type WniosekSkrot = Pick<RenewalRow, 'polisa_id' | 'status' | 'decyzja' | 'wyslano_at' | 'zlozono_at' | 'created_at' | 'email'>;
+	/** Wniosek z trybu testowego (adres testowy zamiast adresu klienta) — klient go nie dostał. */
+	const testowy = (w: WniosekSkrot) => !!w.email && w.email.trim().toLowerCase() === ADRES_TESTOWY;
 	let wnioski = $state<Map<string, WniosekSkrot> | null>(null);
 
 	$effect(() => {
 		let anulowane = false;
 		(async () => {
 			try {
-				let q = sb.from('crm_renewals').select('polisa_id,status,decyzja,wyslano_at,zlozono_at,created_at');
+				let q = sb.from('crm_renewals').select('polisa_id,status,decyzja,wyslano_at,zlozono_at,created_at,email');
 				const tid = appState.profile?.tenant_id;
 				if (tid) q = q.eq('tenant_id', tid);
 				const { data, error } = await q.order('created_at', { ascending: false });
@@ -60,7 +63,7 @@
 		const d = dni(p);
 		if (d < 0 || d > 45) return false;
 		const w = wnioski.get(p.id);
-		return !w || !czyAktywny(w.status) || (w.status === 'utworzony' && !w.wyslano_at);
+		return !w || testowy(w) || !czyAktywny(w.status) || (w.status === 'utworzony' && !w.wyslano_at);
 	}
 
 	type Stan = 'do_odnowienia' | 'wygasla' | 'odnowiona';
@@ -359,7 +362,7 @@
 						{#if n}<span class="block text-xs text-ink-3">odnowiona polisą <span class="font-mono">{n.nr_polisy}</span></span>{/if}
 						{#if wnioski && programIds.has(p.id) && !n}
 							{@const w = wnioski.get(p.id)}
-							<span class="block mt-1">{#if w}<CrmRenewalBadge status={w.status} decyzja={w.decyzja} />{:else}<span class="text-xs text-ink-3">wniosek nie wysłany</span>{/if}</span>
+							<span class="block mt-1">{#if w && testowy(w)}<span class="text-xs text-ink-3" title="Wniosek z trybu testowego — klient go nie dostał. Po wyłączeniu testu automat wyśle prawdziwy link.">wniosek testowy</span>{:else if w}<CrmRenewalBadge status={w.status} decyzja={w.decyzja} />{:else}<span class="text-xs text-ink-3">wniosek nie wysłany</span>{/if}</span>
 						{/if}
 					</a>
 					{#if moznaOdnowic(p)}
@@ -410,7 +413,7 @@
 									<!-- Program OC beauty: stan wniosku klienta o odnowienie. -->
 									{@const w = wnioski.get(p.id)}
 									<span class="block mt-1 whitespace-nowrap" data-testid="kolumna-wniosek">
-										{#if w}<CrmRenewalBadge status={w.status} decyzja={w.decyzja} />{:else}<span class="text-xs text-ink-3">wniosek nie wysłany</span>{/if}
+										{#if w && testowy(w)}<span class="text-xs text-ink-3" title="Wniosek z trybu testowego — klient go nie dostał. Po wyłączeniu testu automat wyśle prawdziwy link.">wniosek testowy</span>{:else if w}<CrmRenewalBadge status={w.status} decyzja={w.decyzja} />{:else}<span class="text-xs text-ink-3">wniosek nie wysłany</span>{/if}
 									</span>
 								{/if}
 							</td>

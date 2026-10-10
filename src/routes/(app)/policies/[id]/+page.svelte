@@ -497,6 +497,7 @@
 			}
 			case 'policy_file_added': return `Dodano dokument: ${s('plik')}`;
 			case 'policy_file_deleted': return `Usunięto dokument: ${s('plik')}`;
+			case 'portal_file_downloaded': return `Klient pobrał w panelu klienta: ${s('plik')}`;
 			case 'policy_deleted': return `Przeniesiono do kosza${s('reason') ? ` — ${s('reason')}` : ''}`;
 			case 'policy_restored': return 'Przywrócono z kosza';
 			default: return w.action.replace(/_/g, ' ');
