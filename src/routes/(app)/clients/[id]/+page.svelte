@@ -327,7 +327,21 @@
 	}
 
 	// ── E-maile wysłane klientowi z CRM (przypomnienia o płatnościach, odnowienia) ──
-	type EmailKlienta = { id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[]; autor_id?: string | null; zalaczniki?: string[] | null };
+	type EmailKlienta = {
+		id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[]; autor_id?: string | null; zalaczniki?: string[] | null;
+		dostawa?: string | null; dostawa_at?: string | null; otwarto_at?: string | null; dostawa_blad?: string | null;
+	};
+	/** Stan dostawy z webhooka Resend; null — brak danych (starszy e-mail albo webhook nieustawiony). */
+	const DOSTAWA: Record<string, { tekst: string; cls: string; problem?: boolean }> = {
+		wyslany: { tekst: 'Wysłany', cls: 'bg-surface-2 text-ink-2' },
+		opozniony: { tekst: 'Opóźniony', cls: 'bg-warn-soft text-warn' },
+		dostarczony: { tekst: 'Dostarczony', cls: 'bg-ok-soft text-ok' },
+		otwarty: { tekst: 'Otwarty', cls: 'bg-accent-soft text-accent-text' },
+		klikniety: { tekst: 'Otwarty', cls: 'bg-accent-soft text-accent-text' },
+		odbity: { tekst: 'Odrzucony', cls: 'bg-danger-soft text-danger', problem: true },
+		spam: { tekst: 'Zgłoszony jako spam', cls: 'bg-danger-soft text-danger', problem: true },
+		blad: { tekst: 'Błąd wysyłki', cls: 'bg-danger-soft text-danger', problem: true }
+	};
 	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', recznie: 'Wysłany z CRM', inne: 'Inne' };
 	const autorEmaila = (e: EmailKlienta) => (e.autor_id ? appState.brokers.find((b) => b.id === e.autor_id)?.imie_nazwisko ?? null : null);
 
@@ -359,7 +373,7 @@
 		const dla = clientId ?? '';
 		emaileLadowanie = true; emaileBlad = '';
 		const { data, error } = await sb.from('crm_client_emails')
-			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids, autor_id, zalaczniki')
+			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids, autor_id, zalaczniki, dostawa, dostawa_at, otwarto_at, dostawa_blad')
 			.eq('klient_id', dla)
 			.order('wyslano_at', { ascending: false })
 			.limit(200);
@@ -915,7 +929,10 @@
 			if (w.zlozono_at) dodaj({ klucz: `wz-${w.id}`, at: w.zlozono_at, tekst: `Klient złożył wniosek o odnowienie ${nrCertyfikatu(w)}`, kto: null, ton: 'accent', href: `/policies/${w.polisa_id}` });
 		}
 		for (const e of emaile) {
-			dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}${e.zalaczniki?.length ? ` (załączniki: ${e.zalaczniki.length})` : ''}`, kto: autorEmaila(e) ?? RODZAJ_EMAILA[e.rodzaj] ?? null, ton: 'accent' });
+			{
+				const problem = e.dostawa ? DOSTAWA[e.dostawa]?.problem : false;
+				dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}${e.zalaczniki?.length ? ` (załączniki: ${e.zalaczniki.length})` : ''}${problem ? ` — nie doszedł (${DOSTAWA[e.dostawa!].tekst.toLowerCase()})` : ''}`, kto: autorEmaila(e) ?? RODZAJ_EMAILA[e.rodzaj] ?? null, ton: problem ? 'danger' : 'accent' });
+			}
 		}
 		for (const w of audyt) {
 			const tekst = opisAudytu(w);
@@ -1966,7 +1983,7 @@
 				<div class="flex items-center gap-2">
 					<Mail size={16} class="text-slate-400" />
 					<span class="text-sm font-semibold text-slate-700">E-maile wysłane z CRM</span>
-					<span class="text-xs text-slate-400">— przypomnienia o płatnościach i odnowienia</span>
+					<span class="text-xs text-slate-400">— przypomnienia, odnowienia i wiadomości wysłane z CRM</span>
 				</div>
 				<button onclick={wczytajEmaile} disabled={emaileLadowanie}
 					class="flex items-center gap-1.5 text-xs text-slate-500 border border-line rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
@@ -1988,6 +2005,7 @@
 							<SortTh wersaliki={false} s={sortEmaile} k="temat" class="px-4 py-2">Temat</SortTh>
 							<SortTh wersaliki={false} s={sortEmaile} k="adres" class="px-4 py-2">Do</SortTh>
 							<th class="px-4 py-2">Polisy</th>
+							<th class="px-4 py-2">Dostawa</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -2004,10 +2022,22 @@
 								<td class="px-4 py-2.5 text-xs">
 									{#each e.polisa_ids as pid, i (pid)}{#if i > 0}, {/if}<a href="/policies/{pid}" class="text-blue-700 hover:underline">{nrPolisy.get(pid) ?? 'polisa'}</a>{/each}
 								</td>
+								<td class="px-4 py-2.5 whitespace-nowrap">
+									{#if e.dostawa && DOSTAWA[e.dostawa]}
+										<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {DOSTAWA[e.dostawa].cls}" title={e.dostawa_blad ?? (e.dostawa_at ? fmtDateTime(e.dostawa_at) : undefined)}>{DOSTAWA[e.dostawa].tekst}</span>
+									{:else}
+										<span class="text-xs text-ink-3" title="Brak informacji od dostawcy — starszy e-mail albo webhook Resend nieustawiony w SAAS Admin">—</span>
+									{/if}
+								</td>
 							</tr>
 							{#if emailOtwarty === e.id && e.tresc}
 								<tr class="bg-slate-50/70">
-									<td colspan="5" class="px-4 py-3">
+									<td colspan="6" class="px-4 py-3">
+										{#if e.dostawa && DOSTAWA[e.dostawa]?.problem}
+											<p class="mb-2 text-[13px] text-danger bg-danger-soft rounded-lg px-3 py-2">{DOSTAWA[e.dostawa].tekst}{e.dostawa_at ? ` · ${fmtDateTime(e.dostawa_at)}` : ''}{e.dostawa_blad ? ` — ${e.dostawa_blad}` : ''}. Sprawdź adres klienta.</p>
+										{:else if e.otwarto_at}
+											<p class="mb-2 text-xs text-ink-3">Otwarty po raz pierwszy: {fmtDateTime(e.otwarto_at)}</p>
+										{/if}
 										{#if autorEmaila(e) || e.zalaczniki?.length}
 											<p class="mb-2 text-xs text-ink-3">{autorEmaila(e) ? `Wysłał(a): ${autorEmaila(e)}` : ''}{autorEmaila(e) && e.zalaczniki?.length ? ' · ' : ''}{e.zalaczniki?.length ? `Załączniki: ${e.zalaczniki.join(', ')}` : ''}</p>
 										{/if}

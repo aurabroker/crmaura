@@ -1,7 +1,49 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+	import { sb } from '$lib/supabase';
 	import { portalState } from '$lib/stores/portal.svelte';
 	import { fmtPln, policyStatus } from '$lib/utils';
-	import { FileText, CreditCard, AlertTriangle, Car } from 'lucide-svelte';
+	import { rozmiar } from '$lib/plikiPolis';
+	import { FileText, CreditCard, AlertTriangle, Car, Download } from 'lucide-svelte';
+
+	// Dokumenty polis (PDF z magazynu biura) — lista i pobieranie przez serwer z tokenem sesji klienta.
+	type Dokument = { id: string; polisa_id: string; rodzaj: string; nazwa: string; rozmiar: number; created_at: string };
+	const RODZAJ_DOKUMENTU: Record<string, string> = { polisa: 'Polisa', aneks: 'Aneks', owu: 'Warunki (OWU)' };
+	let dokumenty = $state<Dokument[]>([]);
+	let bladDokumentu = $state('');
+	const dokumentyPolisy = $derived.by(() => {
+		const m = new Map<string, Dokument[]>();
+		for (const d of dokumenty) m.set(d.polisa_id, [...(m.get(d.polisa_id) ?? []), d]);
+		return m;
+	});
+	async function naglowki(): Promise<Record<string, string>> {
+		const { data: { session } } = await sb.auth.getSession();
+		return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+	}
+	onMount(async () => {
+		try {
+			const res = await fetch('/api/portal/pliki', { headers: await naglowki() });
+			if (res.ok) dokumenty = ((await res.json()) as { pliki?: Dokument[] }).pliki ?? [];
+		} catch {
+			// bez dokumentów — reszta panelu działa
+		}
+	});
+	// Kartę otwieramy od razu w obsłudze kliknięcia (po await przeglądarka zablokowałaby okno).
+	async function otworzDokument(d: Dokument) {
+		bladDokumentu = '';
+		const okno = window.open('about:blank', '_blank');
+		try {
+			const res = await fetch(`/api/portal/pliki/${d.id}`, { headers: await naglowki() });
+			if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { message?: string } | null)?.message ?? 'Nie udało się otworzyć dokumentu.');
+			const url = URL.createObjectURL(await res.blob());
+			if (okno) okno.location.href = url;
+			else window.location.assign(url);
+			setTimeout(() => URL.revokeObjectURL(url), 60_000);
+		} catch (e) {
+			okno?.close();
+			bladDokumentu = (e as Error).message;
+		}
+	}
 
 	type Tab = 'polisy' | 'platnosci' | 'szkody' | 'pojazdy';
 	let tab = $state<Tab>('polisy');
@@ -79,6 +121,7 @@
 </div>
 
 {#if tab === 'polisy'}
+	{#if bladDokumentu}<p class="mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{bladDokumentu}</p>{/if}
 	{#if policies.length === 0}
 		<p class="text-sm text-slate-400 py-10 text-center">Brak polis.</p>
 	{:else}
@@ -100,6 +143,15 @@
 						{fmtPln(p.skladka_przypisana)} PLN
 					</div>
 					<span class="ml-auto text-xs font-semibold {st.color}">{st.label}</span>
+					{#if dokumentyPolisy.get(p.id)?.length}
+						<div class="basis-full flex flex-wrap gap-2 pt-3 mt-1 border-t border-line-soft">
+							{#each dokumentyPolisy.get(p.id) ?? [] as d (d.id)}
+								<button onclick={() => otworzDokument(d)} title={d.nazwa} class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-[13px] font-medium text-accent-text hover:bg-slate-50">
+									<Download size={14} /> {RODZAJ_DOKUMENTU[d.rodzaj] ?? 'Dokument'} <span class="font-normal text-slate-400">· PDF, {rozmiar(d.rozmiar)}</span>
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/each}
 		</div>
