@@ -12,6 +12,8 @@ export interface Profile {
 	stanowisko: string | null;
 	ma_zespol: boolean | null;
 	pesel: string | null;
+	/** Konto bez logowania (np. „Centrala” — domyślny opiekun polis). */
+	wirtualny?: boolean;
 }
 
 export interface Tenant {
