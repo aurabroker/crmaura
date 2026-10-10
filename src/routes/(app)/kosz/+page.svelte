@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { wczytajPolisy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
+	import { usunPlikPolisy } from '$lib/plikiPolis';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln } from '$lib/utils';
 	import { goto } from '$app/navigation';
@@ -88,6 +89,16 @@
 
 	async function confirmPermDelete() {
 		if (!permDeleting) return;
+		// PDF-y polisy leżą w Cloudflare R2: kasujemy je przez API (plik i opis), zanim kaskada w bazie
+		// usunie same opisy — inaczej pliki z danymi klienta zostałyby w magazynie bez żadnego odnośnika.
+		const { data: pliki, error: bladPlikow } = await sb.from('crm_policy_files').select('id').eq('polisa_id', permDeleting.id);
+		if (bladPlikow) { permDeleteError = `Nie udało się sprawdzić dokumentów polisy: ${bladPlikow.message}`; return; }
+		try {
+			for (const f of (pliki ?? []) as { id: string }[]) await usunPlikPolisy(f.id);
+		} catch (e) {
+			permDeleteError = `Nie udało się usunąć dokumentów polisy: ${(e as Error).message}`;
+			return;
+		}
 		const { error } = await sb.from('crm_policies').delete().eq('id', permDeleting.id);
 		if (error) { permDeleteError = error.message; return; }
 		showPermDelete = false;

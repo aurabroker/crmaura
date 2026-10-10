@@ -590,8 +590,9 @@
 		<CrmRenewalPanel bind:this={renewalPanel} {policy} email={klientEmail} odnowiona={!!renewalPolicy} />
 	{/if}
 
-	<!-- Dokumenty polisy (PDF w Cloudflare R2) -->
-	<DokumentyPolisy polisaId={policy.id} />
+	<!-- Dokumenty polisy (PDF w Cloudflare R2); {#key} — przejście na inną polisę (np. certyfikat UG)
+	     w trakcie wysyłki nie dopisze pliku do listy złej karty -->
+	{#key policy.id}<DokumentyPolisy polisaId={policy.id} />{/key}
 
 	<!-- Parametry odczytane z pliku polisy (import z PDF) -->
 	{#if policy.dane_importu}
