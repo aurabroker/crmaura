@@ -15,6 +15,7 @@
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { dekodujCsv, parseErgoCsv } from '$lib/commissionImport/ergoCsv';
+	import { parseColonnade } from '$lib/commissionImport/colonnadeXlsx';
 	const today = todayStr();
 	type Filtr = 'wszystkie' | 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone';
 	let filtr = $state<Filtr>('wszystkie');
@@ -37,7 +38,8 @@
 	let fNotatka = $state('');
 
 	// ===== UNIVERSAL COMMISSION IMPORT =====
-	type ImportMode = 'ergo' | 'leadenhall';
+	type ImportMode = 'ergo' | 'leadenhall' | 'colonnade';
+	const TU_NOTY: Record<ImportMode, string> = { ergo: 'ERGO', leadenhall: 'LEADENHALL', colonnade: 'COLONNADE' };
 
 	interface UniversalRow {
 		nr_polisy: string;
@@ -55,6 +57,9 @@
 		is_negative: boolean;
 		prowizja_diff: number;
 		operator_action: 'settle' | 'skip';
+		// Noty „rata po racie” (Colonnade): numer raty i data wpłaty z pliku
+		nr_raty?: number | null;
+		data_oplacenia?: string | null;
 	}
 
 	let showImport = $state(false);
@@ -105,6 +110,25 @@
 		row.policy_id = policy.id;
 		row.nr_polisy = policy.nr_polisy; // use CRM canonical form
 		row.prowizja_crm = parseFloat(String(policy.prowizja_przypisana)) || 0;
+
+		// Nota z numerem raty (Colonnade): ta konkretna rata. Gdy jest już rozliczona — nie bierzemy innej.
+		if (row.nr_raty != null) {
+			const rata = appState.payments.find(p => p.polisa_id === policy.id && p.nr_raty === row.nr_raty);
+			if (rata && settledStatuses.includes(rata.status)) { row.already_settled = true; return row; }
+			// Prowizja oczekiwana dla tej raty: kwota wpłaty × stawka polisy
+			row.prowizja_crm = Math.round(Math.abs(row.skladka_nota) * (Number(policy.prowizja_pct) || 0)) / 100;
+			const cel = rata ?? appState.payments
+				.filter(p => p.polisa_id === policy.id && !settledStatuses.includes(p.status))
+				.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci))
+				.find(p => Math.abs(Number(p.kwota) - Math.abs(row.skladka_nota)) < 0.01);
+			if (cel) {
+				row.payment_id = cel.id;
+				row.prowizja_diff = Math.abs(row.prowizja_crm - Math.abs(row.prowizja_nota));
+				// Status z wpłaty (cała rata = opłacona); rozjazd prowizji idzie do alertu, nie do statusu raty
+				row.new_status = Math.abs(Number(cel.kwota) - Math.abs(row.skladka_nota)) < 0.01 ? 'Opłacona' : 'Częściowo opłacona';
+			}
+			return row;
+		}
 
 		// Rata o kwocie równej składce z noty, a gdy takiej nie ma — najwcześniejsza nierozliczona
 		const otwarte = appState.payments
@@ -257,6 +281,29 @@
 		});
 	}
 
+	// ===== COLONNADE (portal Cellent) — jedna pozycja = jedna rata =====
+	async function parseColonnadeFile(file: File): Promise<void> {
+		const XLSX = await import('xlsx');
+		const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+		const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: true });
+		const z = parseColonnade(rows, file.name);
+		importNumerNoty = z.numer;
+		importDataZest = z.data_wygenerowania ?? '';
+		importOkres = z.okres;
+		importOstrzezenia = z.ostrzezenia;
+		importRazemSkladka = z.razem_kwota;
+		importRazemProwizja = z.razem_prowizja;
+		importPreview = z.pozycje.map(p => resolveRow({
+			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
+			ubezpieczajacy: p.ubezpieczajacy,
+			skladka_nota: p.kwota, prowizja_nota: p.prowizja,
+			payment_id: null, policy_id: null, prowizja_crm: null,
+			new_status: null, not_found: false, already_settled: false,
+			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle',
+			nr_raty: p.nr_raty, data_oplacenia: p.data_oplacenia
+		}));
+	}
+
 	async function onImportFile(e: Event) {
 		const input = e.target as HTMLInputElement;
 		const file = input.files?.[0];
@@ -271,10 +318,11 @@
 		try {
 			if (importMode === 'ergo' && /\.csv$/i.test(file.name)) await parseErgoCsvFile(file);
 			else if (importMode === 'ergo') await parseErgoXlsx(file);
+			else if (importMode === 'colonnade') await parseColonnadeFile(file);
 			else await parseLeadenhallXlsx(file);
 			if (importNumerNoty) {
 				const { data } = await sb.from('crm_noty').select('id, data_importu, pozycji_count')
-					.eq('numer_noty', importNumerNoty).eq('tu_skrot', importMode === 'ergo' ? 'ERGO' : 'LEADENHALL')
+					.eq('numer_noty', importNumerNoty).eq('tu_skrot', TU_NOTY[importMode])
 					.order('data_importu');
 				const wczesniej = (data ?? []) as { id: string; data_importu: string; pozycji_count: number | null }[];
 				if (wczesniej.length) {
@@ -284,9 +332,10 @@
 						pozycji: wczesniej[0].pozycji_count ?? 0
 					};
 					// Polisa rozliczona już tym zestawieniem nie dostaje drugiej raty z tej samej noty
+					// (przy notach z numerem raty — ta sama rata)
 					const notaIds = new Set(wczesniej.map(n => n.id));
 					importPreview = importPreview.map(r =>
-						r.policy_id && appState.payments.some(p => p.polisa_id === r.policy_id && p.nota_id && notaIds.has(p.nota_id))
+						r.policy_id && appState.payments.some(p => p.polisa_id === r.policy_id && (r.nr_raty == null || p.nr_raty === r.nr_raty) && p.nota_id && notaIds.has(p.nota_id))
 							? { ...r, payment_id: null, new_status: null, already_settled: true }
 							: r
 					);
@@ -307,7 +356,7 @@
 		if (!importNumerNoty) { importError = 'Brak numeru zestawienia w pliku'; return; }
 		importSaving = true; importError = '';
 
-		const tuSkrot = importMode === 'ergo' ? 'ERGO' : 'LEADENHALL';
+		const tuSkrot = TU_NOTY[importMode];
 
 		// Plik źródłowy do prywatnego bucketu; w nocie zapisujemy ścieżkę, a link do pobrania
 		// powstaje przy kliknięciu (storageLink.ts).
@@ -353,8 +402,8 @@
 				kwota: Math.abs(row.skladka_nota),
 				prowizja_z_noty: Math.abs(row.prowizja_nota),
 				nota_id: notaId,
-				data_oplacenia: today
-			}).eq('id', row.payment_id!);
+				data_oplacenia: row.data_oplacenia ?? today
+			} as never).eq('id', row.payment_id!);
 			settled++;
 		}
 
@@ -736,6 +785,10 @@
 						<span class="block text-sm font-medium text-ink">Leadenhall / Squarelife</span>
 						<span class="block text-xs text-ink-3">nota prowizyjna — XLSX</span>
 					</button>
+					<button role="menuitem" onclick={() => { rozliczMenu = false; openImport('colonnade'); }} class="w-full text-left px-4 py-2.5 hover:bg-surface-2">
+						<span class="block text-sm font-medium text-ink">Colonnade (Cellent)</span>
+						<span class="block text-xs text-ink-3">zestawienie prowizyjne — XLSX, rata po racie</span>
+					</button>
 				</div>
 			{/if}
 		</div>
@@ -973,9 +1026,9 @@
 	</div>
 </Modal>
 
-<!-- Modal: Import prowizji (ERGO / Leadenhall) -->
+<!-- Modal: Import prowizji (ERGO / Leadenhall / Colonnade) -->
 <Modal
-	title={importMode === 'ergo' ? 'Rozlicz ERGO — Import zestawienia prowizyjnego' : 'Rozlicz Leadenhall / Squarelife — Import noty prowizyjnej'}
+	title={importMode === 'ergo' ? 'Rozlicz ERGO — Import zestawienia prowizyjnego' : importMode === 'colonnade' ? 'Rozlicz Colonnade — Import zestawienia prowizyjnego (Cellent)' : 'Rozlicz Leadenhall / Squarelife — Import noty prowizyjnej'}
 	open={showImport}
 	onclose={closeImport}
 >
@@ -1001,7 +1054,7 @@
 		<div class="space-y-4">
 			<div>
 				<label class="block text-sm font-medium text-slate-700 mb-2">
-					Wybierz plik zestawienia prowizyjnego {importMode === 'ergo' ? 'ERGO — „Szczegóły zestawienia prowizyjnego” (.csv) lub zestawienie .xlsx' : 'Leadenhall/Squarelife (.xlsx)'}
+					Wybierz plik zestawienia prowizyjnego {importMode === 'ergo' ? 'ERGO — „Szczegóły zestawienia prowizyjnego” (.csv) lub zestawienie .xlsx' : importMode === 'colonnade' ? 'Colonnade z portalu Cellent (.xlsx) — bez zmiany nazwy pliku, numer noty jest w nazwie' : 'Leadenhall/Squarelife (.xlsx)'}
 				</label>
 				<input type="file" accept={importMode === 'ergo' ? '.csv,.xlsx' : '.xlsx'} onchange={onImportFile}
 					class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold {importMode === 'ergo' ? 'file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100' : 'file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100'}" />

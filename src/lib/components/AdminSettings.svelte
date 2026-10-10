@@ -534,7 +534,11 @@
 						<tr class="border-t border-line-soft hover:bg-slate-50 {viewingBroker?.id === b.id ? 'bg-blue-50' : ''}">
 							<td class="px-5 py-3">
 								<div class="font-medium">{b.imie_nazwisko ?? b.email}</div>
-								<div class="text-xs text-slate-400">{b.email}</div>
+								{#if b.wirtualny}
+									<div class="text-xs text-slate-400">konto wirtualne — bez logowania, domyślny opiekun nowych polis</div>
+								{:else}
+									<div class="text-xs text-slate-400">{b.email}</div>
+								{/if}
 							</td>
 							<td class="px-5 py-3"><Badge variant={roleVariant(b.rola)}>{b.rola}</Badge></td>
 							<td class="px-5 py-3 text-xs font-mono text-slate-500">{b.pesel ?? '—'}</td>
@@ -546,7 +550,7 @@
 										class="p-1.5 rounded-lg text-slate-400 hover:text-blue-700 hover:bg-blue-50"
 										title="Polisy brokera"
 									><FileText size={14} /></button>
-									{#if b.id !== appState.profile?.id}
+									{#if b.id !== appState.profile?.id && !b.wirtualny}
 										<button onclick={() => openEditUser(b)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
 									{/if}
 								</div>
