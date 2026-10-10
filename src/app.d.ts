@@ -37,7 +37,7 @@ declare global {
 		// interface Locals {}
 		// interface PageData {}
 		// interface PageState {}
-		// Cloudflare Pages: bindingi ustawiane w panelu (Settings → Functions → Bindings).
+		// Cloudflare Pages: bindingi ustawiane w panelu (Workers & Pages → crmaura → Settings → Bindings), patrz README → Deployment.
 		interface Platform {
 			env?: {
 				/** Kubełek R2 na pliki polis (PDF). Bez niego zapis plików jest wyłączony. */

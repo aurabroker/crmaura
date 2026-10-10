@@ -413,6 +413,21 @@ TURNSTILE_SECRET_KEY       = ...     <- weryfikacja antybotowa (serwer)
 GUS_API_KEY                = ...     <- wyszukiwarka REGON/NIP
 ```
 
+**Bindingi (Workers & Pages → crmaura → Settings → Bindings):**
+
+| Zmienna | Typ | Zasób | Do czego |
+|---------|-----|-------|----------|
+| `POLISY_PDF` | R2 bucket | `crmaura-polisy-pdf` (jurysdykcja **EU**) | PDF polis: sekcja „Dokumenty” na karcie polisy, zapis pliku z importu PDF, załączniki e-maili z Panelu 360° |
+
+- Kubełek zakładamy w panelu R2 → **Create bucket** → Location: **Specify jurisdiction → European Union (EU)**
+  (polisy zawierają dane osobowe; jurysdykcji nie da się zmienić po utworzeniu kubełka). Kubełek jest prywatny —
+  bez domeny publicznej i bez `r2.dev`; pliki wydaje tylko serwer CRM po sprawdzeniu firmy użytkownika.
+- Binding dodajemy dla środowiska **Production** (Preview bez bindingu po prostu wyłącza funkcje plików).
+- Binding działa dopiero w **nowym** wdrożeniu: po dodaniu → Deployments → ostatnie wdrożenie produkcyjne → **Retry deployment**.
+- Bez bindingu `/api/pliki/*` odpowiada 503, a karta polisy pokazuje „Magazyn plików … nie jest jeszcze podpięty”.
+- Projekt **nie** używa pliku `wrangler.toml`/`wrangler.jsonc` — w Pages taki plik z `pages_build_output_dir` przejmuje całą
+  konfigurację (także zmienne środowiskowe) zamiast panelu. Bindingi i zmienne ustawiamy wyłącznie w panelu.
+
 > ⚠️ **BEZPIECZEŃSTWO:** klucz `service_role` (oraz `TURNSTILE_SECRET_KEY`, `GUS_API_KEY`)
 > **NIGDY** nie może mieć przedrostka `VITE_`. Przedrostek `VITE_` powoduje, że Vite
 > wstrzykuje zmienną do bundla przeglądarki — `service_role` omija całe RLS, więc taki

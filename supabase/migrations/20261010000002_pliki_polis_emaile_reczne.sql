@@ -3,6 +3,7 @@
 --    Zapisuje i usuwa wyłącznie serwer (service_role) po sprawdzeniu firmy użytkownika;
 --    pracownicy firmy czytają listę. Klucz obiektu: <tenant_id>/<polisa_id>/<uuid>.pdf
 -- 2) Historia e-maili: rodzaj „recznie” (wysłane z Panelu 360°), autor i nazwy załączników.
+-- STATUS: ZASTOSOWANA na produkcji (sprawdzone 2026-10-10: tabela z RLS i polityką odczytu, kolumny e-maili, nowy check rodzaju).
 -- ============================================================
 
 create table if not exists public.crm_policy_files (

@@ -12,7 +12,7 @@
 | Styling | Tailwind CSS v4 |
 | Backend / DB | Supabase (PostgreSQL 17, RLS, Edge Functions) |
 | Auth | Supabase Auth |
-| Storage | Supabase Storage (bucket: `apk-pdfs`) |
+| Storage | Supabase Storage (bucket: `apk-pdfs`); PDF polis — Cloudflare R2 `crmaura-polisy-pdf` (jurysdykcja EU, binding `POLISY_PDF`) |
 | Deploy | Cloudflare (adapter-cloudflare) |
 | PDF | jsPDF + jspdf-autotable |
 | Excel import | SheetJS (`xlsx`) — ładowany dynamicznie (`await import('xlsx')`) |
