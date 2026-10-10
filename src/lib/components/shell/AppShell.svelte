@@ -7,6 +7,7 @@
 	import { appState, isAdmin, isFinance, isBroker } from '$lib/stores/app.svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania } from '$lib/platnosci';
+	import { odnowionePolisy } from '$lib/statusPolisy';
 	import GlobalSearch from './GlobalSearch.svelte';
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList, Settings, Plus, LogOut,
@@ -36,8 +37,11 @@
 	const today = todayStr();
 	const ug = $derived(ugBezRozliczania(appState.policies));
 	const ratyPoTerminie = $derived(appState.payments.filter((p) => poTerminie(p, today, ug)).length);
+	// Jak segment „Do odnowienia” w Odnowieniach: koniec w ciągu 30 dni i brak polisy odnawiającej.
+	const odnowione = $derived(odnowionePolisy(appState.policies));
 	const odnowienia30 = $derived(
 		appState.policies.filter((p) => {
+			if (!p.data_do || odnowione.has(p.id)) return false;
 			const d = dateDiffDays(today, p.data_do);
 			return d >= 0 && d <= 30;
 		}).length
@@ -83,7 +87,7 @@
 				},
 				{
 					href: '/renewals', label: 'Odnowienia', icon: RefreshCw,
-					licznik: odnowienia30, ton: 'warn', tytulLicznika: 'polis kończących się w ciągu 30 dni'
+					licznik: odnowienia30, ton: 'warn', tytulLicznika: 'polis do odnowienia w ciągu 30 dni'
 				},
 				{ href: '/vehicles', label: 'Pojazdy', icon: Car },
 				{ href: '/apk', label: 'APK', icon: ClipboardList },
