@@ -417,7 +417,7 @@ GUS_API_KEY                = ...     <- wyszukiwarka REGON/NIP
 
 | Zmienna | Typ | Zasób | Do czego |
 |---------|-----|-------|----------|
-| `POLISY_PDF` | R2 bucket | `crmaura-polisy-pdf` (jurysdykcja **EU**) | PDF polis: sekcja „Dokumenty” na karcie polisy, zapis pliku z importu PDF, załączniki e-maili z Panelu 360° |
+| `POLISY_PDF` | R2 bucket | `crm-polisy-eu` (jurysdykcja **EU**) | PDF polis: sekcja „Dokumenty” na karcie polisy, zapis pliku z importu PDF, załączniki e-maili z Panelu 360° |
 
 - Kubełek zakładamy w panelu R2 → **Create bucket** → Location: **Specify jurisdiction → European Union (EU)**
   (polisy zawierają dane osobowe; jurysdykcji nie da się zmienić po utworzeniu kubełka). Kubełek jest prywatny —
