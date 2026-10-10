@@ -5,13 +5,16 @@
 	import { goto, replaceState } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, policyStatus } from '$lib/utils';
-	import Badge from '$lib/components/Badge.svelte';
+	import { fmtPln, fmtDzien, fmtTermin, inicjaly, odmiana } from '$lib/utils';
 	import Modal from '$lib/components/Modal.svelte';
-	import { ArrowLeft, Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Car, PlusCircle, FileText, ChevronDown, Upload, Mail, Link2 } from 'lucide-svelte';
+	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
+	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
-	import type { PolicyBroker } from '$lib/types/database';
+	import type { PolicyAnnex, PolicyBroker, PolicyPayment } from '$lib/types/database';
+	import { nazwaRodzaju, nazwaTu, odnowionePolisy, statusPolisy } from '$lib/statusPolisy';
+	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
+	import type { Szablon } from '$lib/szablonyEmail';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
@@ -116,13 +119,11 @@
 		obsługa: 'Obsługa',
 		opiekun: 'Opiekun'
 	};
-	const rolaVariant: Record<string, 'success' | 'info' | 'neutral'> = {
-		akwizycja: 'success',
-		obsługa: 'info',
-		opiekun: 'neutral'
+	const rolaCls: Record<string, string> = {
+		akwizycja: 'bg-ok-soft text-ok',
+		obsługa: 'bg-accent-soft text-accent-text',
+		opiekun: 'bg-surface-2 text-ink-2'
 	};
-
-	const st = $derived(policy ? policyStatus(policy.data_do) : null);
 
 	const today = todayStr();
 	const renewalPolicy = $derived(
@@ -310,8 +311,11 @@
 		await odswiezPolisy();
 	}
 
-	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
-	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm bg-white text-ink focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent';
+	const labelCls = 'block text-[13px] font-medium text-ink-2 mb-1';
+	const btnGlowny = 'h-9 px-4 text-sm font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60';
+	const btnDrugi = 'h-9 px-4 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2';
+	const bladCls = 'mb-3 text-[13px] text-danger bg-danger-soft rounded-lg px-3 py-2';
 
 	// Płatności: live sum + edit/add
 	const sumaPlatnosci = $derived(payments.reduce((s, p) => s + (p.kwota ?? 0), 0));
@@ -377,86 +381,228 @@
 		showAddPayment = false;
 		await reloadPayments();
 	}
+
+	// ── Nagłówek, podsumowanie i sekcje boczne ──────────────────────────────────
+	const ugBez = $derived(ugBezRozliczania(appState.policies));
+	const odnowione = $derived(odnowionePolisy(appState.policies));
+	const raty = $derived([...payments].sort((a, b) => a.nr_raty - b.nr_raty || a.data_platnosci.localeCompare(b.data_platnosci)));
+	const ratyOtwarte = $derived(raty.filter((r) => !ROZLICZONE.includes(r.status)));
+	const ratyPoTerminie = $derived(ratyOtwarte.filter((r) => poTerminie(r, today, ugBez)));
+	const doZaplaty = $derived(ratyOtwarte.reduce((s, r) => s + Number(r.kwota ?? 0), 0));
+	/** Status jak na liście Polis i w Panelu 360° (wspólne reguły). */
+	const status = $derived(
+		policy ? statusPolisy(policy, { dzis: today, odnowione, zZaleglaRata: new Set(ratyPoTerminie.map((r) => r.polisa_id)) }) : null
+	);
+	const iloscRat = $derived(Number(policy?.ilosc_rat) || 0);
+	const opiekun = $derived(polisaBrokers.find((pb) => pb.rola === 'opiekun') ?? null);
+	const nazwaOpiekuna = $derived(opiekun ? (opiekun.crm_profiles?.imie_nazwisko ?? opiekun.crm_profiles?.email ?? null) : null);
+	const ugNadrzedna = $derived(policy?.parent_id ? (appState.policies.find((p) => p.id === policy!.parent_id) ?? null) : null);
+	const poprzednia = $derived(policy?.renewal_of ? (appState.policies.find((p) => p.id === policy!.renewal_of) ?? null) : null);
+	const ubezpieczony = $derived(
+		policy?.ubezpieczony_id && policy.ubezpieczony_id !== policy.klient_id
+			? (appState.clients.find((c) => c.id === policy!.ubezpieczony_id) ?? null)
+			: null
+	);
+	const pojazd = $derived(policy?.pojazd_id ? (appState.vehicles.find((v) => v.id === policy!.pojazd_id) ?? null) : null);
+	const kontaktTu = $derived(policy?.tu_contact_id ? (appState.insurerContacts.find((c) => c.id === policy!.tu_contact_id) ?? null) : null);
+	/** Przedmiot zapisany jako JSON z sumami (umowy UD) albo zwykły tekst. */
+	const przedmiotUd = $derived.by(() => {
+		if (!policy?.przedmiot) return null;
+		try {
+			const p = JSON.parse(policy.przedmiot);
+			return p && p.__ud ? (p as { ctn?: number; ctc?: number; si?: number }) : null;
+		} catch {
+			return null;
+		}
+	});
+	const koniecOchrony = $derived.by(() => {
+		if (!policy?.data_do) return { tekst: 'bezterminowo', cls: 'text-ink-2' };
+		if (renewalPolicy) return { tekst: 'odnowiona', cls: 'text-ink-2' };
+		const n = dateDiffDays(today, policy.data_do);
+		if (n < 0) return { tekst: `zakończona ${odmiana(-n, 'dzień', 'dni', 'dni')} temu`, cls: 'text-ink-2' };
+		return { tekst: fmtTermin(policy.data_do, today), cls: n <= 30 ? 'text-warn font-semibold' : 'text-ink-2' };
+	});
+
+	const TYP_ANEKSU: Record<PolicyAnnex['typ'], string> = {
+		korekta: 'Korekta',
+		doubezpieczenie: 'Doubezpieczenie',
+		zmiana_zakresu: 'Zmiana zakresu',
+		inne: 'Inne'
+	};
+
+	function chipRaty(r: PolicyPayment): { tekst: string; cls: string } {
+		if (r.status === 'Opłacona') return { tekst: 'Opłacona', cls: 'bg-ok-soft text-ok' };
+		if (r.status === 'Częściowo opłacona') return { tekst: 'Częściowo opłacona', cls: 'bg-warn-soft text-warn' };
+		if (poTerminie(r, today, ugBez)) return { tekst: 'Po terminie', cls: 'bg-danger-soft text-danger' };
+		return { tekst: r.status, cls: 'bg-surface-2 text-ink-2' };
+	}
+
+	// Menu „Więcej akcji” — zamykane kliknięciem poza nim albo klawiszem Esc.
+	let wiecejMenu = $state(false);
+	$effect(() => {
+		if (!wiecejMenu) return;
+		const zamknij = () => (wiecejMenu = false);
+		const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') zamknij(); };
+		window.addEventListener('click', zamknij);
+		window.addEventListener('keydown', esc);
+		return () => {
+			window.removeEventListener('click', zamknij);
+			window.removeEventListener('keydown', esc);
+		};
+	});
+
+	// E-mail do klienta (to samo okno co w Panelu 360°, z tą polisą wybraną na starcie).
+	const klient = $derived(policy ? (appState.clients.find((c) => c.id === policy!.klient_id) ?? null) : null);
+	const kontaktyKlienta = $derived(policy ? appState.clientContacts.filter((c) => c.klient_id === policy!.klient_id) : []);
+	const polisyKlienta = $derived(
+		policy ? appState.policies.filter((p) => p.klient_id === policy!.klient_id || p.ubezpieczony_id === policy!.klient_id) : []
+	);
+	const adresyEmail = $derived(!!klient?.email || kontaktyKlienta.some((c) => !!c.email));
+	let pisanieEmaila = $state(false);
+	let emailSzablon = $state<Szablon>('wlasny');
+	function napiszEmail(s: Szablon = 'wlasny') {
+		emailSzablon = s;
+		pisanieEmaila = true;
+	}
+
+	// Historia polisy z dziennika audytu.
+	type WpisHistorii = { id: string; action: string; user_name: string | null; user_email: string | null; details: Record<string, unknown> | null; created_at: string };
+	let historia = $state<WpisHistorii[]>([]);
+	let historiaLimit = $state(6);
+	async function wczytajHistorie(id: string) {
+		const { data } = await sb
+			.from('crm_audit_log')
+			.select('id, action, user_name, user_email, details, created_at')
+			.eq('entity_type', 'policy')
+			.eq('entity_id', id)
+			.order('created_at', { ascending: false })
+			.limit(30);
+		if (id === policyId) historia = (data ?? []) as WpisHistorii[];
+	}
+	$effect(() => {
+		const id = policyId;
+		historia = [];
+		historiaLimit = 6;
+		if (id) void wczytajHistorie(id);
+	});
+	function opisHistorii(w: WpisHistorii): string {
+		const d = w.details ?? {};
+		const s = (k: string) => (typeof d[k] === 'string' ? (d[k] as string) : '');
+		switch (w.action) {
+			case 'policy_created': return s('zrodlo') ? `Dodano polisę (${s('zrodlo')})` : 'Dodano polisę';
+			case 'policy_imported': return s('plik') ? `Zaimportowano z pliku ${s('plik')}` : 'Zaimportowano z pliku PDF';
+			case 'policy_commission_changed': {
+				const pct = Array.isArray(d.prowizja_pct) ? (d.prowizja_pct as number[]) : null;
+				return `Zmieniono prowizję${pct?.length === 2 ? ` z ${pct[0]}% na ${pct[1]}%` : ''}${s('powod') ? ` — ${s('powod')}` : ''}`;
+			}
+			case 'policy_file_added': return `Dodano dokument: ${s('plik')}`;
+			case 'policy_file_deleted': return `Usunięto dokument: ${s('plik')}`;
+			case 'policy_deleted': return `Przeniesiono do kosza${s('reason') ? ` — ${s('reason')}` : ''}`;
+			case 'policy_restored': return 'Przywrócono z kosza';
+			default: return w.action.replace(/_/g, ' ');
+		}
+	}
+	const fmtKiedy = (iso: string) =>
+		`${fmtDzien(iso.slice(0, 10), true)}, ${new Date(iso).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}`;
 </script>
 
 <svelte:head><title>{policy?.nr_polisy ?? 'Polisa'} — AuraCRM</title></svelte:head>
 
 {#if !policy}
-	<p class="text-slate-400">Polisa nie istnieje lub nie masz dostępu.</p>
+	<div class="bg-white border border-line rounded-xl px-6 py-12 text-center">
+		<p class="text-sm text-ink-3">Polisa nie istnieje albo nie masz do niej dostępu.</p>
+		<a href="/policies" class="mt-2 inline-block text-[13px] font-semibold text-accent-text hover:underline">← Wróć do listy polis</a>
+	</div>
 {:else}
-	{@const tuLabel = policy.crm_insurers?.skrot ?? policy.crm_insurers?.nazwa ?? '—'}
+	{@const ug = policy.typ_umowy === 'generalna'}
 	{@const sumaGw = policy.suma_gwarancyjna != null ? Number(policy.suma_gwarancyjna) : null}
+	{@const ugNierozliczana = ugBez.has(policy.id)}
 
-	<div class="flex items-center justify-between mb-4">
-		<div class="flex items-center gap-3">
-			<button onclick={() => goto('/policies')} class="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800 transition-colors">
-				<ArrowLeft size={16} /> Polisy
-			</button>
-			<div>
-				<h1 class="text-2xl font-semibold text-slate-900">{policy.nr_polisy}</h1>
-				<div class="flex items-center gap-2 mt-0.5">
-					<a href="/clients/{policy.klient_id}" class="text-sm text-blue-600 hover:underline">{policy.crm_clients?.nazwa ?? '—'}</a>
-					<span class="text-slate-300">•</span>
-					<span class="text-sm text-slate-500">{tuLabel}</span>
-					{#if st}<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>{/if}
-					{#if renewalPolicy}
-						<Badge variant="warning">Odnowiona</Badge>
-					{:else if isPendingRenewal}
-						<Badge variant="info">Oczekująca</Badge>
-					{/if}
-				</div>
+	<nav aria-label="Ścieżka" class="flex items-center gap-1.5 text-[13px] text-ink-3 mb-3 min-w-0">
+		<a href="/policies" class="text-accent-text hover:underline">Polisy</a>
+		{#if ugNadrzedna}
+			<span aria-hidden="true">/</span>
+			<a href="/policies/{ugNadrzedna.id}" class="font-mono text-xs text-accent-text hover:underline truncate">{ugNadrzedna.nr_polisy}</a>
+		{/if}
+		<span aria-hidden="true">/</span>
+		<span class="font-mono text-xs truncate">{policy.nr_polisy}</span>
+	</nav>
+
+	<!-- Nagłówek -->
+	<div class="flex flex-wrap items-start gap-4 mb-4">
+		<div class="flex-[1_1_420px] min-w-0 flex flex-col gap-1.5">
+			<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+				<h1 class="text-2xl font-semibold text-ink leading-tight break-all">{policy.nr_polisy}</h1>
+				{#if status}<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {status.cls}">{status.tekst}</span>{/if}
+				{#if ug}<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap bg-accent-soft text-accent-text">Umowa generalna{policy.ug_podtyp ? ` · ${ugPodtypLabel[policy.ug_podtyp] ?? policy.ug_podtyp}` : ''}</span>{/if}
+			</div>
+			<p class="text-[15px] text-ink-2">{nazwaRodzaju(policy.rodzaj)} · {policy.crm_insurers?.nazwa ?? nazwaTu(policy)}</p>
+			<div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[13px] text-ink-2">
+				<a href="/clients/{policy.klient_id}" class="flex items-center gap-1.5 font-medium text-accent-text hover:underline min-w-0">
+					<UserRound size={14} aria-hidden="true" class="shrink-0" /> <span class="truncate">{policy.crm_clients?.nazwa ?? '—'}</span>
+				</a>
+				{#if ubezpieczony}
+					<span>ubezpieczony: <a href="/clients/{ubezpieczony.id}" class="font-medium text-accent-text hover:underline">{ubezpieczony.nazwa_skrocona ?? ubezpieczony.nazwa}</a></span>
+				{/if}
+				<span class="flex items-center gap-1.5">
+					<span aria-hidden="true" class="w-[22px] h-[22px] rounded-full bg-surface-2 text-xs font-semibold flex items-center justify-center">{inicjaly(nazwaOpiekuna)}</span>
+					Opiekun: {#if nazwaOpiekuna}<span class="text-ink font-medium">{nazwaOpiekuna}</span>{:else}<span class="italic text-ink-3">brak</span>{/if}
+					<button onclick={() => { showBrokers = true; pbError = ''; }} class="font-semibold text-accent-text hover:underline">zmień</button>
+				</span>
+				{#if renewalPolicy}
+					<a href="/policies/{renewalPolicy.id}" class="text-accent-text hover:underline">Odnowiona → <span class="font-mono text-xs">{renewalPolicy.nr_polisy}</span></a>
+				{/if}
+				{#if poprzednia}
+					<a href="/policies/{poprzednia.id}" class="text-accent-text hover:underline">Odnowienie polisy <span class="font-mono text-xs">{poprzednia.nr_polisy}</span></a>
+				{/if}
 			</div>
 		</div>
-		<div class="flex gap-2">
-			{#if !renewalPolicy && policy.typ_umowy !== 'generalna'}
-				<!-- Odnowienie: ręcznie albo z pliku polisy. Podświetlone, gdy termin blisko. -->
+		<div class="flex flex-wrap gap-2">
+			{#if adresyEmail}
+				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail do klienta" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
+			{/if}
+			{#if !renewalPolicy && !ug}
+				<!-- Odnowienie: ręcznie, z pliku polisy albo (program OC beauty) wnioskiem klienta. Wyróżnione, gdy termin blisko. -->
 				<div class="relative" bind:this={renewMenuEl}>
 					<button
 						onclick={(e) => { e.stopPropagation(); renewMenuOpen = !renewMenuOpen; }}
-						class="flex items-center gap-1.5 text-sm rounded-lg px-3 py-2 border transition-colors
-							{canRenew
-								? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100'
-								: 'border-line text-slate-600 hover:bg-slate-50'}"
+						aria-expanded={renewMenuOpen}
+						aria-haspopup="menu"
+						class="h-9 flex items-center gap-1.5 pl-2.5 pr-2 rounded-lg text-sm font-semibold transition-colors
+							{canRenew ? 'bg-accent text-white hover:bg-accent-hover' : 'border border-line bg-white text-ink hover:bg-surface-2'}"
 					>
-						<RefreshCw size={14} /> Odnów polisę
-						<ChevronDown size={12} />
+						<RefreshCw size={15} /> Odnów <ChevronDown size={14} />
 					</button>
 					{#if renewMenuOpen}
-						<div data-renew-menu class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl {wProgramie ? 'w-80' : 'w-60'} overflow-hidden z-50">
-							<a
-								href={renewalUrl}
-								onclick={() => (renewMenuOpen = false)}
-								class="flex items-start gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 border-b border-line-soft"
-							>
-								<Pencil size={14} class="mt-0.5 shrink-0 text-slate-400" />
-								<span>
-									Ręcznie
-									<span class="block text-xs text-slate-400">formularz z przeniesionymi danymi</span>
-								</span>
+						<div data-renew-menu role="menu" class="absolute right-0 top-full mt-1 bg-white border border-line rounded-xl shadow-xl {wProgramie ? 'w-80' : 'w-72'} max-w-[calc(100vw-2rem)] overflow-hidden z-50 py-1">
+							<a role="menuitem" href={renewalUrl} onclick={() => (renewMenuOpen = false)} class="flex items-start gap-2.5 px-4 py-2.5 text-sm text-ink hover:bg-surface-2">
+								<Pencil size={15} class="mt-0.5 shrink-0 text-ink-3" />
+								<span>Ręcznie<span class="block text-xs text-ink-3">formularz z przeniesionymi danymi</span></span>
 							</a>
-							<a
-								href="/policies/import?renewal_of={policy.id}"
-								onclick={() => (renewMenuOpen = false)}
-								class="flex items-start gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50"
-							>
-								<Upload size={14} class="mt-0.5 shrink-0 text-slate-400" />
-								<span>
-									Z pliku polisy
-									<span class="block text-xs text-slate-400">wgraj PDF nowej polisy</span>
-								</span>
+							<a role="menuitem" href="/policies/import?renewal_of={policy.id}" onclick={() => (renewMenuOpen = false)} class="flex items-start gap-2.5 px-4 py-2.5 text-sm text-ink hover:bg-surface-2">
+								<Upload size={15} class="mt-0.5 shrink-0 text-ink-3" />
+								<span>Z pliku polisy<span class="block text-xs text-ink-3">wgraj PDF nowej polisy</span></span>
 							</a>
+							{#if adresyEmail}
+								<button role="menuitem" onclick={() => { renewMenuOpen = false; napiszEmail('odnowienie'); }} class="w-full flex items-start gap-2.5 px-4 py-2.5 text-sm text-left text-ink hover:bg-surface-2">
+									<Mail size={15} class="mt-0.5 shrink-0 text-ink-3" />
+									<span>E-mail do klienta o odnowieniu<span class="block text-xs text-ink-3">szablon z datą końca ochrony — przed wysyłką możesz go zmienić</span></span>
+								</button>
+							{/if}
 							{#if wProgramie}
 								<!-- Program OC beauty: klient sam wypełnia APK i wniosek pod linkiem. -->
+								<div class="my-1 border-t border-line-soft"></div>
 								<button
+									role="menuitem"
 									type="button"
 									disabled={!klientEmail}
 									onclick={() => { renewMenuOpen = false; renewalPanel?.utworz('email'); }}
-									class="w-full flex items-start gap-2 px-4 py-3 text-sm text-left text-slate-700 border-t border-line hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-white"
+									class="w-full flex items-start gap-2.5 px-4 py-2.5 text-sm text-left text-ink hover:bg-surface-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:hover:bg-white"
 								>
-									<Mail size={14} class="mt-0.5 shrink-0 text-slate-400" />
+									<Mail size={15} class="mt-0.5 shrink-0 text-ink-3" />
 									<span class="min-w-0">
 										Wyślij klientowi wniosek o odnowienie (e-mail)
-										<span class="block text-xs {klientEmail && !appState.tenantFeatures?.odnowienia_test ? 'text-slate-400' : 'text-amber-600'} break-all">
+										<span class="block text-xs {klientEmail && !appState.tenantFeatures?.odnowienia_test ? 'text-ink-3' : 'text-warn'} break-all">
 											{!klientEmail
 												? 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta albo utwórz link'
 												: appState.tenantFeatures?.odnowienia_test
@@ -465,406 +611,446 @@
 										</span>
 									</span>
 								</button>
-								<button
-									type="button"
-									onclick={() => { renewMenuOpen = false; renewalPanel?.utworz('link'); }}
-									class="w-full flex items-start gap-2 px-4 py-3 text-sm text-left text-slate-700 border-t border-line-soft hover:bg-slate-50"
-								>
-									<Link2 size={14} class="mt-0.5 shrink-0 text-slate-400" />
-									<span>
-										Utwórz link do wniosku
-										<span class="block text-xs text-slate-400">skopiujesz go i przekażesz klientowi sam</span>
-									</span>
+								<button role="menuitem" type="button" onclick={() => { renewMenuOpen = false; renewalPanel?.utworz('link'); }} class="w-full flex items-start gap-2.5 px-4 py-2.5 text-sm text-left text-ink hover:bg-surface-2">
+									<Link2 size={15} class="mt-0.5 shrink-0 text-ink-3" />
+									<span>Utwórz link do wniosku<span class="block text-xs text-ink-3">skopiujesz go i przekażesz klientowi sam</span></span>
 								</button>
 							{/if}
 						</div>
 					{/if}
 				</div>
 			{/if}
-			<button onclick={() => { showBrokers = true; pbError = ''; }} class="flex items-center gap-1.5 text-sm border border-line rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
-				<Users size={14} /> Podział prowizji {#if polisaBrokers.length > 0}<span class="ml-1 bg-blue-100 text-blue-700 rounded-full px-1.5 text-xs font-semibold">{polisaBrokers.length}</span>{/if}
-			</button>
-			{#if policy.typ_umowy === 'generalna'}
-				<a href="/policies/new?parent_id={policyId}&klient={policy.klient_id}"
-					class="flex items-center gap-1.5 text-sm border border-blue-300 bg-blue-50 text-blue-700 rounded-lg px-3 py-2 hover:bg-blue-100 transition-colors">
-					<PlusCircle size={14} /> Dodaj polisę do UG
+			{#if ug}
+				<a href="/policies/new?parent_id={policyId}&klient={policy.klient_id}" class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover">
+					<Plus size={16} /> Dodaj polisę do UG
 				</a>
 			{/if}
-			<button onclick={() => { showAnnex = true; axError = ''; }} class="flex items-center gap-1.5 text-sm border border-line rounded-lg px-3 py-2 text-slate-600 hover:bg-slate-50">
-				<FilePlus2 size={14} /> Aneks
-			</button>
-			<a href="/policies/{policyId}/edit" class="flex items-center gap-1.5 text-sm bg-accent text-white rounded-lg px-3 py-2 hover:bg-accent-hover">
-				<Pencil size={14} /> Edytuj
+			<a href="/policies/{policyId}/edit" class="h-9 flex items-center gap-1.5 px-3 border border-line rounded-lg bg-white text-sm font-medium text-ink hover:bg-surface-2">
+				<Pencil size={15} /> Edytuj
 			</a>
-			<button onclick={() => { showDelete = true; deletionReason = ''; deleteError = ''; }} class="flex items-center gap-1.5 text-sm border border-red-200 text-red-600 rounded-lg px-3 py-2 hover:bg-red-50">
-				<Trash2 size={14} /> Usuń
-			</button>
+			<div class="relative">
+				<button
+					onclick={(e) => { e.stopPropagation(); wiecejMenu = !wiecejMenu; }}
+					aria-label="Więcej akcji"
+					aria-expanded={wiecejMenu}
+					aria-haspopup="menu"
+					class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"
+				><Ellipsis size={16} /></button>
+				{#if wiecejMenu}
+					<div role="menu" class="absolute right-0 top-full mt-1 w-60 bg-white border border-line rounded-xl shadow-xl z-50 py-1">
+						<button role="menuitem" onclick={() => { showAnnex = true; axError = ''; }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><FilePlus2 size={15} class="text-ink-3" /> Dodaj aneks</button>
+						<button role="menuitem" onclick={openAddPayment} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Wallet size={15} class="text-ink-3" /> Dodaj płatność</button>
+						<button role="menuitem" onclick={() => { showBrokers = true; pbError = ''; }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Users size={15} class="text-ink-3" /> Opiekun i podział prowizji</button>
+						<button role="menuitem" onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; poprzedniOpiekunUg = policy?.tu_contact_id ?? null; }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Building2 size={15} class="text-ink-3" /> Kontakt w towarzystwie</button>
+						{#if adresyEmail}
+							<button role="menuitem" onclick={() => napiszEmail()} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Mail size={15} class="text-ink-3" /> Napisz e-mail do klienta</button>
+						{/if}
+						<div class="my-1 border-t border-line-soft"></div>
+						<button role="menuitem" onclick={() => { showDelete = true; deletionReason = ''; deleteError = ''; }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-danger hover:bg-danger-soft"><Trash2 size={15} /> Usuń polisę</button>
+					</div>
+				{/if}
+			</div>
 		</div>
 	</div>
 
-	<!-- Dane polisy -->
-	<div class="grid gap-3 mb-5" style="grid-template-columns: repeat({(policy.typ_umowy === 'generalna' ? 6 : 5) + (sumaGw != null ? 1 : 0)}, minmax(0,1fr))">
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna składka polis' : 'Składka'}</p>
-			<p class="text-base font-semibold text-slate-900">{fmtPln(policy.typ_umowy === 'generalna' ? childSkladka : policy.skladka_przypisana)}</p>
-			<p class="text-xs text-slate-400">{policy.typ_umowy === 'generalna' ? `${childPolicies.length} polis` : `Raty: ${policy.ilosc_rat}`}</p>
+	<!-- Podsumowanie -->
+	<section aria-label="Podsumowanie polisy" class="grid grid-cols-2 lg:grid-cols-4 bg-white border border-line rounded-xl overflow-hidden mb-4">
+		<div class="px-4 py-3.5 flex flex-col gap-0.5 border-r border-b lg:border-b-0 border-line-soft min-w-0">
+			<span class="text-xs text-ink-3">{ug ? 'Składka polis w UG' : 'Składka'}</span>
+			<span class="text-xl font-semibold tabular-nums text-ink whitespace-nowrap">{fmtPln(ug ? childSkladka : policy.skladka_przypisana)} zł</span>
+			<span class="text-xs text-ink-2 truncate">{ug ? odmiana(childPolicies.length, 'polisa', 'polisy', 'polis') : iloscRat > 1 ? `${iloscRat} raty` : 'jednorazowo'}</span>
 		</div>
-		{#if sumaGw != null}
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5">Suma gwarancyjna</p>
-			<p class="text-base font-semibold text-slate-900">{fmtPln(sumaGw)} zł</p>
+		<div class="px-4 py-3.5 flex flex-col gap-0.5 border-b lg:border-b-0 lg:border-r border-line-soft min-w-0">
+			<span class="text-xs text-ink-3">{ug ? 'Prowizja z polis w UG' : 'Prowizja'}</span>
+			<span class="text-xl font-semibold tabular-nums text-ink whitespace-nowrap">{fmtPln(ug ? childProwizja : policy.prowizja_przypisana)} zł</span>
+			<span class="text-xs text-ink-2 truncate">
+				{#if ug}{policy.ug_default_prowizja_pct != null ? `domyślnie ${policy.ug_default_prowizja_pct}%` : childPolicies.length ? `średnio ${fmtPln(childProwizja / childPolicies.length)} zł na polisę` : 'brak polis'}{:else}{policy.prowizja_pct}% składki{/if}
+			</span>
 		</div>
-		{/if}
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5">Okres</p>
-			<p class="text-sm font-semibold text-slate-900">{policy.data_od}</p>
-			<p class="text-xs text-slate-400">{policy.data_do}</p>
+		<div class="px-4 py-3.5 flex flex-col gap-0.5 border-r border-line-soft min-w-0">
+			<span class="text-xs text-ink-3">Okres ochrony</span>
+			<span class="text-xl font-semibold text-ink whitespace-nowrap">{policy.data_do ? `do ${fmtDzien(policy.data_do, true)}` : 'bezterminowo'}</span>
+			<span class="text-xs {koniecOchrony.cls}"><span class="font-normal text-ink-2">od {fmtDzien(policy.data_od, true)}</span>{policy.data_do ? ` · ${koniecOchrony.tekst}` : ''}</span>
 		</div>
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5">{policy.typ_umowy === 'generalna' ? 'Łączna prowizja' : 'Prowizja'}</p>
-			<p class="text-base font-semibold text-emerald-600">{fmtPln(policy.typ_umowy === 'generalna' ? childProwizja : policy.prowizja_przypisana)}</p>
-			<p class="text-xs text-slate-400">{policy.prowizja_pct}%</p>
-		</div>
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5">Rodzaj</p>
-			<p class="text-sm font-semibold text-slate-900">{policy.rodzaj}</p>
-			{#if policy.przedmiot}
-					{@const _ud = (() => { try { const _p = JSON.parse(policy.przedmiot!); return _p.__ud ? _p : null; } catch { return null; } })()}
-					{#if _ud}
-						<div class="text-xs text-slate-400 space-y-0.5 mt-0.5">
-							{#if _ud.ctn}<p>CTN: <span class="font-semibold text-slate-600">{Number(_ud.ctn).toLocaleString('pl-PL')} zł</span></p>{/if}
-							{#if _ud.ctc}<p>CTC: <span class="font-semibold text-slate-600">{Number(_ud.ctc).toLocaleString('pl-PL')} zł</span></p>{/if}
-							{#if _ud.si}<p>SI: <span class="font-semibold text-slate-600">{Number(_ud.si).toLocaleString('pl-PL')} zł</span></p>{/if}
-						</div>
-					{:else}
-						<p class="text-xs text-slate-400 truncate">{policy.przedmiot}</p>
-					{/if}
-				{/if}
-		</div>
-		<!-- Osoba kontaktowa TU — kafelka inline -->
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5 flex items-center justify-between">
-				<span>Kontakt TU</span>
-				<button onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; poprzedniOpiekunUg = policy?.tu_contact_id ?? null; }}
-					class="text-xs text-slate-400 hover:text-blue-600 transition-colors">
-					{policy.tu_contact_id ? 'Zmień' : '+ Przypisz'}
-				</button>
-			</p>
-			{#if policy.crm_insurer_contacts}
-				{@const c = policy.crm_insurer_contacts}
-				<p class="text-sm font-semibold text-slate-900 truncate">{c.imie_nazwisko}</p>
-				{#if c.stanowisko}<p class="text-xs text-slate-400 truncate">{c.stanowisko}</p>{/if}
-				{#if c.crm_insurer_branches}<p class="text-xs text-blue-600 truncate">{c.crm_insurer_branches.nazwa}</p>{/if}
+		<div class="px-4 py-3.5 flex flex-col gap-0.5 min-w-0">
+			<span class="text-xs text-ink-3">Do zapłaty</span>
+			{#if ugNierozliczana}
+				<span class="text-xl font-semibold text-ink-3">—</span>
+				<span class="text-xs text-ink-2 truncate">składki rozliczane na polisach w UG</span>
 			{:else}
-				<p class="text-sm text-slate-400">—</p>
+				<span class="text-xl font-semibold tabular-nums text-ink whitespace-nowrap">{fmtPln(doZaplaty)} zł</span>
+				{#if ratyPoTerminie.length > 0}
+					<span class="text-xs font-semibold text-danger truncate">{odmiana(ratyPoTerminie.length, 'rata', 'raty', 'rat')} po terminie</span>
+				{:else}
+					<span class="text-xs text-ink-2 truncate">{ratyOtwarte.length ? odmiana(ratyOtwarte.length, 'rata oczekująca', 'raty oczekujące', 'rat oczekujących') : raty.length ? 'wszystkie raty opłacone' : 'brak rat'}</span>
+				{/if}
 			{/if}
 		</div>
-		{#if policy.typ_umowy === 'generalna'}
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5">Liczba polis</p>
-			<p class="text-base font-semibold text-slate-900">{childPolicies.length}</p>
-			<p class="text-xs text-slate-400">certyfikatów</p>
-		</div>
-		<div class="bg-white border border-line rounded-xl py-2.5 px-3 shadow-sm">
-			<p class="text-xs text-slate-500 mb-0.5">Śr. prowizja</p>
-			<p class="text-base font-semibold text-emerald-600">{childPolicies.length > 0 ? fmtPln(childProwizja / childPolicies.length) : '—'}</p>
-			<p class="text-xs text-slate-400">na polisę</p>
-		</div>
-		{/if}
-	</div>
+	</section>
 
-	<!-- Pojazd powiązany (komunikacja / flota) -->
-	{#if (policy.rodzaj === 'komunikacja' || policy.rodzaj === 'flota') && policy.pojazd_id}
-		{@const linkedVehicle = appState.vehicles.find(v => v.id === policy.pojazd_id)}
-		{#if linkedVehicle}
-		<div class="inline-flex items-center gap-3 bg-slate-50 border border-line rounded-xl px-4 py-2 mb-5">
-			<Car size={14} class="text-slate-400" />
-			<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide whitespace-nowrap">Pojazd:</span>
-			<span class="text-sm font-semibold text-slate-900">{linkedVehicle.nr_rejestracyjny}{linkedVehicle.vin ? ' / ' + linkedVehicle.vin : ''} — {linkedVehicle.marka_model}</span>
-		</div>
-		{/if}
-	{/if}
+	<div class="flex flex-wrap items-start gap-4">
+		<div class="flex-[2_1_560px] min-w-0 flex flex-col gap-4">
+			<!-- Wniosek o odnowienie (program OC beauty) -->
+			{#if wProgramie}
+				<CrmRenewalPanel bind:this={renewalPanel} {policy} email={klientEmail} odnowiona={!!renewalPolicy} />
+			{/if}
 
-	<!-- Wniosek o odnowienie (program OC beauty) -->
-	{#if wProgramie}
-		<CrmRenewalPanel bind:this={renewalPanel} {policy} email={klientEmail} odnowiona={!!renewalPolicy} />
-	{/if}
-
-	<!-- Dokumenty polisy (PDF w Cloudflare R2) -->
-	<DokumentyPolisy polisaId={policy.id} />
-
-	<!-- Parametry odczytane z pliku polisy (import z PDF) -->
-	{#if policy.dane_importu}
-		{@const di = policy.dane_importu}
-		{@const ryzyka = di.ryzyka ?? []}
-		{@const dodatkowe = Object.entries(di.dodatkowe ?? {})}
-		<div class="bg-white border border-line rounded-xl overflow-hidden shadow-sm mb-5">
-			<button
-				onclick={() => (importOpen = !importOpen)}
-				class="w-full flex items-center gap-2 px-4 py-3 bg-slate-50 border-b border-line text-left hover:bg-slate-100 transition-colors"
-			>
-				<FileText size={14} class="text-slate-400" />
-				<span class="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-					Dane z polisy
-				</span>
-				{#if di.zrodlo?.produkt}
-					<span class="text-xs text-slate-400">— {di.zrodlo.produkt}</span>
+			<!-- Płatności -->
+			{#if !(ug && raty.length === 0)}
+			<section aria-labelledby="raty-polisy" class="bg-white border border-line rounded-xl overflow-hidden">
+				<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-3 border-b border-line-soft">
+					<h2 id="raty-polisy" class="text-[15px] font-semibold text-ink">Płatności</h2>
+					<span class="text-[13px] text-ink-2 tabular-nums">{odmiana(raty.length, 'rata', 'raty', 'rat')} · {fmtPln(sumaPlatnosci)} zł</span>
+					{#if ugNierozliczana}<span class="text-xs text-ink-3">informacyjnie — UG bez rozliczania płatności</span>{/if}
+					<button onclick={openAddPayment} class="ml-auto h-7 flex items-center gap-1 px-1.5 text-[13px] font-semibold text-accent-text hover:underline"><Plus size={14} /> Dodaj płatność</button>
+				</div>
+				{#if raty.length === 0}
+					<p class="px-4 py-8 text-center text-sm text-ink-3">Brak płatności.</p>
+				{:else}
+					<ul>
+						{#each raty as r (r.id)}
+							{@const chip = chipRaty(r)}
+							{@const otwarta = !ROZLICZONE.includes(r.status)}
+							{@const po = poTerminie(r, today, ugBez)}
+							<li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-t border-line-soft first:border-t-0">
+								<span class="w-[76px] shrink-0 text-[13px] font-medium text-ink tabular-nums">Rata {r.nr_raty}{iloscRat > 1 ? `/${iloscRat}` : ''}</span>
+								<span class="flex-[1_1_160px] min-w-0 text-[13px]">
+									<span class="block text-ink">{fmtDzien(r.data_platnosci, true)}</span>
+									{#if otwarta}
+										<span class="block text-xs {po ? 'text-danger font-semibold' : 'text-ink-3'}">{fmtTermin(r.data_platnosci, today)}</span>
+									{:else if r.data_oplacenia}
+										<span class="block text-xs text-ink-3">opłacona {fmtDzien(r.data_oplacenia, true)}</span>
+									{/if}
+									{#if r.powod}<span class="block text-xs text-ink-3">{r.powod}</span>{/if}
+									{#if r.prowizja_z_noty != null}<span class="block text-xs text-ink-3">prowizja z noty {fmtPln(r.prowizja_z_noty)} zł</span>{/if}
+								</span>
+								<!-- Telefon: kwota, status i akcje w drugim wierszu; od sm — kolumny w jednym wierszu. -->
+								<span class="w-full sm:w-auto flex items-center gap-x-3 sm:contents">
+									<span class="sm:w-[110px] sm:text-right text-[13px] font-medium tabular-nums whitespace-nowrap {r.kwota < 0 ? 'text-danger' : 'text-ink'}">{fmtPln(r.kwota)} zł</span>
+									<span class="sm:w-[132px] flex sm:justify-end"><span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {chip.cls}">{chip.tekst}</span></span>
+									<span class="ml-auto sm:w-[68px] flex items-center justify-end">
+										{#if po && adresyEmail}
+											<button onclick={() => napiszEmail('rata')} title="Przypomnij e-mailem" aria-label="Przypomnij e-mailem o racie {r.nr_raty}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><Mail size={15} /></button>
+										{/if}
+										<button onclick={() => openEditPayment(r)} title="Edytuj ratę" aria-label="Edytuj ratę {r.nr_raty}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><Pencil size={15} /></button>
+									</span>
+								</span>
+							</li>
+						{/each}
+					</ul>
 				{/if}
-				<ChevronDown
-					size={14}
-					class="ml-auto text-slate-400 transition-transform {importOpen ? 'rotate-180' : ''}"
-				/>
-			</button>
+			</section>
+			{/if}
 
-			{#if importOpen}
-				<div class="p-4 space-y-4">
-					{#if ryzyka.length}
-						<div class="border border-line rounded-lg overflow-x-auto">
-							<table class="w-full text-sm min-w-[520px]">
-								<thead class="bg-slate-50 text-xs text-slate-500">
-									<tr>
-										<th class="text-left px-3 py-2 font-semibold">Sekcja</th>
-										<th class="text-left px-3 py-2 font-semibold">Przedmiot</th>
-										<th class="text-right px-3 py-2 font-semibold">Suma ubezp.</th>
-										<th class="text-right px-3 py-2 font-semibold">Składka</th>
+			<!-- Polisy w ramach UG -->
+			{#if childPolicies.length > 0}
+				<section aria-labelledby="polisy-ug" class="bg-white border border-line rounded-xl overflow-hidden">
+					<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-3 border-b border-line-soft">
+						<h2 id="polisy-ug" class="text-[15px] font-semibold text-ink">Polisy w ramach UG</h2>
+						<span class="text-[13px] text-ink-2 tabular-nums">{childPolicies.length}</span>
+					</div>
+					<div class="overflow-x-auto">
+						<table class="w-full min-w-[600px] text-[13px] text-left">
+							<thead>
+								<tr class="bg-surface-2 text-ink-2">
+									<SortTh s={sortUg} k="nr" wersaliki={false} class="px-4 py-2.5 font-semibold">Polisa</SortTh>
+									<SortTh s={sortUg} k="klient" wersaliki={false} class="px-4 py-2.5 font-semibold">Klient</SortTh>
+									<SortTh s={sortUg} k="do" wersaliki={false} class="px-4 py-2.5 font-semibold">Koniec ochrony</SortTh>
+									<SortTh s={sortUg} k="skladka" wersaliki={false} align="right" class="px-4 py-2.5 font-semibold text-right">Składka</SortTh>
+									<SortTh s={sortUg} k="prowizja" wersaliki={false} align="right" class="px-4 py-2.5 font-semibold text-right">Prowizja</SortTh>
+									<th class="px-4 py-2.5 font-semibold">Status</th>
+								</tr>
+							</thead>
+							<tbody>
+								{#each childWiersze as cp (cp.id)}
+									{@const cst = statusPolisy(cp, { dzis: today, odnowione })}
+									<tr class="border-t border-line-soft hover:bg-bg">
+										<td class="px-4 py-2"><a href="/policies/{cp.id}" class="font-mono text-xs text-accent-text hover:underline">{cp.nr_polisy}</a></td>
+										<td class="px-4 py-2 max-w-[200px]"><a href="/clients/{cp.klient_id}" class="block truncate text-ink hover:text-accent-text">{cp.crm_clients?.nazwa ?? '—'}</a></td>
+										<td class="px-4 py-2 whitespace-nowrap text-ink-2">{cp.data_do ? fmtDzien(cp.data_do, true) : 'bezterminowo'}</td>
+										<td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtPln(cp.skladka_przypisana)} zł</td>
+										<td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{fmtPln(cp.prowizja_przypisana)} zł</td>
+										<td class="px-4 py-2"><span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {cst.cls}">{cst.tekst}</span></td>
 									</tr>
-								</thead>
-								<tbody>
-									{#each ryzyka as r}
-										<tr class="border-t border-line-soft">
-											<td class="px-3 py-2 text-slate-500 text-xs">{r.sekcja}</td>
-											<td class="px-3 py-2 text-slate-800">{r.przedmiot}</td>
-											<td class="px-3 py-2 text-right text-slate-900 whitespace-nowrap">
-												{r.suma != null ? `${fmtPln(r.suma)} zł` : '—'}
-											</td>
-											<td class="px-3 py-2 text-right text-slate-600 whitespace-nowrap">
-												{r.skladka != null ? `${fmtPln(r.skladka)} zł` : '—'}
-											</td>
-										</tr>
+								{/each}
+							</tbody>
+							<tfoot>
+								<tr class="border-t border-line bg-surface-2 font-semibold text-ink">
+									<td colspan="3" class="px-4 py-2">Razem</td>
+									<td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{fmtPln(childSkladka)} zł</td>
+									<td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{fmtPln(childProwizja)} zł</td>
+									<td></td>
+								</tr>
+							</tfoot>
+						</table>
+					</div>
+				</section>
+			{/if}
+
+			<!-- Aneksy -->
+			{#if annexes.length > 0}
+				<section aria-labelledby="aneksy-polisy" class="bg-white border border-line rounded-xl overflow-hidden">
+					<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1 px-4 py-3 border-b border-line-soft">
+						<h2 id="aneksy-polisy" class="text-[15px] font-semibold text-ink">Aneksy</h2>
+						<span class="text-[13px] text-ink-2 tabular-nums">{annexes.length}</span>
+						<button onclick={() => { showAnnex = true; axError = ''; }} class="ml-auto h-7 flex items-center gap-1 px-1.5 text-[13px] font-semibold text-accent-text hover:underline"><Plus size={14} /> Dodaj aneks</button>
+					</div>
+					<ul>
+						{#each annexes as ax (ax.id)}
+							<li class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2.5 border-t border-line-soft first:border-t-0">
+								<span class="flex-[1_1_240px] min-w-0">
+									<span class="block text-[13px] font-medium text-ink">Aneks {ax.nr_aneksu} <span class="font-normal text-ink-3">· {TYP_ANEKSU[ax.typ] ?? ax.typ} · {fmtDzien(ax.data_aneksu, true)}</span></span>
+									{#if ax.opis}<span class="block text-xs text-ink-2">{ax.opis}</span>{/if}
+								</span>
+								{#if Number(ax.delta_skladka) !== 0}
+									<span class="text-[13px] font-medium tabular-nums whitespace-nowrap {ax.delta_skladka > 0 ? 'text-ok' : 'text-danger'}">{ax.delta_skladka > 0 ? '+' : ''}{fmtPln(ax.delta_skladka)} zł</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
+			<!-- Dokumenty polisy (PDF w Cloudflare R2) -->
+			<DokumentyPolisy polisaId={policy.id} />
+
+			<!-- Parametry odczytane z pliku polisy (import z PDF) -->
+			{#if policy.dane_importu}
+				{@const di = policy.dane_importu}
+				{@const ryzyka = di.ryzyka ?? []}
+				{@const dodatkowe = Object.entries(di.dodatkowe ?? {})}
+				<section aria-labelledby="dane-z-polisy" class="bg-white border border-line rounded-xl overflow-hidden">
+					<h2 id="dane-z-polisy">
+						<button
+							onclick={() => (importOpen = !importOpen)}
+							aria-expanded={importOpen}
+							class="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-bg {importOpen ? 'border-b border-line-soft' : ''}"
+						>
+							<FileText size={16} class="text-ink-3 shrink-0" />
+							<span class="text-[15px] font-semibold text-ink">Dane z polisy</span>
+							{#if di.zrodlo?.produkt}<span class="text-xs text-ink-3 truncate">{di.zrodlo.produkt}</span>{/if}
+							<ChevronDown size={16} class="ml-auto shrink-0 text-ink-3 transition-transform {importOpen ? 'rotate-180' : ''}" />
+						</button>
+					</h2>
+					{#if importOpen}
+						<div class="p-4 flex flex-col gap-4">
+							{#if ryzyka.length}
+								<div class="border border-line-soft rounded-lg overflow-x-auto">
+									<table class="w-full text-[13px] min-w-[520px]">
+										<thead>
+											<tr class="bg-surface-2 text-ink-2">
+												<th class="text-left px-3 py-2 font-semibold">Sekcja</th>
+												<th class="text-left px-3 py-2 font-semibold">Przedmiot</th>
+												<th class="text-right px-3 py-2 font-semibold">Suma ubezp.</th>
+												<th class="text-right px-3 py-2 font-semibold">Składka</th>
+											</tr>
+										</thead>
+										<tbody>
+											{#each ryzyka as r}
+												<tr class="border-t border-line-soft">
+													<td class="px-3 py-2 text-ink-3 text-xs">{r.sekcja}</td>
+													<td class="px-3 py-2 text-ink">{r.przedmiot}</td>
+													<td class="px-3 py-2 text-right tabular-nums whitespace-nowrap">{r.suma != null ? `${fmtPln(r.suma)} zł` : '—'}</td>
+													<td class="px-3 py-2 text-right tabular-nums whitespace-nowrap text-ink-2">{r.skladka != null ? `${fmtPln(r.skladka)} zł` : '—'}</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+							{#if dodatkowe.length || di.owu || di.konto_do_wplat}
+								<dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 text-[13px]">
+									{#each dodatkowe as [klucz, wartosc]}
+										<div class="flex justify-between gap-3 border-b border-line-soft py-1.5">
+											<dt class="text-ink-3 shrink-0">{klucz}</dt>
+											<dd class="text-ink text-right">{wartosc}</dd>
+										</div>
 									{/each}
-								</tbody>
-							</table>
+									{#if di.owu}
+										<div class="flex justify-between gap-3 border-b border-line-soft py-1.5">
+											<dt class="text-ink-3 shrink-0">OWU</dt>
+											<dd class="text-ink text-right">{di.owu}</dd>
+										</div>
+									{/if}
+									{#if di.konto_do_wplat}
+										<div class="flex justify-between gap-3 border-b border-line-soft py-1.5">
+											<dt class="text-ink-3 shrink-0">Konto do wpłat</dt>
+											<dd class="text-ink text-right font-mono text-xs break-words">{di.konto_do_wplat}</dd>
+										</div>
+									{/if}
+								</dl>
+							{/if}
+							{#if di.zrodlo}
+								<p class="text-xs text-ink-3">
+									Odczytane z pliku{di.zrodlo.plik ? ` ${di.zrodlo.plik}` : ''}{di.zrodlo.ubezpieczyciel ? ` — ${di.zrodlo.ubezpieczyciel}` : ''}{di.zrodlo.data ? `, ${di.zrodlo.data}` : ''}.
+								</p>
+							{/if}
 						</div>
 					{/if}
+				</section>
+			{/if}
+		</div>
 
-					{#if dodatkowe.length || di.owu || di.konto_do_wplat}
-						<dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 text-sm">
-							{#each dodatkowe as [klucz, wartosc]}
-								<div class="flex justify-between gap-3 border-b border-line-soft py-1">
-									<dt class="text-slate-500 shrink-0">{klucz}</dt>
-									<dd class="text-slate-800 text-right">{wartosc}</dd>
-								</div>
-							{/each}
-							{#if di.owu}
-								<div class="flex justify-between gap-3 border-b border-line-soft py-1">
-									<dt class="text-slate-500 shrink-0">OWU</dt>
-									<dd class="text-slate-800 text-right">{di.owu}</dd>
-								</div>
-							{/if}
-							{#if di.konto_do_wplat}
-								<div class="flex justify-between gap-3 border-b border-line-soft py-1">
-									<dt class="text-slate-500 shrink-0">Konto do wpłat</dt>
-									<dd class="text-slate-800 text-right font-mono text-xs">{di.konto_do_wplat}</dd>
-								</div>
-							{/if}
-						</dl>
+		<aside class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
+			<!-- Szczegóły -->
+			<section aria-labelledby="szczegoly-polisy" class="bg-white border border-line rounded-xl px-4 py-3.5">
+				<h2 id="szczegoly-polisy" class="text-[15px] font-semibold text-ink mb-1">Szczegóły</h2>
+				<dl class="text-[13px]">
+					{#snippet wiersz(etykieta: string, wartosc: string | null | undefined, mono = false)}
+						{#if wartosc}
+							<div class="flex gap-3 py-1.5 border-t border-line-soft first:border-t-0">
+								<dt class="w-[118px] shrink-0 text-ink-3">{etykieta}</dt>
+								<dd class="flex-1 min-w-0 text-ink break-words {mono ? 'font-mono text-xs leading-5' : ''}">{wartosc}</dd>
+							</div>
+						{/if}
+					{/snippet}
+					<div class="flex gap-3 py-1.5">
+						<dt class="w-[118px] shrink-0 text-ink-3">Ubezpieczający</dt>
+						<dd class="flex-1 min-w-0"><a href="/clients/{policy.klient_id}" class="text-accent-text hover:underline break-words">{policy.crm_clients?.nazwa ?? '—'}</a></dd>
+					</div>
+					{#if ubezpieczony}
+						<div class="flex gap-3 py-1.5 border-t border-line-soft">
+							<dt class="w-[118px] shrink-0 text-ink-3">Ubezpieczony</dt>
+							<dd class="flex-1 min-w-0"><a href="/clients/{ubezpieczony.id}" class="text-accent-text hover:underline break-words">{ubezpieczony.nazwa}</a></dd>
+						</div>
 					{/if}
+					{@render wiersz('Towarzystwo', policy.crm_insurers?.nazwa ?? nazwaTu(policy))}
+					{@render wiersz('Rodzaj', nazwaRodzaju(policy.rodzaj))}
+					{#if przedmiotUd}
+						{@render wiersz('Sumy', [przedmiotUd.ctn ? `CTN ${fmtPln(przedmiotUd.ctn)} zł` : '', przedmiotUd.ctc ? `CTC ${fmtPln(przedmiotUd.ctc)} zł` : '', przedmiotUd.si ? `SI ${fmtPln(przedmiotUd.si)} zł` : ''].filter(Boolean).join(' · '))}
+					{:else}
+						{@render wiersz('Przedmiot', policy.przedmiot)}
+					{/if}
+					{#if ugNadrzedna}
+						<div class="flex gap-3 py-1.5 border-t border-line-soft">
+							<dt class="w-[118px] shrink-0 text-ink-3">Umowa generalna</dt>
+							<dd class="flex-1 min-w-0"><a href="/policies/{ugNadrzedna.id}" class="font-mono text-xs leading-5 text-accent-text hover:underline break-all">{ugNadrzedna.nr_polisy}</a></dd>
+						</div>
+					{/if}
+					{@render wiersz('Zawarta', policy.data_zawarcia ? fmtDzien(policy.data_zawarcia, true) : null)}
+					{@render wiersz('Okres', `${fmtDzien(policy.data_od, true)} – ${policy.data_do ? fmtDzien(policy.data_do, true) : 'bezterminowo'}`)}
+					{@render wiersz('Raty', ug ? null : iloscRat > 1 ? `${iloscRat} raty` : 'jednorazowo')}
+					{@render wiersz('Suma gwarancyjna', sumaGw != null ? `${fmtPln(sumaGw)} zł` : null)}
+					{@render wiersz('Pojazd', pojazd ? `${pojazd.nr_rejestracyjny} · ${pojazd.marka_model}` : null)}
+					{@render wiersz('VIN', pojazd?.vin, true)}
+					{@render wiersz('Leasing', [policy.crm_leasings?.nazwa, policy.nr_umowy_leasingowej ? `umowa ${policy.nr_umowy_leasingowej}` : ''].filter(Boolean).join(' · ') || null)}
+					{@render wiersz('Gwarancja', policy.gwarancja_typ)}
+					{@render wiersz('Beneficjent', [policy.gwarancja_beneficjent_nazwa, policy.gwarancja_beneficjent_nip ? `NIP ${policy.gwarancja_beneficjent_nip}` : ''].filter(Boolean).join(' · ') || null)}
+					{@render wiersz('Kontrakt', policy.gwarancja_kontrakt)}
+					{@render wiersz('Stawka', policy.gwarancja_stawka_pct != null ? `${policy.gwarancja_stawka_pct}%` : null)}
+					{@render wiersz('Dodana do CRM', policy.created_at ? fmtDzien(policy.created_at.slice(0, 10), true) : null)}
+				</dl>
+			</section>
 
-					{#if di.zrodlo}
-						<p class="text-xs text-slate-400">
-							Odczytane z pliku{di.zrodlo.plik ? ` ${di.zrodlo.plik}` : ''}{di.zrodlo
-								.ubezpieczyciel
-								? ` — ${di.zrodlo.ubezpieczyciel}`
-								: ''}{di.zrodlo.data ? `, ${di.zrodlo.data}` : ''}.
+			<!-- Umowa generalna: parametry -->
+			{#if ug}
+				<section aria-labelledby="parametry-ug" class="bg-white border border-line rounded-xl px-4 py-3.5">
+					<h2 id="parametry-ug" class="text-[15px] font-semibold text-ink mb-1">Parametry umowy generalnej</h2>
+					<dl class="text-[13px]">
+						<div class="flex gap-3 py-1.5">
+							<dt class="w-[118px] shrink-0 text-ink-3">Podtyp</dt>
+							<dd class="flex-1 text-ink">{ugPodtypLabel[policy.ug_podtyp ?? ''] ?? policy.ug_podtyp ?? '—'}</dd>
+						</div>
+						{#if policy.ug_podtyp === 'gwarancje'}
+							<div class="flex gap-3 py-1.5 border-t border-line-soft">
+								<dt class="w-[118px] shrink-0 text-ink-3">Limit gwarancyjny</dt>
+								<dd class="flex-1 text-ink tabular-nums">{policy.ug_limit != null ? `${fmtPln(policy.ug_limit)} zł` : '—'}</dd>
+							</div>
+						{/if}
+						<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-1.5 border-t border-line-soft">
+							<dt class="w-[118px] shrink-0 text-ink-3">Domyślna prowizja</dt>
+							<dd class="flex-1 min-w-0 flex flex-wrap items-center gap-2">
+								{#if ugEditOpen}
+									<label class="sr-only" for="ug-prowizja">Domyślna prowizja UG (%)</label>
+									<input id="ug-prowizja" type="number" step="0.01" bind:value={ugEditVal} placeholder="%" class="w-20 h-8 border border-line rounded-lg px-2 text-[13px] bg-white focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent" />
+									<button onclick={saveUgDefault} disabled={ugEditSaving} class="h-8 px-2.5 text-[13px] font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">{ugEditSaving ? 'Zapisywanie…' : 'Zapisz'}</button>
+									<button onclick={() => (ugEditOpen = false)} class="h-8 px-2.5 text-[13px] border border-line rounded-lg text-ink-2 hover:bg-surface-2">Anuluj</button>
+								{:else}
+									<span class="text-ink tabular-nums">{policy.ug_default_prowizja_pct != null ? `${policy.ug_default_prowizja_pct}%` : '—'}</span>
+									<button onclick={() => { ugEditVal = policy.ug_default_prowizja_pct?.toString() ?? ''; ugEditOpen = true; }} class="font-semibold text-accent-text hover:underline">zmień</button>
+									{#if ugEditUpdatedCount > 0}<span class="text-xs text-ok">zaktualizowano {odmiana(ugEditUpdatedCount, 'polisę', 'polisy', 'polis')}</span>{/if}
+								{/if}
+							</dd>
+						</div>
+						<p class="pt-1.5 text-xs text-ink-3">Nowa domyślna prowizja trafia do polis w UG, które nie mają jeszcze ustawionej prowizji.</p>
+					</dl>
+				</section>
+			{/if}
+
+			<!-- Kontakt w TU -->
+			<section aria-labelledby="kontakt-tu" class="bg-white border border-line rounded-xl px-4 py-3.5">
+				<div class="flex items-center mb-1.5">
+					<h2 id="kontakt-tu" class="text-[15px] font-semibold text-ink">Kontakt w towarzystwie</h2>
+					<button
+						onclick={() => { showContact = true; contactBranchId = ''; contactPersonId = ''; contactError = ''; poprzedniOpiekunUg = policy?.tu_contact_id ?? null; }}
+						class="ml-auto h-7 px-1.5 text-[13px] font-semibold text-accent-text hover:underline"
+					>{policy.tu_contact_id ? 'Zmień' : 'Przypisz'}</button>
+				</div>
+				{#if policy.crm_insurer_contacts}
+					{@const c = policy.crm_insurer_contacts}
+					<p class="font-medium text-ink">{c.imie_nazwisko}</p>
+					{#if c.stanowisko || c.crm_insurer_branches}<p class="text-xs text-ink-3">{[c.stanowisko, c.crm_insurer_branches?.nazwa].filter(Boolean).join(' · ')}</p>{/if}
+					{#if kontaktTu?.telefon || kontaktTu?.email}
+						<p class="flex flex-wrap gap-x-3 text-[13px] mt-0.5">
+							{#if kontaktTu?.telefon}<a href="tel:{kontaktTu.telefon}" class="text-accent-text hover:underline">{kontaktTu.telefon}</a>{/if}
+							{#if kontaktTu?.email}<a href="mailto:{kontaktTu.email}" class="text-accent-text hover:underline break-all">{kontaktTu.email}</a>{/if}
 						</p>
 					{/if}
+					<button onclick={removeContact} class="mt-1.5 text-xs text-ink-3 hover:text-danger hover:underline">Odepnij kontakt</button>
+				{:else}
+					<p class="text-[13px] text-ink-3">Nie przypisano osoby z {nazwaTu(policy)}.</p>
+				{/if}
+			</section>
+
+			<!-- Opiekun i podział prowizji -->
+			<section aria-labelledby="podzial-prowizji" class="bg-white border border-line rounded-xl px-4 py-3.5">
+				<div class="flex items-center mb-1.5">
+					<h2 id="podzial-prowizji" class="text-[15px] font-semibold text-ink">Opiekun i podział prowizji</h2>
+					<button onclick={() => { showBrokers = true; pbError = ''; }} class="ml-auto h-7 px-1.5 text-[13px] font-semibold text-accent-text hover:underline">Zarządzaj</button>
 				</div>
-			{/if}
-		</div>
-	{/if}
+				{#if polisaBrokers.length === 0}
+					<p class="text-[13px] text-ink-3">Brak przypisanych osób.</p>
+				{:else}
+					<ul>
+						{#each polisaBrokers as pb (pb.id)}
+							<li class="flex flex-wrap items-center gap-x-2.5 gap-y-1 py-2 border-t border-line-soft first:border-t-0">
+								<span aria-hidden="true" class="w-[26px] h-[26px] rounded-full bg-surface-2 text-xs font-semibold flex items-center justify-center shrink-0">{inicjaly(pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email)}</span>
+								<span class="flex-1 min-w-0">
+									<span class="block text-[13px] font-medium text-ink truncate">{pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email ?? '—'}</span>
+									{#if pb.rola !== 'opiekun'}
+										<span class="block text-xs tabular-nums text-ink-3">{pb.udzial_pct}% prowizji · {fmtPln((policy.prowizja_przypisana ?? 0) * pb.udzial_pct / 100)} zł</span>
+									{/if}
+								</span>
+								<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {rolaCls[pb.rola] ?? 'bg-surface-2 text-ink-2'}">{rolaLabel[pb.rola] ?? pb.rola}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
 
-	<!-- UG: parametry (podtyp, limit, domyślna prowizja) -->
-	{#if policy.typ_umowy === 'generalna'}
-	<div class="flex flex-wrap items-center gap-3 mb-5">
-		<!-- Podtyp UG -->
-		<div class="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
-			<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide whitespace-nowrap">Podtyp UG:</p>
-			<span class="text-base font-bold text-blue-900">{ugPodtypLabel[policy.ug_podtyp ?? ''] ?? policy.ug_podtyp ?? '—'}</span>
-		</div>
-
-		<!-- Limit gwarancyjny (tylko Gwarancje) -->
-		{#if policy.ug_podtyp === 'gwarancje'}
-		<div class="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
-			<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide whitespace-nowrap">Limit gwarancyjny:</p>
-			<span class="text-base font-bold text-blue-900">{policy.ug_limit != null ? fmtPln(policy.ug_limit) : '—'}</span>
-		</div>
-		{/if}
-
-		<!-- Domyślna prowizja (compact inline) -->
-		<div class="inline-flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2">
-		<p class="text-xs font-semibold text-blue-600 uppercase tracking-wide whitespace-nowrap">Domyślna prowizja UG:</p>
-		{#if ugEditOpen}
-			<input type="number" step="0.01" bind:value={ugEditVal}
-				class="border border-blue-300 rounded-lg px-2 py-1 text-sm w-20 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="%" />
-			<button onclick={saveUgDefault} disabled={ugEditSaving} class="px-3 py-1 bg-blue-700 text-white text-xs rounded-lg hover:bg-blue-800 disabled:opacity-60">
-				{ugEditSaving ? '...' : 'Zapisz'}
-			</button>
-			<button onclick={() => ugEditOpen = false} class="px-2 py-1 border border-blue-300 text-blue-700 text-xs rounded-lg hover:bg-blue-100">✕</button>
-		{:else}
-			<span class="text-base font-bold text-blue-900">{policy.ug_default_prowizja_pct != null ? `${policy.ug_default_prowizja_pct}%` : '—'}</span>
-			{#if ugEditUpdatedCount > 0}
-				<span class="text-xs text-emerald-700">✓ zaktualizowano {ugEditUpdatedCount} polis</span>
-			{/if}
-			<button onclick={() => { ugEditVal = policy.ug_default_prowizja_pct?.toString() ?? ''; ugEditOpen = true; }}
-				class="flex items-center gap-1 text-xs text-blue-700 border border-blue-300 rounded-lg px-2 py-1 hover:bg-blue-100">
-				<Pencil size={11} /> Zmień
-			</button>
-		{/if}
-		</div>
-	</div>
-	{/if}
-
-	<!-- Podział prowizji (mini-panel jeśli są wpisy) -->
-	{#if polisaBrokers.length > 0}
-	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5">
-		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex items-center justify-between">
-			<p class="text-sm font-semibold text-slate-700 flex items-center gap-2"><Users size={14} /> Podział prowizji</p>
-			<button onclick={() => { showBrokers = true; pbError = ''; }} class="text-xs text-slate-500 hover:text-slate-800">Zarządzaj</button>
-		</div>
-		<div class="divide-y divide-line-soft">
-			{#each polisaBrokers as pb}
-				<div class="px-5 py-3 flex items-center justify-between">
-					<div>
-						<span class="font-medium text-sm">{pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email ?? '—'}</span>
-					</div>
-					<div class="flex items-center gap-3">
-						<Badge variant={rolaVariant[pb.rola]}>{rolaLabel[pb.rola]}</Badge>
-						{#if pb.rola !== 'opiekun'}
-							<span class="text-sm font-semibold text-slate-700">{pb.udzial_pct}%</span>
-							<span class="text-xs text-slate-400">{fmtPln((policy.prowizja_przypisana ?? 0) * pb.udzial_pct / 100)}</span>
-						{/if}
-					</div>
-				</div>
-			{/each}
-		</div>
-	</div>
-	{/if}
-
-	<!-- Polisy podrzędne (certyfikaty) UG -->
-	{#if childPolicies.length > 0}
-	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5">
-		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex items-center justify-between">
-			<p class="text-sm font-semibold text-slate-700">Polisy w ramach UG ({childPolicies.length})</p>
-			<div class="flex gap-4 text-xs text-slate-500">
-				<span>Łączna składka: <strong class="text-slate-900">{fmtPln(childSkladka)}</strong></span>
-				<span>Łączna prowizja: <strong class="text-emerald-700">{fmtPln(childProwizja)}</strong></span>
-			</div>
-		</div>
-		<table class="w-full text-sm text-left">
-			<thead>
-				<tr class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-					<SortTh s={sortUg} k="nr" class="px-5 py-2">Nr polisy</SortTh>
-					<SortTh s={sortUg} k="klient" class="px-5 py-2">Klient</SortTh>
-					<SortTh s={sortUg} k="od" class="px-5 py-2">OD</SortTh>
-					<SortTh s={sortUg} k="do" class="px-5 py-2">DO</SortTh>
-					<SortTh s={sortUg} k="skladka" class="px-5 py-2 text-right" align="right">Składka</SortTh>
-					<SortTh s={sortUg} k="prowizja" class="px-5 py-2 text-right" align="right">Prowizja</SortTh>
-				</tr>
-			</thead>
-			<tbody>
-				{#each childWiersze as cp}
-					{@const cst = policyStatus(cp.data_do)}
-					<tr class="border-t border-line-soft hover:bg-slate-50">
-						<td class="px-5 py-2">
-							<a href="/policies/{cp.id}" class="font-medium text-blue-700 hover:underline">{cp.nr_polisy}</a>
-						</td>
-						<td class="px-5 py-2 text-slate-600">
-							<a href="/clients/{cp.klient_id}" class="hover:text-blue-700 hover:underline">{cp.crm_clients?.nazwa ?? '—'}</a>
-						</td>
-						<td class="px-5 py-2 text-slate-500">{cp.data_od ?? '—'}</td>
-						<td class="px-5 py-2 text-slate-500">{cp.data_do ?? '—'}</td>
-						<td class="px-5 py-2 text-right font-medium">{fmtPln(cp.skladka_przypisana)}</td>
-						<td class="px-5 py-2 text-right text-emerald-600">{fmtPln(cp.prowizja_przypisana)}</td>
-					</tr>
-				{/each}
-				<tr class="border-t-2 border-line bg-slate-50 font-semibold">
-					<td colspan="4" class="px-5 py-2 text-sm text-slate-600">SUMA</td>
-					<td class="px-5 py-2 text-right">{fmtPln(childSkladka)}</td>
-					<td class="px-5 py-2 text-right text-emerald-700">{fmtPln(childProwizja)}</td>
-				</tr>
-			</tbody>
-		</table>
-	</div>
-	{/if}
-
-	<!-- Aneksy -->
-	{#if annexes.length > 0}
-	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5">
-		<div class="px-5 py-3 border-b border-line-soft bg-slate-50">
-			<p class="text-sm font-semibold text-slate-700">Aneksy ({annexes.length})</p>
-		</div>
-		<table class="w-full text-sm text-left">
-			<thead>
-				<tr class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-					<th class="px-5 py-2">Nr</th>
-					<th class="px-5 py-2">Data</th>
-					<th class="px-5 py-2">Typ</th>
-					<th class="px-5 py-2">Opis</th>
-					<th class="px-5 py-2 text-right">Delta składki</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each annexes as ax}
-					<tr class="border-t border-line-soft hover:bg-slate-50">
-						<td class="px-5 py-2 font-medium">{ax.nr_aneksu}</td>
-						<td class="px-5 py-2">{ax.data_aneksu}</td>
-						<td class="px-5 py-2"><Badge variant="info">{ax.typ}</Badge></td>
-						<td class="px-5 py-2 text-slate-500">{ax.opis ?? '—'}</td>
-						<td class="px-5 py-2 text-right {ax.delta_skladka >= 0 ? 'text-emerald-600' : 'text-red-500'}">
-							{ax.delta_skladka >= 0 ? '+' : ''}{fmtPln(ax.delta_skladka)}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-	{/if}
-
-	<!-- Płatności -->
-	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden w-1/2 min-w-[480px]">
-		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex items-center justify-between">
-			<p class="text-sm font-semibold text-slate-700">Płatności ({payments.length})</p>
-			<div class="flex items-center gap-3">
-				<span class="text-xs text-slate-500">Suma: <strong class="text-slate-900">{fmtPln(sumaPlatnosci)}</strong></span>
-				<button onclick={openAddPayment} class="flex items-center gap-1 text-xs border border-line rounded-lg px-2 py-1 text-slate-600 hover:bg-slate-50">
-					<FilePlus2 size={12} /> Dodaj płatność
-				</button>
-			</div>
-		</div>
-		{#if payments.length > 0}
-		<table class="w-full text-sm text-left">
-			<tbody>
-				{#each payments as pay}
-					<tr class="border-t border-line-soft hover:bg-slate-50">
-						<td class="px-5 py-2.5 text-slate-500 font-medium w-16">Rata {pay.nr_raty}</td>
-						<td class="px-5 py-2.5">
-							<div class="flex items-center justify-between gap-3">
-								<span class="text-slate-700">{pay.data_platnosci}</span>
-								<span class="font-semibold text-slate-900 {pay.kwota < 0 ? 'text-red-600' : ''}">{fmtPln(pay.kwota)}</span>
-								<Badge variant={pay.status === 'Opłacona' ? 'success' : pay.status === 'Zaległa' ? 'error' : 'neutral'}>{pay.status}</Badge>
-								<button onclick={() => openEditPayment(pay)} title="Edytuj" class="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors shrink-0">
-									<Pencil size={13} />
-								</button>
-							</div>
-							{#if pay.powod}<p class="text-xs text-slate-400 mt-0.5">{pay.powod}</p>{/if}
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-		{:else}
-			<p class="px-5 py-6 text-sm text-slate-400">Brak płatności.</p>
-		{/if}
+			<!-- Historia -->
+			<section aria-labelledby="historia-polisy" class="bg-white border border-line rounded-xl px-4 pt-3.5 pb-1.5">
+				<h2 id="historia-polisy" class="text-[15px] font-semibold text-ink mb-1">Historia</h2>
+				{#if historia.length === 0}
+					<p class="pb-2 text-[13px] text-ink-3">Brak wpisów w dzienniku.</p>
+				{:else}
+					<ol>
+						{#each historia.slice(0, historiaLimit) as w (w.id)}
+							<li class="flex gap-3 py-2 border-t border-line-soft first:border-t-0">
+								<span aria-hidden="true" class="w-2 h-2 mt-1.5 rounded-full shrink-0 {w.action === 'policy_deleted' ? 'bg-danger' : 'bg-[#9AA3B2]'}"></span>
+								<span class="flex-1 min-w-0">
+									<span class="block text-[13px] text-ink break-words">{opisHistorii(w)}</span>
+									<span class="block text-xs text-ink-3">{w.user_name ?? w.user_email ?? 'System'} · {fmtKiedy(w.created_at)}</span>
+								</span>
+							</li>
+						{/each}
+					</ol>
+					{#if historia.length > historiaLimit}
+						<button onclick={() => (historiaLimit += 10)} class="mb-2 mt-0.5 text-[13px] font-semibold text-accent-text hover:underline">Pokaż starsze ({historia.length - historiaLimit})</button>
+					{/if}
+				{/if}
+			</section>
+		</aside>
 	</div>
 {/if}
 
@@ -872,149 +1058,129 @@
 <!-- Modal: Aneks -->
 <Modal title="Aneks do polisy {policy.nr_polisy}" open={showAnnex} onclose={() => { showAnnex = false; axError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showAnnex = false; axError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveAnnex} disabled={savingAx} class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-60">
-			{savingAx ? 'Zapisywanie...' : 'Zapisz Aneks'}
-		</button>
+		<button onclick={() => { showAnnex = false; axError = ''; }} class={btnDrugi}>Anuluj</button>
+		<button onclick={saveAnnex} disabled={savingAx} class={btnGlowny}>{savingAx ? 'Zapisywanie…' : 'Zapisz aneks'}</button>
 	{/snippet}
-	{#if axError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{axError}</div>{/if}
-	<div class="space-y-3">
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>Nr Aneksu *</label><input bind:value={axNr} class={inputCls} /></div>
-			<div><label class={labelCls}>Data aneksu *</label><input type="date" bind:value={axData} class={inputCls} /></div>
+	{#if axError}<p class={bladCls}>{axError}</p>{/if}
+	<div class="flex flex-col gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<div><label for="ax-nr" class={labelCls}>Nr aneksu *</label><input id="ax-nr" bind:value={axNr} class={inputCls} /></div>
+			<div><label for="ax-data" class={labelCls}>Data aneksu *</label><input id="ax-data" type="date" bind:value={axData} class={inputCls} /></div>
 		</div>
-		<div>
-			<label class={labelCls}>Typ aneksu</label>
+		<fieldset>
+			<legend class={labelCls}>Typ aneksu</legend>
 			<div class="grid grid-cols-2 gap-2">
-				{#each [['korekta','Korekta'],['doubezpieczenie','Doubezpieczenie'],['zmiana_zakresu','Zmiana zakresu'],['inne','Inne']] as [val, lbl]}
-					<button type="button" onclick={() => axTyp = val as typeof axTyp}
-						class="py-2 px-3 rounded-lg text-sm border text-left transition-colors
-							{axTyp === val ? 'bg-blue-50 text-blue-700 border-blue-400' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">
-						{lbl}
-					</button>
+				{#each Object.entries(TYP_ANEKSU) as [val, lbl]}
+					<button
+						type="button"
+						aria-pressed={axTyp === val}
+						onclick={() => (axTyp = val as typeof axTyp)}
+						class="h-9 px-3 rounded-lg text-sm border text-left transition-colors
+							{axTyp === val ? 'bg-accent-soft text-accent-text border-accent font-semibold' : 'bg-white text-ink-2 border-line hover:bg-surface-2'}"
+					>{lbl}</button>
 				{/each}
 			</div>
-		</div>
-		<div><label class={labelCls}>Opis</label><input bind:value={axOpis} class={inputCls} /></div>
-		<hr class="border-line" />
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>Nowa Data Do</label><input type="date" bind:value={axNewDataDo} class={inputCls} /></div>
-			<div><label class={labelCls}>Nowa Składka</label><input type="number" step="0.01" bind:value={axNewSkladka} class={inputCls} /></div>
-			<div><label class={labelCls}>Delta Składki (+/-)</label><input type="number" step="0.01" bind:value={axDeltaSkladka} class={inputCls} /></div>
-			<div><label class={labelCls}>Nowy % Prowizji</label><input type="number" step="0.01" bind:value={axNewProwizjaPct} class={inputCls} /></div>
+		</fieldset>
+		<div><label for="ax-opis" class={labelCls}>Opis</label><input id="ax-opis" bind:value={axOpis} class={inputCls} /></div>
+		<div class="border-t border-line-soft pt-3">
+			<p class="text-xs text-ink-3 mb-2">Przy korekcie wpisane wartości od razu zmieniają polisę.</p>
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+				<div><label for="ax-do" class={labelCls}>Nowa data końca</label><input id="ax-do" type="date" bind:value={axNewDataDo} class={inputCls} /></div>
+				<div><label for="ax-skl" class={labelCls}>Nowa składka</label><input id="ax-skl" type="number" step="0.01" bind:value={axNewSkladka} class={inputCls} /></div>
+				<div><label for="ax-delta" class={labelCls}>Zmiana składki (+/−)</label><input id="ax-delta" type="number" step="0.01" bind:value={axDeltaSkladka} class={inputCls} /></div>
+				<div><label for="ax-pct" class={labelCls}>Nowa prowizja (%)</label><input id="ax-pct" type="number" step="0.01" bind:value={axNewProwizjaPct} class={inputCls} /></div>
+			</div>
 		</div>
 	</div>
 </Modal>
-{/if}
 
-<!-- Modal: Podział prowizji -->
-{#if policy}
-<Modal title="Podział prowizji — {policy.nr_polisy}" open={showBrokers} onclose={() => { showBrokers = false; pbError = ''; }}>
+<!-- Modal: Opiekun i podział prowizji -->
+<Modal title="Opiekun i podział prowizji — {policy.nr_polisy}" open={showBrokers} onclose={() => { showBrokers = false; pbError = ''; }}>
 	{#snippet footer()}
-		<button onclick={() => { showBrokers = false; pbError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
+		<button onclick={() => { showBrokers = false; pbError = ''; }} class={btnDrugi}>Zamknij</button>
 	{/snippet}
 
 	{#if polisaBrokers.length > 0}
-	<div class="mb-4 divide-y divide-line-soft border border-line rounded-xl overflow-hidden">
-		{#each polisaBrokers as pb}
-			<div class="flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50">
-				<div class="flex items-center gap-3">
-					<Badge variant={rolaVariant[pb.rola]}>{rolaLabel[pb.rola]}</Badge>
-					<span class="text-sm font-medium">{pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email ?? '—'}</span>
-				</div>
-				<div class="flex items-center gap-4">
+		<ul class="mb-4 border border-line rounded-xl overflow-hidden">
+			{#each polisaBrokers as pb (pb.id)}
+				<li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-t border-line-soft first:border-t-0">
+					<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {rolaCls[pb.rola] ?? 'bg-surface-2 text-ink-2'}">{rolaLabel[pb.rola] ?? pb.rola}</span>
+					<span class="flex-1 min-w-0 text-sm font-medium text-ink truncate">{pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email ?? '—'}</span>
 					{#if pb.rola !== 'opiekun'}
-						<div class="text-right">
-							<span class="text-sm font-semibold">{pb.udzial_pct}%</span>
-							<span class="text-xs text-slate-400 ml-1">({fmtPln((policy.prowizja_przypisana ?? 0) * pb.udzial_pct / 100)})</span>
-						</div>
+						<span class="text-[13px] tabular-nums whitespace-nowrap"><span class="font-semibold text-ink">{pb.udzial_pct}%</span> <span class="text-ink-3">· {fmtPln((policy.prowizja_przypisana ?? 0) * pb.udzial_pct / 100)} zł</span></span>
 					{:else}
-						<span class="text-xs text-slate-400">bez prowizji</span>
+						<span class="text-xs text-ink-3">bez prowizji</span>
 					{/if}
-					<button onclick={() => removeBroker(pb)} class="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors">
-						<Trash2 size={13} />
-					</button>
-				</div>
-			</div>
-		{/each}
-	</div>
+					<button onclick={() => removeBroker(pb)} aria-label="Usuń: {pb.crm_profiles?.imie_nazwisko ?? pb.crm_profiles?.email ?? 'osoba'}" title="Usuń" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-danger hover:bg-danger-soft"><Trash2 size={15} /></button>
+				</li>
+			{/each}
+		</ul>
 	{/if}
 
-	<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Dodaj osobę</p>
-	{#if pbError}<div class="mb-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{pbError}</div>{/if}
-	<div class="flex gap-2 items-end">
-		<div class="flex-1">
-			<label class="block text-xs font-medium text-slate-600 mb-1">Broker / Osoba</label>
-			<select bind:value={pbBrokerId} class={inputCls}>
+	<p class="text-[13px] font-semibold text-ink mb-2">Dodaj osobę</p>
+	{#if pbError}<p class={bladCls}>{pbError}</p>{/if}
+	<div class="flex flex-wrap gap-2 items-end">
+		<div class="flex-[1_1_200px] min-w-0">
+			<label for="pb-osoba" class={labelCls}>Osoba</label>
+			<select id="pb-osoba" bind:value={pbBrokerId} class={inputCls}>
 				<option value="">— wybierz —</option>
 				{#each appState.brokers as b}
 					<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>
 				{/each}
 			</select>
 		</div>
-		<div class="w-36">
-			<label class="block text-xs font-medium text-slate-600 mb-1">Rola</label>
-			<select bind:value={pbRola} class={inputCls}>
+		<div class="w-40">
+			<label for="pb-rola" class={labelCls}>Rola</label>
+			<select id="pb-rola" bind:value={pbRola} class={inputCls}>
 				<option value="akwizycja">Akwizycja</option>
 				<option value="obsługa">Obsługa</option>
-				<option value="opiekun">Opiekun (bez prow.)</option>
+				<option value="opiekun">Opiekun (bez prowizji)</option>
 			</select>
 		</div>
 		{#if pbRola !== 'opiekun'}
-		<div class="w-24">
-			<label class="block text-xs font-medium text-slate-600 mb-1">Udział %</label>
-			<input type="number" min="0" max="100" step="1" bind:value={pbUdzial} class={inputCls} />
-		</div>
+			<div class="w-24">
+				<label for="pb-udzial" class={labelCls}>Udział %</label>
+				<input id="pb-udzial" type="number" min="0" max="100" step="1" bind:value={pbUdzial} class={inputCls} />
+			</div>
 		{/if}
-		<button onclick={addBroker} disabled={savingPB} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60 shrink-0">
-			{savingPB ? '...' : '+ Dodaj'}
-		</button>
+		<button onclick={addBroker} disabled={savingPB} class="{btnGlowny} shrink-0">{savingPB ? 'Dodawanie…' : 'Dodaj'}</button>
 	</div>
 
-	{#if polisaBrokers.filter(pb => pb.rola !== 'opiekun').length > 1}
-		{@const suma = polisaBrokers.filter(pb => pb.rola !== 'opiekun').reduce((s, pb) => s + pb.udzial_pct, 0)}
-		<div class="mt-3 text-xs {Math.abs(suma - 100) > 0.1 ? 'text-red-600 bg-red-50 border-red-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200'} border rounded-lg px-3 py-2">
-			Suma udziałów: <strong>{suma}%</strong>
-			{#if Math.abs(suma - 100) > 0.1} ⚠️ nie sumuje się do 100%{:else} ✓{/if}
-		</div>
+	{#if polisaBrokers.filter((pb) => pb.rola !== 'opiekun').length > 1}
+		{@const suma = polisaBrokers.filter((pb) => pb.rola !== 'opiekun').reduce((s, pb) => s + pb.udzial_pct, 0)}
+		<p class="mt-3 text-[13px] rounded-lg px-3 py-2 {Math.abs(suma - 100) > 0.1 ? 'text-danger bg-danger-soft' : 'text-ok bg-ok-soft'}">
+			Suma udziałów: <strong>{suma}%</strong>{Math.abs(suma - 100) > 0.1 ? ' — nie sumuje się do 100%' : ''}
+		</p>
 	{/if}
 </Modal>
-{/if}
 
 <!-- Modal: Usuń polisę -->
-<Modal title="Usuń polisę — {policy?.nr_polisy}" open={showDelete} onclose={() => showDelete = false}>
+<Modal title="Usuń polisę {policy.nr_polisy}" open={showDelete} onclose={() => (showDelete = false)}>
 	{#snippet footer()}
-		<button onclick={() => showDelete = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={softDelete} disabled={deleting} class="px-4 py-2 text-sm bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 disabled:opacity-60">
-			{deleting ? 'Usuwanie...' : 'Przenieś do Kosza'}
-		</button>
+		<button onclick={() => (showDelete = false)} class={btnDrugi}>Anuluj</button>
+		<button onclick={softDelete} disabled={deleting} class="h-9 px-4 text-sm font-semibold bg-danger text-white rounded-lg hover:opacity-90 disabled:opacity-60">{deleting ? 'Usuwanie…' : 'Przenieś do kosza'}</button>
 	{/snippet}
-	{#if deleteError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{deleteError}</div>{/if}
-	<div class="space-y-3">
-		<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-sm text-amber-800">
-			Polisa zostanie przeniesiona do Kosza. Administrator może ją przywrócić lub trwale usunąć.
-		</div>
+	{#if deleteError}<p class={bladCls}>{deleteError}</p>{/if}
+	<div class="flex flex-col gap-3">
+		<p class="bg-warn-soft rounded-lg px-4 py-3 text-[13px] text-warn">Polisa trafi do kosza. Administrator może ją przywrócić albo usunąć na stałe.</p>
 		<div>
-			<label class={labelCls}>Uzasadnienie usunięcia *</label>
-			<textarea bind:value={deletionReason} rows="3" placeholder="Podaj powód usunięcia polisy..." class={inputCls}></textarea>
+			<label for="usun-powod" class={labelCls}>Uzasadnienie usunięcia *</label>
+			<textarea id="usun-powod" bind:value={deletionReason} rows="3" placeholder="Podaj powód usunięcia polisy…" class={inputCls}></textarea>
 		</div>
 	</div>
 </Modal>
 
 <!-- Modal: Osoba kontaktowa TU -->
-{#if policy}
-<Modal title="Osoba kontaktowa TU — {policy.crm_insurers?.skrot ?? policy.crm_insurers?.nazwa ?? ''}" open={showContact} onclose={() => showContact = false}>
+<Modal title="Kontakt w towarzystwie — {nazwaTu(policy)}" open={showContact} onclose={() => (showContact = false)}>
 	{#snippet footer()}
-		<button onclick={() => showContact = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveContact} disabled={savingContact} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
-			{savingContact ? 'Zapisywanie...' : 'Przypisz osobę'}
-		</button>
+		<button onclick={() => (showContact = false)} class={btnDrugi}>Anuluj</button>
+		<button onclick={saveContact} disabled={savingContact} class={btnGlowny}>{savingContact ? 'Zapisywanie…' : 'Przypisz osobę'}</button>
 	{/snippet}
-	{#if contactError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{contactError}</div>{/if}
-	<div class="space-y-3">
+	{#if contactError}<p class={bladCls}>{contactError}</p>{/if}
+	<div class="flex flex-col gap-3">
 		<div>
-			<label class={labelCls}>Oddział</label>
-			<select bind:value={contactBranchId} onchange={() => contactPersonId = ''} class={inputCls}>
+			<label for="tu-oddzial" class={labelCls}>Oddział</label>
+			<select id="tu-oddzial" bind:value={contactBranchId} onchange={() => (contactPersonId = '')} class={inputCls}>
 				<option value="">— bez oddziału (centrala) —</option>
 				{#each tuBranches as b}
 					<option value={b.id}>{b.nazwa}</option>
@@ -1022,67 +1188,78 @@
 			</select>
 		</div>
 		<div>
-			<label class={labelCls}>Osoba *</label>
-			<select bind:value={contactPersonId} class={inputCls}>
+			<label for="tu-osoba" class={labelCls}>Osoba *</label>
+			<select id="tu-osoba" bind:value={contactPersonId} class={inputCls}>
 				<option value="">— wybierz osobę —</option>
 				{#each branchContacts as c}
 					<option value={c.id}>{c.imie_nazwisko}{c.stanowisko ? ` — ${c.stanowisko}` : ''}</option>
 				{/each}
 			</select>
 			{#if branchContacts.length === 0}
-				<p class="text-xs text-slate-400 mt-1">Brak osób przypisanych do wybranego oddziału.</p>
+				<p class="text-xs text-ink-3 mt-1">Brak osób przypisanych do wybranego oddziału.</p>
 			{/if}
+		</div>
+		{#if policy.typ_umowy === 'generalna'}
+			<p class="text-xs text-ink-3">Polisy w UG bez kontaktu albo z dotychczasowym kontaktem UG dostaną nową osobę.</p>
+		{/if}
+	</div>
+</Modal>
+
+<!-- Modal: Dodaj płatność -->
+<Modal title="Dodaj płatność — {policy.nr_polisy}" open={showAddPayment} onclose={() => (showAddPayment = false)}>
+	{#snippet footer()}
+		<button onclick={() => (showAddPayment = false)} class={btnDrugi}>Anuluj</button>
+		<button onclick={saveAddPayment} disabled={savingAp} class={btnGlowny}>{savingAp ? 'Zapisywanie…' : 'Dodaj płatność'}</button>
+	{/snippet}
+	{#if apError}<p class={bladCls}>{apError}</p>{/if}
+	<div class="flex flex-col gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<div><label for="ap-data" class={labelCls}>Termin płatności *</label><input id="ap-data" type="date" bind:value={apData} class={inputCls} /></div>
+			<div><label for="ap-kwota" class={labelCls}>Kwota * (może być ujemna)</label><input id="ap-kwota" type="number" step="0.01" bind:value={apKwota} class={inputCls} /></div>
+		</div>
+		<div>
+			<label for="ap-powod" class={labelCls}>Powód nowej płatności *</label>
+			<input id="ap-powod" bind:value={apPowod} placeholder="np. aneks, rozliczenie składki…" class={inputCls} />
 		</div>
 	</div>
 </Modal>
+
+<!-- E-mail do klienta -->
+{#if klient}
+	<EmailKlienta
+		open={pisanieEmaila}
+		{klient}
+		polisy={polisyKlienta}
+		kontakty={kontaktyKlienta}
+		szablonStartowy={emailSzablon}
+		polisaStartowa={policy.id}
+		onclose={() => (pisanieEmaila = false)}
+		onwyslano={() => {}}
+	/>
+{/if}
 {/if}
 
 <!-- Modal: Edytuj płatność -->
 {#if editingPayment}
-<Modal title="Edytuj płatność — Rata {editingPayment.nr_raty}" open={showEditPayment} onclose={() => { showEditPayment = false; editingPayment = null; }}>
+<Modal title="Edytuj ratę {editingPayment.nr_raty}" open={showEditPayment} onclose={() => { showEditPayment = false; editingPayment = null; }}>
 	{#snippet footer()}
-		<button onclick={() => { showEditPayment = false; editingPayment = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveEditPayment} disabled={savingEp} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
-			{savingEp ? 'Zapisywanie...' : 'Zapisz zmiany'}
-		</button>
+		<button onclick={() => { showEditPayment = false; editingPayment = null; }} class={btnDrugi}>Anuluj</button>
+		<button onclick={saveEditPayment} disabled={savingEp} class={btnGlowny}>{savingEp ? 'Zapisywanie…' : 'Zapisz zmiany'}</button>
 	{/snippet}
-	{#if epError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{epError}</div>{/if}
-	<div class="space-y-3">
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>Data płatności *</label><input type="date" bind:value={epData} class={inputCls} /></div>
-			<div><label class={labelCls}>Kwota * (może być ujemna)</label><input type="number" step="0.01" bind:value={epKwota} class={inputCls} /></div>
+	{#if epError}<p class={bladCls}>{epError}</p>{/if}
+	<div class="flex flex-col gap-3">
+		<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+			<div><label for="ep-data" class={labelCls}>Termin płatności *</label><input id="ep-data" type="date" bind:value={epData} class={inputCls} /></div>
+			<div><label for="ep-kwota" class={labelCls}>Kwota * (może być ujemna)</label><input id="ep-kwota" type="number" step="0.01" bind:value={epKwota} class={inputCls} /></div>
 		</div>
 		<div>
-			<label class={labelCls}>Status</label>
-			<select bind:value={epStatus} class={inputCls}>
+			<label for="ep-status" class={labelCls}>Status</label>
+			<select id="ep-status" bind:value={epStatus} class={inputCls}>
 				<option value="Oczekująca">Oczekująca</option>
 				<option value="Opłacona">Opłacona</option>
 				<option value="Zaległa">Zaległa</option>
 				<option value="Częściowo opłacona">Częściowo opłacona</option>
 			</select>
-		</div>
-	</div>
-</Modal>
-{/if}
-
-<!-- Modal: Dodaj płatność -->
-{#if policy}
-<Modal title="Dodaj płatność — {policy.nr_polisy}" open={showAddPayment} onclose={() => showAddPayment = false}>
-	{#snippet footer()}
-		<button onclick={() => showAddPayment = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveAddPayment} disabled={savingAp} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
-			{savingAp ? 'Zapisywanie...' : 'Dodaj płatność'}
-		</button>
-	{/snippet}
-	{#if apError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{apError}</div>{/if}
-	<div class="space-y-3">
-		<div class="grid grid-cols-2 gap-3">
-			<div><label class={labelCls}>Data płatności *</label><input type="date" bind:value={apData} class={inputCls} /></div>
-			<div><label class={labelCls}>Kwota * (może być ujemna)</label><input type="number" step="0.01" bind:value={apKwota} class={inputCls} /></div>
-		</div>
-		<div>
-			<label class={labelCls}>Powód nowej płatności *</label>
-			<input bind:value={apPowod} placeholder="np. aneks, rozliczenie składki..." class={inputCls} />
 		</div>
 	</div>
 </Modal>
