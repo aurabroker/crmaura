@@ -2,13 +2,14 @@
 	import { wczytajFormularzeApk, wczytajKlientow, wczytajKontakty, wczytajPojazdy, wczytajPolisy, wczytajSzkody, wczytajZadania } from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
 	import { sb } from '$lib/supabase';
-	import { appState } from '$lib/stores/app.svelte';
+	import { appState, isAdmin } from '$lib/stores/app.svelte';
+	import UzupelnijZGus from '$lib/components/UzupelnijZGus.svelte';
 	import type { Client } from '$lib/types/database';
 	import type { Snippet } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
-	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Download } from 'lucide-svelte';
+	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Download, Database } from 'lucide-svelte';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
@@ -486,6 +487,13 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	const modalTitle = $derived(modalTyp === 'firma' ? 'Nowa Firma' : 'Nowa Osoba');
+
+	// Zbiorowe uzupełnianie adresów i REGON z GUS (tylko administrator)
+	let showGus = $state(false);
+	async function poGus() {
+		const { data } = await wczytajKlientow();
+		if (data) appState.clients = data as typeof appState.clients;
+	}
 </script>
 
 <svelte:head><title>Klienci — AuraCRM</title></svelte:head>
@@ -497,6 +505,11 @@
 		<p class="text-sm text-ink-3 mt-0.5">Portfel, dane kontaktowe i zgody RODO</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
+		{#if isAdmin(appState.profile)}
+			<button onclick={() => (showGus = true)} title="Uzupełnij adresy i REGON z GUS dla klientów z NIP" class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
+				<Database size={16} class="text-ink-3" /> Uzupełnij z GUS
+			</button>
+		{/if}
 		<button onclick={() => (showDuplicates = true)} class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
 			Duplikaty
 			{#if visibleDuplicateGroups.length > 0}
@@ -857,3 +870,5 @@
 		</div>
 	{/if}
 </Modal>
+
+<UzupelnijZGus open={showGus} onclose={() => (showGus = false)} onzmiany={poGus} />

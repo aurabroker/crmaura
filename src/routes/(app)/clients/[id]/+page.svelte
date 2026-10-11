@@ -896,6 +896,12 @@
 				return id ? `Opiekun klienta: ${kto?.imie_nazwisko || kto?.email || 'zmieniony'}` : 'Usunięto opiekuna klienta';
 			}
 			case 'clients_exported': return 'Dane klienta wyeksportowane do CSV';
+			case 'client_gus_enriched': {
+				const d = w.details ?? {};
+				const zmiany = Array.isArray(d.zmiany) ? (d.zmiany as string[]) : [];
+				if (d.wynik === 'zakonczona') return `GUS: firma zakończyła działalność${typeof d.data_zakonczenia === 'string' ? ` (${fmtDzien(d.data_zakonczenia, true)})` : ''}${zmiany.length ? `; uzupełniono: ${zmiany.join(', ')}` : ''}`;
+				return `Uzupełniono z GUS: ${zmiany.join(', ') || 'dane'}`;
+			}
 			default: return null;
 		}
 	}
@@ -980,6 +986,13 @@
 				{#if client.nazwa_skrocona && client.nazwa_skrocona !== client.nazwa}<p class="text-[13px] text-ink-3">{client.nazwa}</p>{/if}
 			</div>
 			<div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[13px] text-ink-2">
+				{#if client.gus_wynik === 'zakonczona'}
+					<span class="flex items-center gap-1.5 text-danger font-semibold" title="Według rejestru REGON (GUS) firma zakończyła działalność">
+						<ShieldAlert size={14} aria-hidden="true" /> Działalność zakończona{client.gus_dane?.data_zakonczenia ? ` ${fmtDzien(client.gus_dane.data_zakonczenia, true)}` : ''} (GUS)
+					</span>
+				{:else if client.gus_wynik === 'zly_nip'}
+					<span class="flex items-center gap-1.5 text-warn font-semibold" title="NIP nie przechodzi kontroli sumy — sprawdź go w danych klienta"><ShieldAlert size={14} aria-hidden="true" /> Błędny NIP</span>
+				{/if}
 				{#if client.nip}<span class="font-mono text-xs">NIP {client.nip}</span>{/if}
 				{#if client.krs}<span class="font-mono text-xs">KRS {client.krs}</span>{/if}
 				{#if client.pesel}<span class="font-mono text-xs">PESEL {client.pesel}</span>{/if}
