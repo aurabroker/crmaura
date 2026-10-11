@@ -534,6 +534,38 @@ crmaura/
 
 ## Roadmap SaaS
 
+### Zaplanowane zadania (ustalone z właścicielem)
+
+**SAAS Admin jako osobna część aplikacji — `/saas`** (zaplanowane 2026-10-11, do realizacji później)
+
+- [ ] Etap 1: wydzielenie panelu pod `/saas` z własnym układem i menu (design B), wejście tylko dla `ADMIN GOD`
+  (dostęp nadal pilnuje serwer — `/api/saas-admin/*` sprawdza rolę); przeniesienie obecnych funkcji: firmy
+  (moduły, klucz Resend, nadawca, webhook statusu dostarczenia, użytkownicy) i synchronizacja BEAUTY;
+  przekierowanie ze starego `/saas-admin`
+- [ ] Etap 1: monitor zadań automatycznych — ostatnie uruchomienia przypomnień o płatnościach i odnowień,
+  liczba wysłanych e-maili, błędy
+- [ ] Etap 2: biblioteka ubezpieczycieli wspólna dla wszystkich firm (pełna nazwa, skrót, NIP, REGON, KRS, adres,
+  rodzaj, logo, warianty nazw z PDF i not prowizyjnych); firmy zachowują własne wpisy `crm_insurers` (polisy,
+  oddziały, opiekunowie, stawki), wpis dostaje tylko powiązanie z biblioteką; dodawanie TU w firmie przez wybór
+  z biblioteki; dopasowanie importu PDF i not po NIP / wariancie nazwy
+- [ ] Etap 2: migracja — propozycja połączenia obecnych wpisów TU firm (33 wpisy → ok. 17 towarzystw)
+  do akceptacji przed zapisem
+- [ ] Etap 3: biblioteka OWU w R2 (wspólna, do dołączania do polis i e-maili), domyślne szablony e-maili,
+  dziennik zmian ustawień firm
+- [ ] Później: osobna subdomena panelu z Cloudflare Access (dodatkowe logowanie / dostęp z wybranych adresów)
+
+**Odłożone**
+
+- [ ] Klucz Resend i nadawca e-maili dla Aura Consulting (decyzja 2026-10-11: na razie nie robimy) — do tego
+  czasu firma nie wysyła e-maili do klientów
+- [ ] SMS do klientów przez SMSAPI
+
+**Pozostałe ekrany do przebudowy w designie B**
+
+- [ ] Prospekty (lejek i karta prospektu), Kalendarz, Szkody, Prowizje, Finanse
+- [ ] Formularze dodawania i edycji polisy oraz klienta
+- [ ] Ustawienia (pasek zakładek wychodzi poza ekran), Gwarancje, Pojazdy, APK, Kosz, Raport KNF
+
 ### Etap 1 — Rejestracja samoobsługowa
 
 - [ ] Publiczna strona marketingowa / landing page
@@ -582,4 +614,4 @@ crmaura/
 
 ---
 
-*Dokumentacja aktualna na dzień 2026-06-03*
+*Dokumentacja aktualna na dzień 2026-06-03; zaplanowane zadania — 2026-10-11*
