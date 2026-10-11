@@ -7,8 +7,13 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, Shield, X, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, Shield, X, ChevronLeft, ChevronRight, UserRound } from 'lucide-svelte';
 	import type { CrmTask } from '$lib/types/database';
+	import { fmtDzien } from '$lib/utils';
+	import {
+		ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania,
+		stanMaila, type MailKampanii, type Zgloszenie
+	} from '$lib/sprzedaz';
 
 	type Prospect = {
 		id: string;
@@ -37,6 +42,13 @@
 		ubez_inne_opis: string | null;
 		created_at: string;
 		crm_profiles?: { imie_nazwisko: string } | null;
+		klient_id: string | null;
+		zainteresowania: string[] | null;
+		przychod: string | null;
+		zrodlo: string | null;
+		data_zgloszenia: string | null;
+		liczba_zgloszen: number | null;
+		crm_clients?: { nazwa: string; nazwa_skrocona: string | null; nip: string | null; email: string | null; telefon: string | null; ulica: string | null } | null;
 	};
 
 	type Activity = {
@@ -68,7 +80,15 @@
 	let fNotatki = $state('');
 	let fZatrudnienie = $state<number | ''>('');
 	let fStatus = $state('nowy');
+	let fZainteresowania = $state<string[]>([]);
+	let fPrzychod = $state('');
 	let saving = $state(false);
+
+	// Zgłoszenia z formularza i maile kampanii (BEAUTY) firmy tego leada.
+	let zgloszenia = $state<Zgloszenie[]>([]);
+	let maileKampanii = $state<MailKampanii[]>([]);
+	const klient = $derived(prospect?.crm_clients ?? null);
+	const nazwaLeada = $derived(klient?.nazwa_skrocona ?? klient?.nazwa ?? prospect?.nazwa ?? '');
 
 	const statusLabels: Record<string, string> = {
 		'nowy': 'Nowy', 'w_kontakcie': 'W kontakcie',
@@ -96,10 +116,11 @@
 	async function load() {
 		loading = true;
 		const { data: p } = await sb.from('crm_prospects')
-			.select('*, crm_profiles(imie_nazwisko)')
+			.select('*, crm_profiles(imie_nazwisko), crm_clients(nazwa, nazwa_skrocona, nip, email, telefon, ulica)')
 			.eq('id', prospectId)
 			.single();
 		prospect = p as Prospect | null;
+		void wczytajZgloszeniaIMaile();
 		syncUbezFromProspect();
 
 		const { data: acts } = await sb.from('crm_prospect_activities')
@@ -143,6 +164,32 @@
 		else if (e.key === 'ArrowRight' && nextId) { e.preventDefault(); goToProspect(nextId); }
 	}
 
+	async function wczytajZgloszeniaIMaile() {
+		const lead = prospect;
+		if (!lead) return;
+		const [z, m] = await Promise.all([
+			sb.from('crm_zgloszenia')
+				.select('id, klient_id, prospect_id, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at')
+				.or(lead.klient_id ? `prospect_id.eq.${lead.id},klient_id.eq.${lead.klient_id}` : `prospect_id.eq.${lead.id}`)
+				.order('zgloszono_at', { ascending: false })
+				.limit(20),
+			lead.klient_id
+				? sb.from('crm_kampanie_maile')
+					.select('id, kampania, kod, temat, adres, status, wyslano_at, dostarczono_at, otwarto_at, kliknieto_at, odbito_at')
+					.eq('klient_id', lead.klient_id)
+					.order('wyslano_at', { ascending: false })
+					.limit(20)
+				: Promise.resolve({ data: [] })
+		]);
+		if (prospect?.id !== lead.id) return;
+		zgloszenia = (z.data ?? []) as Zgloszenie[];
+		maileKampanii = (m.data ?? []) as MailKampanii[];
+	}
+
+	function przelaczZainteresowanie(k: string) {
+		fZainteresowania = fZainteresowania.includes(k) ? fZainteresowania.filter((x) => x !== k) : [...fZainteresowania, k];
+	}
+
 	async function addActivity() {
 		if (!newText.trim() || !prospect) return;
 		sending = true;
@@ -179,35 +226,52 @@
 		fBranza = prospect.branza ?? ''; fNotatki = prospect.notatki ?? '';
 		fZatrudnienie = prospect.zatrudnienie ?? '';
 		fStatus = prospect.status;
+		fZainteresowania = [...(prospect.zainteresowania ?? [])];
+		fPrzychod = prospect.przychod ?? '';
 		editingProspect = true;
 	}
 
 	async function saveEdit() {
-		if (!prospect || !fNazwa.trim()) return;
+		if (!prospect || (!prospect.klient_id && !fNazwa.trim())) return;
 		saving = true;
-		await sb.from('crm_prospects').update({
-			nazwa: fNazwa.trim(), nip: fNip.trim() || null, adres: fAdres.trim() || null,
-			telefon: fTelefon.trim() || null, email: fEmail.trim() || null,
+		const wspolne = {
 			branza: fBranza.trim() || null, notatki: fNotatki.trim() || null,
 			zatrudnienie: fZatrudnienie !== '' ? Number(fZatrudnienie) : null,
-			status: fStatus
+			status: fStatus,
+			zainteresowania: posortujZainteresowania(fZainteresowania),
+			przychod: fPrzychod.trim() || null
+		};
+		// Lead powiązany z klientem: dane firmy edytuje się w kartotece klienta.
+		await sb.from('crm_prospects').update(prospect.klient_id ? wspolne : {
+			...wspolne,
+			nazwa: fNazwa.trim(), nip: fNip.trim() || null, adres: fAdres.trim() || null,
+			telefon: fTelefon.trim() || null, email: fEmail.trim() || null
 		}).eq('id', prospect.id);
 		saving = false;
 		editingProspect = false;
 		await load();
 	}
 
+	// Lead spoza kartoteki → klient (albo powiązanie z istniejącym klientem o tym NIP). Etap się nie zmienia:
+	// lead zamknie się jako „Wygrany” sam, gdy klient dostanie polisę.
 	async function convertToClient() {
 		if (!prospect) return;
-		if (!confirm(`Przenieść "${prospect.nazwa}" do Klientów?`)) return;
-		const { error } = await sb.from('crm_clients').insert([{
-			tenant_id: appState.profile!.tenant_id,
-			opiekun_id: appState.profile!.id,
-			nazwa: prospect.nazwa, nip: prospect.nip, ulica: prospect.adres
-		}]);
-		if (error) { alert('Błąd: ' + error.message); return; }
-		await sb.from('crm_prospects').update({ status: 'wygrany' }).eq('id', prospect.id);
-		goto('/prospects');
+		if (prospect.klient_id) { goto(`/clients/${prospect.klient_id}`); return; }
+		const nip = (prospect.nip ?? '').replace(/\D/g, '');
+		let klientId = nip.length === 10 ? appState.clients.find((c) => (c.nip ?? '').replace(/\D/g, '') === nip)?.id ?? null : null;
+		if (!klientId) {
+			if (!(await askConfirm({ title: 'Dodać do Klientów?', message: `„${prospect.nazwa}” trafi do kartoteki klientów. Lead zostaje w Sprzedaży do pierwszej polisy.`, confirmLabel: 'Dodaj', danger: false }))) return;
+			const { data, error } = await sb.from('crm_clients').insert([{
+				tenant_id: appState.profile!.tenant_id,
+				opiekun_id: prospect.broker_id ?? appState.profile!.id,
+				typ: 'firma',
+				nazwa: prospect.nazwa, nip: prospect.nip, ulica: prospect.adres, email: prospect.email, telefon: prospect.telefon
+			}] as never).select('id').single();
+			if (error || !data) { alert('Błąd: ' + (error?.message ?? 'nie udało się dodać klienta')); return; }
+			klientId = (data as { id: string }).id;
+		}
+		await sb.from('crm_prospects').update({ klient_id: klientId }).eq('id', prospect.id);
+		await load();
 	}
 
 	const typLabels = { notatka: 'Notatka', komentarz: 'Komentarz', wiadomosc: 'Wiadomość' };
@@ -420,7 +484,7 @@
 
 <div class="mb-5 flex items-center justify-between gap-3 flex-wrap">
 	<button onclick={() => goto('/prospects')} class="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors">
-		<ArrowLeft size={15} /> Powrót do Prospects
+		<ArrowLeft size={15} /> Powrót do Leadów
 	</button>
 	{#if navIndex >= 0 && navIds.length > 1}
 		<div class="flex items-center gap-1.5">
@@ -461,15 +525,33 @@
 		{#if editingProspect}
 			<div class="space-y-3">
 				<div class="grid grid-cols-2 gap-3">
+					{#if prospect.klient_id}
+						<div class="col-span-2 rounded-lg bg-surface-2 px-3 py-2.5 text-[13px]">
+							<p class="font-semibold text-ink">{nazwaLeada}</p>
+							<p class="text-xs text-ink-3">Dane firmy edytujesz w kartotece klienta — <a href="/clients/{prospect.klient_id}" class="font-semibold text-accent-text hover:underline">Panel 360°</a>.</p>
+						</div>
+					{:else}
+						<div class="col-span-2">
+							<label class={labelCls}>Nazwa *</label>
+							<input bind:value={fNazwa} class={inputCls} />
+						</div>
+						<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
+						<div class="col-span-2"><label class={labelCls}>Adres</label><input bind:value={fAdres} class={inputCls} /></div>
+						<div><label class={labelCls}>Telefon</label><input bind:value={fTelefon} class={inputCls} /></div>
+						<div><label class={labelCls}>Email</label><input bind:value={fEmail} type="email" class={inputCls} /></div>
+					{/if}
 					<div class="col-span-2">
-						<label class={labelCls}>Nazwa *</label>
-						<input bind:value={fNazwa} class={inputCls} />
+						<span class={labelCls}>Zainteresowanie</span>
+						<div class="flex flex-wrap gap-1.5">
+							{#each ZAINTERESOWANIA as k}
+								{@const on = fZainteresowania.includes(k)}
+								<button type="button" aria-pressed={on} onclick={() => przelaczZainteresowanie(k)} title={OPIS_ZAINTERESOWANIA[k]}
+									class="h-7 px-2.5 rounded-full text-xs font-medium border {on ? 'bg-accent-soft border-accent text-accent-text' : 'bg-white border-line text-ink-2 hover:bg-surface-2'}">{ETYKIETA_ZAINTERESOWANIA[k]}</button>
+							{/each}
+						</div>
 					</div>
-					<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
+					<div><label class={labelCls}>Przychód roczny</label><input bind:value={fPrzychod} placeholder="np. do 250 000 zł" class={inputCls} /></div>
 					<div><label class={labelCls}>Branża</label><input bind:value={fBranza} class={inputCls} /></div>
-					<div class="col-span-2"><label class={labelCls}>Adres</label><input bind:value={fAdres} class={inputCls} /></div>
-					<div><label class={labelCls}>Telefon</label><input bind:value={fTelefon} class={inputCls} /></div>
-					<div><label class={labelCls}>Email</label><input bind:value={fEmail} type="email" class={inputCls} /></div>
 					<div><label class={labelCls}>Zatrudnienie (os.)</label><input type="number" bind:value={fZatrudnienie} class={inputCls} placeholder="liczba osób" min="0" /></div>
 					<div>
 						<label class={labelCls}>Status</label>
@@ -496,14 +578,28 @@
 			<div class="flex items-start justify-between gap-4">
 				<div class="flex-1 min-w-0">
 					<div class="flex items-center gap-3 flex-wrap mb-2">
-						<h1 class="text-xl font-bold text-slate-900 leading-tight">{prospect.nazwa}</h1>
+						<h1 class="text-xl font-bold text-slate-900 leading-tight">{nazwaLeada}</h1>
 						<Badge variant={statusVariant(prospect.status)}>{statusLabels[prospect.status] ?? prospect.status}</Badge>
 					</div>
+					{#if (prospect.zainteresowania ?? []).length || prospect.przychod || prospect.klient_id}
+						<div class="flex flex-wrap items-center gap-1.5 text-[13px]">
+							{#each posortujZainteresowania(prospect.zainteresowania) as k}
+								<span title={OPIS_ZAINTERESOWANIA[k]} class="h-[22px] leading-[22px] px-2 rounded-full bg-accent-soft text-accent-text text-xs font-semibold">{ETYKIETA_ZAINTERESOWANIA[k] ?? k}</span>
+							{/each}
+							{#if prospect.przychod}<span class="text-ink-2">przychód {prospect.przychod}</span>{/if}
+							{#if (prospect.liczba_zgloszen ?? 0) >= 2}<span class="h-[22px] leading-[22px] px-2 rounded-full bg-warn-soft text-warn text-xs font-semibold">{prospect.liczba_zgloszen}× zgłoszenie</span>{/if}
+						</div>
+						<p class="mt-1.5 text-xs text-ink-3">
+							{#if prospect.klient_id}Firma z kartoteki — <a href="/clients/{prospect.klient_id}" class="font-semibold text-accent-text hover:underline">Panel 360° klienta</a>{/if}
+							{#if prospect.zrodlo}{prospect.klient_id ? ' · ' : ''}źródło: {ZRODLO_LEADA[prospect.zrodlo] ?? prospect.zrodlo}{/if}
+							{#if prospect.data_zgloszenia} · pierwsze zgłoszenie {fmtDzien(prospect.data_zgloszenia.slice(0, 10), true)}{/if}
+						</p>
+					{/if}
 					<div class="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm mt-3">
-						{#if prospect.nip}
+						{#if klient?.nip ?? prospect.nip}
 							<div class="flex items-center gap-2 text-slate-600">
 								<Tag size={13} class="text-slate-400 shrink-0" />
-								<span>NIP: <strong>{prospect.nip}</strong></span>
+								<span>NIP: <strong>{klient?.nip ?? prospect.nip}</strong></span>
 							</div>
 						{/if}
 						{#if prospect.branza}
@@ -518,22 +614,22 @@
 								<span>Zatrudnienie: <strong>{zatrud} os.</strong></span>
 							</div>
 						{/if}
-						{#if prospect.telefon}
+						{#if klient?.telefon ?? prospect.telefon}
 							<div class="flex items-center gap-2 text-slate-600">
 								<Phone size={13} class="text-slate-400 shrink-0" />
-								<span>{prospect.telefon}</span>
+								<a href="tel:{klient?.telefon ?? prospect.telefon}" class="hover:underline">{klient?.telefon ?? prospect.telefon}</a>
 							</div>
 						{/if}
-						{#if prospect.email}
+						{#if klient?.email ?? prospect.email}
 							<div class="flex items-center gap-2 text-slate-600">
 								<Mail size={13} class="text-slate-400 shrink-0" />
-								<a href="mailto:{prospect.email}" class="text-blue-600 hover:underline truncate">{prospect.email}</a>
+								<a href="mailto:{klient?.email ?? prospect.email}" class="text-blue-600 hover:underline truncate">{klient?.email ?? prospect.email}</a>
 							</div>
 						{/if}
-						{#if prospect.adres}
+						{#if klient?.ulica ?? prospect.adres}
 							<div class="flex items-center gap-2 text-slate-600 col-span-2">
 								<MapPin size={13} class="text-slate-400 shrink-0" />
-								<span>{prospect.adres}</span>
+								<span>{klient?.ulica ?? prospect.adres}</span>
 							</div>
 						{/if}
 						{#if www}
@@ -548,9 +644,15 @@
 					<button onclick={startEdit} title="Edytuj" class="p-2 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
 						<Pencil size={15} />
 					</button>
-					<button onclick={convertToClient} title="Konwertuj do Klienta" class="p-2 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
-						<UserPlus size={15} />
-					</button>
+					{#if prospect.klient_id}
+						<a href="/clients/{prospect.klient_id}" title="Panel 360° klienta" aria-label="Panel 360° klienta" class="p-2 rounded-lg text-ink-3 hover:text-accent-text hover:bg-accent-soft transition-colors">
+							<UserRound size={15} />
+						</a>
+					{:else}
+						<button onclick={convertToClient} title="Dodaj do Klientów" class="p-2 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
+							<UserPlus size={15} />
+						</button>
+					{/if}
 				</div>
 			</div>
 		{/if}
@@ -591,6 +693,49 @@
 
 	</div>
 	<!-- /górny rząd -->
+
+	{#if zgloszenia.length || maileKampanii.length}
+		<section aria-label="Zgłoszenia i maile kampanii" class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
+			<div class="bg-white border border-line rounded-xl px-5 py-4">
+				<h2 class="text-sm font-semibold text-ink mb-2">Zgłoszenia z formularza <span class="font-normal text-ink-3">{zgloszenia.length}</span></h2>
+				{#if zgloszenia.length === 0}
+					<p class="text-[13px] text-ink-3">{prospect.data_zgloszenia ? `Zgłoszenie z ${fmtDzien(prospect.data_zgloszenia.slice(0, 10), true)} (z BEAUTY) — kolejne pojawią się tutaj.` : 'Brak zgłoszeń z formularza.'}</p>
+				{:else}
+					<ul>
+						{#each zgloszenia as z (z.id)}
+							<li class="py-2 border-t border-line-soft first:border-t-0 text-[13px]">
+								<div class="flex flex-wrap items-center gap-1.5">
+									<span class="font-medium text-ink">{fmtDzien(z.zgloszono_at.slice(0, 10), true)}</span>
+									{#if z.ponowne && !z.historyczne}<span class="h-5 leading-5 px-1.5 rounded-full bg-warn-soft text-warn text-[11px] font-semibold">ponowne</span>{/if}
+									{#each posortujZainteresowania(z.zainteresowania) as k}
+										<span title={OPIS_ZAINTERESOWANIA[k]} class="h-5 leading-5 px-1.5 rounded-full bg-accent-soft text-accent-text text-[11px] font-semibold">{ETYKIETA_ZAINTERESOWANIA[k] ?? k}</span>
+									{/each}
+								</div>
+								<p class="text-xs text-ink-3">{[z.produkt, z.przychod ? `przychód ${z.przychod}` : null, z.kontakt, z.telefon].filter(Boolean).join(' · ')}</p>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+			<div class="bg-white border border-line rounded-xl px-5 py-4">
+				<h2 class="text-sm font-semibold text-ink mb-2">Maile kampanii <span class="font-normal text-ink-3">{maileKampanii.length}</span></h2>
+				{#if maileKampanii.length === 0}
+					<p class="text-[13px] text-ink-3">{prospect.klient_id ? 'Do tej firmy nie wysłano jeszcze maili kampanii.' : 'Maile kampanii widać dla firm z kartoteki.'}</p>
+				{:else}
+					<ul>
+						{#each maileKampanii as m (m.id)}
+							{@const st = stanMaila(m)}
+							<li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-2 border-t border-line-soft first:border-t-0 text-[13px]">
+								<span class="flex-1 min-w-0 truncate text-ink" title={m.temat ?? undefined}>{nazwaKampanii(m.kampania)}</span>
+								<span class="text-xs text-ink-3 whitespace-nowrap">{m.wyslano_at ? fmtDzien(m.wyslano_at.slice(0, 10), true) : ''}</span>
+								<span class="h-5 leading-5 px-1.5 rounded-full text-[11px] font-semibold {st.cls}">{st.tekst}</span>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</div>
+		</section>
+	{/if}
 
 	<!-- Tasks + Aktywność (side by side) -->
 	<div class="grid grid-cols-2 gap-5">

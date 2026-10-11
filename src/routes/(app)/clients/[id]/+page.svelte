@@ -7,6 +7,7 @@
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
+	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
@@ -397,6 +398,51 @@
 			wczytajEmaile();
 		}
 	});
+
+	// ── Sprzedaż: lead klienta, zgłoszenia z formularza i maile kampanii (BEAUTY) ──
+	type LeadKlienta = { id: string; status: string; zainteresowania: string[] | null; przychod: string | null; zrodlo: string | null; data_zgloszenia: string | null; ostatnie_zgloszenie_at: string | null; liczba_zgloszen: number | null };
+	let lead = $state<LeadKlienta | null>(null);
+	let zgloszeniaKlienta = $state<Zgloszenie[]>([]);
+	let maileKampanii = $state<MailKampanii[]>([]);
+	let sprzedazDla = '';
+	let dodawanieLeada = $state(false);
+	async function wczytajSprzedaz() {
+		const dla = clientId ?? '';
+		const [l, z, m] = await Promise.all([
+			sb.from('crm_prospects').select('id, status, zainteresowania, przychod, zrodlo, data_zgloszenia, ostatnie_zgloszenie_at, liczba_zgloszen').eq('klient_id', dla).maybeSingle(),
+			sb.from('crm_zgloszenia').select('id, klient_id, prospect_id, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at').eq('klient_id', dla).order('zgloszono_at', { ascending: false }).limit(30),
+			sb.from('crm_kampanie_maile').select('id, kampania, kod, temat, adres, status, wyslano_at, dostarczono_at, otwarto_at, kliknieto_at, odbito_at').eq('klient_id', dla).order('wyslano_at', { ascending: false }).limit(100)
+		]);
+		if (dla !== clientId) return;
+		lead = (l.data ?? null) as LeadKlienta | null;
+		zgloszeniaKlienta = (z.data ?? []) as Zgloszenie[];
+		maileKampanii = (m.data ?? []) as MailKampanii[];
+	}
+	$effect(() => {
+		if (activeTab === 'przeglad' && clientId && sprzedazDla !== clientId) {
+			sprzedazDla = clientId;
+			lead = null; zgloszeniaKlienta = []; maileKampanii = [];
+			untrack(() => wczytajSprzedaz());
+		}
+	});
+	const maileStat = $derived({
+		wyslane: maileKampanii.length,
+		otwarte: maileKampanii.filter((m) => m.otwarto_at).length,
+		klikniete: maileKampanii.filter((m) => m.kliknieto_at).length,
+		odbite: maileKampanii.filter((m) => m.odbito_at).length
+	});
+	async function dodajDoSprzedazy() {
+		if (!client || dodawanieLeada) return;
+		dodawanieLeada = true;
+		const { error } = await sb.from('crm_prospects').insert([{
+			tenant_id: client.tenant_id, klient_id: client.id, nazwa: client.nazwa, nip: client.nip, adres: client.ulica,
+			email: client.email, telefon: client.telefon, status: 'nowy', zrodlo: 'kartoteka', broker_id: client.opiekun_id
+		}] as never);
+		dodawanieLeada = false;
+		if (error) { alert('Błąd: ' + error.message); return; }
+		appState.prospectsLoaded = false;
+		await wczytajSprzedaz();
+	}
 
 	// lazy-load przy wejściu w zakładkę (oszczędza limity API)
 	$effect(() => {
@@ -940,6 +986,16 @@
 				dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}${e.zalaczniki?.length ? ` (załączniki: ${e.zalaczniki.length})` : ''}${problem ? ` — nie doszedł (${DOSTAWA[e.dostawa!].tekst.toLowerCase()})` : ''}`, kto: autorEmaila(e) ?? RODZAJ_EMAILA[e.rodzaj] ?? null, ton: problem ? 'danger' : 'accent' });
 			}
 		}
+		for (const z of zgloszeniaKlienta) {
+			const co = posortujZainteresowania(z.zainteresowania).map((k) => ETYKIETA_ZAINTERESOWANIA[k] ?? k).join(', ') || z.produkt || 'oferta';
+			const ponowne = z.ponowne && !z.historyczne;
+			dodaj({ klucz: `zg-${z.id}`, at: z.zgloszono_at, tekst: `${ponowne ? 'Ponowne zgłoszenie' : 'Zgłoszenie'} z formularza: ${co}${z.przychod ? ` (przychód ${z.przychod})` : ''}`, kto: z.kontakt ?? 'Formularz', ton: ponowne ? 'danger' : 'accent', href: lead ? `/prospects/${lead.id}` : undefined });
+		}
+		for (const m of maileKampanii) {
+			if (!m.wyslano_at) continue;
+			const st = stanMaila(m);
+			dodaj({ klucz: `mk-${m.id}`, at: m.wyslano_at, tekst: `Mail kampanii „${nazwaKampanii(m.kampania)}” — ${st.tekst}`, kto: 'Aura HUB', ton: m.odbito_at ? 'danger' : m.kliknieto_at ? 'accent' : 'neutral' });
+		}
 		for (const w of audyt) {
 			const tekst = opisAudytu(w);
 			if (tekst) dodaj({ klucz: `l-${w.id}`, at: w.created_at, tekst, kto: w.user_name ?? w.user_email, ton: 'neutral' });
@@ -1209,6 +1265,47 @@
 			</div>
 
 			<aside class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
+				<!-- Sprzedaż -->
+				{#if lead || zgloszeniaKlienta.length || maileKampanii.length || activePolicies.length === 0}
+					<section aria-labelledby="przeglad-sprzedaz" class="bg-white border border-line rounded-xl px-4 py-3.5">
+						<div class="flex items-center gap-2 mb-2">
+							<h2 id="przeglad-sprzedaz" class="text-[15px] font-semibold text-ink">Sprzedaż</h2>
+							{#if lead}
+								<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {KLASA_ETAPU[lead.status] ?? 'bg-surface-2 text-ink-2'}">{ETYKIETA_ETAPU[lead.status] ?? lead.status}</span>
+								<a href="/prospects/{lead.id}" class="ml-auto h-7 px-1.5 inline-flex items-center text-[13px] font-semibold text-accent-text hover:underline">Lead →</a>
+							{/if}
+						</div>
+						{#if lead}
+							{#if (lead.zainteresowania ?? []).length}
+								<div class="flex flex-wrap gap-1.5 mb-2">
+									{#each posortujZainteresowania(lead.zainteresowania) as k}
+										<span title={OPIS_ZAINTERESOWANIA[k]} class="h-[22px] leading-[22px] px-2 rounded-full bg-accent-soft text-accent-text text-xs font-semibold">{ETYKIETA_ZAINTERESOWANIA[k] ?? k}</span>
+									{/each}
+								</div>
+							{/if}
+							<dl class="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+								{#if lead.przychod}<dt class="text-ink-3">Przychód</dt><dd class="text-ink">{lead.przychod}</dd>{/if}
+								<dt class="text-ink-3">Zgłoszenia</dt>
+								<dd class="text-ink">
+									{#if zgloszeniaKlienta.length}
+										{zgloszeniaKlienta.length}× · ostatnie {fmtDzien(zgloszeniaKlienta[0].zgloszono_at.slice(0, 10), true)}
+									{:else if lead.data_zgloszenia}
+										{fmtDzien(lead.data_zgloszenia.slice(0, 10), true)}
+									{:else}<span class="text-ink-3">—</span>{/if}
+								</dd>
+								{#if maileStat.wyslane}
+									<dt class="text-ink-3">Maile kampanii</dt>
+									<dd class="text-ink">{`${maileStat.wyslane} · otwarte ${maileStat.otwarte}`}{#if maileStat.klikniete}{' · '}<span class="font-semibold text-accent-text">kliknięte {maileStat.klikniete}</span>{/if}{#if maileStat.odbite}{' · '}<span class="font-semibold text-danger">odbite {maileStat.odbite}</span>{/if}</dd>
+								{/if}
+								{#if lead.zrodlo}<dt class="text-ink-3">Źródło</dt><dd class="text-ink-2">{ZRODLO_LEADA[lead.zrodlo] ?? lead.zrodlo}</dd>{/if}
+							</dl>
+						{:else}
+							<p class="text-[13px] text-ink-3">Klient nie ma aktywnych polis ani leada w Sprzedaży.</p>
+							<button onclick={dodajDoSprzedazy} disabled={dodawanieLeada} class="mt-2 h-8 px-3 rounded-lg border border-line bg-white text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-60">{dodawanieLeada ? 'Dodaję…' : 'Dodaj do Sprzedaży'}</button>
+						{/if}
+					</section>
+				{/if}
+
 				<!-- Kontakty -->
 				<section aria-labelledby="przeglad-kontakty" class="bg-white border border-line rounded-xl px-4 py-3.5">
 					<div class="flex items-center mb-2">

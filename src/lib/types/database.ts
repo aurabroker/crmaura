@@ -383,6 +383,17 @@ export interface Prospect {
 	ubez_inne_opis?: string | null;
 	created_at?: string;
 	crm_profiles?: { imie_nazwisko: string | null } | null;
+	/** Lead firmy z kartoteki — dane firmy (nazwa, NIP, kontakt) bierzemy z klienta. */
+	klient_id?: string | null;
+	/** Kody: oc, tax, utrata_dochodu, zdrowie, grupowe, konsultacja, inne ($lib/sprzedaz). */
+	zainteresowania?: string[];
+	przychod?: string | null;
+	zrodlo?: string | null;
+	data_zgloszenia?: string | null;
+	ostatnie_zgloszenie_at?: string | null;
+	liczba_zgloszen?: number;
+	status_zmieniony_at?: string | null;
+	crm_clients?: { nazwa: string; nazwa_skrocona: string | null; nip: string | null; email: string | null; telefon: string | null; opiekun_id: string | null } | null;
 }
 
 export interface CommissionSettlement {

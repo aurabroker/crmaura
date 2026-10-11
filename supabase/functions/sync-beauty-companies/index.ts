@@ -11,6 +11,9 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 //   Gdy w CRM jest już klient z tym NIP, nowy rekord NIE powstaje: rekordem bazowym jest klient z polisą
 //   (a przy remisie — najstarszy). Jeśli bazowy nie ma jeszcze beauty_id, dostaje identyfikator tej firmy;
 //   jeśli ma inny, firma z BEAUTY jest duplikatem po tamtej stronie i jest pomijana.
+// - Leady (od 2026-10-12): zainteresowania z formularza (ubezpieczenie, zainteresowania), przychód i data
+//   zgłoszenia trafiają do leada klienta (public.crm_beauty_leady); firma bez polisy i bez leada dostaje lead.
+// - Maile kampanii (email_messages) trafiają do crm_kampanie_maile ze statusem dostarczenia, otwarcia i kliknięcia.
 // - Treść { "proba": true } liczy, co by się zmieniło, bez zapisu.
 // Wcześniejsza wersja robiła upsert całych rekordów po beauty_id: odtwarzała usunięte duplikaty
 // i co rano przywracała dane z BEAUTY (w tym RODO = NIE).
@@ -25,7 +28,9 @@ const AURA_EXPERT_TENANT_ID = '9dabd3a0-f1ee-43bc-92a1-6137ac814100';
 const BEAUTY_URL = 'https://dhuvykwecsxgchzxufxw.supabase.co';
 const PAGE_SIZE = 1000;
 
-type Firma = { id: number | string; company: string | null; city: string | null; state: string | null; nip: string | null; regon: string | null; rodo: string | null; email: string | null; phone: string | null; contact: string | null; title: string | null };
+type Firma = { id: number | string; company: string | null; city: string | null; state: string | null; nip: string | null; regon: string | null; rodo: string | null; email: string | null; phone: string | null; contact: string | null; title: string | null; ubezpieczenie: string | null; zainteresowania: string | null; przychod: string | null; created_at: string | null };
+type Mail = { id: string; company_id: number | null; category_id: string | null; to_email: string | null; status: string | null; sent_at: string | null; delivered_at: string | null; opened_at: string | null; clicked_at: string | null; bounced_at: string | null; created_at: string | null };
+type Kategoria = { id: string; code: string | null; name: string | null; subject: string | null };
 type Klient = { id: string; beauty_id: number | string | null; nazwa: string | null; ulica: string | null; nip: string | null; regon: string | null; email: string | null; telefon: string | null; rodo_zgoda: boolean | null; created_at: string };
 
 const json = (body: unknown, status = 200) =>
@@ -95,7 +100,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const firmy = await wszystkie<Firma>(
-      (o) => fetch(`${BEAUTY_URL}/rest/v1/crm_companies?select=id,company,city,state,nip,regon,rodo,email,phone,contact,title&order=id.asc&limit=${PAGE_SIZE}&offset=${o}`, {
+      (o) => fetch(`${BEAUTY_URL}/rest/v1/crm_companies?select=id,company,city,state,nip,regon,rodo,email,phone,contact,title,ubezpieczenie,zainteresowania,przychod,created_at&order=id.asc&limit=${PAGE_SIZE}&offset=${o}`, {
         headers: { apikey: BEAUTY_KEY, Authorization: `Bearer ${BEAUTY_KEY}` },
       }),
       'BEAUTY',
@@ -149,6 +154,8 @@ Deno.serve(async (req: Request) => {
     const nowe: Record<string, unknown>[] = [];
     const zmiany: { id: string; z: Record<string, unknown> }[] = [];
     const klientDlaFirmy = new Map<string, string>(); // beauty_id → id klienta (do kontaktów)
+    // Także duplikaty po stronie BEAUTY (ten sam NIP) → klient bazowy: ich zainteresowania i maile należą do tej firmy.
+    const klientFirmyLubDuplikatu = new Map<string, string>();
     const licznik = { firm: firmy.length, nowi: 0, polaczeni: 0, uzupelnieni: 0, pominiete_duplikaty: 0 };
 
     for (const f of firmy) {
@@ -164,6 +171,7 @@ Deno.serve(async (req: Request) => {
           const b = bazowy(kandydaci);
           if (b.beauty_id != null) {
             licznik.pominiete_duplikaty++;
+            if (!b.id.startsWith('nowy:')) klientFirmyLubDuplikatu.set(bid, b.id);
             continue;
           }
           const z = { beauty_id: f.id, ...uzupelnienie(b, f) };
@@ -242,8 +250,81 @@ Deno.serve(async (req: Request) => {
       if (!res.ok) console.error(`Kontakty ${i}: ${res.status} ${(await res.text()).slice(0, 300)}`);
     }
 
+    for (const [bid, id] of klientDlaFirmy) klientFirmyLubDuplikatu.set(bid, id);
+
+    // Leady: zainteresowania, przychód i data zgłoszenia z formularza (funkcja w bazie uzupełnia tylko braki).
+    const leady = { nowe_leady: 0, uzupelnione: 0 };
+    const wierszeLeadow = firmy
+      .filter((f) => klientFirmyLubDuplikatu.has(String(f.id)))
+      .map((f) => ({
+        klient_id: klientFirmyLubDuplikatu.get(String(f.id)),
+        ubezpieczenie: f.ubezpieczenie,
+        zainteresowania: f.zainteresowania,
+        przychod: f.przychod,
+        data: f.created_at,
+      }));
+    for (let i = 0; i < wierszeLeadow.length; i += 500) {
+      const res = await aura('rpc/crm_beauty_leady', {
+        method: 'POST',
+        body: JSON.stringify({ p_tenant: AURA_EXPERT_TENANT_ID, p_wiersze: wierszeLeadow.slice(i, i + 500) }),
+      });
+      if (!res.ok) {
+        console.error(`Leady ${i}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+        continue;
+      }
+      const d = (await res.json()) as { nowe_leady?: number; uzupelnione?: number };
+      leady.nowe_leady += d.nowe_leady ?? 0;
+      leady.uzupelnione += d.uzupelnione ?? 0;
+    }
+
+    // Maile kampanii wysłane z BEAUTY (Aura HUB) — z ich statusem; kolejne przebiegi odświeżają otwarcia i kliknięcia.
+    let maile = 0;
+    try {
+      const beauty = (path: string) => fetch(`${BEAUTY_URL}/rest/v1/${path}`, { headers: { apikey: BEAUTY_KEY, Authorization: `Bearer ${BEAUTY_KEY}` } });
+      const kategorie = await wszystkie<Kategoria>((o) => beauty(`email_categories?select=id,code,name,subject&order=id.asc&limit=${PAGE_SIZE}&offset=${o}`), 'BEAUTY kategorie');
+      const kategoria = new Map(kategorie.map((k) => [k.id, k]));
+      const wyslane = await wszystkie<Mail>(
+        (o) => beauty(`email_messages?select=id,company_id,category_id,to_email,status,sent_at,delivered_at,opened_at,clicked_at,bounced_at,created_at&resend_id=not.is.null&order=id.asc&limit=${PAGE_SIZE}&offset=${o}`),
+        'BEAUTY maile',
+      );
+      const wiersze = wyslane
+        .filter((m) => m.company_id != null && klientFirmyLubDuplikatu.has(String(m.company_id)))
+        .map((m) => {
+          const k = m.category_id ? kategoria.get(m.category_id) : undefined;
+          return {
+            tenant_id: AURA_EXPERT_TENANT_ID,
+            klient_id: klientFirmyLubDuplikatu.get(String(m.company_id)),
+            zrodlo: 'beauty',
+            zewn_id: m.id,
+            kampania: k?.name ?? null,
+            kod: k?.code ?? null,
+            temat: k?.subject ?? null,
+            adres: m.to_email,
+            status: m.status,
+            wyslano_at: m.sent_at ?? m.created_at,
+            dostarczono_at: m.delivered_at,
+            otwarto_at: m.opened_at,
+            kliknieto_at: m.clicked_at,
+            odbito_at: m.bounced_at,
+            zaktualizowano_at: new Date().toISOString(),
+          };
+        });
+      for (let i = 0; i < wiersze.length; i += 500) {
+        const res = await aura('crm_kampanie_maile?on_conflict=tenant_id,zrodlo,zewn_id', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(wiersze.slice(i, i + 500)),
+        });
+        if (!res.ok) throw new Error(`Maile ${i}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+        maile += Math.min(500, wiersze.length - i);
+      }
+    } catch (e) {
+      // Maile są dodatkiem — błąd nie przerywa synchronizacji klientów.
+      console.error('Maile kampanii:', (e as Error).message);
+    }
+
     await finishLog('done', licznik.nowi + licznik.polaczeni + licznik.uzupelnieni);
-    return json({ ...licznik, kontakty: kontakty.length });
+    return json({ ...licznik, kontakty: kontakty.length, ...leady, maile });
   } catch (err) {
     const msg = (err as Error)?.message ?? String(err);
     await finishLog('error', 0, msg.slice(0, 500));
