@@ -111,7 +111,10 @@
 		},
 		{
 			nazwa: 'Sprzedaż',
-			pozycje: [{ href: '/prospects', label: 'Leady', icon: Target }]
+			pozycje: [{
+				href: '/prospects', label: 'Leady', icon: Target,
+				licznik: appState.ponowneZgloszenia, ton: 'warn', tytulLicznika: 'ponownych zgłoszeń do obsłużenia'
+			}]
 		},
 		{
 			nazwa: 'Analityka',

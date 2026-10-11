@@ -7,6 +7,7 @@
 	import { page } from '$app/stores';
 	import type { Insurer, Profile, InsurerBranch, InsurerContact, Leasing, VehicleRequest, Policy } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
+	import IntegracjaZgloszen from '$lib/components/IntegracjaZgloszen.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
@@ -375,6 +376,7 @@
 
 {#if activeTab === 'system'}
 <!-- ===================== USTAWIENIA SYSTEMU ===================== -->
+<IntegracjaZgloszen />
 <div class="space-y-4">
 	<p class="text-sm text-slate-500">Towarzystwa ubezpieczeniowe, oddziały i osoby kontaktowe TU</p>
 	<div class="grid grid-cols-2 gap-6">
