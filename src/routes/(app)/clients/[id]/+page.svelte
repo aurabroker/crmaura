@@ -343,7 +343,7 @@
 		spam: { tekst: 'Zgłoszony jako spam', cls: 'bg-danger-soft text-danger', problem: true },
 		blad: { tekst: 'Błąd wysyłki', cls: 'bg-danger-soft text-danger', problem: true }
 	};
-	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', recznie: 'Wysłany z CRM', inne: 'Inne' };
+	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', recznie: 'Wysłany z CRM', polisa: 'Polisa wysłana klientowi', inne: 'Inne' };
 	const autorEmaila = (e: EmailKlienta) => (e.autor_id ? appState.brokers.find((b) => b.id === e.autor_id)?.imie_nazwisko ?? null : null);
 
 	// „Napisz e-mail” (okno z szablonami); szablon i polisa ustawiane np. z przypomnienia o racie.

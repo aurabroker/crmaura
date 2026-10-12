@@ -9,7 +9,8 @@
 	} from '$lib/plikiPolis';
 	import { FileText, Upload, Trash2, ExternalLink } from 'lucide-svelte';
 
-	let { polisaId }: { polisaId: string } = $props();
+	// onzmiana: lista plików po wczytaniu i każdej zmianie (karta polisy pokazuje wtedy np. „Wyślij polisę klientowi”).
+	let { polisaId, onzmiana }: { polisaId: string; onzmiana?: (pliki: PlikPolisy[]) => void } = $props();
 
 	let pliki = $state<PlikPolisy[]>([]);
 	let wczytane = $state(false);
@@ -25,6 +26,7 @@
 		pliki = lista;
 		dostepny = ok;
 		wczytane = true;
+		onzmiana?.(lista);
 	}
 	$effect(() => { void wczytaj(polisaId); });
 
@@ -40,6 +42,7 @@
 		try {
 			const nowy = await wyslijPdfPolisy(polisaId, plik, { rodzaj });
 			pliki = [nowy, ...pliki];
+			onzmiana?.(pliki);
 			ctxToast(`Dodano: ${nowy.nazwa}`);
 		} catch (err) {
 			blad = (err as Error).message;
@@ -59,6 +62,7 @@
 		try {
 			await usunPlikPolisy(p.id);
 			pliki = pliki.filter((x) => x.id !== p.id);
+			onzmiana?.(pliki);
 			ctxToast(`Usunięto: ${p.nazwa}`);
 		} catch (err) {
 			blad = (err as Error).message;
