@@ -9,8 +9,10 @@
 		footer?: import('svelte').Snippet;
 		/** Tryb okienkowy: przeciąganie, zmiana rozmiaru, minimalizacja/maksymalizacja (jak w Windows). */
 		windowed?: boolean;
+		/** Szersze okno (np. podgląd importu z tabelą). */
+		szeroki?: boolean;
 	}
-	let { open, title, onclose, children, footer, windowed = false }: Props = $props();
+	let { open, title, onclose, children, footer, windowed = false, szeroki = false }: Props = $props();
 
 	// ---- Stan okna (tryb windowed) ----
 	let posX = $state(0);
@@ -129,7 +131,7 @@
 			role="dialog"
 			aria-modal="true"
 		>
-			<div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col">
+			<div class="bg-white rounded-xl shadow-2xl w-full {szeroki ? 'max-w-4xl' : 'max-w-2xl'} max-h-[95vh] flex flex-col">
 				<div class="flex items-center justify-between px-5 py-4 border-b border-line">
 					<h2 class="text-base font-semibold text-slate-900">{title}</h2>
 					<button onclick={onclose} class="text-slate-400 hover:text-slate-600 transition-colors">
