@@ -68,6 +68,10 @@
 		// Dane polisy z noty do porównania z CRM (Leadenhall)
 		weryfikacja?: { prowizja_pct?: number | null; przypis?: number | null; liczba_rat?: number | null; data_od?: string | null; data_do?: string | null };
 		rozbieznosci?: string[];
+		// Polisa jest w CRM, ale nie ma raty, na którą można zaksięgować tę pozycję
+		brak_raty?: boolean;
+		// Ile pozycji noty zsumowano w tej pozycji (ta sama rata CRM)
+		scalone?: number;
 	}
 
 	let showImport = $state(false);
@@ -190,6 +194,46 @@
 		return row;
 	}
 
+	// Kilka pozycji noty na jedną ratę CRM (np. składka jednorazowa zapłacona w dwóch częściach): sumujemy je
+	// w jedną pozycję. Wcześniej każda zapisywała się osobno na tę samą ratę i ostatnia nadpisywała poprzednie
+	// (kwota i prowizja z noty ginęły). Pozycja polisy bez raty do rozliczenia trafia na listę „brak raty”.
+	function scalPozycje(rows: UniversalRow[]): UniversalRow[] {
+		const out: UniversalRow[] = [];
+		const poRacie = new Map<string, UniversalRow>();
+		const odlozone: UniversalRow[] = [];
+		const dolacz = (cel: UniversalRow, r: UniversalRow) => {
+			cel.skladka_nota = Math.round((cel.skladka_nota + r.skladka_nota) * 100) / 100;
+			cel.prowizja_nota = Math.round((cel.prowizja_nota + r.prowizja_nota) * 100) / 100;
+			cel.prowizja_crm = Math.round(((cel.prowizja_crm ?? 0) + (r.prowizja_crm ?? 0)) * 100) / 100;
+			cel.prowizja_diff = Math.abs((cel.prowizja_crm ?? 0) - Math.abs(cel.prowizja_nota));
+			if (r.data_oplacenia && (!cel.data_oplacenia || r.data_oplacenia > cel.data_oplacenia)) cel.data_oplacenia = r.data_oplacenia;
+			const rata = appState.payments.find(p => p.id === cel.payment_id);
+			const pelna = !!rata && Math.abs(Number(rata.kwota) - Math.abs(cel.skladka_nota)) < 0.01;
+			if (rata) cel.new_status = pelna ? 'Opłacona' : 'Częściowo opłacona';
+			cel.scalone = (cel.scalone ?? 1) + 1;
+			// Uwaga o różnicy kwoty pojedynczej pozycji przestaje obowiązywać, gdy suma pokrywa ratę
+			cel.rozbieznosci = [...(cel.rozbieznosci ?? []).filter(t => !t.startsWith('łącznie ') && !(pelna && t.startsWith(`rata ${cel.rata_crm} w CRM: `))),
+				`łącznie ${odmiana(cel.scalone, 'pozycja', 'pozycje', 'pozycji')} noty na ratę ${cel.rata_crm ?? ''} w CRM: ${fmtPln(Math.abs(cel.skladka_nota))} zł składki, ${fmtPln(Math.abs(cel.prowizja_nota))} zł prowizji`];
+		};
+		for (const r of rows) {
+			if (r.payment_id && !r.is_negative) {
+				const cel = poRacie.get(r.payment_id);
+				if (cel) { dolacz(cel, r); continue; }
+				poRacie.set(r.payment_id, r);
+			} else if (!r.payment_id && r.policy_id && !r.not_found && !r.already_settled && !r.is_negative) {
+				odlozone.push(r);
+				continue;
+			}
+			out.push(r);
+		}
+		for (const r of odlozone) {
+			const cel = out.find(x => x.policy_id === r.policy_id && x.payment_id && !x.is_negative);
+			if (cel) dolacz(cel, r);
+			else out.push({ ...r, brak_raty: true });
+		}
+		return out;
+	}
+
 	// ===== ERGO PARSER =====
 	async function parseErgoXlsx(file: File): Promise<void> {
 		const XLSX = await import('xlsx');
@@ -237,7 +281,7 @@
 						};
 						parsed.push(resolveRow(row));
 					}
-					importPreview = parsed;
+					importPreview = scalPozycje(parsed);
 					resolve();
 				} catch (err: any) { reject(err); }
 			};
@@ -255,14 +299,14 @@
 		importOstrzezenia = z.ostrzezenia;
 		importRazemSkladka = z.razem_podstawa;
 		importRazemProwizja = z.razem_prowizja;
-		importPreview = z.pozycje.map(p => resolveRow({
+		importPreview = scalPozycje(z.pozycje.map(p => resolveRow({
 			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
 			ubezpieczajacy: p.ubezpieczajacy,
 			skladka_nota: p.podstawa, prowizja_nota: p.prowizja,
 			payment_id: null, policy_id: null, prowizja_crm: null,
 			new_status: null, not_found: false, already_settled: false,
 			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle'
-		}));
+		})));
 	}
 
 	// ===== LEADENHALL / SQUARELIFE — jedna pozycja = jedna rata (numer raty i data wpłaty z pliku) =====
@@ -279,7 +323,7 @@
 		importOstrzezenia = z.ostrzezenia;
 		importRazemSkladka = z.razem_skladka;
 		importRazemProwizja = z.razem_prowizja;
-		importPreview = z.pozycje.map(p => resolveRow({
+		importPreview = scalPozycje(z.pozycje.map(p => resolveRow({
 			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
 			ubezpieczajacy: p.ubezpieczajacy,
 			skladka_nota: p.skladka, prowizja_nota: p.prowizja,
@@ -288,7 +332,7 @@
 			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle',
 			nr_raty: p.nr_raty, data_oplacenia: p.data_platnosci,
 			weryfikacja: { prowizja_pct: p.prowizja_pct, przypis: p.przypis, liczba_rat: p.liczba_rat, data_od: p.data_od, data_do: p.data_do }
-		}));
+		})));
 	}
 
 	// ===== COLONNADE (portal Cellent) — jedna pozycja = jedna rata =====
@@ -305,7 +349,7 @@
 		importOstrzezenia = z.ostrzezenia;
 		importRazemSkladka = z.razem_kwota;
 		importRazemProwizja = z.razem_prowizja;
-		importPreview = z.pozycje.map(p => resolveRow({
+		importPreview = scalPozycje(z.pozycje.map(p => resolveRow({
 			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
 			ubezpieczajacy: p.ubezpieczajacy,
 			skladka_nota: p.kwota, prowizja_nota: p.prowizja,
@@ -313,7 +357,7 @@
 			new_status: null, not_found: false, already_settled: false,
 			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle',
 			nr_raty: p.nr_raty, data_oplacenia: p.data_oplacenia
-		}));
+		})));
 	}
 
 	async function onImportFile(e: Event) {
@@ -729,6 +773,7 @@
 	const importNegative = $derived(importPreview.filter(r => r.is_negative));
 	const importNeedsDecision = $derived(importPreview.filter(r => r.prowizja_diff > 0.5 && !r.is_negative && r.payment_id));
 	const importRozbieznosci = $derived(importPreview.filter(r => (r.rozbieznosci ?? []).length > 0));
+	const importBrakRaty = $derived(importPreview.filter(r => r.brak_raty));
 
 	// Checkbox selection
 	let selected = $state(new Set<string>());
@@ -1063,7 +1108,7 @@
 			<button onclick={closeImport} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 			{#if importToProcess.length > 0 && !importLoading}
 				<button onclick={saveImport} disabled={importSaving} class="px-4 py-2 text-sm {importMode === 'ergo' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-violet-600 hover:bg-violet-700'} text-white rounded-lg font-semibold disabled:opacity-60">
-					{importSaving ? 'Rozliczanie...' : `Rozlicz ${importToProcess.filter(r => r.operator_action === 'settle').length} rat`}
+					{importSaving ? 'Rozliczanie...' : `Rozlicz ${odmiana(importToProcess.filter(r => r.operator_action === 'settle').length, 'ratę', 'raty', 'rat')}`}
 				</button>
 			{/if}
 		{/if}
@@ -1143,6 +1188,17 @@
 						{#each importNotFound as r}
 							<div class="text-sm text-amber-700 font-mono">{r.nr_polisy_raw} — {r.ubezpieczajacy}</div>
 						{/each}
+					</div>
+				{/if}
+
+				<!-- Polisa jest, ale nie ma raty do rozliczenia -->
+				{#if importBrakRaty.length > 0}
+					<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+						<div class="flex items-center gap-2 font-semibold text-amber-700 mb-2"><AlertTriangle size={15} /> Brak raty w CRM do rozliczenia ({importBrakRaty.length}) — nie zostaną zaksięgowane:</div>
+						{#each importBrakRaty as r}
+							<div class="text-sm text-amber-700"><span class="font-mono">{r.nr_polisy}</span> — {r.ubezpieczajacy}{r.nr_raty != null ? ` · rata ${r.nr_raty}` : ''} · {fmtPln(r.skladka_nota)} zł / prowizja {fmtPln(r.prowizja_nota)} zł</div>
+						{/each}
+						<p class="text-xs text-amber-700 mt-1">Dodaj brakującą ratę w polisie (albo popraw harmonogram) i zaimportuj notę ponownie — rozliczone już pozycje zostaną pominięte.</p>
 					</div>
 				{/if}
 
