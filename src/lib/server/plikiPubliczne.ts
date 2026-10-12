@@ -23,7 +23,9 @@ export const PLIKI_PUBLICZNE: Record<string, PlikPubliczny> = {
 	'beautypolisa/lista-zabiegow-podologiczne.pdf': { zrodlo: `${GR_PLIKI}/c507c6c6-b126-4098-a3f6-630164e0f74c.pdf`, typ: PDF, nazwa: 'Lista zabiegów - podologiczne.pdf' },
 	'beautypolisa/ankieta-oceny-ryzyka.pdf': { zrodlo: `${GR_PLIKI}/91e7a9d4-4357-4e29-9cc9-2386092033ce.pdf`, typ: PDF, nazwa: 'Ankieta oceny ryzyka.pdf' },
 	'beautypolisa/informacja-o-dystrybutorze-aura-expert.pdf': { zrodlo: `${GR_PLIKI}/e8560860-e79c-409e-8ce6-ed85ab666017.pdf`, typ: PDF, nazwa: 'Informacja o dystrybutorze Aura Expert.pdf' },
-	'beautypolisa/informacja-rodo-aura-expert.pdf': { zrodlo: `${GR_PLIKI}/3a250c30-f6ee-4fd1-aa01-c2845aa42c41.pdf`, typ: PDF, nazwa: 'Informacja RODO Aura Expert.pdf' }
+	'beautypolisa/informacja-rodo-aura-expert.pdf': { zrodlo: `${GR_PLIKI}/3a250c30-f6ee-4fd1-aa01-c2845aa42c41.pdf`, typ: PDF, nazwa: 'Informacja RODO Aura Expert.pdf' },
+	// Logo z maila Tax Protect — wcześniej wklejone jako załącznik na GitHubie
+	'beautypolisa/logo-colonnade.png': { zrodlo: 'https://github.com/user-attachments/assets/cabd8c8d-1d72-4e25-88b1-f8d98a570a37', typ: PNG, nazwa: 'logo-colonnade.png' }
 };
 
 const MAKS = 15 * 1024 * 1024;
