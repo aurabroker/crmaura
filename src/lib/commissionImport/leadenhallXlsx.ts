@@ -1,7 +1,9 @@
 // Zestawienie do noty księgowej Leadenhall / Squarelife — XLSX, jeden arkusz, jedna pozycja = jedna rata
 // opłacona w okresie noty. Kolumny rozpoznajemy po nagłówkach (wcześniej import czytał je po numerach
-// i pomijał numer raty oraz datę wpłaty, przez co rozliczał najstarszą ratę i porównywał prowizję
-// z jednej raty z prowizją za całą polisę).
+// i pomijał datę wpłaty, przez co porównywał prowizję z jednej raty z prowizją za całą polisę).
+// „Nr raty składki” NIE jest numerem kolejnej raty: ta sama polisa ma 12 przy pierwszej wpłacie
+// (N/362/11/2025) i przy wpłacie po dziewięciu miesiącach (N/710/08/2026). Odczytujemy go tylko
+// informacyjnie — import dobiera ratę w CRM po dacie wpłaty.
 //
 // Tytuł w A1: „Zestawienie do noty księgowej nr N/710/08/2026”. Nagłówki (stan z noty N/710/08/2026):
 // Polisa · Nr wniosku · Status polisy · Ubezpieczający · Produkt · Przypis z polisy · Data zawarcia polisy ·
@@ -68,7 +70,7 @@ export function parseLeadenhall(wiersze: Komorka[][]): LeadenhallNota {
 	for (const [k, nazwa] of [['nr_polisy', 'Polisa'], ['skladka', 'Składka'], ['prowizja', 'Prowizja']] as [Klucz, string][]) {
 		if (kol[k] < 0) throw new Error(`Brak kolumny „${nazwa}” w zestawieniu Leadenhall.`);
 	}
-	if (kol.nr_raty < 0) ostrzezenia.push('W pliku nie ma kolumny „Nr raty składki” — raty zostaną dobrane po kwocie i dacie wpłaty.');
+	if (kol.data_platnosci < 0) ostrzezenia.push('W pliku nie ma kolumny „Data płatności składki” — raty zostaną dobrane po kwocie, od najstarszej nierozliczonej.');
 	const z = (w: Komorka[], k: Klucz) => (kol[k] >= 0 ? w[kol[k]] : null);
 	const liczba = (v: Komorka) => (v == null || v === '' ? null : Number(String(v).replace(',', '.')) || null);
 
