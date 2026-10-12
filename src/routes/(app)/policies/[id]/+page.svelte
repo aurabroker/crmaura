@@ -8,7 +8,8 @@
 	import { fmtPln, fmtDzien, fmtTermin, inicjaly, odmiana, opisPrzedmiotu, sumyUtratyDochodu } from '$lib/utils';
 	import Modal from '$lib/components/Modal.svelte';
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
-	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet } from 'lucide-svelte';
+	import WyslijPolise from '$lib/components/WyslijPolise.svelte';
+	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet, Send } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyAnnex, PolicyBroker, PolicyPayment } from '$lib/types/database';
@@ -457,6 +458,15 @@
 		pisanieEmaila = true;
 	}
 
+	// Polisa programu z szablonem maila (Beauty) i z zapisanym PDF → przycisk „Wyślij polisę klientowi”.
+	// Stan PDF podaje sekcja Dokumenty (po wczytaniu, dodaniu i usunięciu pliku).
+	let maPdfPolisy = $state(false);
+	let wysylaniePolisy = $state(false);
+	$effect(() => {
+		void policyId;
+		maPdfPolisy = false;
+	});
+
 	// Historia polisy z dziennika audytu.
 	type WpisHistorii = { id: string; action: string; user_name: string | null; user_email: string | null; details: Record<string, unknown> | null; created_at: string };
 	let historia = $state<WpisHistorii[]>([]);
@@ -489,6 +499,10 @@
 			}
 			case 'policy_file_added': return `Dodano dokument: ${s('plik')}`;
 			case 'policy_file_deleted': return `Usunięto dokument: ${s('plik')}`;
+			case 'policy_email_sent': {
+				const n = typeof d.adresatow === 'number' ? d.adresatow : 1;
+				return `Wysłano polisę klientowi (${odmiana(n, 'adresat', 'adresatów', 'adresatów')})${s('termin_platnosci') ? ` · termin płatności ${fmtDzien(s('termin_platnosci'), true)}` : ''}`;
+			}
 			case 'portal_file_downloaded': return `Klient pobrał w panelu klienta: ${s('plik')}`;
 			case 'policy_deleted': return `Przeniesiono do kosza${s('reason') ? ` — ${s('reason')}` : ''}`;
 			case 'policy_restored': return 'Przywrócono z kosza';
@@ -551,6 +565,16 @@
 			</div>
 		</div>
 		<div class="flex flex-wrap gap-2">
+			{#if wProgramie && maPdfPolisy}
+				<button
+					onclick={() => (wysylaniePolisy = true)}
+					disabled={!adresyEmail}
+					title={adresyEmail ? 'E-mail z szablonu programu i PDF polisy w załączniku' : 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta'}
+					class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50"
+				>
+					<Send size={15} /> Wyślij polisę klientowi
+				</button>
+			{/if}
 			{#if adresyEmail}
 				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail do klienta" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
 			{/if}
@@ -805,7 +829,7 @@
 			{/if}
 
 			<!-- Dokumenty polisy (PDF w Cloudflare R2) -->
-			<DokumentyPolisy polisaId={policy.id} />
+			<DokumentyPolisy polisaId={policy.id} onzmiana={(lista) => (maPdfPolisy = lista.some((f) => f.rodzaj === 'polisa'))} />
 
 			<!-- Parametry odczytane z pliku polisy (import z PDF) -->
 			{#if policy.dane_importu}
@@ -1229,6 +1253,9 @@
 		onclose={() => (pisanieEmaila = false)}
 		onwyslano={() => {}}
 	/>
+{/if}
+{#if wProgramie}
+	<WyslijPolise open={wysylaniePolisy} polisaId={policy.id} onclose={() => (wysylaniePolisy = false)} onwyslano={() => void wczytajHistorie(policy!.id)} />
 {/if}
 {/if}
 

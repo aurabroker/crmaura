@@ -8,6 +8,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import AdminSettings from '$lib/components/AdminSettings.svelte';
+	import PlikiWMailach from '$lib/components/PlikiWMailach.svelte';
 	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark, Upload } from 'lucide-svelte';
 	import { fmtPln, validateVin, assignedPolicyFor } from '$lib/utils';
 	import { openStoredFile } from '$lib/utils/storageLink';
@@ -684,6 +685,7 @@
 
 	{#if activeTab === 'dokumenty'}
 	<div class="space-y-4">
+		<PlikiWMailach />
 		<div class="flex items-center justify-between">
 			<div>
 				<h2 class="text-lg font-semibold text-slate-900">Dokumenty rozliczeniowe</h2>

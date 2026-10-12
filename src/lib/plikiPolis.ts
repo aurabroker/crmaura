@@ -121,3 +121,62 @@ export async function otworzPlikNoty(notaId: string, nazwa: string | null, typ: 
 		throw e;
 	}
 }
+
+// ── Polisa wysłana klientowi (szablon Resend programu + PDF polisy) ──
+
+export type KontekstMailaPolisy = {
+	szablon: string;
+	polisa: { nr_polisy: string; data_od: string | null; data_do: string | null };
+	klient: string;
+	adresy: { adres: string; opis: string }[];
+	pliki: { id: string; nazwa: string; rozmiar: number; rodzaj: PlikPolisy['rodzaj'] }[];
+	domyslne: { do: string[]; powitanie: string; termin_platnosci: string | null; pliki: string[] };
+	wyslane: { wyslano_at: string; adres: string; dostawa: string | null }[];
+};
+export type ZadanieMailaPolisy = { do: string[]; powitanie: string; termin_platnosci: string; pliki: string[] };
+export type PodgladMailaPolisy = { temat: string; html: string; od: string; odpowiedz: string | null; zalaczniki: { nazwa: string; rozmiar: number }[] };
+
+export async function kontekstMailaPolisy(polisaId: string): Promise<KontekstMailaPolisy> {
+	const res = await fetch(`/api/polisy/${polisaId}/mail`, { headers: await naglowki() });
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as KontekstMailaPolisy;
+}
+
+export async function podgladMailaPolisy(polisaId: string, z: ZadanieMailaPolisy): Promise<PodgladMailaPolisy> {
+	const res = await fetch(`/api/polisy/${polisaId}/mail`, {
+		method: 'POST',
+		headers: { ...(await naglowki()), 'Content-Type': 'application/json' },
+		body: JSON.stringify({ ...z, podglad: true })
+	});
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as PodgladMailaPolisy;
+}
+
+export async function wyslijMailPolisy(polisaId: string, z: ZadanieMailaPolisy): Promise<{ id: string | null; adresy: string[] }> {
+	const res = await fetch(`/api/polisy/${polisaId}/mail`, {
+		method: 'POST',
+		headers: { ...(await naglowki()), 'Content-Type': 'application/json' },
+		body: JSON.stringify(z)
+	});
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as { id: string | null; adresy: string[] };
+}
+
+// ── Pliki publiczne z maili (pliki.auraexpert.pl/media/…) ──
+
+export type PlikPubliczny = { sciezka: string; adres: string; opis: string; typ: string; w_magazynie: boolean; rozmiar: number | null; wgrano: string | null; ze_zrodla: boolean };
+
+export async function wczytajPlikiPubliczne(): Promise<{ pliki: PlikPubliczny[]; moze_zmieniac: boolean }> {
+	const res = await fetch('/api/pliki-publiczne', { headers: await naglowki() });
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as { pliki: PlikPubliczny[]; moze_zmieniac: boolean };
+}
+
+export async function podmienPlikPubliczny(sciezka: string, plik: File): Promise<PlikPubliczny> {
+	const form = new FormData();
+	form.append('sciezka', sciezka);
+	form.append('plik', plik);
+	const res = await fetch('/api/pliki-publiczne', { method: 'POST', headers: await naglowki(), body: form });
+	if (!res.ok) throw await blad(res);
+	return ((await res.json()) as { plik: PlikPubliczny }).plik;
+}

@@ -14,8 +14,8 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 		headers: {
 			'content-type': plik.opis.typ,
 			'content-length': String(plik.dane.byteLength),
-			// Pliki pod danym adresem się nie zmieniają (nowa wersja = nowa nazwa)
-			'cache-control': 'public, max-age=31536000, immutable',
+			// Dokument można podmienić pod tym samym adresem (Ustawienia → Dokumenty) — krótka pamięć podręczna
+			'cache-control': 'public, max-age=3600',
 			'x-content-type-options': 'nosniff',
 			...(pdf ? { 'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(plik.opis.nazwa)}` } : {})
 		}
