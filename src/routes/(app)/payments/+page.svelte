@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { wczytajPlatnosci } from '$lib/kolekcje';
+	import { wczytajPlatnosci, wczytajPolisy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { PolicyPayment } from '$lib/types/database';
@@ -20,6 +20,8 @@
 	import { naprawKomorkiStr } from '$lib/commissionImport/xlsxNaprawa';
 	import { magazynDostepny, wyslijPlikNoty } from '$lib/plikiPolis';
 	import { normalizujNr, rataWRoku, rokPolisowyZNumeru, znajdzPolise } from '$lib/commissionImport/dopasowaniePolisy';
+	import { harmonogramWgNoty, statusPoTerminie, type ZmianaTerminu } from '$lib/commissionImport/harmonogramWgNoty';
+	import { logAudit } from '$lib/utils/audit';
 	const today = todayStr();
 	type Filtr = 'wszystkie' | 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone';
 	let filtr = $state<Filtr>('wszystkie');
@@ -73,6 +75,8 @@
 		brak_raty?: boolean;
 		// Ile pozycji noty zsumowano w tej pozycji (ta sama rata CRM)
 		scalone?: number;
+		// Terminy rat w CRM niezgodne z numeracją towarzystwa — propozycja nowych (od raty z noty co miesiąc)
+		harmonogram?: ZmianaTerminu[];
 	}
 
 	let showImport = $state(false);
@@ -157,8 +161,14 @@
 				if (!rata) uwagi.push(`w CRM nie ma raty nr ${nrRaty} — rozliczam ratę ${cel.nr_raty} (termin ${cel.data_platnosci})`);
 				else {
 					if (!rowna(cel)) uwagi.push(`rata ${cel.nr_raty} w CRM: ${fmtPln(Number(cel.kwota))} zł, w nocie ${fmtPln(kwotaNoty)} zł`);
-					// Harmonogram CRM nie pasuje do numeracji TU (np. rata 7 opłacona trzy miesiące po starcie polisy)
-					if (dzien != null && odleglosc(cel) > 45 * 864e5) uwagi.push(`rata ${cel.nr_raty} ma w CRM termin ${cel.data_platnosci}, a wpłata w nocie jest z ${row.data_oplacenia}`);
+					// Harmonogram CRM nie pasuje do numeracji TU (np. rata 7 opłacona trzy miesiące po starcie polisy):
+					// proponujemy terminy od raty z noty co miesiąc (osobna lista w podglądzie, zapis po zaznaczeniu)
+					if (dzien != null && odleglosc(cel) > 45 * 864e5) {
+						row.harmonogram = harmonogramWgNoty(
+							appState.payments.filter(p => p.polisa_id === policy.id),
+							nrRaty, row.data_oplacenia!, policy.data_od ?? null
+						);
+					}
 				}
 				if (uwagi.length) row.rozbieznosci = [...(row.rozbieznosci ?? []), ...uwagi];
 			}
@@ -447,6 +457,32 @@
 			}
 		}
 
+		// Terminy nierozliczonych rat według numeracji z noty (przed rozliczeniem; rozliczonych rat nie ruszamy).
+		// daty_rat polisy też, bo z nich zapis polisy odtwarza nierozliczone raty.
+		let ulozone = 0;
+		if (importUlozTerminy) {
+			const dzis = todayStr();
+			for (const r of importHarmonogramy) {
+				for (const z of r.harmonogram!) {
+					await sb.from('crm_policy_payments')
+						.update({ data_platnosci: z.na, status: statusPoTerminie(z.na, dzis) } as never)
+						.eq('id', z.id)
+						.in('status', ['Oczekująca', 'Zaległa']);
+				}
+				const nowe = new Map(r.harmonogram!.map(z => [z.id, z.na]));
+				const daty = appState.payments
+					.filter(p => p.polisa_id === r.policy_id)
+					.sort((a, b) => a.nr_raty - b.nr_raty)
+					.map(p => nowe.get(p.id) ?? p.data_platnosci)
+					.join(', ');
+				await sb.from('crm_policies').update({ daty_rat: daty } as never).eq('id', r.policy_id!);
+				void logAudit('payment_schedule_aligned', 'policy', r.policy_id, r.nr_polisy, {
+					nota: importNumerNoty, rata_z_noty: r.nr_raty, data_wplaty: r.data_oplacenia, zmiany: r.harmonogram
+				});
+				ulozone++;
+			}
+		}
+
 		// Rows to settle
 		const toSettle = importPreview.filter(r => r.payment_id && r.new_status && r.operator_action === 'settle' && !r.is_negative);
 		let settled = 0;
@@ -497,6 +533,10 @@
 		// Refresh
 		const { data: pays, error: bladPlatnosci } = await wczytajPlatnosci();
 		if (!bladPlatnosci && pays) appState.payments = pays as typeof appState.payments;
+		if (ulozone) {
+			const { data: pol, error: bladPolis } = await wczytajPolisy();
+			if (!bladPolis && pol) appState.policies = pol as typeof appState.policies;
+		}
 		const { data: alts } = await sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false });
 		appState.alerts = (alts ?? []) as typeof appState.alerts;
 
@@ -505,6 +545,7 @@
 		importSaving = false;
 		importDone = true;
 		importSummary = `Rozliczono ${settled} rat. Nota ${importNumerNoty} zapisana.`
+			+ (ulozone ? `\n\nTerminy rat ułożone według noty: ${odmiana(ulozone, 'polisa', 'polisy', 'polis')}.` : '')
 			+ (notFound.length ? `\n\nNie znaleziono: ${notFound.join(', ')}` : '')
 			+ (skipped.length ? `\n\nPominięto (aneks): ${skipped.join(', ')}` : '')
 			+ (alertsToCreate.length ? `\n\n⚠ Utworzono ${alertsToCreate.length} alert(ów) do sprawdzenia.` : '')
@@ -522,6 +563,7 @@
 		importOkres = null;
 		importOstrzezenia = [];
 		importPoprzednia = null;
+		importUlozTerminy = true;
 		showImport = true;
 	}
 
@@ -762,6 +804,17 @@
 	const importNegative = $derived(importPreview.filter(r => r.is_negative));
 	const importNeedsDecision = $derived(importPreview.filter(r => r.prowizja_diff > 0.5 && !r.is_negative && r.payment_id));
 	const importRozbieznosci = $derived(importPreview.filter(r => (r.rozbieznosci ?? []).length > 0));
+	// Polisy, których terminy rat ułożymy według noty; przy kilku ratach jednej polisy liczy się najwyższa
+	const importHarmonogramy = $derived.by(() => {
+		const m = new Map<string, UniversalRow>();
+		for (const r of importPreview) {
+			if (!r.harmonogram?.length || !r.policy_id) continue;
+			const byl = m.get(r.policy_id);
+			if (!byl || (r.nr_raty ?? 0) > (byl.nr_raty ?? 0)) m.set(r.policy_id, r);
+		}
+		return [...m.values()];
+	});
+	let importUlozTerminy = $state(true);
 	const importBrakRaty = $derived(importPreview.filter(r => r.brak_raty));
 
 	// Checkbox selection
@@ -1156,6 +1209,24 @@
 						{#each importRozbieznosci as r}
 							<div class="text-sm text-amber-800"><span class="font-mono">{r.nr_polisy}</span>: {r.rozbieznosci!.join('; ')}</div>
 						{/each}
+					</div>
+				{/if}
+
+				<!-- Terminy rat w CRM niezgodne z numeracją towarzystwa -->
+				{#if importHarmonogramy.length > 0}
+					<div class="bg-sky-50 border border-sky-200 rounded-lg px-4 py-3">
+						<div class="flex items-center gap-2 font-semibold text-sky-800 mb-1"><AlertTriangle size={15} /> Terminy rat w CRM nie pasują do numeracji towarzystwa ({importHarmonogramy.length}):</div>
+						{#each importHarmonogramy as r}
+							<div class="text-sm text-sky-900">
+								<span class="font-mono">{r.nr_polisy}</span> — rata {r.rata_crm ?? r.nr_raty} wpłacona {r.data_oplacenia ? fmtDzien(r.data_oplacenia) : '—'};
+								{odmiana(r.harmonogram!.length, 'rata zmieni', 'raty zmienią', 'rat zmieni')} termin
+								<span class="text-sky-700">({r.harmonogram!.slice(0, 3).map(z => `${z.nr_raty}: ${fmtDzien(z.na)}`).join(', ')}{r.harmonogram!.length > 3 ? '…' : ''})</span>
+							</div>
+						{/each}
+						<label class="flex items-start gap-2 mt-2 text-sm text-sky-900 cursor-pointer">
+							<input type="checkbox" bind:checked={importUlozTerminy} class="mt-0.5 accent-sky-700" />
+							<span>Ułóż terminy nierozliczonych rat według noty: rata z noty na dzień wpłaty, kolejne co miesiąc, raty sprzed początku ochrony na dzień początku (płatne pierwszą wpłatą).</span>
+						</label>
 					</div>
 				{/if}
 
