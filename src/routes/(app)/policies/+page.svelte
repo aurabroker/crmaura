@@ -3,7 +3,7 @@
 	import { opiekunZUmowy } from '$lib/policyImport/umowaGeneralna';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, todayStr, ugPodtypCls } from '$lib/utils';
+	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, opisPrzedmiotu, todayStr, ugPodtypCls } from '$lib/utils';
 	import type { Policy } from '$lib/types/database';
 	import type { Snippet } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
@@ -128,7 +128,7 @@
 			return !q ||
 				p.nr_polisy.toLowerCase().includes(q) ||
 				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) ||
-				(p.przedmiot ?? '').toLowerCase().includes(q) ||
+				opisPrzedmiotu(p.przedmiot).toLowerCase().includes(q) ||
 				(p.parent_id ? parentNr(p.parent_id).toLowerCase().includes(q) : false);
 		});
 	});
@@ -179,7 +179,7 @@
 		};
 		const naglowek = ['Nr polisy', 'Typ umowy', 'Umowa generalna', 'Klient', 'Towarzystwo', 'Rodzaj', 'Przedmiot', 'Od', 'Do', 'Składka przypisana', 'Składka zainkasowana', 'Prowizja %', 'Prowizja przypisana', 'Status'];
 		const linie = wybrane.map(p => [
-			p.nr_polisy, p.typ_umowy, p.parent_id ? parentNr(p.parent_id) : '', p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), p.przedmiot,
+			p.nr_polisy, p.typ_umowy, p.parent_id ? parentNr(p.parent_id) : '', p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), opisPrzedmiotu(p.przedmiot),
 			p.data_od, p.data_do, fmtPln(p.skladka_przypisana), fmtPln(p.skladka_zainkasowana), p.prowizja_pct, fmtPln(p.prowizja_przypisana), status(p).tekst
 		].map(pole).join(';'));
 		const blob = new Blob(['\uFEFF' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -614,7 +614,7 @@
 							</td>
 							<td class="px-3 py-2 min-w-[160px] max-w-[240px]">
 								<a href="/clients/{p.klient_id}" class="block truncate font-medium text-ink hover:text-accent-text">{p.crm_clients?.nazwa ?? '—'}</a>
-								{#if p.przedmiot}<span class="block truncate text-xs text-ink-3" title={p.przedmiot}>{p.przedmiot}</span>{/if}
+								{#if opisPrzedmiotu(p.przedmiot)}<span class="block truncate text-xs text-ink-3" title={opisPrzedmiotu(p.przedmiot)}>{opisPrzedmiotu(p.przedmiot)}</span>{/if}
 							</td>
 							<td class="px-3 py-2 whitespace-nowrap" title={p.crm_insurers?.nazwa ?? undefined}>{nazwaTu(p)}</td>
 							<td class="px-3 py-2">

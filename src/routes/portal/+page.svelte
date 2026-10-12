@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { sb } from '$lib/supabase';
 	import { portalState } from '$lib/stores/portal.svelte';
-	import { fmtPln, policyStatus } from '$lib/utils';
+	import { fmtPln, opisPrzedmiotu, policyStatus } from '$lib/utils';
 	import { rozmiar } from '$lib/plikiPolis';
 	import { FileText, CreditCard, AlertTriangle, Car, Download } from 'lucide-svelte';
 
@@ -132,7 +132,7 @@
 					<div class="min-w-[160px]">
 						<div class="text-xs text-slate-400 uppercase tracking-wide">{p.rodzaj ?? '—'}</div>
 						<div class="font-semibold text-slate-900">{p.nr_polisy}</div>
-						{#if p.przedmiot}<div class="text-xs text-slate-500">{p.przedmiot}</div>{/if}
+						{#if opisPrzedmiotu(p.przedmiot)}<div class="text-xs text-slate-500">{opisPrzedmiotu(p.przedmiot)}</div>{/if}
 					</div>
 					<div class="text-sm text-slate-600">
 						<div class="text-xs text-slate-400 uppercase">Okres</div>

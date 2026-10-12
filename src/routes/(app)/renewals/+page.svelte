@@ -2,7 +2,7 @@
 	// Odnowienia: lista robocza polis kończących się w najbliższych tygodniach — do odnowienia,
 	// już odnowione i te, które wygasły bez następczyni (ostatnie 90 dni).
 	import { appState } from '$lib/stores/app.svelte';
-	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, todayStr } from '$lib/utils';
+	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, opisPrzedmiotu, todayStr } from '$lib/utils';
 	import type { Snippet } from 'svelte';
 	import { Search, Eye, ExternalLink, RefreshCw, Pencil, User, Copy, X, Download, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
@@ -137,7 +137,7 @@
 			if (fRodzaj && p.rodzaj !== fRodzaj) return false;
 			if (fOpiekun && (fOpiekun === '-' ? !!opiekunKlienta.get(p.klient_id) : opiekunKlienta.get(p.klient_id) !== fOpiekun)) return false;
 			if (tylkoBezWniosku && !bezWniosku(p)) return false;
-			return !q || p.nr_polisy.toLowerCase().includes(q) || (p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) || (p.przedmiot ?? '').toLowerCase().includes(q);
+			return !q || p.nr_polisy.toLowerCase().includes(q) || (p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) || opisPrzedmiotu(p.przedmiot).toLowerCase().includes(q);
 		});
 	});
 	const liczSeg = $derived(Object.fromEntries(SEGMENTY.map(([id]) => [id, poFiltrach.filter((p) => wSegmencie(p, id)).length])) as Record<Segment, number>);
@@ -196,7 +196,7 @@
 		};
 		const naglowek = ['Nr polisy', 'Klient', 'Towarzystwo', 'Rodzaj', 'Przedmiot', 'Od', 'Do', 'Dni do końca', 'Składka przypisana', 'Prowizja przypisana', 'Opiekun klienta', 'Status', 'Odnowiona polisą'];
 		const linie = wiersze.map((p) => [
-			p.nr_polisy, p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), p.przedmiot, p.data_od, p.data_do, dni(p),
+			p.nr_polisy, p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), opisPrzedmiotu(p.przedmiot), p.data_od, p.data_do, dni(p),
 			fmtPln(p.skladka_przypisana), fmtPln(p.prowizja_przypisana), nazwaOpiekuna(p), chip(p).tekst, nastepczyni.get(p.id)?.nr_polisy
 		].map(pole).join(';'));
 		const blob = new Blob(['﻿' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -402,7 +402,7 @@
 							</td>
 							<td class="px-3 py-2 min-w-[160px] max-w-[240px]">
 								<a href="/clients/{p.klient_id}" class="block truncate font-medium text-ink hover:text-accent-text">{p.crm_clients?.nazwa ?? '—'}</a>
-								{#if p.przedmiot}<span class="block truncate text-xs text-ink-3" title={p.przedmiot}>{p.przedmiot}</span>{/if}
+								{#if opisPrzedmiotu(p.przedmiot)}<span class="block truncate text-xs text-ink-3" title={opisPrzedmiotu(p.przedmiot)}>{opisPrzedmiotu(p.przedmiot)}</span>{/if}
 							</td>
 							<td class="px-3 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtPln(p.skladka_przypisana)} zł</td>
 							<td class="hidden xl:table-cell px-3 py-2 max-w-[160px] truncate {nazwaOpiekuna(p) ? 'text-ink-2' : 'italic text-ink-3'}">{nazwaOpiekuna(p) ?? 'brak'}</td>
