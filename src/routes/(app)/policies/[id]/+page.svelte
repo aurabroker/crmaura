@@ -5,7 +5,7 @@
 	import { goto, replaceState } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, fmtDzien, fmtTermin, inicjaly, odmiana } from '$lib/utils';
+	import { fmtPln, fmtDzien, fmtTermin, inicjaly, odmiana, opisPrzedmiotu, sumyUtratyDochodu } from '$lib/utils';
 	import Modal from '$lib/components/Modal.svelte';
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
 	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet } from 'lucide-svelte';
@@ -406,15 +406,7 @@
 	const pojazd = $derived(policy?.pojazd_id ? (appState.vehicles.find((v) => v.id === policy!.pojazd_id) ?? null) : null);
 	const kontaktTu = $derived(policy?.tu_contact_id ? (appState.insurerContacts.find((c) => c.id === policy!.tu_contact_id) ?? null) : null);
 	/** Przedmiot zapisany jako JSON z sumami (umowy UD) albo zwykły tekst. */
-	const przedmiotUd = $derived.by(() => {
-		if (!policy?.przedmiot) return null;
-		try {
-			const p = JSON.parse(policy.przedmiot);
-			return p && p.__ud ? (p as { ctn?: number; ctc?: number; si?: number }) : null;
-		} catch {
-			return null;
-		}
-	});
+	const przedmiotUd = $derived(sumyUtratyDochodu(policy?.przedmiot));
 	const koniecOchrony = $derived.by(() => {
 		if (!policy?.data_do) return { tekst: 'bezterminowo', cls: 'text-ink-2' };
 		if (renewalPolicy) return { tekst: 'odnowiona', cls: 'text-ink-2' };
@@ -918,7 +910,7 @@
 					{@render wiersz('Towarzystwo', policy.crm_insurers?.nazwa ?? nazwaTu(policy))}
 					{@render wiersz('Rodzaj', nazwaRodzaju(policy.rodzaj))}
 					{#if przedmiotUd}
-						{@render wiersz('Sumy', [przedmiotUd.ctn ? `CTN ${fmtPln(przedmiotUd.ctn)} zł` : '', przedmiotUd.ctc ? `CTC ${fmtPln(przedmiotUd.ctc)} zł` : '', przedmiotUd.si ? `SI ${fmtPln(przedmiotUd.si)} zł` : ''].filter(Boolean).join(' · '))}
+						{@render wiersz('Sumy', opisPrzedmiotu(policy.przedmiot))}
 					{:else}
 						{@render wiersz('Przedmiot', policy.przedmiot)}
 					{/if}

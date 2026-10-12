@@ -3,6 +3,28 @@ export const fmtPln = (n: number | null | undefined): string => {
 	return Number(n).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
+/** Sumy umowy utraty dochodu, zapisane w polu przedmiot jako JSON ({"__ud":true,"ctn":…,"ctc":…,"si":…}); null — zwykły tekst. */
+export function sumyUtratyDochodu(przedmiot: string | null | undefined): { ctn?: number | string; ctc?: number | string; si?: number | string } | null {
+	if (!przedmiot || przedmiot.trim()[0] !== '{') return null;
+	try {
+		const p = JSON.parse(przedmiot);
+		return p && p.__ud ? p : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Przedmiot polisy do pokazania ludziom (listy, e-maile, eksport) — sumy umowy UD zamiast surowego JSON. */
+export function opisPrzedmiotu(przedmiot: string | null | undefined): string {
+	const ud = sumyUtratyDochodu(przedmiot);
+	if (!ud) return przedmiot ?? '';
+	const kwota = (v: unknown) => (v === '' || v == null || !Number(v) ? null : `${fmtPln(Number(v))} zł`);
+	return ([['CTN', ud.ctn], ['CTC', ud.ctc], ['SI', ud.si]] as const)
+		.map(([k, v]) => (kwota(v) ? `${k} ${kwota(v)}` : ''))
+		.filter(Boolean)
+		.join(' · ');
+}
+
 export const dateDiffDays = (a: string, b: string): number =>
 	Math.round((new Date(b).getTime() - new Date(a).getTime()) / (1000 * 60 * 60 * 24));
 
