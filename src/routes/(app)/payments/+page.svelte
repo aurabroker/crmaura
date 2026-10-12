@@ -116,9 +116,27 @@
 	// Raty wybrane już przez pozycje bieżącej noty (dopasowanie po dacie wpłaty); czyszczone przy każdym pliku
 	let zajeteRaty = new Set<string>();
 
+	// Umowa wieloletnia prowadzona rokiem polisowym („LHC3028651_2025”, „…_2026”): pierwsza rata roku bywa
+	// płacona przed jego początkiem, więc wpłata trafia do roku z nierozliczoną ratą najbliższą dacie wpłaty;
+	// gdy żaden rok nie ma wolnej raty — do roku obejmującego datę wpłaty (jak dotąd).
+	function polisaDlaWplaty(nr: string, data: string | null | undefined) {
+		const p = znajdzPolise(appState.policies, nr, data);
+		const rok = p && data && normalizujNr(p.nr_polisy) !== normalizujNr(nr) ? rokPolisowyZNumeru(p.nr_polisy) : null;
+		if (!p || !rok || !data) return p;
+		const lata = new Set(appState.policies.filter(x => {
+			const r = rokPolisowyZNumeru(x.nr_polisy);
+			return !!r && normalizujNr(r.umowa) === normalizujNr(rok.umowa);
+		}).map(x => x.id));
+		const dzien = new Date(data).getTime();
+		const najblizsza = appState.payments
+			.filter(r => lata.has(r.polisa_id) && !ROZLICZONE.includes(r.status) && !zajeteRaty.has(r.id))
+			.sort((a, b) => Math.abs(new Date(a.data_platnosci).getTime() - dzien) - Math.abs(new Date(b.data_platnosci).getTime() - dzien))[0];
+		return (najblizsza && appState.policies.find(x => x.id === najblizsza.polisa_id)) || p;
+	}
+
 	function resolveRow(row: UniversalRow): UniversalRow {
 		const settledStatuses = ['Opłacona', 'Częściowo opłacona'];
-		const policy = znajdzPolise(appState.policies, row.nr_polisy_raw, row.data_oplacenia);
+		const policy = polisaDlaWplaty(row.nr_polisy_raw, row.data_oplacenia);
 		if (!policy) { row.not_found = true; return row; }
 		row.policy_id = policy.id;
 		row.nr_polisy = policy.nr_polisy; // use CRM canonical form
@@ -183,10 +201,9 @@
 			const wolne = wgOdleglosci(otwarte.filter(p => !zajeteRaty.has(p.id)));
 			const cel = wolne.find(p => rowna(p) && odleglosc(p) <= 45 * 864e5) ?? wolne[0]
 				?? wgOdleglosci(otwarte.filter(p => zajeteRaty.has(p.id)))[0];
-			if (!cel) {
-				if (appState.payments.some(p => p.polisa_id === policy.id && settledStatuses.includes(p.status))) row.already_settled = true;
-				return row;
-			}
+			// Wpłaty nie ma w CRM (sprawdzone wyżej), a polisa nie ma wolnej raty — lista „Brak raty w CRM”,
+			// nie „już rozliczone” (np. pierwsza rata kolejnego roku umowy, którego jeszcze nie założono)
+			if (!cel) return row;
 			zajeteRaty.add(cel.id);
 			row.payment_id = cel.id;
 			row.rata_crm = cel.nr_raty;
