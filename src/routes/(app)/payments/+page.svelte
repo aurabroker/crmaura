@@ -19,6 +19,7 @@
 	import { parseLeadenhall } from '$lib/commissionImport/leadenhallXlsx';
 	import { naprawKomorkiStr } from '$lib/commissionImport/xlsxNaprawa';
 	import { magazynDostepny, wyslijPlikNoty } from '$lib/plikiPolis';
+	import { normalizujNr, rataWRoku, rokPolisowyZNumeru, znajdzPolise } from '$lib/commissionImport/dopasowaniePolisy';
 	const today = todayStr();
 	type Filtr = 'wszystkie' | 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone';
 	let filtr = $state<Filtr>('wszystkie');
@@ -94,35 +95,17 @@
 	// a nowe pozycje dopisujemy do tej samej noty
 	let importPoprzednia = $state<{ id: string; data: string; pozycji: number } | null>(null);
 
-	// Policy number normalization — strips spaces, uppercase
-	function normalizeNr(nr: string): string {
-		return nr.replace(/[\s\-]/g, '').toUpperCase();
-	}
-
-	function findPolicy(nrPolisy: string) {
-		const norm = normalizeNr(nrPolisy);
-		// 1. Exact match
-		let p = appState.policies.find(x => x.nr_polisy === nrPolisy);
-		if (p) return p;
-		// 2. Normalized match (strip spaces/dashes)
-		p = appState.policies.find(x => normalizeNr(x.nr_polisy) === norm);
-		if (p) return p;
-		// 3. Suffix match (nota has "123456", CRM has "XYZ123456")
-		p = appState.policies.find(x => {
-			const pn = normalizeNr(x.nr_polisy);
-			return pn.endsWith(norm) || norm.endsWith(pn);
-		});
-		return p ?? null;
-	}
-
 	// Dane polisy z noty (Leadenhall) różne od CRM — pokazujemy przed rozliczeniem, żeby nic nie przeszło po cichu.
-	function rozbieznosciZCrm(row: UniversalRow, policy: (typeof appState.policies)[number]): string[] {
+	// Przy umowie wieloletniej prowadzonej w CRM rokiem polisowym („LHC3028651_2025”) liczba rat i okres
+	// w nocie dotyczą całej umowy, więc porównujemy tylko stawkę prowizji i składkę roczną.
+	function rozbieznosciZCrm(row: UniversalRow, policy: (typeof appState.policies)[number], rokPolisowy: boolean): string[] {
 		const w = row.weryfikacja;
 		if (!w) return [];
 		const out: string[] = [];
 		const pctCrm = Number(policy.prowizja_pct) || 0;
 		if (w.prowizja_pct != null && Math.abs(w.prowizja_pct - pctCrm) > 0.01) out.push(`prowizja w nocie ${w.prowizja_pct}%, w CRM ${pctCrm}%`);
 		if (w.przypis != null && Math.abs(w.przypis - (Number(policy.skladka_przypisana) || 0)) > 0.01) out.push(`składka roczna w nocie ${fmtPln(w.przypis)} zł, w CRM ${fmtPln(Number(policy.skladka_przypisana))} zł`);
+		if (rokPolisowy) return out;
 		if (w.liczba_rat != null && String(w.liczba_rat) !== String(parseInt(policy.ilosc_rat ?? '') || '')) out.push(`liczba rat w nocie ${w.liczba_rat}, w CRM ${policy.ilosc_rat ?? '—'}`);
 		const dni = (a: string, b: string) => Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 864e5;
 		if (w.data_od && policy.data_od && dni(w.data_od, policy.data_od) > 1) out.push(`początek ochrony w nocie ${w.data_od}, w CRM ${policy.data_od}`);
@@ -132,13 +115,19 @@
 
 	function resolveRow(row: UniversalRow): UniversalRow {
 		const settledStatuses = ['Opłacona', 'Częściowo opłacona'];
-		const policy = findPolicy(row.nr_polisy_raw);
+		const policy = znajdzPolise(appState.policies, row.nr_polisy_raw, row.data_oplacenia);
 		if (!policy) { row.not_found = true; return row; }
 		row.policy_id = policy.id;
 		row.nr_polisy = policy.nr_polisy; // use CRM canonical form
 		row.prowizja_crm = parseFloat(String(policy.prowizja_przypisana)) || 0;
 
-		row.rozbieznosci = rozbieznosciZCrm(row, policy);
+		// Rok polisowy umowy wieloletniej: w nocie numer raty liczony od początku umowy (np. 14 ze 180)
+		const rokPolisowy = normalizujNr(policy.nr_polisy) !== normalizujNr(row.nr_polisy_raw) && rokPolisowyZNumeru(policy.nr_polisy) != null;
+		row.rozbieznosci = rozbieznosciZCrm(row, policy, rokPolisowy);
+		const nrRaty = row.nr_raty != null && rokPolisowy
+			? rataWRoku(row.nr_raty, parseInt(policy.ilosc_rat ?? '') || appState.payments.filter(p => p.polisa_id === policy.id).length)
+			: row.nr_raty;
+		if (nrRaty != null && nrRaty !== row.nr_raty) row.rozbieznosci = [...row.rozbieznosci, `rata ${row.nr_raty} umowy = rata ${nrRaty} w roku polisowym ${policy.nr_polisy}`];
 		const kwotaNoty = Math.abs(row.skladka_nota);
 		const rowna = (p: { kwota: number | string }) => Math.abs(Number(p.kwota) - kwotaNoty) < 0.01;
 		// Prowizja oczekiwana za tę pozycję: przy całej składce — prowizja polisy, przy racie — kwota × stawka polisy.
@@ -151,8 +140,8 @@
 			.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci));
 
 		// Nota z numerem raty (Colonnade, Leadenhall): ta konkretna rata. Gdy jest już rozliczona — nie bierzemy innej.
-		if (row.nr_raty != null) {
-			const rata = appState.payments.find(p => p.polisa_id === policy.id && p.nr_raty === row.nr_raty);
+		if (nrRaty != null) {
+			const rata = appState.payments.find(p => p.polisa_id === policy.id && p.nr_raty === nrRaty);
 			if (rata && settledStatuses.includes(rata.status)) { row.already_settled = true; return row; }
 			// Brak raty o tym numerze w harmonogramie CRM — rata o tej kwocie z terminem najbliższym dacie wpłaty.
 			const dzien = row.data_oplacenia ? new Date(row.data_oplacenia).getTime() : null;
@@ -165,7 +154,7 @@
 				// Status z wpłaty (cała rata = opłacona); rozjazd prowizji idzie do alertu, nie do statusu raty
 				row.new_status = rowna(cel) ? 'Opłacona' : 'Częściowo opłacona';
 				const uwagi: string[] = [];
-				if (!rata) uwagi.push(`w CRM nie ma raty nr ${row.nr_raty} — rozliczam ratę ${cel.nr_raty} (termin ${cel.data_platnosci})`);
+				if (!rata) uwagi.push(`w CRM nie ma raty nr ${nrRaty} — rozliczam ratę ${cel.nr_raty} (termin ${cel.data_platnosci})`);
 				else {
 					if (!rowna(cel)) uwagi.push(`rata ${cel.nr_raty} w CRM: ${fmtPln(Number(cel.kwota))} zł, w nocie ${fmtPln(kwotaNoty)} zł`);
 					// Harmonogram CRM nie pasuje do numeracji TU (np. rata 7 opłacona trzy miesiące po starcie polisy)
