@@ -1,4 +1,5 @@
 // Pliki publiczne (grafiki i PDF-y z maili BeautyPolisy) w kubełku R2, pod kluczem publiczne/<ścieżka>.
+// W mailach adres https://pliki.auraexpert.pl/media/<ścieżka> (ta domena podaje tylko /media — hooks.server.ts).
 // Wcześniej leżały w GetResponse, z którego rezygnujemy. Lista jest zamknięta: adres spoza niej to 404,
 // więc trasa nie udostępnia żadnych innych obiektów kubełka (pliki polis mają klucze <tenant>/…).
 // Przy pierwszym żądaniu pliku, którego jeszcze nie ma w R2, serwer pobiera go jednorazowo ze starego
