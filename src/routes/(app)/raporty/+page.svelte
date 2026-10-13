@@ -16,12 +16,12 @@
 	import { CheckCircle2, AlertTriangle, Download, FileSpreadsheet, ExternalLink, Inbox } from 'lucide-svelte';
 
 	const dzis = todayStr();
-	type Id = 'knf' | 'apk' | 'nal' | 'prow' | 'odn' | 'rodz';
+	type Id = 'knf' | 'apk' | 'nal' | 'prow' | 'odn' | 'rodz' | 'agent';
 	type Kontrola = { ok: boolean; tekst: string; szczegol?: string; akcja?: { tekst: string; href: string } };
 	type Suma = { etykieta: string; wartosc: string; notka?: string; uwaga?: boolean };
 	type Kol = { t: string; prawa?: boolean; mono?: boolean };
 	type Raport = {
-		nazwa: string; opis: string; okres?: boolean; horyzont?: boolean;
+		nazwa: string; opis: string; okres?: boolean; horyzont?: boolean; agent?: boolean;
 		kontrole: Kontrola[]; sumy: Suma[];
 		kolumny?: Kol[]; wiersze?: string[][]; razem?: string[];
 		eksport?: { naglowek: string[]; wiersze: (string | number | null)[][] };
@@ -36,6 +36,9 @@
 		{ grupa: 'Finanse', pozycje: [
 			{ id: 'nal', nazwa: 'Należności i zaległości', krotko: 'Raty po terminie według towarzystw i wieku', widoczny: true },
 			{ id: 'prow', nazwa: 'Prowizje według towarzystw', krotko: 'Przypis, prowizja i stawka efektywna', widoczny: true }
+		] },
+		{ grupa: 'Sprzedaż', pozycje: [
+			{ id: 'agent', nazwa: 'Sprzedaż według agentów', krotko: 'Polisy, przypis i prowizja agenta / sprzedawcy', widoczny: true }
 		] },
 		{ grupa: 'Portfel', pozycje: [
 			{ id: 'odn', nazwa: 'Odnowienia', krotko: 'Polisy kończące się w najbliższych dniach', widoczny: true },
@@ -222,6 +225,125 @@
 		};
 	}
 
+	// ── Sprzedaż według agentów: podział prowizji polisy (akwizycja / obsługa / opiekun z udziałem %);
+	// polisa bez podziału — opiekun klienta ze 100%. Pracownik bez roli administratora widzi tylko siebie.
+	const ROLE_AGENTA: [string, string][] = [['', 'wszystkie role'], ['akwizycja', 'akwizycja'], ['obsługa', 'obsługa'], ['opiekun', 'opiekun']];
+	let agentWybor = $state('');
+	let rolaAgenta = $state('');
+	const adminRaportow = $derived(isAdmin(appState.profile));
+	const agent = $derived(adminRaportow ? agentWybor : (appState.profile?.id ?? ''));
+	const nazwaAgentaWg = $derived(new Map(appState.brokers.map((b) => [b.id, b.imie_nazwisko || b.email])));
+	const agenci = $derived([...appState.brokers].sort((a, b) => (a.imie_nazwisko || a.email).localeCompare(b.imie_nazwisko || b.email, 'pl')));
+	const opiekunKlientaWg = $derived(new Map(appState.clients.map((c) => [c.id, c.opiekun_id])));
+
+	function raportAgentow(): Raport {
+		type Udzial = { p: (typeof wOkr)[number]; agent: string | null; rola: string; pct: number; zPodzialu: boolean };
+		const wgPolisy = new Map<string, typeof appState.policyBrokers>();
+		for (const pb of appState.policyBrokers) wgPolisy.set(pb.polisa_id, [...(wgPolisy.get(pb.polisa_id) ?? []), pb]);
+		const wszystkie: Udzial[] = [];
+		let bezPodzialu = 0;
+		let bezAgenta = 0;
+		let zlaSuma = 0;
+		for (const p of wOkr) {
+			const lista = wgPolisy.get(p.id) ?? [];
+			if (lista.length) {
+				for (const pb of lista) wszystkie.push({ p, agent: pb.broker_id, rola: pb.rola, pct: Number(pb.udzial_pct) || 0, zPodzialu: true });
+				const sprzedaz = lista.filter((pb) => pb.rola !== 'opiekun');
+				if (sprzedaz.length && Math.abs(sprzedaz.reduce((a, pb) => a + Number(pb.udzial_pct || 0), 0) - 100) > 0.1) zlaSuma++;
+			} else {
+				const op = opiekunKlientaWg.get(p.klient_id) ?? null;
+				bezPodzialu++;
+				if (!op) bezAgenta++;
+				wszystkie.push({ p, agent: op, rola: 'opiekun', pct: 100, zPodzialu: false });
+			}
+		}
+		const udzialy = wszystkie.filter((u) => (!rolaAgenta || u.rola === rolaAgenta) && (!agent || u.agent === agent));
+		const nazwa = (id: string | null) => (id ? (nazwaAgentaWg.get(id) ?? 'nieznany pracownik') : 'Bez agenta');
+		const prowAg = (u: Udzial) => (Number(u.p.prowizja_przypisana ?? 0) * u.pct) / 100;
+		const zainkAg = (u: Udzial) => (Number(u.p.prowizja_zainkasowana ?? 0) * u.pct) / 100;
+		const polisyUdz = new Map(udzialy.map((u) => [u.p.id, u.p]));
+		const przypisRazem = [...polisyUdz.values()].reduce((a, p) => a + Number(p.skladka_przypisana ?? 0), 0);
+		const prowAgRazem = udzialy.reduce((a, u) => a + prowAg(u), 0);
+		const zainkRazem = udzialy.reduce((a, u) => a + zainkAg(u), 0);
+		const okresTxt = okres.etykieta.split(' · ')[1];
+		const rolaTxt = rolaAgenta ? ` · rola: ${rolaAgenta}` : '';
+
+		const kontrole: Kontrola[] = [
+			bezPodzialu
+				? { ok: bezAgenta === 0, tekst: `${odmiana(bezPodzialu, 'polisa nie ma', 'polisy nie mają', 'polis nie ma')} podziału prowizji`, szczegol: bezAgenta ? `przypisane opiekunowi klienta; ${odmiana(bezAgenta, 'polisa jest', 'polisy są', 'polis jest')} bez agenta — uzupełnij opiekuna lub podział na karcie polisy` : 'przypisane opiekunowi klienta ze 100% udziału', akcja: { tekst: 'Polisy', href: '/policies' } }
+				: { ok: true, tekst: 'Każda polisa w okresie ma podział prowizji', szczegol: `${liczba(wOkr.length)} z ${liczba(wOkr.length)}` },
+			zlaSuma ? { ok: false, tekst: `${odmiana(zlaSuma, 'polisa ma', 'polisy mają', 'polis ma')} udziały akwizycji i obsługi różne od 100%`, szczegol: 'prowizja agentów nie sumuje się do prowizji polisy — popraw podział na karcie polisy' } : { ok: true, tekst: 'Udziały akwizycji i obsługi sumują się do 100%' }
+		];
+		if (!adminRaportow) kontrole.push({ ok: true, tekst: 'Widzisz tylko swoje polisy', szczegol: 'zestawienie wszystkich agentów jest dostępne dla administratora' });
+
+		const eksportWierszePolis = udzialy
+			.slice()
+			.sort((a, b) => (b.p.data_od ?? '').localeCompare(a.p.data_od ?? ''))
+			.map((u) => [nazwa(u.agent), u.rola + (u.zPodzialu ? '' : ' (opiekun klienta)'), u.p.data_od ?? '', u.p.crm_clients?.nazwa ?? '', u.p.nr_polisy, nazwaTu(u.p), nazwaRodzaju(u.p.rodzaj), kwota(Number(u.p.skladka_przypisana ?? 0)), kwota(Number(u.p.prowizja_przypisana ?? 0)), u.pct, kwota(prowAg(u)), kwota(zainkAg(u))]);
+		const naglowekPolis = ['Agent', 'Rola', 'Początek ochrony', 'Klient', 'Nr polisy', 'Towarzystwo', 'Rodzaj', 'Składka', 'Prowizja polisy', 'Udział %', 'Prowizja agenta', 'Prowizja agenta zainkasowana'];
+
+		if (agent) {
+			const lista = udzialy.slice().sort((a, b) => (b.p.data_od ?? '').localeCompare(a.p.data_od ?? ''));
+			return {
+				nazwa: `Sprzedaż agenta: ${nazwa(agent)}`,
+				opis: `Polisy z początkiem ochrony w okresie (${okresTxt}), w których agent ma udział w prowizji${rolaTxt}. Prowizja agenta = prowizja polisy × udział agenta.`,
+				okres: true,
+				agent: true,
+				kontrole,
+				sumy: [
+					{ etykieta: 'Polisy', wartosc: liczba(polisyUdz.size), notka: odmiana(new Set(lista.map((u) => u.p.klient_id)).size, 'klient', 'klientów', 'klientów') },
+					{ etykieta: 'Przypis składki', wartosc: zl(przypisRazem) },
+					{ etykieta: 'Prowizja agenta', wartosc: zl(prowAgRazem), notka: 'przypisana' },
+					{ etykieta: 'W tym zainkasowana', wartosc: zl(zainkRazem), notka: prowAgRazem ? proc((zainkRazem / prowAgRazem) * 100, 0) : '' }
+				],
+				kolumny: [{ t: 'Początek' }, { t: 'Klient' }, { t: 'Polisa', mono: true }, { t: 'Towarzystwo' }, { t: 'Rola' }, { t: 'Składka', prawa: true }, { t: 'Udział', prawa: true }, { t: 'Prowizja agenta', prawa: true }],
+				wiersze: lista.map((u) => [fmtDzien(u.p.data_od, true), u.p.crm_clients?.nazwa ?? '—', u.p.nr_polisy, nazwaTu(u.p), u.zPodzialu ? u.rola : 'opiekun klienta', zl(Number(u.p.skladka_przypisana ?? 0)), proc(u.pct, 0), zl(prowAg(u))]),
+				razem: ['Razem', '', liczba(polisyUdz.size), '', '', zl(przypisRazem), '', zl(prowAgRazem)],
+				eksport: { naglowek: naglowekPolis, wiersze: eksportWierszePolis },
+				pusty: lista.length ? undefined : { tytul: 'Brak polis agenta w okresie', tekst: 'Wybierz dłuższy okres albo inną rolę.' }
+			};
+		}
+
+		const wgAgenta = new Map<string, { polisy: Set<string>; klienci: Set<string>; przypis: number; prowPolis: number; prow: number; zaink: number; role: Set<string> }>();
+		for (const u of udzialy) {
+			const k = u.agent ?? '';
+			const w = wgAgenta.get(k) ?? { polisy: new Set(), klienci: new Set(), przypis: 0, prowPolis: 0, prow: 0, zaink: 0, role: new Set() };
+			if (!w.polisy.has(u.p.id)) {
+				w.polisy.add(u.p.id);
+				w.przypis += Number(u.p.skladka_przypisana ?? 0);
+				w.prowPolis += Number(u.p.prowizja_przypisana ?? 0);
+			}
+			w.klienci.add(u.p.klient_id);
+			w.prow += prowAg(u);
+			w.zaink += zainkAg(u);
+			w.role.add(u.zPodzialu ? u.rola : 'opiekun klienta');
+			wgAgenta.set(k, w);
+		}
+		const wiersze = [...wgAgenta].map(([id, w]) => ({ nazwa: nazwa(id || null), ...w })).sort((a, b) => b.prow - a.prow);
+		const najlepszy = wiersze[0];
+		return {
+			nazwa: 'Sprzedaż według agentów',
+			opis: `Polisy z początkiem ochrony w okresie (${okresTxt}) według agentów z podziału prowizji${rolaTxt}. Przypis i prowizja polis liczone w całości u każdego agenta polisy; prowizja agenta = prowizja polisy × jego udział. Wybierz agenta, żeby zobaczyć jego polisy.`,
+			okres: true,
+			agent: true,
+			kontrole,
+			sumy: [
+				{ etykieta: 'Agenci', wartosc: liczba(wiersze.filter((w) => w.nazwa !== 'Bez agenta').length), notka: odmiana(polisyUdz.size, 'polisa', 'polisy', 'polis') },
+				{ etykieta: 'Przypis składki', wartosc: zl(przypisRazem) },
+				{ etykieta: 'Prowizja agentów', wartosc: zl(prowAgRazem), notka: `w tym zainkasowana ${zl(zainkRazem)}` },
+				...(najlepszy ? [{ etykieta: 'Najwyższa prowizja', wartosc: zl(najlepszy.prow), notka: najlepszy.nazwa }] : [])
+			],
+			kolumny: [{ t: 'Agent' }, { t: 'Rola' }, { t: 'Polisy', prawa: true }, { t: 'Klienci', prawa: true }, { t: 'Przypis', prawa: true }, { t: 'Prowizja polis', prawa: true }, { t: 'Prowizja agenta', prawa: true }, { t: 'Zainkasowana', prawa: true }],
+			wiersze: wiersze.map((w) => [w.nazwa, [...w.role].join(', '), liczba(w.polisy.size), liczba(w.klienci.size), zl(w.przypis), zl(w.prowPolis), zl(w.prow), zl(w.zaink)]),
+			razem: ['Razem', '', liczba(polisyUdz.size), liczba(new Set(udzialy.map((u) => u.p.klient_id)).size), zl(przypisRazem), zl([...polisyUdz.values()].reduce((a, p) => a + Number(p.prowizja_przypisana ?? 0), 0)), zl(prowAgRazem), zl(zainkRazem)],
+			eksport: {
+				naglowek: ['Agent', 'Role', 'Polisy', 'Klienci', 'Przypis', 'Prowizja polis', 'Prowizja agenta', 'Prowizja agenta zainkasowana'],
+				wiersze: wiersze.map((w) => [w.nazwa, [...w.role].join(', '), w.polisy.size, w.klienci.size, kwota(w.przypis), kwota(w.prowPolis), kwota(w.prow), kwota(w.zaink)])
+			},
+			pusty: udzialy.length ? undefined : { tytul: 'Brak polis w okresie', tekst: 'Wybierz dłuższy okres albo inną rolę.' }
+		};
+	}
+
 	function raportKnf(): Raport {
 		const rok = Number(dzis.slice(0, 4)) - 1;
 		return {
@@ -240,6 +362,7 @@
 			case 'odn': return raportOdnowien();
 			case 'rodz': return raportRodzajow();
 			case 'apk': return raportApk();
+			case 'agent': return raportAgentow();
 			default: return raportKnf();
 		}
 	});
@@ -301,7 +424,7 @@
 			{/if}
 		</div>
 
-		{#if raport.okres || raport.horyzont}
+		{#if raport.okres || raport.horyzont || raport.agent}
 			<div role="group" aria-label="Parametry raportu" class="flex flex-wrap gap-2 px-4 py-2.5 border-b border-line-soft bg-side">
 				{#if raport.okres}
 					<label class="relative inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-line bg-white text-[13px] focus-within:ring-2 focus-within:ring-accent/40">
@@ -309,6 +432,25 @@
 						<span class="font-semibold text-ink">{okres.etykieta.split(' · ')[1]}</span>
 						<select bind:value={preset} aria-label="Okres" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
 							{#each PRESETY as [id, label]}<option value={id}>{label}</option>{/each}
+						</select>
+					</label>
+				{/if}
+				{#if raport.agent}
+					<label class="relative inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-line bg-white text-[13px] focus-within:ring-2 focus-within:ring-accent/40 {adminRaportow ? '' : 'opacity-80'}">
+						<span class="text-ink-3">Agent</span>
+						<span class="font-semibold text-ink">{agent ? (nazwaAgentaWg.get(agent) ?? 'nieznany') : 'wszyscy'}</span>
+						{#if adminRaportow}
+							<select bind:value={agentWybor} aria-label="Agent" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+								<option value="">wszyscy</option>
+								{#each agenci as b}<option value={b.id}>{b.imie_nazwisko || b.email}</option>{/each}
+							</select>
+						{/if}
+					</label>
+					<label class="relative inline-flex items-center gap-2 h-8 px-2.5 rounded-lg border border-line bg-white text-[13px] focus-within:ring-2 focus-within:ring-accent/40">
+						<span class="text-ink-3">Rola</span>
+						<span class="font-semibold text-ink">{ROLE_AGENTA.find(([k]) => k === rolaAgenta)?.[1]}</span>
+						<select bind:value={rolaAgenta} aria-label="Rola agenta" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+							{#each ROLE_AGENTA as [k, l]}<option value={k}>{l}</option>{/each}
 						</select>
 					</label>
 				{/if}

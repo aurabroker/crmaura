@@ -10,8 +10,8 @@
 	import type { Policy } from '$lib/types/database';
 	import Kolumny from '$lib/components/wykresy/Kolumny.svelte';
 	import {
-		KOLOR, PRESETY, dzien, grupuj, liczba, liczonaPolisa, mediana, miesiacKrotko, miesiacPelny, miesiecznie,
-		okresZPresetu, proc, rokWczesniej, stanRat, sumuj, wOkresie, zl, zmiana, type Kolumna, type PresetOkresu
+		KOLOR, PRESETY, dzien, grupuj, koniecMiesiaca, liczba, liczonaPolisa, mediana, miesiacKrotko, miesiacPelny, miesiacRokWczesniej,
+		miesiecznie, okresZPresetu, proc, rokWczesniej, stanRat, sumuj, wOkresie, zero, zl, zmiana, type Kolumna, type PresetOkresu
 	} from '$lib/analityka';
 	import { ArrowDownRight, ArrowUpRight, CheckCircle2, Clock, AlertCircle, Info, X, GitCompare, FileChartColumn } from 'lucide-svelte';
 
@@ -81,16 +81,63 @@
 	// ── Wykres miesięczny ──
 	const miesieczne = $derived(miesiecznie(polisy, okres));
 	const kilkaLat = $derived(okres.od.slice(0, 4) !== okres.do.slice(0, 4));
+
+	// Ten sam miesiąc rok wcześniej — pełne miesiące (kolumna obok); te same filtry, a przy „Bez 2 największych”
+	// bez 2 największych polis tamtego roku. Miesiące sprzed początku historii polis — bez kolumny (brak danych).
+	const porownujRok = $derived(preset !== 'wszystko');
+	const okresRw = $derived.by(() => {
+		const o = rokWczesniej(okres);
+		return { ...o, do: koniecMiesiaca(o.do) };
+	});
+	const polisyRw = $derived.by(() => {
+		const w = wFiltrach.filter((p) => wOkresie(p.data_od, okresRw));
+		if (!(bezNajwiekszych && moznaUkryc) || w.length < 5) return w;
+		const top = [...w].sort((a, b) => Number(b.skladka_przypisana ?? 0) - Number(a.skladka_przypisana ?? 0)).slice(0, 2);
+		return w.filter((p) => !top.includes(p));
+	});
+	const miesieczneRw = $derived(new Map(miesiecznie(polisyRw, okresRw).map(({ ym, s }) => [ym, s])));
+	const rwMiesiaca = (ym: string) => {
+		const poprzedni = miesiacRokWczesniej(ym);
+		if (!porownujRok || !najstarsza || poprzedni < najstarsza.slice(0, 7)) return null;
+		return miesieczneRw.get(poprzedni) ?? zero();
+	};
+	// Zmiana r/r bieżącego miesiąca: od 1. do dziś w obu latach (niepełny miesiąc nie jest porównywany z pełnym).
+	const biezacyMiesiac = dzis.slice(0, 7);
+	// Ten sam fragment miesiąca rok wcześniej (np. 1–13 paź 2025) — kolumna obok miesiąca w toku i podstawa zmiany r/r.
+	const rwBiezacyDoDnia = $derived.by(() => {
+		if (!porownujRok || okres.do !== dzis || !miesieczne.some((m) => m.ym === biezacyMiesiac)) return null;
+		const od = `${miesiacRokWczesniej(biezacyMiesiac)}-01`;
+		if (!najstarsza || najstarsza > od) return null;
+		const doDnia = rokWczesniej({ od: dzis, do: dzis, etykieta: '' }).do;
+		return sumuj(polisyRw.filter((p) => wOkresie(p.data_od, { od, do: doDnia, etykieta: '' })));
+	});
+	const wzrostBiezacego = $derived.by(() => {
+		const teraz = miesieczne.find((m) => m.ym === biezacyMiesiac);
+		return teraz && rwBiezacyDoDnia ? zmiana(teraz.s[miara], rwBiezacyDoDnia[miara]) : null;
+	});
 	const kolumny = $derived<Kolumna[]>(
 		miesieczne.map(({ ym, s }) => {
-			const wToku = ym === dzis.slice(0, 7) && okres.do === dzis;
+			const wToku = ym === biezacyMiesiac && okres.do === dzis;
+			const rw = porownujRok ? rwMiesiaca(ym) : undefined;
+			const doDnia = dzien(dzis, false);
 			return {
 				klucz: ym,
 				etykieta: miesiacKrotko(ym, kilkaLat),
-				pelna: `${miesiacPelny(ym)}${wToku ? ` (do ${dzien(dzis, false)})` : ''}`,
+				pelna: `${miesiacPelny(ym)}${wToku ? ` (do ${doDnia})` : ''}`,
 				wartosc: s[miara],
 				dodatek: miara === 'polisy' ? `przypis ${zl(s.przypis)}` : odmiana(s.polisy, 'polisa', 'polisy', 'polis'),
-				jasna: wToku
+				jasna: wToku,
+				...(rw !== undefined
+					? wToku && rwBiezacyDoDnia
+						? {
+								porownanie: rwBiezacyDoDnia[miara],
+								porownanieOpis: `${miesiacPelny(miesiacRokWczesniej(ym)).toLowerCase()} (do ${dzien(rokWczesniej({ od: dzis, do: dzis, etykieta: '' }).do, false)})`,
+								porownanieCaly: rw ? rw[miara] : null,
+								porownanieCalyOpis: `cały ${miesiacPelny(miesiacRokWczesniej(ym)).toLowerCase()}`
+							}
+						: { porownanie: rw ? rw[miara] : null, porownanieOpis: miesiacPelny(miesiacRokWczesniej(ym)).toLowerCase() }
+					: {}),
+				...(wToku && wzrostBiezacego != null ? { wzrost: wzrostBiezacego, wzrostOpis: `(1–${Number(dzis.slice(8, 10))} ${miesiacKrotko(ym)} w obu latach)` } : {})
 			};
 		})
 	);
@@ -315,8 +362,12 @@
 	{#if widok === 'wykres'}
 		<Kolumny dane={kolumny} pieniadze={miara !== 'polisy'} opis={TYTUL[miara]} />
 		<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
+			{#if porownujRok}
+				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seria}"></span>wybrany okres</span>
+				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seria2}"></span>ten sam miesiąc rok wcześniej</span>
+			{/if}
 			{#if kolumny.some((k) => k.jasna)}
-				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seriaJasna}"></span>{miesiacPelny(dzis.slice(0, 7)).toLowerCase()} — miesiąc w toku</span>
+				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seriaJasna}"></span>{miesiacPelny(dzis.slice(0, 7)).toLowerCase()} — miesiąc w toku{wzrostBiezacego != null ? '; zmiana r/r liczona od 1. do dziś w obu latach' : ''}</span>
 			{/if}
 			{#if notka}<span>{notka}</span>{/if}
 		</div>
@@ -329,6 +380,10 @@
 						<th class="px-3 py-2 font-semibold text-right">Przypis składki</th>
 						<th class="px-3 py-2 font-semibold text-right">Prowizja</th>
 						<th class="px-3 py-2 font-semibold text-right">Polisy</th>
+						{#if porownujRok}
+							<th class="px-3 py-2 font-semibold text-right">{miara === 'przypis' ? 'Przypis' : miara === 'prowizja' ? 'Prowizja' : 'Polisy'} rok wcześniej</th>
+							<th class="px-3 py-2 font-semibold text-right">Zmiana r/r</th>
+						{/if}
 					</tr>
 				</thead>
 				<tbody>
@@ -338,6 +393,12 @@
 							<td class="px-3 py-1.5 text-right tabular-nums">{zl(s.przypis)}</td>
 							<td class="px-3 py-1.5 text-right tabular-nums">{zl(s.prowizja)}</td>
 							<td class="px-3 py-1.5 text-right tabular-nums">{liczba(s.polisy)}</td>
+							{#if porownujRok}
+								{@const rw = rwMiesiaca(ym)}
+								{@const z = ym === biezacyMiesiac && okres.do === dzis ? wzrostBiezacego : rw ? zmiana(s[miara], rw[miara]) : null}
+								<td class="px-3 py-1.5 text-right tabular-nums text-ink-2">{rw ? (miara === 'polisy' ? liczba(rw.polisy) : zl(rw[miara])) : '—'}</td>
+								<td class="px-3 py-1.5 text-right tabular-nums" style="color: {z == null ? 'inherit' : z >= 0 ? KOLOR.ok : KOLOR.zly}">{z == null ? '—' : `${z >= 0 ? '▲ +' : '▼ −'}${proc(Math.abs(z))}`}</td>
+							{/if}
 						</tr>
 					{/each}
 					<tr class="border-t border-line font-semibold bg-side">
@@ -345,6 +406,7 @@
 						<td class="px-3 py-1.5 text-right tabular-nums">{zl(sumy.przypis)}</td>
 						<td class="px-3 py-1.5 text-right tabular-nums">{zl(sumy.prowizja)}</td>
 						<td class="px-3 py-1.5 text-right tabular-nums">{liczba(sumy.polisy)}</td>
+						{#if porownujRok}<td class="px-3 py-1.5"></td><td class="px-3 py-1.5"></td>{/if}
 					</tr>
 				</tbody>
 			</table>
