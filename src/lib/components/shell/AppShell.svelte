@@ -10,6 +10,7 @@
 	import { odnowionePolisy } from '$lib/statusPolisy';
 	import GlobalSearch from './GlobalSearch.svelte';
 	import Skroty from './Skroty.svelte';
+	import { BUILD_COMMIT, BUILD_DATA, OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList, Settings, Plus, LogOut,
 		ShieldCheck, ChevronDown, AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield,
@@ -205,6 +206,12 @@
 			</div>
 		{/each}
 	</nav>
+
+	<!-- Wersja i build — żeby po wdrożeniu było widać, która wersja działa -->
+	<p class="mt-auto px-2.5 pt-2 text-[11px] leading-4 text-ink-3 tabular-nums" title="Wersja CRM {OPIS_WERSJI}">
+		<span class="font-semibold text-ink-2">AuraCRM v{WERSJA}</span><br />
+		build {BUILD_DATA}{#if BUILD_COMMIT} · <span class="font-mono">{BUILD_COMMIT}</span>{/if}
+	</p>
 {/snippet}
 
 <div class="min-h-screen flex bg-bg text-ink">

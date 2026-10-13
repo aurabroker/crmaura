@@ -8,6 +8,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { dndzone } from 'svelte-dnd-action';
 	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check } from 'lucide-svelte';
+	import { OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { isBroker } from '$lib/stores/app.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
@@ -451,9 +452,6 @@
 		return String(Math.round(v));
 	}
 
-	// Numer wersji CRM przy nagłówku pulpitu (vite.config.ts; podnoszony przy każdym wdrożeniu).
-	const WERSJA = __APP_VERSION__;
-	const BUILD_DATA = new Date(__APP_BUILD__.data).toLocaleString('pl-PL', { timeZone: 'Europe/Warsaw', dateStyle: 'short', timeStyle: 'short' });
 </script>
 
 <svelte:head><title>Pulpit — AuraCRM</title></svelte:head>
@@ -463,7 +461,7 @@
 		<h1 class="text-2xl font-semibold text-ink flex items-center gap-2">
 			Dziś
 			<span class="text-xs font-medium text-ink-3 bg-surface-2 border border-line rounded-full px-2 py-0.5"
-				title="Wersja CRM {WERSJA} · build {BUILD_DATA}{__APP_BUILD__.commit ? ` · ${__APP_BUILD__.commit}` : ''}">v{WERSJA}</span>
+				title="Wersja CRM {OPIS_WERSJI}">v{WERSJA}</span>
 		</h1>
 		<p class="text-sm text-ink-3 mt-0.5">{dzisOpis}{appState.tenantNazwa ? ` · ${appState.tenantNazwa}` : ''}</p>
 	</div>
