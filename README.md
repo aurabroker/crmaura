@@ -253,7 +253,8 @@ w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
 | Towarzystwo | Produkt | Uwagi |
 |-------------|---------|-------|
 | WARTA | Ekstrabiznes Plus | sekcje ryzyk, składki sekcyjne, wiele lokalizacji |
-| ERGO Hestia | OC zawodowe | certyfikat pod Programem Ubezpieczenia |
+| ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia |
+| ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk, lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
 | UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
 
 Produkt bez parsera jest widoczny na liście, ale import jest zablokowany.

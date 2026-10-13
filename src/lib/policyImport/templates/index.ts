@@ -5,6 +5,7 @@
 import type { InsurerTemplate, ProductTemplate } from '../types';
 import * as wartaEkstrabiznes from './warta-ekstrabiznes';
 import * as ergoOcZawodowe from './ergo-oc-zawodowe';
+import * as ergoOcIndywidualna from './ergo-oc-indywidualna';
 import * as uniqaKomunikacja from './uniqa-komunikacja';
 
 export const INSURER_TEMPLATES: InsurerTemplate[] = [
@@ -40,10 +41,17 @@ export const INSURER_TEMPLATES: InsurerTemplate[] = [
 		produkty: [
 			{
 				id: 'ergo-oc-zawodowe',
-				label: 'OC zawodowe',
+				label: 'OC zawodowe — certyfikat z programu',
 				rodzaj: 'OC',
 				parse: ergoOcZawodowe.parse,
 				detect: ergoOcZawodowe.detect
+			},
+			{
+				id: 'ergo-oc-indywidualna',
+				label: 'OC zawodowe — polisa indywidualna (po ocenie ryzyka)',
+				rodzaj: 'OC',
+				parse: ergoOcIndywidualna.parse,
+				detect: ergoOcIndywidualna.detect
 			},
 			{
 				id: 'ergo-flota-komunikacja',
