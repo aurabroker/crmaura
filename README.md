@@ -253,7 +253,8 @@ w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
 | Towarzystwo | Produkt | Uwagi |
 |-------------|---------|-------|
 | WARTA | Ekstrabiznes Plus | sekcje ryzyk, składki sekcyjne, wiele lokalizacji |
-| ERGO Hestia | OC zawodowe | certyfikat pod Programem Ubezpieczenia |
+| ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia |
+| ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk, lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
 | UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
 
 Produkt bez parsera jest widoczny na liście, ale import jest zablokowany.
@@ -288,6 +289,12 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
   aktywności.
 - **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
   z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
+- **Suma gwarancyjna.** Szablony OC (ERGO: certyfikat i polisa indywidualna)
+  przekazują sumę ubezpieczenia do `suma_gwarancyjna` — korzystają z niej
+  odnowienia OC beauty.
+- **Raty a składka.** Gdy suma odczytanych rat różni się od składki,
+  podgląd pokazuje ostrzeżenie (zwykle ucięty harmonogram) — import nie jest
+  blokowany.
 - **Wznowienie.** Numer polisy poprzedniej ustawia `renewal_of`. Gdy polisa go
   nie podaje (typowe dla komunikacji), poprzednika szukamy po **pojeździe
   i ciągłości okresów**: polisa tego samego pojazdu kończąca się w promieniu
@@ -412,6 +419,21 @@ SUPABASE_SERVICE_ROLE_KEY  = eyJ...  <- wymagany dla /api/admin/*
 TURNSTILE_SECRET_KEY       = ...     <- weryfikacja antybotowa (serwer)
 GUS_API_KEY                = ...     <- wyszukiwarka REGON/NIP
 ```
+
+**Bindingi (Workers & Pages → crmaura → Settings → Bindings):**
+
+| Zmienna | Typ | Zasób | Do czego |
+|---------|-----|-------|----------|
+| `POLISY_PDF` | R2 bucket | `crm-polisy-eu` (jurysdykcja **EU**) | PDF polis: sekcja „Dokumenty” na karcie polisy, zapis pliku z importu PDF, załączniki e-maili z Panelu 360° |
+
+- Kubełek zakładamy w panelu R2 → **Create bucket** → Location: **Specify jurisdiction → European Union (EU)**
+  (polisy zawierają dane osobowe; jurysdykcji nie da się zmienić po utworzeniu kubełka). Kubełek jest prywatny —
+  bez domeny publicznej i bez `r2.dev`; pliki wydaje tylko serwer CRM po sprawdzeniu firmy użytkownika.
+- Binding dodajemy dla środowiska **Production** (Preview bez bindingu po prostu wyłącza funkcje plików).
+- Binding działa dopiero w **nowym** wdrożeniu: po dodaniu → Deployments → ostatnie wdrożenie produkcyjne → **Retry deployment**.
+- Bez bindingu `/api/pliki/*` odpowiada 503, a karta polisy pokazuje „Magazyn plików … nie jest jeszcze podpięty”.
+- Projekt **nie** używa pliku `wrangler.toml`/`wrangler.jsonc` — w Pages taki plik z `pages_build_output_dir` przejmuje całą
+  konfigurację (także zmienne środowiskowe) zamiast panelu. Bindingi i zmienne ustawiamy wyłącznie w panelu.
 
 > ⚠️ **BEZPIECZEŃSTWO:** klucz `service_role` (oraz `TURNSTILE_SECRET_KEY`, `GUS_API_KEY`)
 > **NIGDY** nie może mieć przedrostka `VITE_`. Przedrostek `VITE_` powoduje, że Vite

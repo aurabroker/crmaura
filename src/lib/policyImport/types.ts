@@ -65,6 +65,8 @@ export interface ExtractedPolicy {
 	rodzaj: string | null;
 
 	skladka: number | null;
+	/** Suma gwarancyjna / ubezpieczenia — kolumna crm_policies.suma_gwarancyjna (odnowienia OC beauty). */
+	suma_gwarancyjna: number | null;
 	ilosc_rat: number | null;
 	raty: Installment[];
 	konto_do_wplat: string | null;
@@ -98,6 +100,7 @@ export function emptyExtraction(): ExtractedPolicy {
 		leasing: null,
 		rodzaj: null,
 		skladka: null,
+		suma_gwarancyjna: null,
 		ilosc_rat: null,
 		raty: [],
 		konto_do_wplat: null,

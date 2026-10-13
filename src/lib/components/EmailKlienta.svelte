@@ -84,6 +84,7 @@
 			szablon = szablonStartowy;
 			polisaId = polisaStartowa ?? (SZABLONY.find((s) => s.id === szablonStartowy)?.polisa ? domyslnaPolisa(szablonStartowy) : '');
 			zalaczniki = new Set();
+			autoPdf = null;
 			przelicz();
 			void (async () => {
 				const [u, lista, ok] = await Promise.all([
@@ -103,9 +104,16 @@
 	const polisa = $derived(polisy.find((p) => p.id === polisaId) ?? null);
 	const nazwaPolisy = (id: string) => polisy.find((p) => p.id === id)?.nr_polisy ?? '—';
 
+	// PDF dodany automatycznie do „Potwierdzenia zawarcia” — przy zmianie polisy podmieniamy go, a nie dokładamy.
+	let autoPdf: string | null = null;
 	function zaznaczPdfPolisy() {
+		if (!magazyn) return;
+		const n = new Set(zalaczniki);
+		if (autoPdf) n.delete(autoPdf);
 		const pdf = pliki.find((f) => f.polisa_id === polisaId && f.rodzaj === 'polisa');
-		if (pdf) zalaczniki = new Set([...zalaczniki, pdf.id]);
+		autoPdf = pdf?.id ?? null;
+		if (pdf) n.add(pdf.id);
+		zalaczniki = n;
 	}
 
 	function przelicz() {
@@ -252,7 +260,7 @@
 				<div class="flex flex-col gap-1">
 					{#each pliki as f (f.id)}
 						<label class="flex items-center gap-2 cursor-pointer min-w-0">
-							<input type="checkbox" checked={zalaczniki.has(f.id)} onchange={() => przelaczZalacznik(f.id)} disabled={!magazyn} class="w-4 h-4 accent-accent" />
+							<input type="checkbox" checked={zalaczniki.has(f.id)} onchange={() => przelaczZalacznik(f.id)} disabled={!magazyn && !zalaczniki.has(f.id)} class="w-4 h-4 accent-accent" />
 							<span class="text-ink truncate">{f.nazwa}</span>
 							<span class="text-xs text-ink-3 whitespace-nowrap">{RODZAJ_PLIKU[f.rodzaj]} · polisa {nazwaPolisy(f.polisa_id)} · {rozmiar(f.rozmiar)}</span>
 						</label>

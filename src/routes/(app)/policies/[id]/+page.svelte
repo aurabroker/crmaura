@@ -836,7 +836,8 @@
 			{/if}
 
 			<!-- Dokumenty polisy (PDF w Cloudflare R2) -->
-			<DokumentyPolisy polisaId={policy.id} onzmiana={(lista) => (maPdfPolisy = lista.some((f) => f.rodzaj === 'polisa'))} />
+			<!-- {#key}: przejście na inną polisę (np. certyfikat UG) w trakcie wysyłki nie dopisze pliku do listy złej karty -->
+			{#key policy.id}<DokumentyPolisy polisaId={policy.id} onzmiana={(lista) => (maPdfPolisy = lista.some((f) => f.rodzaj === 'polisa'))} />{/key}
 
 			<!-- Parametry odczytane z pliku polisy (import z PDF) -->
 			{#if policy.dane_importu}

@@ -24,14 +24,17 @@ async function blad(res: Response): Promise<Error> {
 	return new Error(d?.message ?? `Błąd ${res.status}`);
 }
 
-// Czy magazyn jest podpięty — raz na sesję.
+// Czy magazyn jest podpięty — raz na sesję. Zapamiętujemy tylko odpowiedź serwera; błąd sieci
+// albo sesji nie może wyłączyć plików do końca dnia (import przestałby po cichu zapisywać PDF).
 let stan: Promise<boolean> | null = null;
 export function magazynDostepny(): Promise<boolean> {
 	stan ??= (async () => {
 		try {
 			const res = await fetch('/api/pliki/stan', { headers: await naglowki() });
-			return res.ok && ((await res.json()) as { magazyn?: boolean }).magazyn === true;
+			if (!res.ok) { stan = null; return false; }
+			return ((await res.json()) as { magazyn?: boolean }).magazyn === true;
 		} catch {
+			stan = null;
 			return false;
 		}
 	})();

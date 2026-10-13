@@ -13,8 +13,11 @@ const X_PRAWA_KOLUMNA = 330;
 export function detect(doc: PdfDoc): string | null {
 	if (!/ERGO Hestia/i.test(doc.text))
 		return 'W dokumencie nie znaleziono oznaczeń ERGO Hestii — to nie jest polisa tego towarzystwa.';
-	if (!/POLISA\/POLICY/i.test(doc.text))
-		return 'Brak nagłówka „POLISA/POLICY” — to nie jest polisa OC zawodowego w tym układzie.';
+	if (!/POLISA\/POLICY/i.test(doc.text)) {
+		if (/^Polisa nr\s+\d+/m.test(doc.text) && /^Warunki ubezpieczenia:/m.test(doc.text))
+			return 'To polisa wystawiona indywidualnie, nie certyfikat z programu — wybierz produkt „OC zawodowe — polisa indywidualna”.';
+		return 'Brak nagłówka „POLISA/POLICY” — to nie jest certyfikat OC zawodowego w tym układzie.';
+	}
 	return null;
 }
 
@@ -52,6 +55,8 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 				)
 				.join('; ')
 		: null;
+	// Pierwsza pozycja to OC zawodowe — jej suma jest sumą gwarancyjną certyfikatu.
+	out.suma_gwarancyjna = out.ryzyka[0]?.suma ?? null;
 
 	out.program_ug = grab(text, /Programem Ubezpieczenia nr\s*([A-Z0-9/]+?)\.?\s*$/im);
 	out.produkt_owu = grab(text, /nr\s+(AB-[A-Z]+-\d+\/\d+)/i);
