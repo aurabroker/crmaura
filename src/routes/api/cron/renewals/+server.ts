@@ -72,9 +72,10 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			.order('data_do');
 		// Certyfikat, który miał już jakikolwiek prawdziwy wniosek (także anulowany przez pracownika albo
 		// wygasły), nie dostaje automatycznie nowego — ponowne zaproszenie to decyzja doradcy. Wnioski
-		// z trybu testowego nie blokują: po wyłączeniu testu automat zastępuje je prawdziwym linkiem.
-		const { data: zajete } = await admin.from('crm_renewals').select('polisa_id, email').eq('tenant_id', f.id);
-		const { maWniosek, tylkoTestowe } = podzielWnioski((zajete ?? []) as { polisa_id: string; email: string | null }[]);
+		// z trybu testowego nie blokują: po wyłączeniu testu automat zastępuje je prawdziwym linkiem —
+		// chyba że pracownik anulował wniosek testowy (odnowienie ręczne), wtedy certyfikat też zostaje doradcy.
+		const { data: zajete } = await admin.from('crm_renewals').select('polisa_id, email, status').eq('tenant_id', f.id);
+		const { maWniosek, tylkoTestowe } = podzielWnioski((zajete ?? []) as { polisa_id: string; email: string | null; status: string }[]);
 
 		// Automatyczne wnioski, których e-mail się nie wysłał (np. chwilowy błąd Resend) — ponawiamy.
 		const { data: niewyslane } = await admin
