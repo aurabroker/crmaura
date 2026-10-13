@@ -18,6 +18,8 @@ const X_WARTOSCI = 150;
 const Y_STOPKA = 70;
 /** Największy odstęp linii bazowych (pt) uznawany za ciągłość listy — większy zaczyna nowy akapit. */
 const ODSTEP_LISTY = 15;
+/** Koniec postanowień underwritera: następny nagłówek sekcji (także drugie „Postanowienia dodatkowe:” i lista ubezpieczonych). */
+const KONIEC_POSTANOWIEN = /^(?:Klauzule dodatkowe|Postanowienia dodatkowe|Treść klauzul dodatkowych|Składka i sposób płatności|Ubezpieczeni):$/m;
 
 export function detect(doc: PdfDoc): string | null {
 	if (!/ERGO Hestia/i.test(doc.text))
@@ -54,6 +56,7 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	out.ubezpieczony_regon = ubezpieczony?.regon ?? null;
 
 	const suma = toAmount(grab(tresc, /^Suma ubezpieczenia:\s*([\d\s.,]+)\s*PLN/m));
+	out.suma_gwarancyjna = suma;
 	out.skladka =
 		toAmount(grab(tresc, /^Składka łączna:\s*([\d\s.,]+)\s*PLN/m)) ??
 		toAmount(grab(tresc, /^Składka:\s*([\d\s.,]+)\s*PLN/m));
@@ -70,7 +73,11 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 		});
 	}
 	out.ryzyka.push(...parseKlauzule(tresc));
-	out.ryzyka.push(...parseSublimity(blok(tresc, /^Postanowienia dodatkowe:$/m, /^(?:Klauzule dodatkowe|Treść klauzul dodatkowych|Składka i sposób płatności):$/m)));
+	// Nagłówek „Postanowienia dodatkowe:” stoi dwa razy: postanowienia underwritera (str. 1, przed klauzulami)
+	// i stały akapit „Umowę ubezpieczenia zawarto…” przed listą ubezpieczonych — ten drugi to nie postanowienia.
+	let postanowienia = blok(tresc, /^Postanowienia dodatkowe:$/m, KONIEC_POSTANOWIEN);
+	if (/^\s*Umowę ubezpieczenia zawarto/.test(postanowienia)) postanowienia = '';
+	out.ryzyka.push(...parseSublimity(postanowienia));
 	out.przedmiot = out.ryzyka[0]
 		? out.ryzyka[0].suma != null
 			? `${out.ryzyka[0].przedmiot}: ${out.ryzyka[0].suma.toLocaleString('pl-PL')} zł`
@@ -98,8 +105,8 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 		if (w) out.dodatkowe[nazwa] = w;
 	}
 
-	const postanowienia = collapse(blok(tresc, /^Postanowienia dodatkowe:$/m, /^(?:Klauzule dodatkowe|Treść klauzul dodatkowych|Składka i sposób płatności):$/m));
-	if (postanowienia) out.dodatkowe['Postanowienia dodatkowe'] = postanowienia;
+	const postanowieniaTekst = collapse(postanowienia);
+	if (postanowieniaTekst) out.dodatkowe['Postanowienia dodatkowe'] = postanowieniaTekst;
 
 	const klauzule = out.ryzyka.filter((r) => r.sekcja === 'Klauzule dodatkowe').map((r) => r.przedmiot);
 	if (klauzule.length) out.dodatkowe['Klauzule dodatkowe'] = klauzule.join(' | ');
@@ -132,11 +139,8 @@ function pole(linie: Line[], etykieta: RegExp): string[] | null {
 	const wynik: string[] = [];
 	const pierwszy = collapse(linie[i].text.replace(etykieta, ''));
 	if (pierwszy) wynik.push(pierwszy);
-	for (let j = i + 1; j < linie.length; j++) {
-		const l = linie[j];
-		if (l.page !== linie[i].page || l.words[0].x < X_WARTOSCI) break;
-		wynik.push(l.text);
-	}
+	// Wartość może przejść na następną stronę — kończy ją dopiero wiersz przy lewym marginesie (etykieta).
+	for (let j = i + 1; j < linie.length && linie[j].words[0].x >= X_WARTOSCI; j++) wynik.push(linie[j].text);
 	return wynik;
 }
 
@@ -148,7 +152,8 @@ function lista(linie: Line[], naglowek: RegExp): string[] {
 	for (let j = i + 1; j < linie.length; j++) {
 		const poprzednia = linie[j - 1];
 		const l = linie[j];
-		if (l.page !== poprzednia.page || poprzednia.y - l.y > ODSTEP_LISTY) break;
+		// Na przełomie strony odstęp nic nie mówi — lista trwa, dopóki wiersz wygląda jak pozycja, a nie akapit czy nagłówek.
+		if (l.page !== poprzednia.page ? l.text.length > 80 || /:$/.test(l.text) : poprzednia.y - l.y > ODSTEP_LISTY) break;
 		wynik.push(l.text);
 	}
 	return wynik;
@@ -170,13 +175,17 @@ function strona(linie: Line[], etykieta: RegExp) {
 	let nip: string | null = null;
 	let regon: string | null = null;
 	const adres: string[] = [];
-	for (const wiersz of w.slice(1)) {
+	// Długa nazwa (spółka) łamie się na dwa wiersze — identyfikatory i adres zaczynają się
+	// od pierwszego wiersza z NIP/REGON/PESEL albo kodem pocztowym.
+	const odDanych = w.findIndex((l, k) => k > 0 && (/\b(?:NIP|REGON|PESEL)\b/i.test(l) || /\b\d{2}-\d{3}\b/.test(l)));
+	const dane = odDanych > 0 ? odDanych : 1;
+	for (const wiersz of w.slice(dane)) {
 		nip ??= digits(grab(wiersz, /NIP:?\s*([\d\s-]{10,13})(?!\d)/i));
 		regon ??= digits(grab(wiersz, /REGON:?\s*(\d{9}(?:\d{5})?)/i));
-		const bezId = collapse(wiersz.replace(/(?:NIP|REGON|PESEL):?\s*[\d\s-]+/gi, ''));
+		const bezId = collapse(wiersz.replace(/(?:NIP|REGON|PESEL):?\s*[\d\s-]+/gi, '').replace(/^[\s,;]+|[\s,;]+$/g, ''));
 		if (bezId) adres.push(bezId);
 	}
-	return { nazwa: collapse(w[0]), nip, regon, adres: adres.length ? adres.join(', ') : null };
+	return { nazwa: collapse(w.slice(0, dane).join(' ')), nip, regon, adres: adres.length ? adres.join(', ') : null };
 }
 
 // Sekcja „Klauzule dodatkowe:”: tytuł klauzuli (bywa łamany na dwa wiersze), pod nim limit
@@ -216,11 +225,14 @@ function parseKlauzule(tresc: string): RiskItem[] {
 function parseSublimity(postanowienia: string): RiskItem[] {
 	const ryzyka: RiskItem[] = [];
 	let naglowek: string | null = null;
-	for (const wiersz of postanowienia.split('\n')) {
-		const w = wiersz.trim();
-		if (!w) continue;
+	const wiersze = postanowienia.split('\n').map((w) => w.trim()).filter(Boolean);
+	for (let k = 0; k < wiersze.length; k++) {
+		const w = wiersze[k];
 		if (w.split(/\s+/).length <= 6 && !/[.:;,”"]$/.test(w) && !/^\d/.test(w)) naglowek = w;
-		const sublimit = toAmount(grab(w, /sublimit w wysokości:?\s*([\d\s.,]+)\s*PLN/i));
+		// Zdanie o sublimicie bywa łamane między etykietą a kwotą — dopasowujemy na parze wierszy,
+		// licząc tylko dopasowanie zaczynające się w bieżącym.
+		const m = `${w} ${wiersze[k + 1] ?? ''}`.match(/sublimit w wysokości:?\s*([\d\s.,]+)\s*PLN/i);
+		const sublimit = m && (m.index ?? 0) < w.length ? toAmount(m[1]) : null;
 		if (sublimit != null)
 			ryzyka.push({ sekcja: 'Postanowienia dodatkowe', przedmiot: `${naglowek ?? 'Sublimit'} — sublimit`, suma: sublimit });
 	}

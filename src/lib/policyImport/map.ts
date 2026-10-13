@@ -157,6 +157,13 @@ export function buildDraft(input: BuildInput): Draft {
 			level: 'warn',
 			text: 'Nie odczytano harmonogramu rat — nie powstaną pozycje w Płatnościach.'
 		});
+	// Raty, które nie sumują się do składki, to zwykle ucięty harmonogram (część rat poza odczytanym blokiem).
+	const sumaRat = raty.reduce((s, r) => s + r.kwota, 0);
+	if (raty.length && extracted.skladka != null && Math.abs(sumaRat - extracted.skladka) > 0.01)
+		issues.push({
+			level: 'warn',
+			text: `Suma odczytanych rat (${sumaRat.toFixed(2)} zł) różni się od składki (${extracted.skladka.toFixed(2)} zł) — sprawdź harmonogram płatności.`
+		});
 
 	const { pojazd, nowyPojazd, wniosekPojazd } = dopasujPojazd(input, issues);
 	const { leasing, nowyLeasing } = dopasujLeasing(input, issues);
@@ -210,6 +217,8 @@ export function buildDraft(input: BuildInput): Draft {
 		daty_rat: raty.map((r) => r.data).join(', ') || null,
 		kwoty_rat: raty.map((r) => r.kwota.toFixed(2)).join(', ') || null,
 		skladka_przypisana: skladka,
+		// Suma gwarancyjna (kolumna z migracji odnowień) — klucz idzie tylko z odczytaną kwotą.
+		...(extracted.suma_gwarancyjna != null ? { suma_gwarancyjna: extracted.suma_gwarancyjna } : {}),
 		skladka_zainkasowana: 0,
 		skladka_zaliczkowa: 0,
 		prowizja_pct: prowizjaPct,

@@ -289,6 +289,12 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
   aktywności.
 - **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
   z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
+- **Suma gwarancyjna.** Szablony OC (ERGO: certyfikat i polisa indywidualna)
+  przekazują sumę ubezpieczenia do `suma_gwarancyjna` — korzystają z niej
+  odnowienia OC beauty.
+- **Raty a składka.** Gdy suma odczytanych rat różni się od składki,
+  podgląd pokazuje ostrzeżenie (zwykle ucięty harmonogram) — import nie jest
+  blokowany.
 - **Wznowienie.** Numer polisy poprzedniej ustawia `renewal_of`. Gdy polisa go
   nie podaje (typowe dla komunikacji), poprzednika szukamy po **pojeździe
   i ciągłości okresów**: polisa tego samego pojazdu kończąca się w promieniu

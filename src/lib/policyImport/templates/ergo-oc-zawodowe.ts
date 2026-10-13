@@ -55,6 +55,8 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 				)
 				.join('; ')
 		: null;
+	// Pierwsza pozycja to OC zawodowe — jej suma jest sumą gwarancyjną certyfikatu.
+	out.suma_gwarancyjna = out.ryzyka[0]?.suma ?? null;
 
 	out.program_ug = grab(text, /Programem Ubezpieczenia nr\s*([A-Z0-9/]+?)\.?\s*$/im);
 	out.produkt_owu = grab(text, /nr\s+(AB-[A-Z]+-\d+\/\d+)/i);
