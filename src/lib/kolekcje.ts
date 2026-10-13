@@ -20,8 +20,13 @@ export const wczytajPolisy = () =>
 export const wczytajAneksy = () =>
 	wszystkieWiersze((od, d, l) => sb.from('crm_policy_annexes').select('*', licz(l)).order('data_aneksu').order('id').range(od, d));
 
+// Raty tylko polis spoza kosza (polisa usunięta = jej raty znikają z Płatności, pulpitu i prowizji;
+// po przywróceniu z kosza wracają).
+const PLATNOSCI_AKTYWNYCH_POLIS = '*, crm_policies!inner(nr_polisy, crm_clients!klient_id(nazwa))';
 export const wczytajPlatnosci = () =>
-	wszystkieWiersze((od, d, l) => sb.from('crm_policy_payments').select(PAYMENT_SELECT, licz(l)).order('data_platnosci').order('id').range(od, d));
+	wszystkieWiersze((od, d, l) =>
+		sb.from('crm_policy_payments').select(PLATNOSCI_AKTYWNYCH_POLIS, licz(l)).is('crm_policies.deleted_at', null).order('data_platnosci').order('id').range(od, d)
+	);
 
 export const wczytajSzkody = () =>
 	wszystkieWiersze((od, d, l) => sb.from('crm_claims').select(CLAIM_SELECT, licz(l)).order('created_at').order('id').range(od, d));

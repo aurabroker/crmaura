@@ -5,6 +5,7 @@
 	import type { Claim } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { Search, Pencil, Copy, User, FileText, CircleDot } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
 	import { goto } from '$app/navigation';
@@ -165,9 +166,9 @@
 			{#each filtered as c}
 				<tr use:ctxMenu={{ items: () => claimMenu(c), title: c.nr_szkody ?? 'Zgłoszenie' }}
 					class="border-t border-line-soft hover:bg-slate-50">
-					<td class="px-5 py-3 font-medium">{c.nr_szkody ?? 'Zgłoszenie'}</td>
+					<td class="px-5 py-3 font-medium whitespace-nowrap">{c.nr_szkody ?? 'Zgłoszenie'} <Kopiuj tekst={c.nr_szkody} opis="nr szkody" /></td>
 					<td class="px-5 py-3">{c.crm_clients?.nazwa ?? '—'}</td>
-					<td class="px-5 py-3">{c.crm_policies?.nr_polisy ?? '—'}</td>
+					<td class="px-5 py-3 whitespace-nowrap">{c.crm_policies?.nr_polisy ?? '—'} <Kopiuj tekst={c.crm_policies?.nr_polisy} opis="nr polisy" /></td>
 					<td class="px-5 py-3">{c.data_szkody}</td>
 					<td class="px-5 py-3 text-xs text-slate-500 max-w-[200px] truncate">{c.opis_szkody ?? '—'}</td>
 					<td class="px-5 py-3 text-right">{fmtPln(c.wartosc_roszczenia)} PLN</td>

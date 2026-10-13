@@ -5,6 +5,7 @@
 	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, opisPrzedmiotu, todayStr } from '$lib/utils';
 	import type { Snippet } from 'svelte';
 	import { Search, Eye, ExternalLink, RefreshCw, Pencil, User, Copy, X, Download, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -398,6 +399,7 @@
 							</td>
 							<td class="px-3 py-2 whitespace-nowrap">
 								<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{p.nr_polisy}</a>
+								<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 								<span class="block text-xs text-ink-3">{nazwaRodzaju(p.rodzaj)} · {nazwaTu(p)}</span>
 							</td>
 							<td class="px-3 py-2 min-w-[160px] max-w-[240px]">

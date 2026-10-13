@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Wyszukiwarka w górnym pasku — na każdym ekranie, skrót Ctrl+K (⌘K).
+	// Wyszukiwarka w górnym pasku — na każdym ekranie, skrót Ctrl+K (⌘K) albo „/”.
 	// Szuka po nazwie klienta, NIP, PESEL, REGON, numerze polisy i rejestracji pojazdu.
 	import { goto } from '$app/navigation';
 	import { appState } from '$lib/stores/app.svelte';
@@ -85,7 +85,11 @@
 	}
 
 	function skrot(e: KeyboardEvent) {
-		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+		const t = e.target as HTMLElement | null;
+		const pisze = !!t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+		// „/” jak w Gmailu i GitHubie — tylko gdy nie piszesz w polu i nie ma otwartego okna
+		const ukosnik = e.key === '/' && !pisze && !e.ctrlKey && !e.metaKey && !e.altKey && !document.querySelector('[role="dialog"]');
+		if (ukosnik || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
 			e.preventDefault();
 			pole?.focus();
 			pole?.select();

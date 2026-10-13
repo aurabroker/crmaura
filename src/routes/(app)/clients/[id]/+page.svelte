@@ -16,6 +16,7 @@
 	import type { Claim, Vehicle, ClientContact, CrmTask, Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
 	import { Pencil, Plus, Car, FileText, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip, Phone, Ellipsis, ShieldCheck, ShieldAlert, Users, AlertTriangle } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
@@ -1049,9 +1050,9 @@
 				{:else if client.gus_wynik === 'zly_nip'}
 					<span class="flex items-center gap-1.5 text-warn font-semibold" title="NIP nie przechodzi kontroli sumy — sprawdź go w danych klienta"><ShieldAlert size={14} aria-hidden="true" /> Błędny NIP</span>
 				{/if}
-				{#if client.nip}<span class="font-mono text-xs">NIP {client.nip}</span>{/if}
-				{#if client.krs}<span class="font-mono text-xs">KRS {client.krs}</span>{/if}
-				{#if client.pesel}<span class="font-mono text-xs">PESEL {client.pesel}</span>{/if}
+				{#if client.nip}<span class="inline-flex items-center gap-0.5 font-mono text-xs">NIP {client.nip} <Kopiuj tekst={client.nip.replace(/\D/g, '')} opis="NIP" skrot="c" /></span>{/if}
+				{#if client.krs}<span class="inline-flex items-center gap-0.5 font-mono text-xs">KRS {client.krs} <Kopiuj tekst={client.krs} opis="KRS" /></span>{/if}
+				{#if client.pesel}<span class="inline-flex items-center gap-0.5 font-mono text-xs">PESEL {client.pesel} <Kopiuj tekst={client.pesel} opis="PESEL" /></span>{/if}
 				<span>{client.typ === 'osoba' ? 'Osoba' : 'Firma'}{miasto ? ` · ${miasto}` : ''}{client.beauty_id != null ? ' · import BEAUTY' : ''}</span>
 				{#if client.rodo_zgoda}
 					<span class="flex items-center gap-1.5 text-ok font-semibold">
@@ -1087,10 +1088,10 @@
 				<a href="tel:{client.telefon}" aria-label="Zadzwoń: {client.telefon}" title="Zadzwoń: {client.telefon}" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Phone size={16} /></a>
 			{/if}
 			{#if adresyEmail}
-				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
+				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail (M)" data-skrot="m" data-skrot-opis="Napisz e-mail do klienta" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
 			{/if}
 			<button onclick={wyslijApk} class="h-9 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Wyślij APK</button>
-			<button onclick={() => goto(`/policies/new?klient=${clientId}`)} class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
+			<button onclick={() => goto(`/policies/new?klient=${clientId}`)} title="Nowa polisa (P)" data-skrot="p" data-skrot-opis="Nowa polisa dla klienta" class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
 				<Plus size={16} /> Nowa polisa
 			</button>
 			<div class="relative">
@@ -1372,10 +1373,10 @@
 					</div>
 					<dl class="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
 						<dt class="text-ink-3">Adres</dt><dd class={client.ulica ? 'text-ink' : 'text-ink-3'}>{client.ulica ?? '—'}</dd>
-						<dt class="text-ink-3">Telefon</dt><dd>{#if client.telefon}<a href="tel:{client.telefon}" class="text-accent-text hover:underline">{client.telefon}</a>{:else}<span class="text-ink-3">—</span>{/if}</dd>
-						<dt class="text-ink-3">E-mail</dt><dd class="break-all">{#if client.email}<a href="mailto:{client.email}" class="text-accent-text hover:underline">{client.email}</a>{:else}<span class="text-ink-3">—</span>{/if}</dd>
+						<dt class="text-ink-3">Telefon</dt><dd>{#if client.telefon}<a href="tel:{client.telefon}" class="text-accent-text hover:underline">{client.telefon}</a> <Kopiuj tekst={client.telefon} opis="telefon" />{:else}<span class="text-ink-3">—</span>{/if}</dd>
+						<dt class="text-ink-3">E-mail</dt><dd class="break-all">{#if client.email}<a href="mailto:{client.email}" class="text-accent-text hover:underline">{client.email}</a> <Kopiuj tekst={client.email} opis="e-mail" />{:else}<span class="text-ink-3">—</span>{/if}</dd>
 						{#if client.typ !== 'osoba'}
-							<dt class="text-ink-3">REGON</dt><dd class="font-mono text-xs leading-[18px] {client.regon ? '' : 'text-ink-3'}">{client.regon ?? '—'}</dd>
+							<dt class="text-ink-3">REGON</dt><dd class="font-mono text-xs leading-[18px] {client.regon ? '' : 'text-ink-3'}">{client.regon ?? '—'} <Kopiuj tekst={client.regon} opis="REGON" /></dd>
 						{/if}
 						<dt class="text-ink-3">Źródło</dt><dd>{client.beauty_id != null ? 'import BEAUTY' : 'dodany w CRM'}{client.created_at ? ` · ${fmtDzien(client.created_at.slice(0, 10), true)}` : ''}</dd>
 						{#if showGwarancje}
@@ -1419,6 +1420,7 @@
 							<td class="px-4 py-2.5">
 								<div class="flex items-center gap-1.5 flex-wrap">
 									<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{p.nr_polisy}</a>
+									<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 									{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
 										<span class="text-xs font-semibold text-violet-700 bg-violet-50 rounded-full px-2 leading-5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">jako ubezpieczony</span>
 									{/if}
@@ -1479,6 +1481,7 @@
 									<td class="px-4 py-2.5">
 										<div class="flex items-center gap-1.5 flex-wrap">
 											<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-ink-2 hover:text-accent-text hover:underline">{p.nr_polisy}</a>
+											<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 											{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
 												<span class="text-xs font-semibold text-violet-700 bg-violet-50 rounded-full px-2 leading-5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">jako ubezpieczony</span>
 											{/if}
@@ -1524,9 +1527,9 @@
 						{@const assigned = assignedPolicyFor(v.id, appState.policies)}
 						{@const unlinkedPolicies = clientPolicies.filter(p => (p.rodzaj === 'komunikacja' || p.rodzaj === 'flota') && !p.pojazd_id && !p.deleted_at)}
 						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3 font-medium">{v.nr_rejestracyjny}</td>
+							<td class="px-5 py-3 font-medium whitespace-nowrap">{v.nr_rejestracyjny} <Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" /></td>
 							<td class="px-5 py-3">{v.marka_model}</td>
-							<td class="px-5 py-3 text-slate-500">{v.vin ?? '—'}</td>
+							<td class="px-5 py-3 text-slate-500 whitespace-nowrap">{v.vin ?? '—'} <Kopiuj tekst={v.vin} opis="VIN" /></td>
 							<td class="px-5 py-3">{v.rok_produkcji ?? '—'}</td>
 							<td class="px-5 py-3">
 								{#if assigned}
@@ -1601,7 +1604,7 @@
 				<tbody>
 					{#each gwarancjeWiersze as g}
 						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3 font-medium text-blue-700"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a></td>
+							<td class="px-5 py-3 font-medium text-blue-700 whitespace-nowrap"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a> <Kopiuj tekst={g.nr_polisy} opis="nr umowy" /></td>
 							<td class="px-5 py-3 text-slate-600">{g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : '—')}</td>
 							<td class="px-5 py-3 text-xs text-slate-500">{g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt ?? '—'}</td>
 							<td class="px-5 py-3">{g.data_od}</td>

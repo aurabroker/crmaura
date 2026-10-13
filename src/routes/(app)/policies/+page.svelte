@@ -8,6 +8,7 @@
 	import type { Snippet } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import {
 		Search, Pencil, FilePlus2, Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus,
 		ChevronDown, ChevronLeft, ChevronRight, X, Download, Upload, FileStack, FileText
@@ -368,6 +369,7 @@
 		if (error) { deleteError = error.message; return; }
 		await logAudit('policy_deleted', 'policy', target.id, target.nr_polisy, { reason: deletionReason.trim() });
 		appState.policies = appState.policies.filter((p) => p.id !== target.id);
+		appState.payments = appState.payments.filter((x) => x.polisa_id !== target.id);
 		deleteTarget = null;
 		ctxToast(`Polisa ${target.nr_polisy} przeniesiona do kosza`);
 	}
@@ -603,6 +605,7 @@
 							</td>
 							<td class="px-3 py-2 whitespace-nowrap">
 								<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{p.nr_polisy}</a>
+								<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 								<span class="block text-xs text-ink-3">
 									{#if p.parent_id}
 										w UG <a href="/policies/{p.parent_id}" class="font-mono hover:text-accent-text hover:underline">{parentNr(p.parent_id)}</a>
