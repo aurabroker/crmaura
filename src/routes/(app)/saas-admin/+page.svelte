@@ -7,7 +7,7 @@
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 
 	// Klucz Resend nie trafia do przeglądarki — serwer zwraca tylko jego końcówkę (resend_key_hint).
-	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null; email_from?: string | null };
+	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null; webhook_secret_hint?: string | null; email_from?: string | null };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
 
 	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
@@ -29,7 +29,7 @@
 		return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` };
 	}
 
-	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null }) {
+	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null; resend_webhook_secret?: string | null }) {
 		try {
 			const res = await fetch('/api/saas-admin/tenants', {
 				method: 'PATCH', headers: await authHeaders(),
@@ -41,6 +41,7 @@
 				ok: true as const,
 				features: (d.features ?? {}) as Record<string, boolean>,
 				resend_key_hint: (d.resend_key_hint ?? null) as string | null,
+				webhook_secret_hint: (d.webhook_secret_hint ?? null) as string | null,
 				email_from: (d.email_from ?? null) as string | null
 			};
 		} catch {
@@ -205,6 +206,37 @@
 		if (!r.ok) { fromError = r.message; return; }
 		applyToTenant(tenant.id, { email_from: r.email_from });
 		editingFrom = null;
+	}
+
+	// Webhook Resend (status dostarczenia e-maili): adres do wklejenia w Resend i sekret podpisu z Resend.
+	let editingWebhook = $state<string | null>(null);
+	let webhookInput = $state('');
+	let savingWebhook = $state(false);
+	let webhookError = $state('');
+	let webhookSkopiowany = $state(false);
+	const adresWebhooka = (t: Tenant) => `${location.origin}/api/webhooks/resend/${t.id}`;
+
+	async function saveWebhookSecret(tenant: Tenant, remove = false) {
+		const sekret = webhookInput.trim();
+		if (!remove && !sekret) { webhookError = 'Wklej sekret albo użyj „Usuń sekret”.'; return; }
+		if (remove && !confirm(`Usunąć sekret webhooka firmy „${tenant.nazwa}”? Statusy dostarczenia przestaną się aktualizować.`)) return;
+		savingWebhook = true; webhookError = '';
+		const r = await patchTenant(tenant.id, { resend_webhook_secret: remove ? null : sekret });
+		savingWebhook = false;
+		if (!r.ok) { webhookError = r.message; return; }
+		applyToTenant(tenant.id, { webhook_secret_hint: r.webhook_secret_hint });
+		webhookInput = '';
+		editingWebhook = null;
+	}
+
+	async function kopiujAdresWebhooka(t: Tenant) {
+		try {
+			await navigator.clipboard.writeText(adresWebhooka(t));
+			webhookSkopiowany = true;
+			setTimeout(() => (webhookSkopiowany = false), 2000);
+		} catch {
+			webhookError = 'Nie udało się skopiować — zaznacz adres i skopiuj ręcznie.';
+		}
 	}
 
 	function removeResendKey(tenant: Tenant) {
@@ -460,6 +492,38 @@
 							</button>
 						</div>
 					{/if}
+				</div>
+
+				<!-- Webhook Resend: status dostarczenia -->
+				<div class="mb-5 border-t border-line-soft pt-4">
+					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Status dostarczenia e-maili (webhook Resend)</p>
+					<p class="text-xs text-slate-500 mb-2">
+						W panelu Resend tej firmy: Webhooks → Add endpoint → wklej adres poniżej i zaznacz zdarzenia
+						<span class="font-mono">email.sent, email.delivered, email.delivery_delayed, email.bounced, email.complained, email.opened, email.failed</span>.
+						Potem skopiuj „Signing secret” (whsec_…) i zapisz go tutaj.
+					</p>
+					<div class="flex items-center gap-2 mb-2">
+						<code class="flex-1 min-w-0 truncate text-xs bg-slate-50 border border-line rounded-lg px-2 py-1.5" title={adresWebhooka(st)}>{adresWebhooka(st)}</code>
+						<button onclick={() => kopiujAdresWebhooka(st)} class="px-3 py-1.5 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-100">{webhookSkopiowany ? 'Skopiowano' : 'Kopiuj adres'}</button>
+					</div>
+					{#if editingWebhook === st.id}
+						<div class="flex items-center gap-2">
+							<input type="password" autocomplete="off" bind:value={webhookInput} placeholder={st.webhook_secret_hint ? 'Nowy sekret (zastąpi obecny)' : 'whsec_...'} class="flex-1 border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<button onclick={() => saveWebhookSecret(st)} disabled={savingWebhook || !webhookInput.trim()} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingWebhook ? '…' : 'Zapisz'}</button>
+							<button onclick={() => { editingWebhook = null; webhookError = ''; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+							{#if st.webhook_secret_hint}
+								<button onclick={() => saveWebhookSecret(st, true)} disabled={savingWebhook} class="px-3 py-2 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50">Usuń sekret</button>
+							{/if}
+						</div>
+					{:else}
+						<div class="flex items-center gap-3">
+							<span class="text-sm text-slate-600 font-mono">{st.webhook_secret_hint ? `whsec_****${st.webhook_secret_hint}` : '— sekret nie ustawiony —'}</span>
+							<button onclick={() => { editingWebhook = st.id; webhookInput = ''; webhookError = ''; }} class="text-xs text-blue-600 hover:underline">
+								{st.webhook_secret_hint ? 'Zmień' : 'Dodaj'}
+							</button>
+						</div>
+					{/if}
+					{#if webhookError}<p class="mt-2 text-sm text-red-600">{webhookError}</p>{/if}
 				</div>
 
 				<!-- Użytkownicy -->

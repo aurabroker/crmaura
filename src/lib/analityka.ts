@@ -162,7 +162,33 @@ export function stanRat(raty: PolicyPayment[], dzis: string, ug: Set<string>): S
 export const KUBELKI_ZALEGLOSCI: [string, number, number][] = [['1–30 dni', 1, 30], ['31–90 dni', 31, 90], ['ponad 90 dni', 91, Infinity]];
 
 /** Kolumna wykresu (komponent wykresy/Kolumny). jasna = miesiąc w toku albo okres poprzedni. */
-export type Kolumna = { klucz: string; etykieta: string; pelna: string; wartosc: number; dodatek?: string; jasna?: boolean };
+export type Kolumna = {
+	klucz: string;
+	etykieta: string;
+	pelna: string;
+	wartosc: number;
+	dodatek?: string;
+	jasna?: boolean;
+	/** Ten sam miesiąc rok wcześniej (druga kolumna obok); null — brak danych z tamtego okresu. */
+	porownanie?: number | null;
+	porownanieOpis?: string;
+	/** Cały miesiąc rok wcześniej, gdy kolumna porównania obejmuje tylko część miesiąca (miesiąc w toku). */
+	porownanieCaly?: number | null;
+	porownanieCalyOpis?: string;
+	/** Zmiana r/r w % podpisana nad kolumną (np. bieżący miesiąc) i jej opis w podpowiedzi. */
+	wzrost?: number | null;
+	wzrostOpis?: string;
+};
+
+/** Ostatni dzień miesiąca daty (RRRR-MM-DD). */
+export function koniecMiesiaca(d: string): string {
+	const r = Number(d.slice(0, 4));
+	const m = Number(d.slice(5, 7));
+	return iso(r, m, ostatniDzien(r, m));
+}
+
+/** Ten sam miesiąc rok wcześniej: 2026-10 → 2025-10. */
+export const miesiacRokWczesniej = (ym: string) => `${Number(ym.slice(0, 4)) - 1}${ym.slice(4)}`;
 
 // ── Formatowanie i osie ─────────────────────────────────────────────────────────
 export const zl = (n: number) => `${Math.round(n).toLocaleString('pl-PL')} zł`;

@@ -2,7 +2,7 @@
 // zmienić przed wysyłką; serwer zamienia go na prosty HTML.
 import type { Client, Policy, PolicyPayment } from '$lib/types/database';
 import { nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
-import { fmtPln } from '$lib/utils';
+import { fmtPln, opisPrzedmiotu } from '$lib/utils';
 
 export type Szablon = 'wlasny' | 'rata' | 'odnowienie' | 'dokumenty' | 'potwierdzenie';
 export const SZABLONY: { id: Szablon; nazwa: string; polisa: boolean }[] = [
@@ -77,7 +77,7 @@ export function zbudujSzablon(s: Szablon, k: Kontekst): { temat: string; tresc: 
 				tresc:
 					`Dzień dobry,\n\npotwierdzam zawarcie ubezpieczenia:\n` +
 					`- polisa nr ${p.nr_polisy}, ${p.crm_insurers?.nazwa ?? nazwaTu(p)}\n` +
-					`- rodzaj: ${nazwaRodzaju(p.rodzaj)}${p.przedmiot ? `, przedmiot: ${p.przedmiot}` : ''}\n` +
+					`- rodzaj: ${nazwaRodzaju(p.rodzaj)}${opisPrzedmiotu(p.przedmiot) ? `, ${p.rodzaj === 'utrata_dochodu' ? 'sumy' : 'przedmiot'}: ${opisPrzedmiotu(p.przedmiot)}` : ''}\n` +
 					`- okres ochrony: ${data(p.data_od)} – ${data(p.data_do)}\n` +
 					`- składka: ${fmtPln(p.skladka_przypisana)} zł${Number(p.ilosc_rat) > 1 ? ` (${p.ilosc_rat} raty)` : ''}` +
 					harmonogram +

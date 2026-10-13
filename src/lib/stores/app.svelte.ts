@@ -27,7 +27,9 @@ export const appState = $state({
 	apkForms: [] as ApkForm[],
 	leasings: [] as Leasing[],
 	// Wnioski o dodanie pojazdu czekające na decyzję administratora.
-	vehicleRequests: [] as VehicleRequest[]
+	vehicleRequests: [] as VehicleRequest[],
+	// Nieodczytane ponowne zgłoszenia klientów (komunikat „Klient po raz kolejny prosi o ofertę”).
+	ponowneZgloszenia: 0
 });
 
 export function isBroker(): boolean {

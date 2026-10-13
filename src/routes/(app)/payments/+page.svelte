@@ -4,6 +4,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import type { PolicyPayment } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { fmtPln, todayStr, fmtDzien, fmtTermin, dateDiffDays, odmiana } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania, ROZLICZONE } from '$lib/platnosci';
@@ -16,6 +17,10 @@
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { dekodujCsv, parseErgoCsv } from '$lib/commissionImport/ergoCsv';
 	import { parseColonnade } from '$lib/commissionImport/colonnadeXlsx';
+	import { parseLeadenhall } from '$lib/commissionImport/leadenhallXlsx';
+	import { naprawKomorkiStr } from '$lib/commissionImport/xlsxNaprawa';
+	import { magazynDostepny, wyslijPlikNoty } from '$lib/plikiPolis';
+	import { normalizujNr, rataWRoku, rokPolisowyZNumeru, znajdzPolise } from '$lib/commissionImport/dopasowaniePolisy';
 	const today = todayStr();
 	type Filtr = 'wszystkie' | 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone';
 	let filtr = $state<Filtr>('wszystkie');
@@ -57,9 +62,18 @@
 		is_negative: boolean;
 		prowizja_diff: number;
 		operator_action: 'settle' | 'skip';
-		// Noty „rata po racie” (Colonnade): numer raty i data wpłaty z pliku
+		// Noty „rata po racie” (Colonnade, Leadenhall): numer raty i data wpłaty z pliku
 		nr_raty?: number | null;
 		data_oplacenia?: string | null;
+		// Numer raty w CRM, którą rozliczy import (może różnić się od numeru z noty — wtedy ostrzeżenie)
+		rata_crm?: number | null;
+		// Dane polisy z noty do porównania z CRM (Leadenhall)
+		weryfikacja?: { prowizja_pct?: number | null; przypis?: number | null; liczba_rat?: number | null; data_od?: string | null; data_do?: string | null };
+		rozbieznosci?: string[];
+		// Polisa jest w CRM, ale nie ma raty, na którą można zaksięgować tę pozycję
+		brak_raty?: boolean;
+		// Ile pozycji noty zsumowano w tej pozycji (ta sama rata CRM)
+		scalone?: number;
 	}
 
 	let showImport = $state(false);
@@ -82,66 +96,133 @@
 	// a nowe pozycje dopisujemy do tej samej noty
 	let importPoprzednia = $state<{ id: string; data: string; pozycji: number } | null>(null);
 
-	// Policy number normalization — strips spaces, uppercase
-	function normalizeNr(nr: string): string {
-		return nr.replace(/[\s\-]/g, '').toUpperCase();
+	// Dane polisy z noty (Leadenhall) różne od CRM — pokazujemy przed rozliczeniem, żeby nic nie przeszło po cichu.
+	// Przy umowie wieloletniej prowadzonej w CRM rokiem polisowym („LHC3028651_2025”) liczba rat i okres
+	// w nocie dotyczą całej umowy, więc porównujemy tylko stawkę prowizji i składkę roczną.
+	function rozbieznosciZCrm(row: UniversalRow, policy: (typeof appState.policies)[number], rokPolisowy: boolean): string[] {
+		const w = row.weryfikacja;
+		if (!w) return [];
+		const out: string[] = [];
+		const pctCrm = Number(policy.prowizja_pct) || 0;
+		if (w.prowizja_pct != null && Math.abs(w.prowizja_pct - pctCrm) > 0.01) out.push(`prowizja w nocie ${w.prowizja_pct}%, w CRM ${pctCrm}%`);
+		if (w.przypis != null && Math.abs(w.przypis - (Number(policy.skladka_przypisana) || 0)) > 0.01) out.push(`składka roczna w nocie ${fmtPln(w.przypis)} zł, w CRM ${fmtPln(Number(policy.skladka_przypisana))} zł`);
+		if (rokPolisowy) return out;
+		if (w.liczba_rat != null && String(w.liczba_rat) !== String(parseInt(policy.ilosc_rat ?? '') || '')) out.push(`liczba rat w nocie ${w.liczba_rat}, w CRM ${policy.ilosc_rat ?? '—'}`);
+		const dni = (a: string, b: string) => Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 864e5;
+		if (w.data_od && policy.data_od && dni(w.data_od, policy.data_od) > 1) out.push(`początek ochrony w nocie ${w.data_od}, w CRM ${policy.data_od}`);
+		if (w.data_do && policy.data_do && dni(w.data_do, policy.data_do) > 1) out.push(`koniec ochrony w nocie ${w.data_do}, w CRM ${policy.data_do}`);
+		return out;
 	}
 
-	function findPolicy(nrPolisy: string) {
-		const norm = normalizeNr(nrPolisy);
-		// 1. Exact match
-		let p = appState.policies.find(x => x.nr_polisy === nrPolisy);
-		if (p) return p;
-		// 2. Normalized match (strip spaces/dashes)
-		p = appState.policies.find(x => normalizeNr(x.nr_polisy) === norm);
-		if (p) return p;
-		// 3. Suffix match (nota has "123456", CRM has "XYZ123456")
-		p = appState.policies.find(x => {
-			const pn = normalizeNr(x.nr_polisy);
-			return pn.endsWith(norm) || norm.endsWith(pn);
-		});
-		return p ?? null;
+	// Raty wybrane już przez pozycje bieżącej noty (dopasowanie po dacie wpłaty); czyszczone przy każdym pliku
+	let zajeteRaty = new Set<string>();
+
+	// Umowa wieloletnia prowadzona rokiem polisowym („LHC3028651_2025”, „…_2026”): pierwsza rata roku bywa
+	// płacona przed jego początkiem, więc wpłata trafia do roku z nierozliczoną ratą najbliższą dacie wpłaty;
+	// gdy żaden rok nie ma wolnej raty — do roku obejmującego datę wpłaty (jak dotąd).
+	function polisaDlaWplaty(nr: string, data: string | null | undefined) {
+		const p = znajdzPolise(appState.policies, nr, data);
+		const rok = p && data && normalizujNr(p.nr_polisy) !== normalizujNr(nr) ? rokPolisowyZNumeru(p.nr_polisy) : null;
+		if (!p || !rok || !data) return p;
+		const lata = new Set(appState.policies.filter(x => {
+			const r = rokPolisowyZNumeru(x.nr_polisy);
+			return !!r && normalizujNr(r.umowa) === normalizujNr(rok.umowa);
+		}).map(x => x.id));
+		const dzien = new Date(data).getTime();
+		const najblizsza = appState.payments
+			.filter(r => lata.has(r.polisa_id) && !ROZLICZONE.includes(r.status) && !zajeteRaty.has(r.id))
+			.sort((a, b) => Math.abs(new Date(a.data_platnosci).getTime() - dzien) - Math.abs(new Date(b.data_platnosci).getTime() - dzien))[0];
+		return (najblizsza && appState.policies.find(x => x.id === najblizsza.polisa_id)) || p;
 	}
 
 	function resolveRow(row: UniversalRow): UniversalRow {
 		const settledStatuses = ['Opłacona', 'Częściowo opłacona'];
-		const policy = findPolicy(row.nr_polisy_raw);
+		const policy = polisaDlaWplaty(row.nr_polisy_raw, row.data_oplacenia);
 		if (!policy) { row.not_found = true; return row; }
 		row.policy_id = policy.id;
 		row.nr_polisy = policy.nr_polisy; // use CRM canonical form
 		row.prowizja_crm = parseFloat(String(policy.prowizja_przypisana)) || 0;
 
-		// Nota z numerem raty (Colonnade): ta konkretna rata. Gdy jest już rozliczona — nie bierzemy innej.
-		if (row.nr_raty != null) {
-			const rata = appState.payments.find(p => p.polisa_id === policy.id && p.nr_raty === row.nr_raty);
+		// Rok polisowy umowy wieloletniej: w nocie numer raty liczony od początku umowy (np. 14 ze 180)
+		const rokPolisowy = normalizujNr(policy.nr_polisy) !== normalizujNr(row.nr_polisy_raw) && rokPolisowyZNumeru(policy.nr_polisy) != null;
+		row.rozbieznosci = rozbieznosciZCrm(row, policy, rokPolisowy);
+		const nrRaty = row.nr_raty != null && rokPolisowy
+			? rataWRoku(row.nr_raty, parseInt(policy.ilosc_rat ?? '') || appState.payments.filter(p => p.polisa_id === policy.id).length)
+			: row.nr_raty;
+		if (nrRaty != null && nrRaty !== row.nr_raty) row.rozbieznosci = [...row.rozbieznosci, `rata ${row.nr_raty} umowy = rata ${nrRaty} w roku polisowym ${policy.nr_polisy}`];
+		const kwotaNoty = Math.abs(row.skladka_nota);
+		const rowna = (p: { kwota: number | string }) => Math.abs(Number(p.kwota) - kwotaNoty) < 0.01;
+		// Prowizja oczekiwana za tę pozycję: przy całej składce — prowizja polisy, przy racie — kwota × stawka polisy.
+		// (Wcześniej każdą pozycję porównywaliśmy z prowizją za całą polisę, więc przy ratach wychodził sztuczny rozjazd.)
+		row.prowizja_crm = Math.abs(kwotaNoty - (Number(policy.skladka_przypisana) || 0)) < 0.01
+			? parseFloat(String(policy.prowizja_przypisana)) || 0
+			: Math.round(kwotaNoty * (Number(policy.prowizja_pct) || 0)) / 100;
+		const otwarte = appState.payments
+			.filter(p => p.polisa_id === policy.id && !settledStatuses.includes(p.status))
+			.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci));
+
+		// Nota z numerem raty (Colonnade, Leadenhall): ta konkretna rata. Gdy jest już rozliczona — nie bierzemy innej.
+		if (nrRaty != null) {
+			const rata = appState.payments.find(p => p.polisa_id === policy.id && p.nr_raty === nrRaty);
 			if (rata && settledStatuses.includes(rata.status)) { row.already_settled = true; return row; }
-			// Prowizja oczekiwana dla tej raty: kwota wpłaty × stawka polisy
-			row.prowizja_crm = Math.round(Math.abs(row.skladka_nota) * (Number(policy.prowizja_pct) || 0)) / 100;
-			const cel = rata ?? appState.payments
-				.filter(p => p.polisa_id === policy.id && !settledStatuses.includes(p.status))
-				.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci))
-				.find(p => Math.abs(Number(p.kwota) - Math.abs(row.skladka_nota)) < 0.01);
+			// Brak raty o tym numerze w harmonogramie CRM — rata o tej kwocie z terminem najbliższym dacie wpłaty.
+			const dzien = row.data_oplacenia ? new Date(row.data_oplacenia).getTime() : null;
+			const odleglosc = (p: { data_platnosci: string }) => (dzien == null ? 0 : Math.abs(new Date(p.data_platnosci).getTime() - dzien));
+			const cel = rata ?? otwarte.filter(rowna).sort((a, b) => odleglosc(a) - odleglosc(b) || a.data_platnosci.localeCompare(b.data_platnosci))[0];
 			if (cel) {
 				row.payment_id = cel.id;
+				row.rata_crm = cel.nr_raty;
 				row.prowizja_diff = Math.abs(row.prowizja_crm - Math.abs(row.prowizja_nota));
 				// Status z wpłaty (cała rata = opłacona); rozjazd prowizji idzie do alertu, nie do statusu raty
-				row.new_status = Math.abs(Number(cel.kwota) - Math.abs(row.skladka_nota)) < 0.01 ? 'Opłacona' : 'Częściowo opłacona';
+				row.new_status = rowna(cel) ? 'Opłacona' : 'Częściowo opłacona';
+				const uwagi: string[] = [];
+				if (!rata) uwagi.push(`w CRM nie ma raty nr ${nrRaty} — rozliczam ratę ${cel.nr_raty} (termin ${cel.data_platnosci})`);
+				else {
+					if (!rowna(cel)) uwagi.push(`rata ${cel.nr_raty} w CRM: ${fmtPln(Number(cel.kwota))} zł, w nocie ${fmtPln(kwotaNoty)} zł`);
+					// Harmonogram CRM nie pasuje do numeracji TU (np. rata 7 opłacona trzy miesiące po starcie polisy)
+					if (dzien != null && odleglosc(cel) > 45 * 864e5) uwagi.push(`rata ${cel.nr_raty} ma w CRM termin ${cel.data_platnosci}, a wpłata w nocie jest z ${row.data_oplacenia}`);
+				}
+				if (uwagi.length) row.rozbieznosci = [...(row.rozbieznosci ?? []), ...uwagi];
 			}
 			return row;
 		}
 
+		// Nota z datą wpłaty, bez wiarygodnego numeru raty (Leadenhall): nierozliczona rata z terminem najbliższym
+		// dacie wpłaty — o tej samej kwocie, jeśli taka jest w ciągu 45 dni — nie zajęta przez inną pozycję tej noty
+		// (dwie wpłaty jednej polisy to dwie raty). Gdy wolnych rat brak, a rata wybrana wcześniej w tej nocie
+		// czeka na resztę kwoty, pozycja jest dopłatą do niej (składka zapłacona w częściach).
+		if (row.data_oplacenia) {
+			// Ta wpłata (ta sama data i kwota) jest już zaksięgowana — np. nota importowana drugi raz
+			const zaksiegowana = appState.payments.find(p => p.polisa_id === policy.id && settledStatuses.includes(p.status)
+				&& p.data_oplacenia === row.data_oplacenia && rowna(p) && !zajeteRaty.has(p.id));
+			if (zaksiegowana) { zajeteRaty.add(zaksiegowana.id); row.already_settled = true; return row; }
+			const dzien = new Date(row.data_oplacenia).getTime();
+			const odleglosc = (p: { data_platnosci: string }) => Math.abs(new Date(p.data_platnosci).getTime() - dzien);
+			const wgOdleglosci = (lista: typeof otwarte) => [...lista].sort((a, b) => odleglosc(a) - odleglosc(b) || a.data_platnosci.localeCompare(b.data_platnosci));
+			const wolne = wgOdleglosci(otwarte.filter(p => !zajeteRaty.has(p.id)));
+			const cel = wolne.find(p => rowna(p) && odleglosc(p) <= 45 * 864e5) ?? wolne[0]
+				?? wgOdleglosci(otwarte.filter(p => zajeteRaty.has(p.id)))[0];
+			// Wpłaty nie ma w CRM (sprawdzone wyżej), a polisa nie ma wolnej raty — lista „Brak raty w CRM”,
+			// nie „już rozliczone” (np. pierwsza rata kolejnego roku umowy, którego jeszcze nie założono)
+			if (!cel) return row;
+			zajeteRaty.add(cel.id);
+			row.payment_id = cel.id;
+			row.rata_crm = cel.nr_raty;
+			row.prowizja_diff = Math.abs(row.prowizja_crm - Math.abs(row.prowizja_nota));
+			row.new_status = rowna(cel) ? 'Opłacona' : 'Częściowo opłacona';
+			if (odleglosc(cel) > 45 * 864e5) row.rozbieznosci = [...(row.rozbieznosci ?? []), `najbliższa nierozliczona rata (${cel.nr_raty}) ma w CRM termin ${cel.data_platnosci}, a wpłata w nocie jest z ${row.data_oplacenia} — sprawdź harmonogram`];
+			return row;
+		}
+
 		// Rata o kwocie równej składce z noty, a gdy takiej nie ma — najwcześniejsza nierozliczona
-		const otwarte = appState.payments
-			.filter(p => p.polisa_id === policy.id && !settledStatuses.includes(p.status))
-			.sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci));
-		const payment = otwarte.find(p => Math.abs(Number(p.kwota) - Math.abs(row.skladka_nota)) < 0.01) ?? otwarte[0];
+		const payment = otwarte.find(rowna) ?? otwarte[0];
 		if (payment) {
 			row.payment_id = payment.id;
-			const diff = Math.abs((row.prowizja_crm ?? 0) - row.prowizja_nota);
-			row.prowizja_diff = diff;
-			// ≤ 0.50 PLN → OK, > 0.50 PLN → needs operator decision (default: settle)
-			row.new_status = diff <= 0.5 ? 'Opłacona' : 'Częściowo opłacona';
-			row.operator_action = diff > 0.5 ? 'settle' : 'settle';
+			row.rata_crm = payment.nr_raty;
+			row.prowizja_diff = Math.abs((row.prowizja_crm ?? 0) - Math.abs(row.prowizja_nota));
+			// Status z wpłaty; rozjazd prowizji > 0,50 zł → decyzja operatora i alert, nie status raty
+			row.new_status = rowna(payment) ? 'Opłacona' : 'Częściowo opłacona';
+			row.operator_action = 'settle';
 		} else {
 			const anyPay = appState.payments.find(p => p.polisa_id === policy.id);
 			if (anyPay && settledStatuses.includes(anyPay.status)) {
@@ -149,6 +230,46 @@
 			}
 		}
 		return row;
+	}
+
+	// Kilka pozycji noty na jedną ratę CRM (np. składka jednorazowa zapłacona w dwóch częściach): sumujemy je
+	// w jedną pozycję. Wcześniej każda zapisywała się osobno na tę samą ratę i ostatnia nadpisywała poprzednie
+	// (kwota i prowizja z noty ginęły). Pozycja polisy bez raty do rozliczenia trafia na listę „brak raty”.
+	function scalPozycje(rows: UniversalRow[]): UniversalRow[] {
+		const out: UniversalRow[] = [];
+		const poRacie = new Map<string, UniversalRow>();
+		const odlozone: UniversalRow[] = [];
+		const dolacz = (cel: UniversalRow, r: UniversalRow) => {
+			cel.skladka_nota = Math.round((cel.skladka_nota + r.skladka_nota) * 100) / 100;
+			cel.prowizja_nota = Math.round((cel.prowizja_nota + r.prowizja_nota) * 100) / 100;
+			cel.prowizja_crm = Math.round(((cel.prowizja_crm ?? 0) + (r.prowizja_crm ?? 0)) * 100) / 100;
+			cel.prowizja_diff = Math.abs((cel.prowizja_crm ?? 0) - Math.abs(cel.prowizja_nota));
+			if (r.data_oplacenia && (!cel.data_oplacenia || r.data_oplacenia > cel.data_oplacenia)) cel.data_oplacenia = r.data_oplacenia;
+			const rata = appState.payments.find(p => p.id === cel.payment_id);
+			const pelna = !!rata && Math.abs(Number(rata.kwota) - Math.abs(cel.skladka_nota)) < 0.01;
+			if (rata) cel.new_status = pelna ? 'Opłacona' : 'Częściowo opłacona';
+			cel.scalone = (cel.scalone ?? 1) + 1;
+			// Uwaga o różnicy kwoty pojedynczej pozycji przestaje obowiązywać, gdy suma pokrywa ratę
+			cel.rozbieznosci = [...(cel.rozbieznosci ?? []).filter(t => !t.startsWith('łącznie ') && !(pelna && t.startsWith(`rata ${cel.rata_crm} w CRM: `))),
+				`łącznie ${odmiana(cel.scalone, 'pozycja', 'pozycje', 'pozycji')} noty na ratę ${cel.rata_crm ?? ''} w CRM: ${fmtPln(Math.abs(cel.skladka_nota))} zł składki, ${fmtPln(Math.abs(cel.prowizja_nota))} zł prowizji`];
+		};
+		for (const r of rows) {
+			if (r.payment_id && !r.is_negative) {
+				const cel = poRacie.get(r.payment_id);
+				if (cel) { dolacz(cel, r); continue; }
+				poRacie.set(r.payment_id, r);
+			} else if (!r.payment_id && r.policy_id && !r.not_found && !r.already_settled && !r.is_negative) {
+				odlozone.push(r);
+				continue;
+			}
+			out.push(r);
+		}
+		for (const r of odlozone) {
+			const cel = out.find(x => x.policy_id === r.policy_id && x.payment_id && !x.is_negative);
+			if (cel) dolacz(cel, r);
+			else out.push({ ...r, brak_raty: true });
+		}
+		return out;
 	}
 
 	// ===== ERGO PARSER =====
@@ -160,6 +281,7 @@
 				try {
 					const data = new Uint8Array(e.target!.result as ArrayBuffer);
 					const wb = XLSX.read(data, { type: 'array' });
+					naprawKomorkiStr(XLSX, data, wb);
 					const ws = wb.Sheets[wb.SheetNames[0]];
 					const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
@@ -197,7 +319,7 @@
 						};
 						parsed.push(resolveRow(row));
 					}
-					importPreview = parsed;
+					importPreview = scalPozycje(parsed);
 					resolve();
 				} catch (err: any) { reject(err); }
 			};
@@ -215,76 +337,51 @@
 		importOstrzezenia = z.ostrzezenia;
 		importRazemSkladka = z.razem_podstawa;
 		importRazemProwizja = z.razem_prowizja;
-		importPreview = z.pozycje.map(p => resolveRow({
+		importPreview = scalPozycje(z.pozycje.map(p => resolveRow({
 			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
 			ubezpieczajacy: p.ubezpieczajacy,
 			skladka_nota: p.podstawa, prowizja_nota: p.prowizja,
 			payment_id: null, policy_id: null, prowizja_crm: null,
 			new_status: null, not_found: false, already_settled: false,
 			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle'
-		}));
+		})));
 	}
 
-	// ===== LEADENHALL PARSER =====
-	// Squarelife jest tożsamy z Leadenhall — obsługiwane identycznie
+	// ===== LEADENHALL / SQUARELIFE — jedna pozycja = jedna rata (numer raty i data wpłaty z pliku) =====
 	async function parseLeadenhallXlsx(file: File): Promise<void> {
 		const XLSX = await import('xlsx');
-		return new Promise((resolve, reject) => {
-			const reader = new FileReader();
-			reader.onload = (e) => {
-				try {
-					const data = new Uint8Array(e.target!.result as ArrayBuffer);
-					const wb = XLSX.read(data, { type: 'array' });
-					const ws = wb.Sheets[wb.SheetNames[0]];
-					const rows: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-
-					// Row 0: "Zestawienie do noty księgowej nr N/XXX/..."
-					const titleRow = String(rows[0]?.[0] ?? '').trim();
-					const notaMatch = titleRow.match(/nr\s+([A-Z0-9\/\-]+)/i);
-					importNumerNoty = notaMatch?.[1] ?? titleRow;
-					importDataZest = '';
-					importRazemSkladka = 0; importRazemProwizja = 0;
-
-					// Row 1: headers — skip
-					// Rows 2+: data
-					// Cols: 0=Polisa, 3=Ubezpieczający, 13=Składka, 14=%Prowizji, 15=Prowizja, 17=Pracownik, 18=PESEL
-					const parsed: UniversalRow[] = [];
-					const peselsInNota: Set<string> = new Set();
-
-					for (let i = 2; i < rows.length; i++) {
-						const r = rows[i];
-						const nr = String(r[0] ?? '').trim();
-						if (!nr) continue;
-						const skladka = parseFloat(String(r[13] ?? '0').replace(',', '.')) || 0;
-						const prowizja = parseFloat(String(r[15] ?? '0').replace(',', '.')) || 0;
-						const pesel = String(r[18] ?? '').trim();
-						if (pesel) peselsInNota.add(pesel);
-						importRazemSkladka += Math.abs(skladka);
-						importRazemProwizja += Math.abs(prowizja);
-
-						const row: UniversalRow = {
-							nr_polisy: nr, nr_polisy_raw: nr,
-							ubezpieczajacy: String(r[3] ?? '').trim(),
-							skladka_nota: skladka, prowizja_nota: prowizja,
-							payment_id: null, policy_id: null, prowizja_crm: null,
-							new_status: null, not_found: false, already_settled: false,
-							is_negative: prowizja < 0, prowizja_diff: 0, operator_action: 'settle'
-						};
-						parsed.push(resolveRow(row));
-					}
-					importPreview = parsed;
-					resolve();
-				} catch (err: any) { reject(err); }
-			};
-			reader.onerror = () => reject(new Error('Błąd odczytu pliku'));
-			reader.readAsArrayBuffer(file);
-		});
+		const dane = new Uint8Array(await file.arrayBuffer());
+		const wb = XLSX.read(dane, { type: 'array' });
+		naprawKomorkiStr(XLSX, dane, wb);
+		const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: true });
+		const z = parseLeadenhall(rows);
+		importNumerNoty = z.numer;
+		importDataZest = '';
+		importOkres = null;
+		importOstrzezenia = z.ostrzezenia;
+		importRazemSkladka = z.razem_skladka;
+		importRazemProwizja = z.razem_prowizja;
+		// „Nr raty składki” Leadenhall nie jest numerem kolejnej raty (ta sama polisa ma 12 przy pierwszej
+		// wpłacie w 10.2025 i przy wpłacie w 07.2026), więc ratę dobieramy po dacie wpłaty, od najstarszej wpłaty.
+		const wgDaty = [...z.pozycje].sort((a, b) => (a.data_platnosci ?? '').localeCompare(b.data_platnosci ?? ''));
+		importPreview = scalPozycje(wgDaty.map(p => resolveRow({
+			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
+			ubezpieczajacy: p.ubezpieczajacy,
+			skladka_nota: p.skladka, prowizja_nota: p.prowizja,
+			payment_id: null, policy_id: null, prowizja_crm: null,
+			new_status: null, not_found: false, already_settled: false,
+			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle',
+			nr_raty: null, data_oplacenia: p.data_platnosci,
+			weryfikacja: { prowizja_pct: p.prowizja_pct, przypis: p.przypis, liczba_rat: p.liczba_rat, data_od: p.data_od, data_do: p.data_do }
+		})));
 	}
 
 	// ===== COLONNADE (portal Cellent) — jedna pozycja = jedna rata =====
 	async function parseColonnadeFile(file: File): Promise<void> {
 		const XLSX = await import('xlsx');
-		const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' });
+		const dane = new Uint8Array(await file.arrayBuffer());
+		const wb = XLSX.read(dane, { type: 'array' });
+		naprawKomorkiStr(XLSX, dane, wb);
 		const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null, raw: true });
 		const z = parseColonnade(rows, file.name);
 		importNumerNoty = z.numer;
@@ -293,7 +390,7 @@
 		importOstrzezenia = z.ostrzezenia;
 		importRazemSkladka = z.razem_kwota;
 		importRazemProwizja = z.razem_prowizja;
-		importPreview = z.pozycje.map(p => resolveRow({
+		importPreview = scalPozycje(z.pozycje.map(p => resolveRow({
 			nr_polisy: p.nr_polisy, nr_polisy_raw: p.nr_polisy,
 			ubezpieczajacy: p.ubezpieczajacy,
 			skladka_nota: p.kwota, prowizja_nota: p.prowizja,
@@ -301,7 +398,7 @@
 			new_status: null, not_found: false, already_settled: false,
 			is_negative: p.prowizja < 0, prowizja_diff: 0, operator_action: 'settle',
 			nr_raty: p.nr_raty, data_oplacenia: p.data_oplacenia
-		}));
+		})));
 	}
 
 	async function onImportFile(e: Event) {
@@ -315,6 +412,7 @@
 		importOkres = null;
 		importOstrzezenia = [];
 		importPoprzednia = null;
+		zajeteRaty = new Set();
 		try {
 			if (importMode === 'ergo' && /\.csv$/i.test(file.name)) await parseErgoCsvFile(file);
 			else if (importMode === 'ergo') await parseErgoXlsx(file);
@@ -358,8 +456,10 @@
 
 		const tuSkrot = TU_NOTY[importMode];
 
-		// Plik źródłowy do prywatnego bucketu; w nocie zapisujemy ścieżkę, a link do pobrania
-		// powstaje przy kliknięciu (storageLink.ts).
+		// Plik źródłowy: do magazynu R2 (po zapisaniu noty, przez serwer); gdy magazyn nie jest podpięty —
+		// jak dawniej do prywatnego bucketu Supabase (w nocie ścieżka, link powstaje przy kliknięciu).
+		const doR2 = !!importFile && !importPoprzednia && (await magazynDostepny());
+		let uwagaPliku = '';
 		const pozycji = importPreview.filter(r => r.payment_id && r.operator_action === 'settle').length;
 		let notaId: string;
 		if (importPoprzednia) {
@@ -371,7 +471,7 @@
 			notaId = importPoprzednia.id;
 		} else {
 			let fileUrl: string | null = null;
-			if (importFile) {
+			if (importFile && !doR2) {
 				const ext = importFile.name.split('.').pop() ?? 'xlsx';
 				const path = `${appState.profile!.tenant_id}/${tuSkrot}_${importNumerNoty.replace(/\//g, '-')}_${Date.now()}.${ext}`;
 				const { data: upData } = await sb.storage.from('settlement-files').upload(path, importFile, { upsert: true });
@@ -391,6 +491,13 @@
 
 			if (notaErr) { importSaving = false; importError = notaErr.message; return; }
 			notaId = nota!.id;
+			if (doR2 && importFile) {
+				try {
+					await wyslijPlikNoty(notaId, importFile);
+				} catch (e) {
+					uwagaPliku = `\n\nUwaga: plik zestawienia nie trafił do magazynu (${(e as Error).message}). Dodasz go w Ustawieniach → Dokumenty rozliczeniowe.`;
+				}
+			}
 		}
 
 		// Rows to settle
@@ -453,7 +560,8 @@
 		importSummary = `Rozliczono ${settled} rat. Nota ${importNumerNoty} zapisana.`
 			+ (notFound.length ? `\n\nNie znaleziono: ${notFound.join(', ')}` : '')
 			+ (skipped.length ? `\n\nPominięto (aneks): ${skipped.join(', ')}` : '')
-			+ (alertsToCreate.length ? `\n\n⚠ Utworzono ${alertsToCreate.length} alert(ów) do sprawdzenia.` : '');
+			+ (alertsToCreate.length ? `\n\n⚠ Utworzono ${alertsToCreate.length} alert(ów) do sprawdzenia.` : '')
+			+ uwagaPliku;
 	}
 
 	function openImport(mode: ImportMode) {
@@ -706,6 +814,8 @@
 	const importAlreadySettled = $derived(importPreview.filter(r => r.already_settled));
 	const importNegative = $derived(importPreview.filter(r => r.is_negative));
 	const importNeedsDecision = $derived(importPreview.filter(r => r.prowizja_diff > 0.5 && !r.is_negative && r.payment_id));
+	const importRozbieznosci = $derived(importPreview.filter(r => (r.rozbieznosci ?? []).length > 0));
+	const importBrakRaty = $derived(importPreview.filter(r => r.brak_raty));
 
 	// Checkbox selection
 	let selected = $state(new Set<string>());
@@ -810,7 +920,7 @@
 			{#each appState.alerts.slice(0, 3) as alert}
 				<li class="px-4 py-2 text-[13px] text-ink-2">
 					<span class="font-semibold text-ink">{alert.typ === 'ujemna_prowizja' ? 'Ujemna prowizja' : alert.typ === 'aneks_wymagany' ? 'Aneks wymagany' : 'Rozbieżność prowizji'}</span>
-					{#if alert.nr_polisy} · polisa <span class="font-mono">{alert.nr_polisy}</span>{/if}
+					{#if alert.nr_polisy} · polisa <span class="font-mono">{alert.nr_polisy}</span> <Kopiuj tekst={alert.nr_polisy} opis="nr polisy" />{/if}
 					· {alert.opis}
 				</li>
 			{/each}
@@ -949,6 +1059,7 @@
 								</td>
 								<td class="px-3 py-2 font-mono text-xs whitespace-nowrap">
 									<a href="/policies/{pay.polisa_id}" class="text-accent-text hover:underline">{pay.crm_policies?.nr_polisy ?? '—'}</a>
+									<Kopiuj tekst={pay.crm_policies?.nr_polisy} opis="nr polisy" />
 								</td>
 								<td class="px-3 py-2 min-w-[180px] max-w-[300px]">
 									{#if pol?.klient_id}
@@ -1031,6 +1142,7 @@
 	title={importMode === 'ergo' ? 'Rozlicz ERGO — Import zestawienia prowizyjnego' : importMode === 'colonnade' ? 'Rozlicz Colonnade — Import zestawienia prowizyjnego (Cellent)' : 'Rozlicz Leadenhall / Squarelife — Import noty prowizyjnej'}
 	open={showImport}
 	onclose={closeImport}
+	szeroki
 >
 	{#snippet footer()}
 		{#if importDone}
@@ -1039,7 +1151,7 @@
 			<button onclick={closeImport} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
 			{#if importToProcess.length > 0 && !importLoading}
 				<button onclick={saveImport} disabled={importSaving} class="px-4 py-2 text-sm {importMode === 'ergo' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-violet-600 hover:bg-violet-700'} text-white rounded-lg font-semibold disabled:opacity-60">
-					{importSaving ? 'Rozliczanie...' : `Rozlicz ${importToProcess.filter(r => r.operator_action === 'settle').length} rat`}
+					{importSaving ? 'Rozliczanie...' : `Rozlicz ${odmiana(importToProcess.filter(r => r.operator_action === 'settle').length, 'ratę', 'raty', 'rat')}`}
 				</button>
 			{/if}
 		{/if}
@@ -1086,8 +1198,18 @@
 
 				{#if importOstrzezenia.length > 0}
 					<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-						<div class="flex items-center gap-2 font-semibold text-amber-700 mb-1"><AlertTriangle size={15} /> Sumy w pliku nie zgadzają się z wierszami:</div>
+						<div class="flex items-center gap-2 font-semibold text-amber-700 mb-1"><AlertTriangle size={15} /> Uwagi do pliku:</div>
 						{#each importOstrzezenia as o}<div class="text-sm text-amber-700">{o}</div>{/each}
+					</div>
+				{/if}
+
+				<!-- Dane polisy w nocie inne niż w CRM — do sprawdzenia przed rozliczeniem -->
+				{#if importRozbieznosci.length > 0}
+					<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+						<div class="flex items-center gap-2 font-semibold text-amber-700 mb-1"><AlertTriangle size={15} /> Nota a CRM — sprawdź przed rozliczeniem ({importRozbieznosci.length}):</div>
+						{#each importRozbieznosci as r}
+							<div class="text-sm text-amber-800"><span class="font-mono">{r.nr_polisy}</span>: {r.rozbieznosci!.join('; ')}</div>
+						{/each}
 					</div>
 				{/if}
 
@@ -1112,6 +1234,17 @@
 					</div>
 				{/if}
 
+				<!-- Polisa jest, ale nie ma raty do rozliczenia -->
+				{#if importBrakRaty.length > 0}
+					<div class="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+						<div class="flex items-center gap-2 font-semibold text-amber-700 mb-2"><AlertTriangle size={15} /> Brak raty w CRM do rozliczenia ({importBrakRaty.length}) — nie zostaną zaksięgowane:</div>
+						{#each importBrakRaty as r}
+							<div class="text-sm text-amber-700"><span class="font-mono">{r.nr_polisy}</span> — {r.ubezpieczajacy}{r.nr_raty != null ? ` · rata ${r.nr_raty}` : ''} · {fmtPln(r.skladka_nota)} zł / prowizja {fmtPln(r.prowizja_nota)} zł</div>
+						{/each}
+						<p class="text-xs text-amber-700 mt-1">Dodaj brakującą ratę w polisie (albo popraw harmonogram) i zaimportuj notę ponownie — rozliczone już pozycje zostaną pominięte.</p>
+					</div>
+				{/if}
+
 				<!-- Już rozliczone -->
 				{#if importAlreadySettled.length > 0}
 					<div class="bg-slate-50 border border-line rounded-lg px-4 py-3">
@@ -1122,15 +1255,16 @@
 
 				<!-- Tabela do rozliczenia -->
 				{#if importToProcess.length > 0}
-					<div class="border border-line rounded-lg overflow-hidden">
-						<table class="w-full text-xs">
+					<div class="border border-line rounded-lg overflow-x-auto">
+						<table class="w-full min-w-[640px] text-xs">
 							<thead class="bg-slate-50 border-b border-line">
 								<tr>
 									<th class="px-3 py-2 text-left font-semibold text-slate-600">Nr polisy</th>
 									<th class="px-3 py-2 text-left font-semibold text-slate-600">Ubezpieczający</th>
+									<th class="px-3 py-2 text-left font-semibold text-slate-600" title="Numer raty z noty → rata w CRM, którą rozliczy import">Rata</th>
 									<th class="px-3 py-2 text-right font-semibold text-slate-600">Składka</th>
 									<th class="px-3 py-2 text-right font-semibold text-slate-600">Prow. nota</th>
-									<th class="px-3 py-2 text-right font-semibold text-slate-600">Prow. CRM</th>
+									<th class="px-3 py-2 text-right font-semibold text-slate-600" title="Stawka prowizji polisy w CRM × składka z noty">Prow. wg CRM</th>
 									<th class="px-3 py-2 font-semibold text-slate-600">Akcja</th>
 								</tr>
 							</thead>
@@ -1140,6 +1274,10 @@
 									<tr class="border-t border-line-soft {bigDiff ? 'bg-amber-50/60' : ''}">
 										<td class="px-3 py-2 font-mono">{r.nr_polisy}</td>
 										<td class="px-3 py-2 text-slate-600 truncate max-w-[120px]">{r.ubezpieczajacy}</td>
+										<td class="px-3 py-2 whitespace-nowrap {r.nr_raty != null && r.rata_crm != null && r.rata_crm !== r.nr_raty ? 'text-amber-700 font-bold' : 'text-slate-600'}">
+											{#if r.nr_raty != null}{r.nr_raty}{#if r.rata_crm != null && r.rata_crm !== r.nr_raty} → CRM {r.rata_crm}{/if}{:else}{r.rata_crm != null ? `CRM ${r.rata_crm}` : '—'}{/if}
+											{#if r.data_oplacenia}<span class="block text-[11px] font-normal text-slate-400">wpłata {r.data_oplacenia.split('-').reverse().join('.')}</span>{/if}
+										</td>
 										<td class="px-3 py-2 text-right">{fmtPln(r.skladka_nota)}</td>
 										<td class="px-3 py-2 text-right {bigDiff ? 'text-amber-700 font-bold' : ''}">{fmtPln(r.prowizja_nota)}</td>
 										<td class="px-3 py-2 text-right {bigDiff ? 'text-amber-700 font-bold' : ''}">{fmtPln(r.prowizja_crm ?? 0)}</td>

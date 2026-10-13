@@ -43,6 +43,10 @@ export interface Client {
 	gwarancje?: boolean;
 	/** Identyfikator firmy w BEAUTY (synchronizacja sync-beauty-companies); unikalny w firmie. */
 	beauty_id?: number | string | null;
+	/** Zbiorowe uzupełnianie z GUS: kiedy sprawdzono, wynik i dane z rejestru REGON. */
+	gus_sprawdzono_at?: string | null;
+	gus_wynik?: 'uzupelniono' | 'bez_zmian' | 'nie_znaleziono' | 'zakonczona' | 'zly_nip' | null;
+	gus_dane?: { nazwa?: string | null; regon?: string | null; typ?: string | null; adres?: string | null; wojewodztwo?: string | null; data_zakonczenia?: string | null } | null;
 	created_at?: string;
 }
 
@@ -379,6 +383,17 @@ export interface Prospect {
 	ubez_inne_opis?: string | null;
 	created_at?: string;
 	crm_profiles?: { imie_nazwisko: string | null } | null;
+	/** Lead firmy z kartoteki — dane firmy (nazwa, NIP, kontakt) bierzemy z klienta. */
+	klient_id?: string | null;
+	/** Kody: oc, tax, utrata_dochodu, zdrowie, grupowe, konsultacja, inne ($lib/sprzedaz). */
+	zainteresowania?: string[];
+	przychod?: string | null;
+	zrodlo?: string | null;
+	data_zgloszenia?: string | null;
+	ostatnie_zgloszenie_at?: string | null;
+	liczba_zgloszen?: number;
+	status_zmieniony_at?: string | null;
+	crm_clients?: { nazwa: string; nazwa_skrocona: string | null; nip: string | null; email: string | null; telefon: string | null; opiekun_id: string | null } | null;
 }
 
 export interface CommissionSettlement {

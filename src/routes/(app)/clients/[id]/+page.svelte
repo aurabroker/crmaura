@@ -7,6 +7,7 @@
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
+	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
@@ -15,6 +16,7 @@
 	import type { Claim, Vehicle, ClientContact, CrmTask, Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
 	import { Pencil, Plus, Car, FileText, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip, Phone, Ellipsis, ShieldCheck, ShieldAlert, Users, AlertTriangle } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
@@ -327,8 +329,22 @@
 	}
 
 	// ── E-maile wysłane klientowi z CRM (przypomnienia o płatnościach, odnowienia) ──
-	type EmailKlienta = { id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[]; autor_id?: string | null; zalaczniki?: string[] | null };
-	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', recznie: 'Wysłany z CRM', inne: 'Inne' };
+	type EmailKlienta = {
+		id: string; rodzaj: string; adres: string; temat: string; tresc: string | null; wyslano_at: string; polisa_ids: string[]; autor_id?: string | null; zalaczniki?: string[] | null;
+		dostawa?: string | null; dostawa_at?: string | null; otwarto_at?: string | null; dostawa_blad?: string | null;
+	};
+	/** Stan dostawy z webhooka Resend; null — brak danych (starszy e-mail albo webhook nieustawiony). */
+	const DOSTAWA: Record<string, { tekst: string; cls: string; problem?: boolean }> = {
+		wyslany: { tekst: 'Wysłany', cls: 'bg-surface-2 text-ink-2' },
+		opozniony: { tekst: 'Opóźniony', cls: 'bg-warn-soft text-warn' },
+		dostarczony: { tekst: 'Dostarczony', cls: 'bg-ok-soft text-ok' },
+		otwarty: { tekst: 'Otwarty', cls: 'bg-accent-soft text-accent-text' },
+		klikniety: { tekst: 'Otwarty', cls: 'bg-accent-soft text-accent-text' },
+		odbity: { tekst: 'Odrzucony', cls: 'bg-danger-soft text-danger', problem: true },
+		spam: { tekst: 'Zgłoszony jako spam', cls: 'bg-danger-soft text-danger', problem: true },
+		blad: { tekst: 'Błąd wysyłki', cls: 'bg-danger-soft text-danger', problem: true }
+	};
+	const RODZAJ_EMAILA: Record<string, string> = { przypomnienie_platnosci: 'Przypomnienie o płatności', odnowienie: 'Odnowienie', recznie: 'Wysłany z CRM', polisa: 'Polisa wysłana klientowi', inne: 'Inne' };
 	const autorEmaila = (e: EmailKlienta) => (e.autor_id ? appState.brokers.find((b) => b.id === e.autor_id)?.imie_nazwisko ?? null : null);
 
 	// „Napisz e-mail” (okno z szablonami); szablon i polisa ustawiane np. z przypomnienia o racie.
@@ -359,7 +375,7 @@
 		const dla = clientId ?? '';
 		emaileLadowanie = true; emaileBlad = '';
 		const { data, error } = await sb.from('crm_client_emails')
-			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids, autor_id, zalaczniki')
+			.select('id, rodzaj, adres, temat, tresc, wyslano_at, polisa_ids, autor_id, zalaczniki, dostawa, dostawa_at, otwarto_at, dostawa_blad')
 			.eq('klient_id', dla)
 			.order('wyslano_at', { ascending: false })
 			.limit(200);
@@ -383,6 +399,51 @@
 			wczytajEmaile();
 		}
 	});
+
+	// ── Sprzedaż: lead klienta, zgłoszenia z formularza i maile kampanii (BEAUTY) ──
+	type LeadKlienta = { id: string; status: string; zainteresowania: string[] | null; przychod: string | null; zrodlo: string | null; data_zgloszenia: string | null; ostatnie_zgloszenie_at: string | null; liczba_zgloszen: number | null };
+	let lead = $state<LeadKlienta | null>(null);
+	let zgloszeniaKlienta = $state<Zgloszenie[]>([]);
+	let maileKampanii = $state<MailKampanii[]>([]);
+	let sprzedazDla = '';
+	let dodawanieLeada = $state(false);
+	async function wczytajSprzedaz() {
+		const dla = clientId ?? '';
+		const [l, z, m] = await Promise.all([
+			sb.from('crm_prospects').select('id, status, zainteresowania, przychod, zrodlo, data_zgloszenia, ostatnie_zgloszenie_at, liczba_zgloszen').eq('klient_id', dla).maybeSingle(),
+			sb.from('crm_zgloszenia').select('id, klient_id, prospect_id, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at').eq('klient_id', dla).order('zgloszono_at', { ascending: false }).limit(30),
+			sb.from('crm_kampanie_maile').select('id, kampania, kod, temat, adres, status, wyslano_at, dostarczono_at, otwarto_at, kliknieto_at, odbito_at').eq('klient_id', dla).order('wyslano_at', { ascending: false }).limit(100)
+		]);
+		if (dla !== clientId) return;
+		lead = (l.data ?? null) as LeadKlienta | null;
+		zgloszeniaKlienta = (z.data ?? []) as Zgloszenie[];
+		maileKampanii = (m.data ?? []) as MailKampanii[];
+	}
+	$effect(() => {
+		if (activeTab === 'przeglad' && clientId && sprzedazDla !== clientId) {
+			sprzedazDla = clientId;
+			lead = null; zgloszeniaKlienta = []; maileKampanii = [];
+			untrack(() => wczytajSprzedaz());
+		}
+	});
+	const maileStat = $derived({
+		wyslane: maileKampanii.length,
+		otwarte: maileKampanii.filter((m) => m.otwarto_at).length,
+		klikniete: maileKampanii.filter((m) => m.kliknieto_at).length,
+		odbite: maileKampanii.filter((m) => m.odbito_at).length
+	});
+	async function dodajDoSprzedazy() {
+		if (!client || dodawanieLeada) return;
+		dodawanieLeada = true;
+		const { error } = await sb.from('crm_prospects').insert([{
+			tenant_id: client.tenant_id, klient_id: client.id, nazwa: client.nazwa, nip: client.nip, adres: client.ulica,
+			email: client.email, telefon: client.telefon, status: 'nowy', zrodlo: 'kartoteka', broker_id: client.opiekun_id
+		}] as never);
+		dodawanieLeada = false;
+		if (error) { alert('Błąd: ' + error.message); return; }
+		appState.prospectsLoaded = false;
+		await wczytajSprzedaz();
+	}
 
 	// lazy-load przy wejściu w zakładkę (oszczędza limity API)
 	$effect(() => {
@@ -882,6 +943,12 @@
 				return id ? `Opiekun klienta: ${kto?.imie_nazwisko || kto?.email || 'zmieniony'}` : 'Usunięto opiekuna klienta';
 			}
 			case 'clients_exported': return 'Dane klienta wyeksportowane do CSV';
+			case 'client_gus_enriched': {
+				const d = w.details ?? {};
+				const zmiany = Array.isArray(d.zmiany) ? (d.zmiany as string[]) : [];
+				if (d.wynik === 'zakonczona') return `GUS: firma zakończyła działalność${typeof d.data_zakonczenia === 'string' ? ` (${fmtDzien(d.data_zakonczenia, true)})` : ''}${zmiany.length ? `; uzupełniono: ${zmiany.join(', ')}` : ''}`;
+				return `Uzupełniono z GUS: ${zmiany.join(', ') || 'dane'}`;
+			}
 			default: return null;
 		}
 	}
@@ -915,7 +982,20 @@
 			if (w.zlozono_at) dodaj({ klucz: `wz-${w.id}`, at: w.zlozono_at, tekst: `Klient złożył wniosek o odnowienie ${nrCertyfikatu(w)}`, kto: null, ton: 'accent', href: `/policies/${w.polisa_id}` });
 		}
 		for (const e of emaile) {
-			dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}${e.zalaczniki?.length ? ` (załączniki: ${e.zalaczniki.length})` : ''}`, kto: autorEmaila(e) ?? RODZAJ_EMAILA[e.rodzaj] ?? null, ton: 'accent' });
+			{
+				const problem = e.dostawa ? DOSTAWA[e.dostawa]?.problem : false;
+				dodaj({ klucz: `e-${e.id}`, at: e.wyslano_at, tekst: `E-mail do klienta: ${e.temat}${e.zalaczniki?.length ? ` (załączniki: ${e.zalaczniki.length})` : ''}${problem ? ` — nie doszedł (${DOSTAWA[e.dostawa!].tekst.toLowerCase()})` : ''}`, kto: autorEmaila(e) ?? RODZAJ_EMAILA[e.rodzaj] ?? null, ton: problem ? 'danger' : 'accent' });
+			}
+		}
+		for (const z of zgloszeniaKlienta) {
+			const co = posortujZainteresowania(z.zainteresowania).map((k) => ETYKIETA_ZAINTERESOWANIA[k] ?? k).join(', ') || z.produkt || 'oferta';
+			const ponowne = z.ponowne && !z.historyczne;
+			dodaj({ klucz: `zg-${z.id}`, at: z.zgloszono_at, tekst: `${ponowne ? 'Ponowne zgłoszenie' : 'Zgłoszenie'} z formularza: ${co}${z.przychod ? ` (przychód ${z.przychod})` : ''}`, kto: z.kontakt ?? 'Formularz', ton: ponowne ? 'danger' : 'accent', href: lead ? `/prospects/${lead.id}` : undefined });
+		}
+		for (const m of maileKampanii) {
+			if (!m.wyslano_at) continue;
+			const st = stanMaila(m);
+			dodaj({ klucz: `mk-${m.id}`, at: m.wyslano_at, tekst: `Mail kampanii „${nazwaKampanii(m.kampania)}” — ${st.tekst}`, kto: 'Aura HUB', ton: m.odbito_at ? 'danger' : m.kliknieto_at ? 'accent' : 'neutral' });
 		}
 		for (const w of audyt) {
 			const tekst = opisAudytu(w);
@@ -963,9 +1043,16 @@
 				{#if client.nazwa_skrocona && client.nazwa_skrocona !== client.nazwa}<p class="text-[13px] text-ink-3">{client.nazwa}</p>{/if}
 			</div>
 			<div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[13px] text-ink-2">
-				{#if client.nip}<span class="font-mono text-xs">NIP {client.nip}</span>{/if}
-				{#if client.krs}<span class="font-mono text-xs">KRS {client.krs}</span>{/if}
-				{#if client.pesel}<span class="font-mono text-xs">PESEL {client.pesel}</span>{/if}
+				{#if client.gus_wynik === 'zakonczona'}
+					<span class="flex items-center gap-1.5 text-danger font-semibold" title="Według rejestru REGON (GUS) firma zakończyła działalność">
+						<ShieldAlert size={14} aria-hidden="true" /> Działalność zakończona{client.gus_dane?.data_zakonczenia ? ` ${fmtDzien(client.gus_dane.data_zakonczenia, true)}` : ''} (GUS)
+					</span>
+				{:else if client.gus_wynik === 'zly_nip'}
+					<span class="flex items-center gap-1.5 text-warn font-semibold" title="NIP nie przechodzi kontroli sumy — sprawdź go w danych klienta"><ShieldAlert size={14} aria-hidden="true" /> Błędny NIP</span>
+				{/if}
+				{#if client.nip}<span class="inline-flex items-center gap-0.5 font-mono text-xs">NIP {client.nip} <Kopiuj tekst={client.nip.replace(/\D/g, '')} opis="NIP" skrot="c" /></span>{/if}
+				{#if client.krs}<span class="inline-flex items-center gap-0.5 font-mono text-xs">KRS {client.krs} <Kopiuj tekst={client.krs} opis="KRS" /></span>{/if}
+				{#if client.pesel}<span class="inline-flex items-center gap-0.5 font-mono text-xs">PESEL {client.pesel} <Kopiuj tekst={client.pesel} opis="PESEL" /></span>{/if}
 				<span>{client.typ === 'osoba' ? 'Osoba' : 'Firma'}{miasto ? ` · ${miasto}` : ''}{client.beauty_id != null ? ' · import BEAUTY' : ''}</span>
 				{#if client.rodo_zgoda}
 					<span class="flex items-center gap-1.5 text-ok font-semibold">
@@ -1001,10 +1088,10 @@
 				<a href="tel:{client.telefon}" aria-label="Zadzwoń: {client.telefon}" title="Zadzwoń: {client.telefon}" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Phone size={16} /></a>
 			{/if}
 			{#if adresyEmail}
-				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
+				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail (M)" data-skrot="m" data-skrot-opis="Napisz e-mail do klienta" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
 			{/if}
 			<button onclick={wyslijApk} class="h-9 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Wyślij APK</button>
-			<button onclick={() => goto(`/policies/new?klient=${clientId}`)} class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
+			<button onclick={() => goto(`/policies/new?klient=${clientId}`)} title="Nowa polisa (P)" data-skrot="p" data-skrot-opis="Nowa polisa dla klienta" class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">
 				<Plus size={16} /> Nowa polisa
 			</button>
 			<div class="relative">
@@ -1179,6 +1266,47 @@
 			</div>
 
 			<aside class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
+				<!-- Sprzedaż -->
+				{#if lead || zgloszeniaKlienta.length || maileKampanii.length || activePolicies.length === 0}
+					<section aria-labelledby="przeglad-sprzedaz" class="bg-white border border-line rounded-xl px-4 py-3.5">
+						<div class="flex items-center gap-2 mb-2">
+							<h2 id="przeglad-sprzedaz" class="text-[15px] font-semibold text-ink">Sprzedaż</h2>
+							{#if lead}
+								<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {KLASA_ETAPU[lead.status] ?? 'bg-surface-2 text-ink-2'}">{ETYKIETA_ETAPU[lead.status] ?? lead.status}</span>
+								<a href="/prospects/{lead.id}" class="ml-auto h-7 px-1.5 inline-flex items-center text-[13px] font-semibold text-accent-text hover:underline">Lead →</a>
+							{/if}
+						</div>
+						{#if lead}
+							{#if (lead.zainteresowania ?? []).length}
+								<div class="flex flex-wrap gap-1.5 mb-2">
+									{#each posortujZainteresowania(lead.zainteresowania) as k}
+										<span title={OPIS_ZAINTERESOWANIA[k]} class="h-[22px] leading-[22px] px-2 rounded-full bg-accent-soft text-accent-text text-xs font-semibold">{ETYKIETA_ZAINTERESOWANIA[k] ?? k}</span>
+									{/each}
+								</div>
+							{/if}
+							<dl class="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+								{#if lead.przychod}<dt class="text-ink-3">Przychód</dt><dd class="text-ink">{lead.przychod}</dd>{/if}
+								<dt class="text-ink-3">Zgłoszenia</dt>
+								<dd class="text-ink">
+									{#if zgloszeniaKlienta.length}
+										{zgloszeniaKlienta.length}× · ostatnie {fmtDzien(zgloszeniaKlienta[0].zgloszono_at.slice(0, 10), true)}
+									{:else if lead.data_zgloszenia}
+										{fmtDzien(lead.data_zgloszenia.slice(0, 10), true)}
+									{:else}<span class="text-ink-3">—</span>{/if}
+								</dd>
+								{#if maileStat.wyslane}
+									<dt class="text-ink-3">Maile kampanii</dt>
+									<dd class="text-ink">{`${maileStat.wyslane} · otwarte ${maileStat.otwarte}`}{#if maileStat.klikniete}{' · '}<span class="font-semibold text-accent-text">kliknięte {maileStat.klikniete}</span>{/if}{#if maileStat.odbite}{' · '}<span class="font-semibold text-danger">odbite {maileStat.odbite}</span>{/if}</dd>
+								{/if}
+								{#if lead.zrodlo}<dt class="text-ink-3">Źródło</dt><dd class="text-ink-2">{ZRODLO_LEADA[lead.zrodlo] ?? lead.zrodlo}</dd>{/if}
+							</dl>
+						{:else}
+							<p class="text-[13px] text-ink-3">Klient nie ma aktywnych polis ani leada w Sprzedaży.</p>
+							<button onclick={dodajDoSprzedazy} disabled={dodawanieLeada} class="mt-2 h-8 px-3 rounded-lg border border-line bg-white text-[13px] font-medium text-ink hover:bg-surface-2 disabled:opacity-60">{dodawanieLeada ? 'Dodaję…' : 'Dodaj do Sprzedaży'}</button>
+						{/if}
+					</section>
+				{/if}
+
 				<!-- Kontakty -->
 				<section aria-labelledby="przeglad-kontakty" class="bg-white border border-line rounded-xl px-4 py-3.5">
 					<div class="flex items-center mb-2">
@@ -1245,10 +1373,10 @@
 					</div>
 					<dl class="grid grid-cols-[104px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
 						<dt class="text-ink-3">Adres</dt><dd class={client.ulica ? 'text-ink' : 'text-ink-3'}>{client.ulica ?? '—'}</dd>
-						<dt class="text-ink-3">Telefon</dt><dd>{#if client.telefon}<a href="tel:{client.telefon}" class="text-accent-text hover:underline">{client.telefon}</a>{:else}<span class="text-ink-3">—</span>{/if}</dd>
-						<dt class="text-ink-3">E-mail</dt><dd class="break-all">{#if client.email}<a href="mailto:{client.email}" class="text-accent-text hover:underline">{client.email}</a>{:else}<span class="text-ink-3">—</span>{/if}</dd>
+						<dt class="text-ink-3">Telefon</dt><dd>{#if client.telefon}<a href="tel:{client.telefon}" class="text-accent-text hover:underline">{client.telefon}</a> <Kopiuj tekst={client.telefon} opis="telefon" />{:else}<span class="text-ink-3">—</span>{/if}</dd>
+						<dt class="text-ink-3">E-mail</dt><dd class="break-all">{#if client.email}<a href="mailto:{client.email}" class="text-accent-text hover:underline">{client.email}</a> <Kopiuj tekst={client.email} opis="e-mail" />{:else}<span class="text-ink-3">—</span>{/if}</dd>
 						{#if client.typ !== 'osoba'}
-							<dt class="text-ink-3">REGON</dt><dd class="font-mono text-xs leading-[18px] {client.regon ? '' : 'text-ink-3'}">{client.regon ?? '—'}</dd>
+							<dt class="text-ink-3">REGON</dt><dd class="font-mono text-xs leading-[18px] {client.regon ? '' : 'text-ink-3'}">{client.regon ?? '—'} <Kopiuj tekst={client.regon} opis="REGON" /></dd>
 						{/if}
 						<dt class="text-ink-3">Źródło</dt><dd>{client.beauty_id != null ? 'import BEAUTY' : 'dodany w CRM'}{client.created_at ? ` · ${fmtDzien(client.created_at.slice(0, 10), true)}` : ''}</dd>
 						{#if showGwarancje}
@@ -1292,6 +1420,7 @@
 							<td class="px-4 py-2.5">
 								<div class="flex items-center gap-1.5 flex-wrap">
 									<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{p.nr_polisy}</a>
+									<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 									{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
 										<span class="text-xs font-semibold text-violet-700 bg-violet-50 rounded-full px-2 leading-5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">jako ubezpieczony</span>
 									{/if}
@@ -1352,6 +1481,7 @@
 									<td class="px-4 py-2.5">
 										<div class="flex items-center gap-1.5 flex-wrap">
 											<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-ink-2 hover:text-accent-text hover:underline">{p.nr_polisy}</a>
+											<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 											{#if p.klient_id !== clientId && p.ubezpieczony_id === clientId}
 												<span class="text-xs font-semibold text-violet-700 bg-violet-50 rounded-full px-2 leading-5" title="Klient jest ubezpieczonym; ubezpieczający: {p.crm_clients?.nazwa ?? '—'}">jako ubezpieczony</span>
 											{/if}
@@ -1397,9 +1527,9 @@
 						{@const assigned = assignedPolicyFor(v.id, appState.policies)}
 						{@const unlinkedPolicies = clientPolicies.filter(p => (p.rodzaj === 'komunikacja' || p.rodzaj === 'flota') && !p.pojazd_id && !p.deleted_at)}
 						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3 font-medium">{v.nr_rejestracyjny}</td>
+							<td class="px-5 py-3 font-medium whitespace-nowrap">{v.nr_rejestracyjny} <Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" /></td>
 							<td class="px-5 py-3">{v.marka_model}</td>
-							<td class="px-5 py-3 text-slate-500">{v.vin ?? '—'}</td>
+							<td class="px-5 py-3 text-slate-500 whitespace-nowrap">{v.vin ?? '—'} <Kopiuj tekst={v.vin} opis="VIN" /></td>
 							<td class="px-5 py-3">{v.rok_produkcji ?? '—'}</td>
 							<td class="px-5 py-3">
 								{#if assigned}
@@ -1474,7 +1604,7 @@
 				<tbody>
 					{#each gwarancjeWiersze as g}
 						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3 font-medium text-blue-700"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a></td>
+							<td class="px-5 py-3 font-medium text-blue-700 whitespace-nowrap"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a> <Kopiuj tekst={g.nr_polisy} opis="nr umowy" /></td>
 							<td class="px-5 py-3 text-slate-600">{g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : '—')}</td>
 							<td class="px-5 py-3 text-xs text-slate-500">{g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt ?? '—'}</td>
 							<td class="px-5 py-3">{g.data_od}</td>
@@ -1966,7 +2096,7 @@
 				<div class="flex items-center gap-2">
 					<Mail size={16} class="text-slate-400" />
 					<span class="text-sm font-semibold text-slate-700">E-maile wysłane z CRM</span>
-					<span class="text-xs text-slate-400">— przypomnienia o płatnościach i odnowienia</span>
+					<span class="text-xs text-slate-400">— przypomnienia, odnowienia i wiadomości wysłane z CRM</span>
 				</div>
 				<button onclick={wczytajEmaile} disabled={emaileLadowanie}
 					class="flex items-center gap-1.5 text-xs text-slate-500 border border-line rounded-lg px-2.5 py-1.5 hover:bg-slate-50 disabled:opacity-50">
@@ -1988,6 +2118,7 @@
 							<SortTh wersaliki={false} s={sortEmaile} k="temat" class="px-4 py-2">Temat</SortTh>
 							<SortTh wersaliki={false} s={sortEmaile} k="adres" class="px-4 py-2">Do</SortTh>
 							<th class="px-4 py-2">Polisy</th>
+							<th class="px-4 py-2">Dostawa</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -2004,10 +2135,22 @@
 								<td class="px-4 py-2.5 text-xs">
 									{#each e.polisa_ids as pid, i (pid)}{#if i > 0}, {/if}<a href="/policies/{pid}" class="text-blue-700 hover:underline">{nrPolisy.get(pid) ?? 'polisa'}</a>{/each}
 								</td>
+								<td class="px-4 py-2.5 whitespace-nowrap">
+									{#if e.dostawa && DOSTAWA[e.dostawa]}
+										<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {DOSTAWA[e.dostawa].cls}" title={e.dostawa_blad ?? (e.dostawa_at ? fmtDateTime(e.dostawa_at) : undefined)}>{DOSTAWA[e.dostawa].tekst}</span>
+									{:else}
+										<span class="text-xs text-ink-3" title="Brak informacji od dostawcy — starszy e-mail albo webhook Resend nieustawiony w SAAS Admin">—</span>
+									{/if}
+								</td>
 							</tr>
 							{#if emailOtwarty === e.id && e.tresc}
 								<tr class="bg-slate-50/70">
-									<td colspan="5" class="px-4 py-3">
+									<td colspan="6" class="px-4 py-3">
+										{#if e.dostawa && DOSTAWA[e.dostawa]?.problem}
+											<p class="mb-2 text-[13px] text-danger bg-danger-soft rounded-lg px-3 py-2">{DOSTAWA[e.dostawa].tekst}{e.dostawa_at ? ` · ${fmtDateTime(e.dostawa_at)}` : ''}{e.dostawa_blad ? ` — ${e.dostawa_blad}` : ''}. Sprawdź adres klienta.</p>
+										{:else if e.otwarto_at}
+											<p class="mb-2 text-xs text-ink-3">Otwarty po raz pierwszy: {fmtDateTime(e.otwarto_at)}</p>
+										{/if}
 										{#if autorEmaila(e) || e.zalaczniki?.length}
 											<p class="mb-2 text-xs text-ink-3">{autorEmaila(e) ? `Wysłał(a): ${autorEmaila(e)}` : ''}{autorEmaila(e) && e.zalaczniki?.length ? ' · ' : ''}{e.zalaczniki?.length ? `Załączniki: ${e.zalaczniki.join(', ')}` : ''}</p>
 										{/if}

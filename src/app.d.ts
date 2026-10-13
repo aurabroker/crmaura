@@ -29,6 +29,8 @@ declare global {
 			opcje?: { httpMetadata?: { contentType?: string; contentDisposition?: string }; customMetadata?: Record<string, string> }
 		): Promise<unknown>;
 		get(klucz: string): Promise<R2Obiekt | null>;
+		/** Opis obiektu bez treści (w R2 zawsze jest; opcjonalne tylko dla atrap w testach). */
+		head?(klucz: string): Promise<{ size: number; uploaded?: Date } | null>;
 		delete(klucz: string | string[]): Promise<void>;
 	}
 

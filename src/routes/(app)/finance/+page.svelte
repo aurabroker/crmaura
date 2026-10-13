@@ -7,6 +7,7 @@
 	import { fmtPln } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { Search, FileUp, CheckCircle } from 'lucide-svelte';
 	import type { Policy } from '$lib/types/database';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
@@ -154,7 +155,7 @@
 			{#each wiersze as p}
 				{@const rs = (p as any).rozliczenie_status ?? 'nierozliczona'}
 				<tr class="border-t border-line-soft hover:bg-slate-50">
-					<td class="px-5 py-3 font-medium">{p.nr_polisy}</td>
+					<td class="px-5 py-3 font-medium whitespace-nowrap">{p.nr_polisy} <Kopiuj tekst={p.nr_polisy} opis="nr polisy" /></td>
 					<td class="px-5 py-3">{p.crm_clients?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3">{p.crm_insurers?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3 text-right">{fmtPln(p.skladka_przypisana)}</td>

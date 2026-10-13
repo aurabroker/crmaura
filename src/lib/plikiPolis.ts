@@ -1,4 +1,4 @@
-// Pliki polis (PDF w Cloudflare R2) po stronie przeglądarki: lista z bazy (RLS — tylko pliki firmy),
+// Pliki w Cloudflare R2 po stronie przeglądarki (PDF polis, pliki not prowizyjnych): lista z bazy (RLS — tylko pliki firmy),
 // wysyłka / otwieranie / usuwanie przez API serwera z tokenem sesji.
 import { sb } from '$lib/supabase';
 
@@ -87,4 +87,99 @@ export async function usunPlikPolisy(id: string): Promise<void> {
 export function rozmiar(b: number): string {
 	if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toLocaleString('pl-PL', { maximumFractionDigits: 1 })} MB`;
 	return `${Math.max(1, Math.round(b / 1024))} KB`;
+}
+
+// ── Pliki not prowizyjnych i zestawień TU (XLSX, XLS, CSV, PDF) w tym samym magazynie R2 ──
+
+export type PlikNoty = { plik_nazwa: string; plik_rozmiar: number; plik_typ: string };
+
+export async function wyslijPlikNoty(notaId: string, plik: File): Promise<PlikNoty> {
+	const form = new FormData();
+	form.append('plik', plik);
+	const res = await fetch(`/api/noty/${notaId}/plik`, { method: 'POST', headers: await naglowki(), body: form });
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as PlikNoty;
+}
+
+/** PDF otwiera się w nowej karcie, arkusz i CSV pobierają się pod zapisaną nazwą. */
+export async function otworzPlikNoty(notaId: string, nazwa: string | null, typ: string | null): Promise<void> {
+	const pdf = typ === 'application/pdf';
+	const okno = pdf ? window.open('about:blank', '_blank') : null;
+	try {
+		const res = await fetch(`/api/noty/${notaId}/plik`, { headers: await naglowki() });
+		if (!res.ok) throw await blad(res);
+		const url = URL.createObjectURL(await res.blob());
+		if (pdf) {
+			if (okno) okno.location.href = url;
+			else window.location.assign(url);
+		} else {
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = nazwa ?? 'zestawienie';
+			a.click();
+		}
+		setTimeout(() => URL.revokeObjectURL(url), 60_000);
+	} catch (e) {
+		okno?.close();
+		throw e;
+	}
+}
+
+// ── Polisa wysłana klientowi (szablon Resend programu + PDF polisy) ──
+
+export type KontekstMailaPolisy = {
+	szablon: string;
+	polisa: { nr_polisy: string; data_od: string | null; data_do: string | null };
+	klient: string;
+	adresy: { adres: string; opis: string }[];
+	pliki: { id: string; nazwa: string; rozmiar: number; rodzaj: PlikPolisy['rodzaj'] }[];
+	domyslne: { do: string[]; powitanie: string; termin_platnosci: string | null; pliki: string[] };
+	wyslane: { wyslano_at: string; adres: string; dostawa: string | null }[];
+};
+export type ZadanieMailaPolisy = { do: string[]; powitanie: string; termin_platnosci: string; pliki: string[] };
+export type PodgladMailaPolisy = { temat: string; html: string; od: string; odpowiedz: string | null; zalaczniki: { nazwa: string; rozmiar: number }[] };
+
+export async function kontekstMailaPolisy(polisaId: string): Promise<KontekstMailaPolisy> {
+	const res = await fetch(`/api/polisy/${polisaId}/mail`, { headers: await naglowki() });
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as KontekstMailaPolisy;
+}
+
+export async function podgladMailaPolisy(polisaId: string, z: ZadanieMailaPolisy): Promise<PodgladMailaPolisy> {
+	const res = await fetch(`/api/polisy/${polisaId}/mail`, {
+		method: 'POST',
+		headers: { ...(await naglowki()), 'Content-Type': 'application/json' },
+		body: JSON.stringify({ ...z, podglad: true })
+	});
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as PodgladMailaPolisy;
+}
+
+export async function wyslijMailPolisy(polisaId: string, z: ZadanieMailaPolisy): Promise<{ id: string | null; adresy: string[] }> {
+	const res = await fetch(`/api/polisy/${polisaId}/mail`, {
+		method: 'POST',
+		headers: { ...(await naglowki()), 'Content-Type': 'application/json' },
+		body: JSON.stringify(z)
+	});
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as { id: string | null; adresy: string[] };
+}
+
+// ── Pliki publiczne z maili (pliki.auraexpert.pl/media/…) ──
+
+export type PlikPubliczny = { sciezka: string; adres: string; opis: string; typ: string; w_magazynie: boolean; rozmiar: number | null; wgrano: string | null; ze_zrodla: boolean };
+
+export async function wczytajPlikiPubliczne(): Promise<{ pliki: PlikPubliczny[]; moze_zmieniac: boolean }> {
+	const res = await fetch('/api/pliki-publiczne', { headers: await naglowki() });
+	if (!res.ok) throw await blad(res);
+	return (await res.json()) as { pliki: PlikPubliczny[]; moze_zmieniac: boolean };
+}
+
+export async function podmienPlikPubliczny(sciezka: string, plik: File): Promise<PlikPubliczny> {
+	const form = new FormData();
+	form.append('sciezka', sciezka);
+	form.append('plik', plik);
+	const res = await fetch('/api/pliki-publiczne', { method: 'POST', headers: await naglowki(), body: form });
+	if (!res.ok) throw await blad(res);
+	return ((await res.json()) as { plik: PlikPubliczny }).plik;
 }

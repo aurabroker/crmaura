@@ -7,7 +7,10 @@
 	import { appState, isAdmin, isFinance, isBroker } from '$lib/stores/app.svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania } from '$lib/platnosci';
+	import { odnowionePolisy } from '$lib/statusPolisy';
 	import GlobalSearch from './GlobalSearch.svelte';
+	import Skroty from './Skroty.svelte';
+	import { BUILD_COMMIT, BUILD_DATA, OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList, Settings, Plus, LogOut,
 		ShieldCheck, ChevronDown, AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield,
@@ -36,8 +39,11 @@
 	const today = todayStr();
 	const ug = $derived(ugBezRozliczania(appState.policies));
 	const ratyPoTerminie = $derived(appState.payments.filter((p) => poTerminie(p, today, ug)).length);
+	// Jak segment „Do odnowienia” w Odnowieniach: koniec w ciągu 30 dni i brak polisy odnawiającej.
+	const odnowione = $derived(odnowionePolisy(appState.policies));
 	const odnowienia30 = $derived(
 		appState.policies.filter((p) => {
+			if (!p.data_do || odnowione.has(p.id)) return false;
 			const d = dateDiffDays(today, p.data_do);
 			return d >= 0 && d <= 30;
 		}).length
@@ -83,7 +89,7 @@
 				},
 				{
 					href: '/renewals', label: 'Odnowienia', icon: RefreshCw,
-					licznik: odnowienia30, ton: 'warn', tytulLicznika: 'polis kończących się w ciągu 30 dni'
+					licznik: odnowienia30, ton: 'warn', tytulLicznika: 'polis do odnowienia w ciągu 30 dni'
 				},
 				{ href: '/vehicles', label: 'Pojazdy', icon: Car },
 				{ href: '/apk', label: 'APK', icon: ClipboardList },
@@ -107,7 +113,10 @@
 		},
 		{
 			nazwa: 'Sprzedaż',
-			pozycje: [{ href: '/prospects', label: 'Leady', icon: Target }]
+			pozycje: [{
+				href: '/prospects', label: 'Leady', icon: Target,
+				licznik: appState.ponowneZgloszenia, ton: 'warn', tytulLicznika: 'ponownych zgłoszeń do obsłużenia'
+			}]
 		},
 		{
 			nazwa: 'Analityka',
@@ -197,6 +206,12 @@
 			</div>
 		{/each}
 	</nav>
+
+	<!-- Wersja i build — żeby po wdrożeniu było widać, która wersja działa -->
+	<p class="mt-auto px-2.5 pt-2 text-[11px] leading-4 text-ink-3 tabular-nums" title="Wersja CRM {OPIS_WERSJI}">
+		<span class="font-semibold text-ink-2">AuraCRM v{WERSJA}</span><br />
+		build {BUILD_DATA}{#if BUILD_COMMIT} · <span class="font-mono">{BUILD_COMMIT}</span>{/if}
+	</p>
 {/snippet}
 
 <div class="min-h-screen flex bg-bg text-ink">
@@ -263,6 +278,8 @@
 				>
 					<RotateCcw size={16} class={refreshing ? 'animate-spin' : ''} />
 				</button>
+
+				<Skroty />
 
 				<span class="hidden sm:block w-px h-6 bg-line"></span>
 

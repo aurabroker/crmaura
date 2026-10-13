@@ -8,6 +8,7 @@
 	import { fmtPln, policyStatus, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
@@ -261,9 +262,9 @@
 									<ChevronRight size={15} class="transition-transform {rozwiniety === v.id ? 'rotate-90' : ''}" />
 								</button>
 							</td>
-							<td class="px-4 py-3 font-semibold text-slate-900">{v.nr_rejestracyjny}</td>
+							<td class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{v.nr_rejestracyjny} <Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" /></td>
 							<td class="px-4 py-3 text-slate-700">{v.marka_model ?? '—'}</td>
-							<td class="px-4 py-3 font-mono text-xs text-slate-500">{v.vin ?? '—'}</td>
+							<td class="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{v.vin ?? '—'} <Kopiuj tekst={v.vin} opis="VIN" /></td>
 							<td class="px-4 py-3 text-slate-500">{v.rok_produkcji ?? '—'}</td>
 							<td class="px-4 py-3 text-slate-700">{klientNazwa(v.klient_id)}</td>
 							<td class="px-4 py-3">
@@ -315,6 +316,7 @@
 																<a href="/policies/{p.id}" class="text-sm font-medium text-blue-600 hover:underline">
 																	{p.nr_polisy}
 																</a>
+																<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 															</td>
 															<td class="px-3 py-2 text-xs text-slate-500">{p.data_od}</td>
 															<td class="px-3 py-2 text-xs text-slate-500">{p.data_do}</td>

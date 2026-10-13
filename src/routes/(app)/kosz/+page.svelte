@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { wczytajPolisy } from '$lib/kolekcje';
+	import { wczytajPlatnosci, wczytajPolisy } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { usunPlikPolisy } from '$lib/plikiPolis';
 	import { appState } from '$lib/stores/app.svelte';
@@ -7,6 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { RotateCcw, Trash2 } from 'lucide-svelte';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
@@ -72,9 +73,10 @@
 			.eq('id', restoring.id);
 		if (error) { restoreError = error.message; return; }
 		showRestore = false;
-		// Reload policies in app state
-		const { data, error: bladPolis } = await wczytajPolisy();
+		// Polisa i jej raty wracają do list
+		const [{ data, error: bladPolis }, { data: raty, error: bladRat }] = await Promise.all([wczytajPolisy(), wczytajPlatnosci()]);
 		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
+		if (!bladRat && raty) appState.payments = raty as typeof appState.payments;
 		await loadDeleted();
 	}
 
@@ -148,7 +150,7 @@
 		<tbody>
 			{#each wiersze as p}
 				<tr class="border-t border-line-soft hover:bg-slate-50 bg-red-50/30">
-					<td class="px-5 py-3 font-medium text-slate-700">{p.nr_polisy}</td>
+					<td class="px-5 py-3 font-medium text-slate-700 whitespace-nowrap">{p.nr_polisy} <Kopiuj tekst={p.nr_polisy} opis="nr polisy" /></td>
 					<td class="px-5 py-3 text-slate-600">{p.crm_clients?.nazwa ?? '—'}</td>
 					<td class="px-5 py-3">
 						{#if p.crm_insurers?.skrot}

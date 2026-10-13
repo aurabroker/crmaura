@@ -3,7 +3,7 @@ import { requireSaasAdmin } from '$lib/server/auth';
 import { createTenantWithAdmin, parseTenantPatch } from '$lib/server/tenants';
 import type { RequestHandler } from './$types';
 
-// Klucz Resend nigdy nie wraca do przeglądarki — pokazujemy tylko końcówkę. Krótki klucz
+// Klucz Resend i sekret webhooka nigdy nie wracają do przeglądarki — pokazujemy tylko końcówkę. Krótki klucz
 // (zapisany dawniej bez walidacji) nie jest pokazywany nawet częściowo.
 function keyHint(key: unknown): string | null {
 	if (typeof key !== 'string' || key.length === 0) return null;
@@ -18,10 +18,11 @@ export const GET: RequestHandler = async ({ request }) => {
 		admin.from('crm_profiles').select('id, email, imie_nazwisko, rola, tenant_id')
 	]);
 
-	const tenants = (tRes.data ?? []).map(({ resend_api_key, ...rest }) => ({
+	const tenants = (tRes.data ?? []).map(({ resend_api_key, resend_webhook_secret, ...rest }) => ({
 		...rest,
 		features: rest.features ?? {},
-		resend_key_hint: keyHint(resend_api_key)
+		resend_key_hint: keyHint(resend_api_key),
+		webhook_secret_hint: keyHint(resend_webhook_secret)
 	}));
 
 	return json({ tenants, profiles: pRes.data ?? [] });
@@ -67,6 +68,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		success: true,
 		features: data.features ?? {},
 		resend_key_hint: keyHint(data.resend_api_key),
+		webhook_secret_hint: keyHint(data.resend_webhook_secret),
 		email_from: data.email_from ?? null
 	});
 };

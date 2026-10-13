@@ -5,6 +5,7 @@ import {
 	DNI_PRZED_KONCEM,
 	dzisWarszawa,
 	anulujNieaktualny,
+	podzielWnioski,
 	polisaProgramu,
 	trybTestowy,
 	usunSierotyPlikow,
@@ -69,10 +70,11 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			.gte('data_do', dzis)
 			.lte('data_do', granica)
 			.order('data_do');
-		// Certyfikat, który miał już jakikolwiek wniosek (także anulowany przez pracownika albo wygasły),
-		// nie dostaje automatycznie nowego — ponowne zaproszenie to decyzja doradcy.
-		const { data: zajete } = await admin.from('crm_renewals').select('polisa_id').eq('tenant_id', f.id);
-		const maWniosek = new Set((zajete ?? []).map((z) => z.polisa_id));
+		// Certyfikat, który miał już jakikolwiek prawdziwy wniosek (także anulowany przez pracownika albo
+		// wygasły), nie dostaje automatycznie nowego — ponowne zaproszenie to decyzja doradcy. Wnioski
+		// z trybu testowego nie blokują: po wyłączeniu testu automat zastępuje je prawdziwym linkiem.
+		const { data: zajete } = await admin.from('crm_renewals').select('polisa_id, email').eq('tenant_id', f.id);
+		const { maWniosek, tylkoTestowe } = podzielWnioski((zajete ?? []) as { polisa_id: string; email: string | null }[]);
 
 		// Automatyczne wnioski, których e-mail się nie wysłał (np. chwilowy błąd Resend) — ponawiamy.
 		const { data: niewyslane } = await admin
@@ -114,7 +116,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					wynik.pominiete++;
 					continue;
 				}
-				const r = await utworzOdnowienie(admin, p, { utworzyl: null });
+				const r = await utworzOdnowienie(admin, p, { utworzyl: null, zastap: tylkoTestowe.has(c.id) });
 				const w = await wyslijZaproszenie(admin, r, origin);
 				if (w.ok) {
 					wynik.zaproszenia++;

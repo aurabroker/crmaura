@@ -34,7 +34,7 @@
 		try { const p = JSON.parse(raw); if (p.__ud) return p; } catch {}
 		return { __ud: true, ctn: '', ctc: '', si: '' };
 	}
-	let fpUD = $state(parseUD(policy?.przedmiot ?? ''));
+	let fpUD = $state(parseUD(policy?.przedmiot ?? presetPrzedmiot ?? ''));
 	const isUD = $derived(fpRodzaj === 'utrata_dochodu');
 	const isKomunikacja = $derived(fpRodzaj === 'komunikacja');
 	const isFlota = $derived(fpRodzaj === 'flota');

@@ -1,26 +1,37 @@
 <script lang="ts">
-	import { wczytajKlientow } from '$lib/kolekcje';
+	// Sprzedaż → Leady: firmy bez polis (lead powiązany z klientem z kartoteki) i potencjalni klienci spoza kartoteki.
+	// Dane firmy powiązanego leada pochodzą z klienta — jedno miejsce edycji. Lead trzyma etap sprzedaży,
+	// zainteresowania z formularza, przychód i liczbę zgłoszeń; dodanie polisy klientowi zamyka go jako „Wygrany”.
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown, LayoutGrid, List,
-		Eye, CircleDot, Copy, Mail, Phone } from 'lucide-svelte';
+	import {
+		Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown, LayoutGrid, List, Eye, CircleDot, Copy,
+		Mail, Phone, X, UserRound, MousePointerClick, MailOpen, MailX, Repeat
+	} from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { dndzone } from 'svelte-dnd-action';
-	import { onMount } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
+	import { fmtDzien, odmiana } from '$lib/utils';
+	import {
+		ETAPY, ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZAINTERESOWANIA, ZRODLO_LEADA,
+		nazwaKampanii, posortujZainteresowania, type PodsumowanieMaili
+	} from '$lib/sprzedaz';
 	import type { Prospect } from '$lib/types/database';
 
-	// Lista korzysta ze wspólnego cache w appState — dzięki temu powrót z karty
-	// prospekta jest natychmiastowy (bez ponownego pobierania ~5 tys. rekordów).
+	// Lista korzysta ze wspólnego cache w appState — powrót z karty leada jest natychmiastowy.
 	const prospects = $derived(appState.prospects);
 	let loading = $state(false);
 	let search = $state('');
-	let statusFilter = $state('Nowy');
+	let statusFilter = $state('nowy');
 	let letterFilter = $state('');
+	let fZaint = $state('');
+	let fMaile = $state('');
+	let fZgloszenia = $state('');
 	let view = $state<'tabela' | 'kanban'>('tabela');
+	let limit = $state(100);
 	let showModal = $state(false);
 	let editingProspect = $state<Prospect | null>(null);
 	let saving = $state(false);
@@ -36,23 +47,20 @@
 	let fZatrudnienie = $state<number | ''>('');
 	let fBrokerId = $state('');
 	let fStatus = $state('nowy');
+	let fZainteresowania = $state<string[]>([]);
+	let fPrzychod = $state('');
 
-	const statuses = ['Nowy', 'W kontakcie', 'Oferta wysłana', 'Wygrany', 'Przegrany', 'Wszystkie'];
-	const statusValues: Record<string, string> = {
-		'Nowy': 'nowy', 'W kontakcie': 'w_kontakcie',
-		'Oferta wysłana': 'oferta_wyslana', 'Wygrany': 'wygrany', 'Przegrany': 'przegrany'
-	};
-	const statusLabels: Record<string, string> = {
-		'nowy': 'Nowy', 'w_kontakcie': 'W kontakcie',
-		'oferta_wyslana': 'Oferta wysłana', 'wygrany': 'Wygrany', 'przegrany': 'Przegrany'
-	};
+	// Podsumowanie maili kampanii (BEAUTY) na klienta.
+	let maile = $state(new Map<string, PodsumowanieMaili>());
 
-	function statusVariant(s: string): 'info' | 'success' | 'error' | 'warning' {
-		if (s === 'wygrany') return 'success';
-		if (s === 'przegrany') return 'error';
-		if (s === 'oferta_wyslana') return 'warning';
-		return 'info';
-	}
+	const STATUSY: [string, string][] = [...ETAPY.map((e) => [e.key, e.label] as [string, string]), ['', 'Wszystkie']];
+
+	const nazwaLeada = (p: Prospect) => p.crm_clients?.nazwa_skrocona ?? p.crm_clients?.nazwa ?? p.nazwa;
+	const nipLeada = (p: Prospect) => p.crm_clients?.nip ?? p.nip;
+	const emailLeada = (p: Prospect) => p.crm_clients?.email ?? p.email;
+	const telefonLeada = (p: Prospect) => p.crm_clients?.telefon ?? p.telefon;
+	const mailKlienta = (p: Prospect) => (p.klient_id ? maile.get(p.klient_id) : undefined);
+	const dataZgloszenia = (p: Prospect) => p.ostatnie_zgloszenie_at ?? p.data_zgloszenia ?? null;
 
 	function getZatrudnienie(p: Prospect): number | null {
 		if (p.zatrudnienie != null) return p.zatrudnienie;
@@ -61,19 +69,16 @@
 		return m ? parseInt(m[1].trim()) : null;
 	}
 
-	type SortCol = 'nazwa' | 'branza' | 'zatrudnienie' | 'status' | 'created_at';
+	type SortCol = 'nazwa' | 'zainteresowania' | 'maile' | 'status' | 'zgloszenie' | 'created_at';
 	let sortCol = $state<SortCol>('created_at');
 	let sortAsc = $state(false);
-
 	function toggleSort(col: SortCol) {
 		if (sortCol === col) sortAsc = !sortAsc;
-		else { sortCol = col; sortAsc = true; }
+		else { sortCol = col; sortAsc = col === 'nazwa'; }
 	}
-
 	const statusOrder: Record<string, number> = { nowy: 0, w_kontakcie: 1, oferta_wyslana: 2, wygrany: 3, przegrany: 4 };
 
-	// ---- Alfabet (filtr po pierwszej literze nazwy) ----
-	// Nazwy zaczynające się od cyfry trafiają pod literę "A".
+	// ---- Alfabet (cyfry pod „A”) ----
 	function firstLetterOf(name: string): string {
 		const c = (name ?? '').trim().charAt(0).toUpperCase();
 		if (!c) return '#';
@@ -81,82 +86,91 @@
 		return c;
 	}
 	const baseAlphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
-	const lettersWithData = $derived.by(() => {
-		const s = new Set<string>();
-		for (const p of prospects) s.add(firstLetterOf(p.nazwa));
-		return s;
-	});
+	const lettersWithData = $derived.by(() => new Set(prospects.map((p) => firstLetterOf(nazwaLeada(p)))));
 	const alphabet = $derived.by(() => {
 		const set = new Set<string>(baseAlphabet);
-		for (const p of prospects) set.add(firstLetterOf(p.nazwa));
+		for (const l of lettersWithData) set.add(l);
 		set.delete('#');
 		return Array.from(set).sort((a, b) => a.localeCompare(b, 'pl'));
 	});
 
-	const filtered = $derived(() => {
-		const list = prospects.filter((p) => {
-			if (statusFilter !== 'Wszystkie' && p.status !== statusValues[statusFilter]) return false;
-			if (letterFilter && firstLetterOf(p.nazwa) !== letterFilter) return false;
-			if (search) {
-				const q = search.toLowerCase();
-				return p.nazwa.toLowerCase().includes(q) || (p.nip ?? '').includes(q) || (p.branza ?? '').toLowerCase().includes(q);
+	// Filtry wspólne dla tabeli i kanbanu (bez etapu — w kanbanie etapy są kolumnami).
+	const poFiltrach = $derived.by(() => {
+		const q = search.trim().toLowerCase();
+		return prospects.filter((p) => {
+			if (letterFilter && firstLetterOf(nazwaLeada(p)) !== letterFilter) return false;
+			if (fZaint && !(p.zainteresowania ?? []).includes(fZaint)) return false;
+			if (fZgloszenia === 'ponowne' && (p.liczba_zgloszen ?? 0) < 2) return false;
+			if (fZgloszenia === 'formularz' && !dataZgloszenia(p)) return false;
+			if (fMaile) {
+				const m = mailKlienta(p);
+				if (fMaile === 'klik' && !m?.klikniete) return false;
+				if (fMaile === 'otw' && !m?.otwarte) return false;
+				if (fMaile === 'odbite' && !m?.odbite) return false;
+				if (fMaile === 'brak' && m) return false;
+			}
+			if (q) {
+				const pola = [nazwaLeada(p), p.nazwa, nipLeada(p), emailLeada(p), telefonLeada(p), p.branza];
+				return pola.some((v) => (v ?? '').toLowerCase().includes(q));
 			}
 			return true;
 		});
-		list.sort((a, b) => {
-			let av: string | number = '', bv: string | number = '';
-			if (sortCol === 'nazwa') { av = a.nazwa.toLowerCase(); bv = b.nazwa.toLowerCase(); }
-			else if (sortCol === 'branza') { av = (a.branza ?? '').toLowerCase(); bv = (b.branza ?? '').toLowerCase(); }
-			else if (sortCol === 'zatrudnienie') {
-				av = getZatrudnienie(a) ?? 0;
-				bv = getZatrudnienie(b) ?? 0;
+	});
+
+	const liczEtapy = $derived.by(() => {
+		const n: Record<string, number> = { '': poFiltrach.length };
+		for (const p of poFiltrach) n[p.status] = (n[p.status] ?? 0) + 1;
+		return n;
+	});
+
+	const filtered = $derived.by(() => {
+		const list = statusFilter ? poFiltrach.filter((p) => p.status === statusFilter) : [...poFiltrach];
+		const klucz = (p: Prospect): string | number => {
+			switch (sortCol) {
+				case 'nazwa': return nazwaLeada(p).toLowerCase();
+				case 'zainteresowania': return posortujZainteresowania(p.zainteresowania).join(',') || '~';
+				case 'maile': { const m = mailKlienta(p); return m ? m.klikniete * 10000 + m.otwarte * 100 + m.maile : -1; }
+				case 'status': return statusOrder[p.status] ?? 99;
+				case 'zgloszenie': return dataZgloszenia(p) ?? '';
+				default: return p.created_at ?? '';
 			}
-			else if (sortCol === 'status') { av = statusOrder[a.status] ?? 99; bv = statusOrder[b.status] ?? 99; }
-			else if (sortCol === 'created_at') { av = a.created_at ?? ''; bv = b.created_at ?? ''; }
+		};
+		list.sort((a, b) => {
+			const av = klucz(a), bv = klucz(b);
 			if (av < bv) return sortAsc ? -1 : 1;
 			if (av > bv) return sortAsc ? 1 : -1;
 			return 0;
 		});
 		return list;
 	});
+	const naStronie = $derived(filtered.slice(0, limit));
 
-	// ---- Widok KANBAN (kolumny = statusy, karty przeciągane między nimi) ----
+	// Kolumny pokazujemy tylko, gdy coś w nich jest (Aura Expert: zainteresowania i maile; B2B: branża i zatrudnienie).
+	const maZainteresowania = $derived(prospects.some((p) => (p.zainteresowania ?? []).length > 0));
+	const maMaile = $derived(maile.size > 0);
+	const maBranze = $derived(prospects.some((p) => p.branza || getZatrudnienie(p) != null));
+
+	const ileFiltrow = $derived([fZaint, fMaile, fZgloszenia, letterFilter].filter(Boolean).length);
+	function wyczyscFiltry() { fZaint = ''; fMaile = ''; fZgloszenia = ''; letterFilter = ''; search = ''; }
+
+	// ---- KANBAN ----
 	const KANBAN_COLS = [
-		{ key: 'nowy', label: 'Nowy', accent: 'bg-slate-400' },
-		{ key: 'w_kontakcie', label: 'W kontakcie', accent: 'bg-blue-500' },
-		{ key: 'oferta_wyslana', label: 'Oferta wysłana', accent: 'bg-amber-500' },
-		{ key: 'wygrany', label: 'Wygrany', accent: 'bg-emerald-500' },
-		{ key: 'przegrany', label: 'Przegrany', accent: 'bg-red-500' }
+		{ key: 'nowy', label: 'Nowy', accent: 'bg-accent' },
+		{ key: 'w_kontakcie', label: 'W kontakcie', accent: 'bg-[#9AA3B2]' },
+		{ key: 'oferta_wyslana', label: 'Oferta wysłana', accent: 'bg-warn' },
+		{ key: 'wygrany', label: 'Wygrany', accent: 'bg-ok' },
+		{ key: 'przegrany', label: 'Przegrany', accent: 'bg-danger' }
 	];
-
-	// Kanban ignoruje pojedynczy filtr statusu (kolumny same są statusami),
-	// ale respektuje wyszukiwarkę i filtr litery.
-	const searchLetterFiltered = $derived.by(() =>
-		prospects.filter((p) => {
-			if (letterFilter && firstLetterOf(p.nazwa) !== letterFilter) return false;
-			if (search) {
-				const q = search.toLowerCase();
-				return p.nazwa.toLowerCase().includes(q) || (p.nip ?? '').includes(q) || (p.branza ?? '').toLowerCase().includes(q);
-			}
-			return true;
-		})
-	);
-
 	const kanbanSource = $derived.by(() => {
 		const g: Record<string, Prospect[]> = {};
 		for (const c of KANBAN_COLS) g[c.key] = [];
-		for (const p of searchLetterFiltered) (g[p.status] ??= []).push(p);
-		for (const k in g) g[k].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+		for (const p of poFiltrach) (g[p.status] ??= []).push(p);
+		for (const k in g) g[k] = g[k].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? '')).slice(0, 200);
 		return g;
 	});
-
-	// Mutowalne kolumny dla svelte-dnd-action. Przebudowujemy je z danych, gdy
-	// nie trwa przeciąganie — inaczej reaktywność „walczyłaby" z biblioteką d&d.
-	let kanban = $state<Record<string, Prospect[]>>(
-		Object.fromEntries(KANBAN_COLS.map((c) => [c.key, [] as Prospect[]]))
-	);
+	// Mutowalne kolumny dla svelte-dnd-action — przebudowywane, gdy nie trwa przeciąganie.
+	let kanban = $state<Record<string, Prospect[]>>(Object.fromEntries(KANBAN_COLS.map((c) => [c.key, [] as Prospect[]])));
 	let dragging = $state(false);
-
 	$effect(() => {
 		if (view !== 'kanban') return;
 		const src = kanbanSource;
@@ -165,19 +179,15 @@
 		for (const c of KANBAN_COLS) next[c.key] = [...(src[c.key] ?? [])];
 		kanban = next;
 	});
-
 	function kanbanConsider(key: string, e: CustomEvent) {
 		dragging = true;
 		kanban[key] = e.detail.items;
 	}
-
 	async function kanbanFinalize(key: string, e: CustomEvent) {
 		const items = e.detail.items as Prospect[];
 		kanban[key] = items;
 		dragging = false;
-		// Karty, które trafiły do tej kolumny z innego statusu → zapis nowego statusu.
-		const moved = items.filter((p) => p.status !== key);
-		for (const p of moved) {
+		for (const p of items.filter((x) => x.status !== key)) {
 			p.status = key;
 			const idx = appState.prospects.findIndex((x) => x.id === p.id);
 			if (idx >= 0) appState.prospects[idx] = { ...appState.prospects[idx], status: key };
@@ -185,66 +195,55 @@
 		}
 	}
 
-	// Liczba widocznych rekordów zależnie od aktywnego widoku.
-	const visibleCount = $derived(view === 'kanban' ? searchLetterFiltered.length : filtered().length);
+	const visibleCount = $derived(view === 'kanban' ? poFiltrach.length : filtered.length);
 
-	// Kolejność widocznych prospektów — zapisujemy do sessionStorage, aby karta
-	// prospekta mogła udostępnić przyciski „Poprzedni / Następny".
+	// Kolejność widocznych leadów — karta leada pokazuje „Poprzedni / Następny”.
 	const ORDER_KEY = 'prospects:order';
 	const visibleOrder = $derived.by(() => {
-		if (view === 'kanban') {
-			const ids: string[] = [];
-			for (const c of KANBAN_COLS) for (const p of kanban[c.key] ?? []) ids.push(p.id);
-			return ids;
-		}
-		return filtered().map((p) => p.id);
+		if (view === 'kanban') return KANBAN_COLS.flatMap((c) => (kanban[c.key] ?? []).map((p) => p.id));
+		return filtered.map((p) => p.id);
 	});
 	$effect(() => {
 		if (!stateRestored) return;
 		try { sessionStorage.setItem(ORDER_KEY, JSON.stringify(visibleOrder)); } catch { /* ignore */ }
 	});
 
-	// Lista nie potrzebuje wszystkich ~28 kolumn (m.in. 12 pól ubez_*) — pobieramy
-	// tylko to, co widać w tabeli. Mniej danych = szybsze ładowanie.
 	const PROSPECT_COLS =
-		'id, tenant_id, nazwa, nip, adres, telefon, email, branza, notatki, zatrudnienie, broker_id, status, created_at, crm_profiles(imie_nazwisko)';
+		'id, tenant_id, nazwa, nip, adres, telefon, email, branza, notatki, zatrudnienie, broker_id, status, created_at, klient_id, zainteresowania, przychod, zrodlo, data_zgloszenia, ostatnie_zgloszenie_at, liczba_zgloszen, status_zmieniony_at, crm_profiles(imie_nazwisko), crm_clients(nazwa, nazwa_skrocona, nip, email, telefon, opiekun_id)';
 
-	async function loadProspects(background = false) {
-		// Pierwsza strona + dokładny licznik; resztę stron dociągamy równolegle
-		// (zamiast jedna po drugiej), więc całość pobiera się znacznie szybciej.
-		if (!background) loading = true;
+	async function wszystkieStrony<T>(zapytanie: (od: number, do_: number) => PromiseLike<{ data: unknown; count?: number | null }>): Promise<T[]> {
 		const pageSize = 1000;
-		const { data: first, count } = await sb
-			.from('crm_prospects')
-			.select(PROSPECT_COLS, { count: 'exact' })
-			.order('created_at', { ascending: false })
-			.order('id', { ascending: false })
-			.range(0, pageSize - 1);
-		const all: Prospect[] = (first ?? []) as Prospect[];
+		const { data: first, count } = await zapytanie(0, pageSize - 1);
+		const all = [...((first ?? []) as T[])];
 		const total = count ?? all.length;
 		if (total > pageSize) {
 			const reqs = [];
-			for (let from = pageSize; from < total; from += pageSize) {
-				reqs.push(
-					sb.from('crm_prospects')
-						.select(PROSPECT_COLS)
-						.order('created_at', { ascending: false })
-						.order('id', { ascending: false })
-						.range(from, from + pageSize - 1)
-				);
-			}
-			const results = await Promise.all(reqs);
-			for (const r of results) all.push(...((r.data ?? []) as Prospect[]));
+			for (let from = pageSize; from < total; from += pageSize) reqs.push(zapytanie(from, from + pageSize - 1));
+			for (const r of await Promise.all(reqs)) all.push(...((r.data ?? []) as T[]));
 		}
-		appState.prospects = all;
+		return all;
+	}
+
+	async function loadProspects(background = false) {
+		if (!background) loading = true;
+		appState.prospects = await wszystkieStrony<Prospect>((od, do_) =>
+			sb.from('crm_prospects').select(PROSPECT_COLS, { count: 'exact' })
+				.order('created_at', { ascending: false }).order('id', { ascending: false }).range(od, do_)
+		);
 		appState.prospectsLoaded = true;
 		loading = false;
 	}
 
-	// --- Pamięć filtrów na czas sesji (status / litera / szukaj / sortowanie) ---
-	const FILTERS_KEY = 'prospects:filters';
-	let stateRestored = $state(false);
+	async function loadMaile() {
+		const wiersze = await wszystkieStrony<PodsumowanieMaili>((od, do_) =>
+			sb.from('crm_kampanie_podsumowanie').select('*', { count: 'exact' }).order('klient_id').range(od, do_)
+		).catch(() => [] as PodsumowanieMaili[]);
+		maile = new Map(wiersze.map((m) => [m.klient_id, m]));
+	}
 
+	// --- Pamięć filtrów na czas sesji ---
+	const FILTERS_KEY = 'prospects:filters:v2';
+	let stateRestored = $state(false);
 	onMount(() => {
 		try {
 			const raw = sessionStorage.getItem(FILTERS_KEY);
@@ -253,33 +252,37 @@
 				if (typeof f.search === 'string') search = f.search;
 				if (typeof f.statusFilter === 'string') statusFilter = f.statusFilter;
 				if (typeof f.letterFilter === 'string') letterFilter = f.letterFilter;
+				if (typeof f.fZaint === 'string') fZaint = f.fZaint;
+				if (typeof f.fMaile === 'string') fMaile = f.fMaile;
+				if (typeof f.fZgloszenia === 'string') fZgloszenia = f.fZgloszenia;
 				if (typeof f.sortCol === 'string') sortCol = f.sortCol as SortCol;
 				if (typeof f.sortAsc === 'boolean') sortAsc = f.sortAsc;
 				if (f.view === 'tabela' || f.view === 'kanban') view = f.view;
 			}
-		} catch { /* brak zapisanych filtrów — pomijamy */ }
+		} catch { /* brak zapisanych filtrów */ }
 		stateRestored = true;
-
-		// Jeśli dane są już w cache — pokazujemy je od razu i odświeżamy w tle
-		// (np. po edycji prospekta). Inaczej ładujemy z paskiem "Ładowanie".
-		loadProspects(appState.prospectsLoaded);
+		void loadProspects(appState.prospectsLoaded);
+		void loadMaile();
 	});
-
-	// Zapis filtrów po każdej zmianie (dopiero po przywróceniu, by nie nadpisać).
 	$effect(() => {
 		if (!stateRestored) return;
-		const snapshot = JSON.stringify({ search, statusFilter, letterFilter, sortCol, sortAsc, view });
+		const snapshot = JSON.stringify({ search, statusFilter, letterFilter, fZaint, fMaile, fZgloszenia, sortCol, sortAsc, view });
 		try { sessionStorage.setItem(FILTERS_KEY, snapshot); } catch { /* ignore */ }
+	});
+	// Zmiana filtrów wraca do pierwszej strony listy.
+	$effect(() => {
+		void [search, statusFilter, letterFilter, fZaint, fMaile, fZgloszenia, sortCol, sortAsc];
+		limit = 100;
 	});
 
 	function openNew() {
 		editingProspect = null;
 		fNazwa = ''; fNip = ''; fAdres = ''; fTelefon = ''; fEmail = '';
 		fBranza = ''; fNotatki = ''; fZatrudnienie = ''; fStatus = 'nowy'; formError = '';
+		fZainteresowania = []; fPrzychod = '';
 		fBrokerId = appState.profile?.id ?? '';
 		showModal = true;
 	}
-
 	function openEdit(p: Prospect) {
 		editingProspect = p;
 		fNazwa = p.nazwa; fNip = p.nip ?? ''; fAdres = p.adres ?? '';
@@ -287,253 +290,336 @@
 		fBranza = p.branza ?? ''; fNotatki = p.notatki ?? '';
 		fZatrudnienie = p.zatrudnienie ?? '';
 		fBrokerId = p.broker_id ?? ''; fStatus = p.status; formError = '';
+		fZainteresowania = [...(p.zainteresowania ?? [])]; fPrzychod = p.przychod ?? '';
 		showModal = true;
 	}
-
 	function closeModal() { showModal = false; editingProspect = null; formError = ''; }
+	function przelaczZainteresowanie(k: string) {
+		fZainteresowania = fZainteresowania.includes(k) ? fZainteresowania.filter((x) => x !== k) : [...fZainteresowania, k];
+	}
 
 	async function save() {
-		if (!fNazwa.trim()) { formError = 'Pole Nazwa jest wymagane.'; return; }
+		const powiazany = !!editingProspect?.klient_id;
+		if (!powiazany && !fNazwa.trim()) { formError = 'Pole Nazwa jest wymagane.'; return; }
 		saving = true; formError = '';
-		const payload = {
+		const wspolne = {
+			notatki: fNotatki.trim() || null,
+			broker_id: fBrokerId || null,
+			status: fStatus,
+			zainteresowania: posortujZainteresowania(fZainteresowania),
+			przychod: fPrzychod.trim() || null,
+			branza: fBranza.trim() || null,
+			zatrudnienie: fZatrudnienie !== '' ? Number(fZatrudnienie) : null
+		};
+		// Lead powiązany z klientem: dane firmy edytuje się w kartotece klienta.
+		const payload = powiazany ? wspolne : {
+			...wspolne,
 			nazwa: fNazwa.trim(), nip: fNip.trim() || null, adres: fAdres.trim() || null,
-			telefon: fTelefon.trim() || null, email: fEmail.trim() || null,
-			branza: fBranza.trim() || null, notatki: fNotatki.trim() || null,
-			zatrudnienie: fZatrudnienie !== '' ? Number(fZatrudnienie) : null,
-			broker_id: fBrokerId || null, status: fStatus
+			telefon: fTelefon.trim() || null, email: fEmail.trim() || null
 		};
 		let error;
 		if (editingProspect) {
 			({ error } = await sb.from('crm_prospects').update(payload).eq('id', editingProspect.id));
 		} else {
-			({ error } = await sb.from('crm_prospects').insert([{ tenant_id: appState.profile!.tenant_id, ...payload }]));
+			({ error } = await sb.from('crm_prospects').insert([{ tenant_id: appState.profile!.tenant_id, zrodlo: 'recznie', ...payload }]));
 		}
 		saving = false;
 		if (error) { formError = error.message; return; }
 		closeModal();
-		await loadProspects();
+		await loadProspects(true);
 	}
 
+	// Lead spoza kartoteki → klient. Gdy klient z tym NIP już jest, lead zostaje tylko z nim powiązany.
+	// Etap się nie zmienia: lead zamknie się jako „Wygrany” sam, gdy klient dostanie polisę.
 	async function convertToClient(p: Prospect) {
-		const { error: insertError } = await sb.from('crm_clients').insert([{
-			tenant_id: appState.profile!.tenant_id,
-			opiekun_id: appState.profile!.id,
-			nazwa: p.nazwa, nip: p.nip, ulica: p.adres
-		}]);
-		if (insertError) { alert('Błąd: ' + insertError.message); return; }
-		await sb.from('crm_prospects').update({ status: 'wygrany' }).eq('id', p.id);
-		await loadProspects();
-		const { data } = await wczytajKlientow();
-		appState.clients = (data ?? []) as typeof appState.clients;
+		if (p.klient_id) { goto(`/clients/${p.klient_id}`); return; }
+		const nip = (p.nip ?? '').replace(/\D/g, '');
+		let klientId = nip.length === 10 ? appState.clients.find((c) => (c.nip ?? '').replace(/\D/g, '') === nip)?.id ?? null : null;
+		if (!klientId) {
+			const { data, error } = await sb.from('crm_clients').insert([{
+				tenant_id: appState.profile!.tenant_id,
+				opiekun_id: p.broker_id ?? appState.profile!.id,
+				typ: 'firma',
+				nazwa: p.nazwa, nip: p.nip, ulica: p.adres, email: p.email, telefon: p.telefon
+			}] as never).select('id, tenant_id, typ, nazwa, nazwa_skrocona, nip, ulica, email, telefon, opiekun_id, rodo_zgoda, beauty_id, created_at').single();
+			if (error || !data) { ctxToast(`Błąd: ${error?.message ?? 'nie udało się dodać klienta'}`); return; }
+			klientId = (data as { id: string }).id;
+			appState.clients = [...appState.clients, data as unknown as (typeof appState.clients)[number]];
+			ctxToast('Dodano do Klientów — lead zostaje w Sprzedaży do pierwszej polisy');
+		} else {
+			ctxToast('Powiązano z istniejącym klientem o tym NIP');
+		}
+		const { error } = await sb.from('crm_prospects').update({ klient_id: klientId }).eq('id', p.id);
+		if (error) { ctxToast(`Błąd: ${error.message}`); return; }
+		await loadProspects(true);
 	}
 
 	async function setProspectStatus(p: Prospect, status: string) {
 		const { error } = await sb.from('crm_prospects').update({ status }).eq('id', p.id);
 		if (error) { ctxToast(`Błąd: ${error.message}`); return; }
 		appState.prospects = appState.prospects.map((x) => (x.id === p.id ? { ...x, status } : x));
-		ctxToast(`Status: ${statusLabels[status] ?? status}`);
+		ctxToast(`Etap: ${ETYKIETA_ETAPU[status] ?? status}`);
 	}
 
 	function prospectMenu(p: Prospect): CtxItem[] {
+		const email = emailLeada(p), telefon = telefonLeada(p), nip = nipLeada(p);
 		return [
-			{ label: 'Otwórz prospekta', icon: Eye, onSelect: () => goto(`/prospects/${p.id}`) },
-			{
-				label: 'Otwórz w nowej karcie',
-				icon: ExternalLink,
-				onSelect: () => window.open(`/prospects/${p.id}`, '_blank', 'noopener')
-			},
+			{ label: 'Otwórz leada', icon: Eye, onSelect: () => goto(`/prospects/${p.id}`) },
+			...(p.klient_id ? [{ label: 'Otwórz klienta (Panel 360°)', icon: UserRound, onSelect: () => goto(`/clients/${p.klient_id}`) } as CtxItem] : []),
+			{ label: 'Otwórz w nowej karcie', icon: ExternalLink, onSelect: () => window.open(`/prospects/${p.id}`, '_blank', 'noopener') },
 			{ label: 'Edytuj', icon: Pencil, onSelect: () => openEdit(p) },
 			{ separator: true },
 			...KANBAN_COLS.filter((c) => c.key !== p.status).map((c): CtxItem => ({
-				label: `Status: ${c.label}`,
-				icon: CircleDot,
-				onSelect: () => setProspectStatus(p, c.key)
+				label: `Etap: ${c.label}`, icon: CircleDot, onSelect: () => setProspectStatus(p, c.key)
 			})),
+			...(p.klient_id ? [] : [{ separator: true } as CtxItem, { label: 'Dodaj do Klientów', icon: UserPlus, onSelect: () => convertToClient(p) } as CtxItem]),
 			{ separator: true },
-			{ label: 'Dodaj do Klientów', icon: UserPlus, onSelect: () => convertToClient(p) },
+			{ label: 'Napisz e-mail', icon: Mail, disabled: !email, onSelect: () => window.open(`mailto:${email}`, '_self') },
+			{ label: 'Zadzwoń', icon: Phone, disabled: !telefon, onSelect: () => window.open(`tel:${telefon}`, '_self') },
 			{ separator: true },
-			{
-				label: 'Napisz e-mail',
-				icon: Mail,
-				disabled: !p.email,
-				onSelect: () => window.open(`mailto:${p.email}`, '_self')
-			},
-			{
-				label: 'Zadzwoń',
-				icon: Phone,
-				disabled: !p.telefon,
-				onSelect: () => window.open(`tel:${p.telefon}`, '_self')
-			},
-			{ separator: true },
-			{ label: 'Kopiuj nazwę', icon: Copy, onSelect: () => ctxCopy(p.nazwa, 'nazwę') },
-			{ label: 'Kopiuj NIP', icon: Copy, disabled: !p.nip, onSelect: () => ctxCopy(p.nip, 'NIP') },
-			{ label: 'Kopiuj e-mail', icon: Copy, disabled: !p.email, onSelect: () => ctxCopy(p.email, 'e-mail') },
-			{ label: 'Kopiuj telefon', icon: Copy, disabled: !p.telefon, onSelect: () => ctxCopy(p.telefon, 'telefon') }
+			{ label: 'Kopiuj nazwę', icon: Copy, onSelect: () => ctxCopy(nazwaLeada(p), 'nazwę') },
+			{ label: 'Kopiuj NIP', icon: Copy, disabled: !nip, onSelect: () => ctxCopy(nip, 'NIP') },
+			{ label: 'Kopiuj e-mail', icon: Copy, disabled: !email, onSelect: () => ctxCopy(email, 'e-mail') },
+			{ label: 'Kopiuj telefon', icon: Copy, disabled: !telefon, onSelect: () => ctxCopy(telefon, 'telefon') }
 		];
 	}
 
-	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
-	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
+	const inputCls = 'w-full h-9 border border-line rounded-lg px-3 text-sm bg-white focus:outline-none focus:border-accent disabled:bg-surface-2 disabled:text-ink-2';
+	const labelCls = 'block text-[13px] font-medium text-ink-2 mb-1';
 </script>
 
-<svelte:head><title>Prospects — CRM</title></svelte:head>
+<svelte:head><title>Leady — AuraCRM</title></svelte:head>
 
-<div class="flex items-center justify-between mb-6">
+{#snippet chipy(kody: string[] | undefined)}
+	{#each posortujZainteresowania(kody) as k}
+		<span title={OPIS_ZAINTERESOWANIA[k]} class="h-5 leading-5 px-1.5 rounded-full bg-accent-soft text-accent-text text-[11px] font-semibold whitespace-nowrap">{ETYKIETA_ZAINTERESOWANIA[k] ?? k}</span>
+	{/each}
+{/snippet}
+
+{#snippet stanMaili(p: Prospect)}
+	{@const m = mailKlienta(p)}
+	{#if m}
+		{#if m.klikniete}
+			<span class="inline-flex items-center gap-1 text-accent-text font-semibold" title="Kliknął link w mailu „{nazwaKampanii(m.ostatni_klik_kampania)}”{m.ostatni_klik_at ? ` · ${fmtDzien(m.ostatni_klik_at.slice(0, 10), true)}` : ''}"><MousePointerClick size={13} aria-hidden="true" /> kliknął · {nazwaKampanii(m.ostatni_klik_kampania)}</span>
+		{:else if m.otwarte}
+			<span class="inline-flex items-center gap-1 text-ok font-semibold"><MailOpen size={13} aria-hidden="true" /> otworzył {m.otwarte} z {m.maile}</span>
+		{:else if m.odbite}
+			<span class="inline-flex items-center gap-1 text-danger font-semibold" title="Mail nie doszedł — sprawdź adres"><MailX size={13} aria-hidden="true" /> adres odbity</span>
+		{:else}
+			<span class="text-ink-2">{odmiana(m.maile, 'mail', 'maile', 'maili')}, bez otwarcia</span>
+		{/if}
+	{:else}
+		<span class="text-ink-3">—</span>
+	{/if}
+{/snippet}
+
+<div class="flex flex-wrap items-end justify-between gap-3 mb-4">
 	<div>
-		<h1 class="text-2xl font-semibold text-slate-900">Prospects</h1>
-		<p class="text-sm text-slate-500 mt-1">Potencjalni klienci — {visibleCount} rekordów</p>
+		<h1 class="text-2xl font-semibold text-ink">Leady <span class="font-normal text-ink-3 tabular-nums">{prospects.length.toLocaleString('pl-PL')}</span></h1>
+		<p class="text-sm text-ink-3 mt-0.5">Firmy bez polis i potencjalni klienci — zainteresowania z formularza, maile kampanii, etap sprzedaży</p>
 	</div>
-	<div class="flex items-center gap-2">
-		<!-- Przełącznik widoku: Tabela / Kanban -->
-		<div class="flex items-center bg-slate-100 rounded-lg p-0.5">
-			<button
-				onclick={() => view = 'tabela'}
-				title="Widok tabeli"
-				class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors {view === 'tabela' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}"
-			>
-				<List size={15} /> Tabela
-			</button>
-			<button
-				onclick={() => view = 'kanban'}
-				title="Widok Kanban"
-				class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors {view === 'kanban' ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}"
-			>
-				<LayoutGrid size={15} /> Kanban
-			</button>
+	<div class="flex flex-wrap items-center gap-2">
+		<div role="group" aria-label="Widok" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
+			<button aria-pressed={view === 'tabela'} onclick={() => (view = 'tabela')} class="h-[30px] flex items-center gap-1.5 px-3 rounded-md text-[13px] {view === 'tabela' ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}"><List size={15} /> Tabela</button>
+			<button aria-pressed={view === 'kanban'} onclick={() => (view = 'kanban')} class="h-[30px] flex items-center gap-1.5 px-3 rounded-md text-[13px] {view === 'kanban' ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}"><LayoutGrid size={15} /> Kanban</button>
 		</div>
-		<button onclick={openNew} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
-			+ Nowy Prospect
-		</button>
+		<button onclick={openNew} class="h-9 px-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">Nowy lead</button>
 	</div>
 </div>
 
 {#if view === 'tabela'}
-<div class="flex items-center gap-2 mb-3 flex-wrap">
-	{#each statuses as s}
-		<button
-			onclick={() => statusFilter = s}
-			class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {statusFilter === s ? 'bg-slate-900 text-white' : 'bg-white border border-line text-slate-600 hover:bg-slate-50'}"
-		>{s}</button>
-	{/each}
-</div>
+	<div role="tablist" aria-label="Etapy sprzedaży" class="flex gap-x-5 border-b border-line mb-3 overflow-x-auto">
+		{#each STATUSY as [key, label]}
+			<button
+				role="tab"
+				aria-selected={statusFilter === key}
+				onclick={() => (statusFilter = key)}
+				class="h-10 -mb-px shrink-0 border-b-2 whitespace-nowrap text-sm transition-colors
+					{statusFilter === key ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-2 font-medium hover:text-ink'}"
+			>
+				{label} <span class="font-normal text-ink-3 tabular-nums">{(liczEtapy[key] ?? 0).toLocaleString('pl-PL')}</span>
+			</button>
+		{/each}
+	</div>
 {/if}
 
-<!-- Alfabet — filtr po pierwszej literze nazwy (cyfry pod "A") -->
-<div class="flex items-center gap-1 mb-4 flex-wrap">
-	<button
-		onclick={() => letterFilter = ''}
-		class="px-2.5 py-1 rounded-md text-xs font-semibold transition-colors {letterFilter === '' ? 'bg-blue-600 text-white' : 'bg-white border border-line text-slate-500 hover:bg-slate-50'}"
-	>Wszystkie</button>
-	{#each alphabet as L}
-		{@const has = lettersWithData.has(L)}
-		<button
-			onclick={() => { if (has) letterFilter = letterFilter === L ? '' : L; }}
-			disabled={!has}
-			class="w-7 h-7 rounded-md text-xs font-semibold transition-colors {letterFilter === L ? 'bg-blue-600 text-white' : has ? 'bg-white border border-line text-slate-600 hover:bg-slate-50' : 'text-slate-300 cursor-default'}"
-		>{L}</button>
-	{/each}
+<!-- Filtry -->
+<div class="flex flex-wrap items-center gap-2 mb-3">
+	<label class="w-full sm:w-auto sm:flex-[1_1_260px] sm:max-w-[380px] h-9 flex items-center gap-2 px-2.5 border border-line rounded-lg bg-white focus-within:border-accent">
+		<Search size={16} class="text-ink-3 shrink-0" />
+		<span class="sr-only">Szukaj leada</span>
+		<input bind:value={search} placeholder="Nazwa, NIP, e-mail, telefon…" class="flex-1 min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3" />
+		{#if search}
+			<button onclick={() => (search = '')} aria-label="Wyczyść wyszukiwanie" class="w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={14} /></button>
+		{/if}
+	</label>
+	{#snippet filtr(etykieta: string, tekst: string | null, wyczysc: () => void, opcje: Snippet, wartosc: string, ustaw: (v: string) => void)}
+		<span class="relative inline-flex items-center h-9 rounded-lg text-[13px] font-medium focus-within:ring-2 focus-within:ring-accent/40 {tekst ? 'border border-line bg-white text-ink pr-7' : 'border border-dashed border-[#C4CAD4] text-ink-2 hover:bg-white'}">
+			<span aria-hidden="true" class="px-2.5 max-w-[240px] truncate whitespace-nowrap">{tekst ?? `+ ${etykieta}`}</span>
+			<select aria-label={etykieta} value={wartosc} onchange={(e) => ustaw((e.currentTarget as HTMLSelectElement).value)} class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+				{@render opcje()}
+			</select>
+			{#if tekst}
+				<button onclick={wyczysc} aria-label="Usuń filtr: {etykieta}" class="absolute right-1 z-10 w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={12} /></button>
+			{/if}
+		</span>
+	{/snippet}
+	{#snippet opcjeZaint()}
+		<option value="">Dowolne zainteresowanie</option>
+		{#each ZAINTERESOWANIA as k}<option value={k}>{OPIS_ZAINTERESOWANIA[k]}</option>{/each}
+	{/snippet}
+	{#snippet opcjeMaile()}
+		<option value="">Dowolne</option>
+		<option value="klik">Kliknęli link w mailu</option>
+		<option value="otw">Otworzyli maila</option>
+		<option value="odbite">Adres odbity</option>
+		<option value="brak">Bez maili kampanii</option>
+	{/snippet}
+	{#snippet opcjeZgl()}
+		<option value="">Dowolne</option>
+		<option value="ponowne">Ponowne zgłoszenia</option>
+		<option value="formularz">Ze zgłoszeniem z formularza</option>
+	{/snippet}
+	{#if maZainteresowania}
+		{@render filtr('Zainteresowanie', fZaint ? `Zainteresowanie: ${ETYKIETA_ZAINTERESOWANIA[fZaint]}` : null, () => (fZaint = ''), opcjeZaint, fZaint, (v) => (fZaint = v))}
+	{/if}
+	{#if maMaile}
+		{@render filtr('Maile kampanii', fMaile ? ({ klik: 'Kliknęli link', otw: 'Otworzyli maila', odbite: 'Adres odbity', brak: 'Bez maili' } as Record<string, string>)[fMaile] : null, () => (fMaile = ''), opcjeMaile, fMaile, (v) => (fMaile = v))}
+	{/if}
+	{@render filtr('Zgłoszenia', fZgloszenia ? (fZgloszenia === 'ponowne' ? 'Ponowne zgłoszenia' : 'Z formularza') : null, () => (fZgloszenia = ''), opcjeZgl, fZgloszenia, (v) => (fZgloszenia = v))}
+	<label class="inline-flex items-center h-9 rounded-lg text-[13px] font-medium {letterFilter ? 'border border-line bg-white text-ink' : 'border border-dashed border-[#C4CAD4] text-ink-2'}">
+		<span class="sr-only">Pierwsza litera nazwy</span>
+		<select bind:value={letterFilter} class="h-full pl-2.5 pr-2 bg-transparent cursor-pointer outline-none">
+			<option value="">+ Litera</option>
+			{#each alphabet as L}<option value={L} disabled={!lettersWithData.has(L)}>Litera {L}</option>{/each}
+		</select>
+	</label>
+	{#if ileFiltrow > 0 || search}
+		<button onclick={wyczyscFiltry} class="h-9 px-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść</button>
+	{/if}
+	<span class="ml-auto text-[13px] text-ink-3 tabular-nums">{odmiana(visibleCount, 'lead', 'leady', 'leadów')}</span>
 </div>
 
 {#if view === 'tabela'}
-<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-	<div class="px-5 py-3 border-b border-line flex items-center gap-3">
-		<Search size={16} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, branży..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
-	</div>
-	<div class="overflow-x-auto">
-		<table class="w-full text-left text-sm">
-			<thead>
-				<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide select-none">
-					{#snippet thSort(col: SortCol, label: string, cls?: string)}
-						<th class="px-4 py-3 {cls ?? ''}">
-							<button onclick={() => toggleSort(col)} class="flex items-center gap-1 hover:text-slate-800 transition-colors group">
-								{label}
-								<span class="flex flex-col leading-none opacity-40 group-hover:opacity-100">
-									<ChevronUp size={9} class="{sortCol === col && sortAsc ? 'text-blue-600 opacity-100' : ''}" />
-									<ChevronDown size={9} class="{sortCol === col && !sortAsc ? 'text-blue-600 opacity-100' : ''}" />
-								</span>
-							</button>
-						</th>
-					{/snippet}
-					<th class="px-4 py-3 w-24">Akcje</th>
-					{@render thSort('nazwa', 'Firma', 'min-w-[150px]')}
-					{@render thSort('zatrudnienie', 'Zatrudnienie', 'w-32')}
-					{@render thSort('branza', 'Branża', 'w-36')}
-					<th class="px-4 py-3 w-44">Kontakt</th>
-					{@render thSort('status', 'Status', 'w-28')}
-					{@render thSort('created_at', 'Dodano', 'w-24')}
-				</tr>
-			</thead>
-			<tbody>
-				{#each filtered() as p}
-					{@const zatrud = getZatrudnienie(p)}
-					<tr use:ctxMenu={{ items: () => prospectMenu(p), title: p.nazwa }}
-						class="border-t border-line-soft hover:bg-slate-50 group">
-						<td class="px-4 py-2.5">
-							<div class="flex items-center gap-1">
-								<a href={`/prospects/${p.id}`} title="Otwórz (Ctrl/⌘+klik = nowa karta)" class="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
-									<ExternalLink size={13} />
-								</a>
-								<button onclick={() => openEdit(p)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
-									<Pencil size={13} />
-								</button>
-								<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" class="p-1.5 rounded-lg text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 transition-colors">
-									<UserPlus size={13} />
-								</button>
-							</div>
-						</td>
-						<td class="px-4 py-2.5">
-							<a
-								href={`/prospects/${p.id}`}
-								class="block font-medium text-blue-700 hover:text-blue-900 hover:underline text-left leading-snug"
-							>{p.nazwa}</a>
-							<div class="flex items-center gap-2 mt-0.5 flex-wrap">
-								{#if p.nip}<span class="text-xs text-slate-400">NIP: {p.nip}</span>{/if}
-							</div>
-						</td>
-						<td class="px-4 py-2.5 text-sm text-slate-700">
-							{#if zatrud != null}
-								<span class="font-medium">{zatrud}</span>
-								<span class="text-xs text-slate-400 ml-0.5">os.</span>
-							{:else}
-								<span class="text-slate-300">—</span>
-							{/if}
-						</td>
-						<td class="px-4 py-2.5 text-xs text-slate-500 max-w-[140px]">
-							{#if p.branza}<span class="truncate block">{p.branza}</span>{:else}<span class="text-slate-300">—</span>{/if}
-						</td>
-						<td class="px-4 py-2.5 text-xs text-slate-500 leading-relaxed">
-							{#if p.telefon}<div class="truncate">{p.telefon}</div>{/if}
-							{#if p.email}<div class="truncate text-blue-600">{p.email}</div>{/if}
-							{#if !p.telefon && !p.email}<span class="text-slate-300">—</span>{/if}
-						</td>
-						<td class="px-4 py-2.5">
-							<Badge variant={statusVariant(p.status)}>{statusLabels[p.status] ?? p.status}</Badge>
-						</td>
-						<td class="px-4 py-2.5 text-xs text-slate-400 whitespace-nowrap">
-							{p.created_at ? p.created_at.slice(0, 10) : '—'}
-						</td>
-					</tr>
-				{:else}
-					<tr><td colspan="7" class="px-5 py-8 text-center text-slate-400">{loading ? 'Ładowanie…' : 'Brak prospectów'}</td></tr>
+	<section aria-label="Lista leadów" class="bg-white border border-line rounded-xl overflow-hidden">
+		{#if filtered.length === 0}
+			<div class="px-4 py-12 text-center">
+				<p class="text-sm text-ink-3">{loading ? 'Wczytuję leady…' : 'Brak leadów dla wybranych filtrów.'}</p>
+				{#if !loading && (ileFiltrow > 0 || search)}
+					<button onclick={wyczyscFiltry} class="mt-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść filtry</button>
+				{/if}
+			</div>
+		{:else}
+			<!-- Telefon: karty -->
+			<ul class="md:hidden divide-y divide-line-soft">
+				{#each naStronie as p (p.id)}
+					<li use:ctxMenu={{ items: () => prospectMenu(p), title: nazwaLeada(p) }} class="px-4 py-3">
+						<div class="flex items-start justify-between gap-2">
+							<a href="/prospects/{p.id}" class="min-w-0 font-medium text-ink hover:text-accent-text truncate">{nazwaLeada(p)}</a>
+							<span class="shrink-0 h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {KLASA_ETAPU[p.status] ?? 'bg-surface-2 text-ink-2'}">{ETYKIETA_ETAPU[p.status] ?? p.status}</span>
+						</div>
+						<div class="flex flex-wrap items-center gap-1 mt-1">
+							{@render chipy(p.zainteresowania)}
+							{#if (p.liczba_zgloszen ?? 0) >= 2}<span class="h-5 leading-5 px-1.5 rounded-full bg-warn-soft text-warn text-[11px] font-semibold">{p.liczba_zgloszen}× zgłoszenie</span>{/if}
+						</div>
+						<p class="mt-1 text-xs text-ink-3">{[nipLeada(p) ? `NIP ${nipLeada(p)}` : null, p.przychod, dataZgloszenia(p) ? `zgłoszenie ${fmtDzien(dataZgloszenia(p)!.slice(0, 10), true)}` : null].filter(Boolean).join(' · ')}</p>
+						{#if mailKlienta(p)}<p class="mt-0.5 text-xs">{@render stanMaili(p)}</p>{/if}
+						{#if telefonLeada(p)}<a href="tel:{telefonLeada(p)}" class="mt-1 inline-block text-[13px] text-accent-text">{telefonLeada(p)}</a>{/if}
+					</li>
 				{/each}
-			</tbody>
-		</table>
-	</div>
-</div>
+			</ul>
+
+			<!-- Komputer: tabela -->
+			<div class="hidden md:block overflow-x-auto">
+				<table class="w-full min-w-[980px] text-[13px] text-left">
+					<thead>
+						<tr class="bg-surface-2 text-ink-2 select-none">
+							{#snippet th(col: SortCol, label: string, cls = '')}
+								<th class="px-3 py-2.5 font-semibold {cls}" aria-sort={sortCol === col ? (sortAsc ? 'ascending' : 'descending') : 'none'}>
+									<button onclick={() => toggleSort(col)} class="inline-flex items-center gap-1 hover:text-ink group">
+										{label}
+										<span class="flex flex-col leading-none {sortCol === col ? 'text-accent-text' : 'opacity-40 group-hover:opacity-100'}">
+											<ChevronUp size={9} class={sortCol === col && !sortAsc ? 'opacity-30' : ''} />
+											<ChevronDown size={9} class={sortCol === col && sortAsc ? 'opacity-30' : ''} />
+										</span>
+									</button>
+								</th>
+							{/snippet}
+							{@render th('nazwa', 'Firma', 'pl-4')}
+							{#if maZainteresowania}{@render th('zainteresowania', 'Zainteresowanie', 'w-[190px]')}{/if}
+							{#if maMaile}{@render th('maile', 'Maile kampanii', 'w-[220px]')}{/if}
+							{#if maBranze}<th class="px-3 py-2.5 font-semibold w-[170px]">Branża</th>{/if}
+							<th class="px-3 py-2.5 font-semibold w-[190px]">Kontakt</th>
+							{@render th('status', 'Etap', 'w-[130px]')}
+							{@render th('zgloszenie', 'Zgłoszenie', 'w-[120px]')}
+							<th class="pr-4 py-2.5 w-[84px]"><span class="sr-only">Akcje</span></th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each naStronie as p (p.id)}
+							{@const zatrud = getZatrudnienie(p)}
+							{@const zgl = dataZgloszenia(p)}
+							<tr use:ctxMenu={{ items: () => prospectMenu(p), title: nazwaLeada(p) }} class="border-t border-line-soft hover:bg-bg">
+								<td class="pl-4 pr-3 py-2.5 max-w-[340px]">
+									<a href="/prospects/{p.id}" class="block font-medium text-ink hover:text-accent-text truncate">{nazwaLeada(p)}</a>
+									<span class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-3">
+										{#if nipLeada(p)}<span class="font-mono">NIP {nipLeada(p)}</span>{/if}
+										{#if p.przychod}<span>przychód {p.przychod}</span>{/if}
+										{#if (p.liczba_zgloszen ?? 0) >= 2}<span class="inline-flex items-center gap-1 text-warn font-semibold"><Repeat size={11} aria-hidden="true" /> {p.liczba_zgloszen}× zgłoszenie</span>{/if}
+									</span>
+								</td>
+								{#if maZainteresowania}
+									<td class="px-3 py-2.5"><span class="flex flex-wrap gap-1">{@render chipy(p.zainteresowania)}</span>{#if !(p.zainteresowania ?? []).length}<span class="text-ink-3">—</span>{/if}</td>
+								{/if}
+								{#if maMaile}<td class="px-3 py-2.5 text-xs">{@render stanMaili(p)}</td>{/if}
+								{#if maBranze}
+									<td class="px-3 py-2.5 text-xs text-ink-2 max-w-[170px]">
+										<span class="block truncate">{p.branza ?? '—'}</span>
+										{#if zatrud != null}<span class="text-ink-3">{zatrud} os.</span>{/if}
+									</td>
+								{/if}
+								<td class="px-3 py-2.5 text-xs leading-relaxed max-w-[190px]">
+									{#if telefonLeada(p)}<a href="tel:{telefonLeada(p)}" class="block truncate text-ink-2 hover:text-accent-text">{telefonLeada(p)}</a>{/if}
+									{#if emailLeada(p)}<a href="mailto:{emailLeada(p)}" class="block truncate text-accent-text hover:underline">{emailLeada(p)}</a>{/if}
+									{#if !telefonLeada(p) && !emailLeada(p)}<span class="text-ink-3">—</span>{/if}
+								</td>
+								<td class="px-3 py-2.5">
+									<span class="inline-block h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {KLASA_ETAPU[p.status] ?? 'bg-surface-2 text-ink-2'}">{ETYKIETA_ETAPU[p.status] ?? p.status}</span>
+								</td>
+								<td class="px-3 py-2.5 text-xs text-ink-2 whitespace-nowrap" title={p.zrodlo ? `Źródło: ${ZRODLO_LEADA[p.zrodlo] ?? p.zrodlo}` : undefined}>
+									{zgl ? fmtDzien(zgl.slice(0, 10), true) : '—'}
+								</td>
+								<td class="pr-4 py-2.5">
+									<span class="flex items-center justify-end gap-0.5">
+										{#if p.klient_id}
+											<a href="/clients/{p.klient_id}" title="Panel 360° klienta" aria-label="Panel 360° klienta {nazwaLeada(p)}" class="w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-accent-text hover:bg-accent-soft"><UserRound size={14} /></a>
+										{:else}
+											<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" aria-label="Dodaj do Klientów: {nazwaLeada(p)}" class="w-7 h-7 flex items-center justify-center rounded-lg text-ok hover:bg-ok-soft"><UserPlus size={14} /></button>
+										{/if}
+										<button onclick={() => openEdit(p)} title="Edytuj" aria-label="Edytuj leada {nazwaLeada(p)}" class="w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><Pencil size={14} /></button>
+									</span>
+								</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			{#if filtered.length > limit}
+				<div class="px-4 py-3 border-t border-line-soft text-center">
+					<button onclick={() => (limit += 200)} class="text-[13px] font-semibold text-accent-text hover:underline">Pokaż więcej ({(filtered.length - limit).toLocaleString('pl-PL')})</button>
+				</div>
+			{/if}
+		{/if}
+	</section>
 {:else}
-	<!-- Widok KANBAN -->
-	<div class="bg-white border border-line rounded-xl shadow-sm px-5 py-3 mb-4 flex items-center gap-3">
-		<Search size={16} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj po nazwie, NIP, branży..." class="flex-1 text-sm outline-none placeholder:text-slate-400" />
-	</div>
-	<div class="flex gap-4 overflow-x-auto pb-4 items-start">
+	<!-- KANBAN -->
+	<div class="flex gap-3 overflow-x-auto pb-4 items-start">
 		{#each KANBAN_COLS as col}
-			<div class="flex-1 min-w-[240px] bg-slate-50 border border-line rounded-xl flex flex-col">
-				<div class="px-4 py-3 border-b border-line flex items-center gap-2">
-					<span class="w-2 h-2 rounded-full {col.accent}"></span>
-					<h3 class="text-sm font-semibold text-slate-700">{col.label}</h3>
-					<span class="ml-auto text-xs font-semibold text-slate-400 bg-white border border-line rounded-full px-2 py-0.5">{(kanban[col.key] ?? []).length}</span>
+			<div class="flex-1 min-w-[250px] bg-surface-2 border border-line-soft rounded-xl flex flex-col">
+				<div class="px-3.5 py-2.5 border-b border-line-soft flex items-center gap-2">
+					<span class="w-2 h-2 rounded-full {col.accent}" aria-hidden="true"></span>
+					<h3 class="text-[13px] font-semibold text-ink">{col.label}</h3>
+					<span class="ml-auto text-xs font-semibold text-ink-3 tabular-nums">{(liczEtapy[col.key] ?? 0).toLocaleString('pl-PL')}</span>
 				</div>
 				<div
 					class="p-2 flex flex-col gap-2 min-h-[120px] flex-1"
@@ -542,43 +628,21 @@
 					onfinalize={(e) => kanbanFinalize(col.key, e)}
 				>
 					{#each kanban[col.key] ?? [] as p (p.id)}
-						{@const zatrud = getZatrudnienie(p)}
-						<div use:ctxMenu={{ items: () => prospectMenu(p), title: p.nazwa }}
-							class="bg-white border border-line rounded-lg shadow-sm p-3 cursor-grab active:cursor-grabbing hover:border-blue-300 transition-colors group">
-							<div class="flex items-start justify-between gap-2">
-								<a
-									href={`/prospects/${p.id}`}
-									class="font-medium text-blue-700 hover:text-blue-900 hover:underline text-sm leading-snug break-words"
-								>{p.nazwa}</a>
-								<div class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-									<a href={`/prospects/${p.id}`} title="Otwórz" class="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50">
-										<ExternalLink size={12} />
-									</a>
-									<button onclick={() => openEdit(p)} title="Edytuj" class="p-1 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100">
-										<Pencil size={12} />
-									</button>
-									<button onclick={() => convertToClient(p)} title="Dodaj do Klientów" class="p-1 rounded text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50">
-										<UserPlus size={12} />
-									</button>
-								</div>
+						<div use:ctxMenu={{ items: () => prospectMenu(p), title: nazwaLeada(p) }} class="bg-white border border-line rounded-lg p-3 cursor-grab active:cursor-grabbing hover:border-accent/50 transition-colors">
+							<a href="/prospects/{p.id}" class="block font-medium text-ink hover:text-accent-text text-[13px] leading-snug break-words">{nazwaLeada(p)}</a>
+							{#if nipLeada(p)}<div class="text-xs text-ink-3 mt-0.5 font-mono">NIP {nipLeada(p)}</div>{/if}
+							<div class="flex flex-wrap gap-1 mt-1.5">
+								{@render chipy(p.zainteresowania)}
+								{#if (p.liczba_zgloszen ?? 0) >= 2}<span class="h-5 leading-5 px-1.5 rounded-full bg-warn-soft text-warn text-[11px] font-semibold">{p.liczba_zgloszen}× zgłoszenie</span>{/if}
 							</div>
-							{#if p.nip}<div class="text-xs text-slate-400 mt-1">NIP: {p.nip}</div>{/if}
-							<div class="flex items-center gap-2 mt-1.5 flex-wrap text-xs text-slate-500">
-								{#if p.branza}<span class="truncate max-w-[140px]">{p.branza}</span>{/if}
-								{#if zatrud != null}<span class="text-slate-400">· {zatrud} os.</span>{/if}
-							</div>
-							{#if p.telefon || p.email}
-								<div class="mt-1.5 space-y-0.5 text-xs">
-									{#if p.telefon}<div class="text-slate-500 truncate">{p.telefon}</div>{/if}
-									{#if p.email}<div class="text-blue-600 truncate">{p.email}</div>{/if}
-								</div>
-							{/if}
+							{#if mailKlienta(p)}<div class="mt-1.5 text-xs">{@render stanMaili(p)}</div>{/if}
+							{#if telefonLeada(p)}<div class="mt-1 text-xs text-ink-2 truncate">{telefonLeada(p)}</div>{/if}
 						</div>
 					{/each}
 					{#if (kanban[col.key] ?? []).length === 0}
-						<div class="text-center text-xs text-slate-300 py-6 select-none">
-							{loading ? 'Ładowanie…' : 'Przeciągnij tutaj'}
-						</div>
+						<div class="text-center text-xs text-ink-3 py-6 select-none">{loading ? 'Wczytuję…' : 'Przeciągnij tutaj'}</div>
+					{:else if (liczEtapy[col.key] ?? 0) > (kanban[col.key] ?? []).length}
+						<p class="text-center text-xs text-ink-3 py-1">i {((liczEtapy[col.key] ?? 0) - (kanban[col.key] ?? []).length).toLocaleString('pl-PL')} kolejnych — zawęź filtrem</p>
 					{/if}
 				</div>
 			</div>
@@ -586,46 +650,61 @@
 	</div>
 {/if}
 
-<Modal title={editingProspect ? `Edytuj — ${editingProspect.nazwa}` : 'Nowy Prospect'} open={showModal} onclose={closeModal}>
+<Modal title={editingProspect ? `Lead — ${nazwaLeada(editingProspect)}` : 'Nowy lead'} open={showModal} onclose={closeModal}>
 	{#snippet footer()}
-		<button onclick={closeModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={save} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : editingProspect ? 'Zapisz zmiany' : 'Zapisz Prospect'}
+		<button onclick={closeModal} class="h-9 px-4 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Anuluj</button>
+		<button onclick={save} disabled={saving} class="h-9 px-4 text-sm font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">
+			{saving ? 'Zapisywanie…' : editingProspect ? 'Zapisz zmiany' : 'Dodaj leada'}
 		</button>
 	{/snippet}
 
-	{#if formError}<div class="mb-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-	<div class="grid grid-cols-2 gap-3">
-		<div class="col-span-2">
-			<label class={labelCls}>Nazwa firmy / Imię i Nazwisko *</label>
-			<input bind:value={fNazwa} class={inputCls} />
-		</div>
-		<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
-		<div><label class={labelCls}>Branża</label><input bind:value={fBranza} class={inputCls} /></div>
-		<div class="col-span-2"><label class={labelCls}>Adres</label><input bind:value={fAdres} class={inputCls} /></div>
-		<div><label class={labelCls}>Telefon</label><input bind:value={fTelefon} class={inputCls} /></div>
-		<div><label class={labelCls}>Email</label><input bind:value={fEmail} type="email" class={inputCls} /></div>
-		<div><label class={labelCls}>Zatrudnienie (os.)</label><input type="number" bind:value={fZatrudnienie} class={inputCls} placeholder="liczba osób" min="0" /></div>
+	{#if formError}<p class="mb-3 text-[13px] text-danger bg-danger-soft rounded-lg px-3 py-2">{formError}</p>{/if}
+	<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+		{#if editingProspect?.klient_id}
+			<div class="sm:col-span-2 rounded-lg bg-surface-2 px-3 py-2.5 text-[13px]">
+				<p class="font-semibold text-ink">{nazwaLeada(editingProspect)}</p>
+				<p class="text-ink-2">{[nipLeada(editingProspect) ? `NIP ${nipLeada(editingProspect)}` : null, telefonLeada(editingProspect), emailLeada(editingProspect)].filter(Boolean).join(' · ') || 'brak danych kontaktowych'}</p>
+				<p class="mt-1 text-xs text-ink-3">Dane firmy edytujesz w kartotece klienta — <a href="/clients/{editingProspect.klient_id}" class="font-semibold text-accent-text hover:underline">Panel 360°</a>.</p>
+			</div>
+		{:else}
+			<div class="sm:col-span-2">
+				<label class={labelCls} for="lead-nazwa">Nazwa firmy / imię i nazwisko *</label>
+				<input id="lead-nazwa" bind:value={fNazwa} class={inputCls} />
+			</div>
+			<div><label class={labelCls} for="lead-nip">NIP</label><input id="lead-nip" bind:value={fNip} class={inputCls} /></div>
+			<div><label class={labelCls} for="lead-adres">Adres</label><input id="lead-adres" bind:value={fAdres} class={inputCls} /></div>
+			<div><label class={labelCls} for="lead-tel">Telefon</label><input id="lead-tel" bind:value={fTelefon} class={inputCls} /></div>
+			<div><label class={labelCls} for="lead-email">E-mail</label><input id="lead-email" bind:value={fEmail} type="email" class={inputCls} /></div>
+		{/if}
+		<fieldset class="sm:col-span-2">
+			<legend class={labelCls}>Zainteresowanie</legend>
+			<div class="flex flex-wrap gap-1.5">
+				{#each ZAINTERESOWANIA as k}
+					{@const on = fZainteresowania.includes(k)}
+					<button type="button" aria-pressed={on} onclick={() => przelaczZainteresowanie(k)} title={OPIS_ZAINTERESOWANIA[k]}
+						class="h-8 px-3 rounded-full text-[13px] font-medium border {on ? 'bg-accent-soft border-accent text-accent-text' : 'bg-white border-line text-ink-2 hover:bg-surface-2'}">{ETYKIETA_ZAINTERESOWANIA[k]}</button>
+				{/each}
+			</div>
+		</fieldset>
+		<div><label class={labelCls} for="lead-przychod">Przychód roczny</label><input id="lead-przychod" bind:value={fPrzychod} placeholder="np. do 250 000 zł" class={inputCls} /></div>
 		<div>
-			<label class={labelCls}>Status</label>
-			<select bind:value={fStatus} class={inputCls}>
-				<option value="nowy">Nowy</option>
-				<option value="w_kontakcie">W kontakcie</option>
-				<option value="oferta_wyslana">Oferta wysłana</option>
-				<option value="wygrany">Wygrany</option>
-				<option value="przegrany">Przegrany</option>
+			<label class={labelCls} for="lead-etap">Etap</label>
+			<select id="lead-etap" bind:value={fStatus} class={inputCls}>
+				{#each ETAPY as e}<option value={e.key}>{e.label}</option>{/each}
 			</select>
 		</div>
 		<div>
-			<label class={labelCls}>Broker</label>
-			<select bind:value={fBrokerId} class={inputCls}>
+			<label class={labelCls} for="lead-broker">Opiekun leada</label>
+			<select id="lead-broker" bind:value={fBrokerId} class={inputCls}>
 				<option value="">— brak —</option>
 				{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko}</option>{/each}
 			</select>
 		</div>
-		<div class="col-span-2">
-			<label class={labelCls}>Notatki</label>
-			<textarea bind:value={fNotatki} rows="3" class={inputCls}></textarea>
+		<div><label class={labelCls} for="lead-branza">Branża</label><input id="lead-branza" bind:value={fBranza} class={inputCls} /></div>
+		<div><label class={labelCls} for="lead-zatr">Zatrudnienie (os.)</label><input id="lead-zatr" type="number" bind:value={fZatrudnienie} class={inputCls} min="0" /></div>
+		<div class="sm:col-span-2">
+			<label class={labelCls} for="lead-notatki">Notatki</label>
+			<textarea id="lead-notatki" bind:value={fNotatki} rows="3" class="w-full border border-line rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-accent"></textarea>
 		</div>
 	</div>
 </Modal>

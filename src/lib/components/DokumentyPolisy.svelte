@@ -9,7 +9,8 @@
 	} from '$lib/plikiPolis';
 	import { FileText, Upload, Trash2, ExternalLink } from 'lucide-svelte';
 
-	let { polisaId }: { polisaId: string } = $props();
+	// onzmiana: lista plików po wczytaniu i każdej zmianie (karta polisy pokazuje wtedy np. „Wyślij polisę klientowi”).
+	let { polisaId, onzmiana }: { polisaId: string; onzmiana?: (pliki: PlikPolisy[]) => void } = $props();
 
 	let pliki = $state<PlikPolisy[]>([]);
 	let wczytane = $state(false);
@@ -25,6 +26,7 @@
 		pliki = lista;
 		dostepny = ok;
 		wczytane = true;
+		onzmiana?.(lista);
 	}
 	$effect(() => { void wczytaj(polisaId); });
 
@@ -40,6 +42,7 @@
 		try {
 			const nowy = await wyslijPdfPolisy(polisaId, plik, { rodzaj });
 			pliki = [nowy, ...pliki];
+			onzmiana?.(pliki);
 			ctxToast(`Dodano: ${nowy.nazwa}`);
 		} catch (err) {
 			blad = (err as Error).message;
@@ -59,6 +62,7 @@
 		try {
 			await usunPlikPolisy(p.id);
 			pliki = pliki.filter((x) => x.id !== p.id);
+			onzmiana?.(pliki);
 			ctxToast(`Usunięto: ${p.nazwa}`);
 		} catch (err) {
 			blad = (err as Error).message;
@@ -67,7 +71,7 @@
 </script>
 
 {#if wczytane && (pliki.length > 0 || dostepny || isAdmin(appState.profile))}
-	<section aria-labelledby="dokumenty-polisy" class="bg-white border border-line rounded-xl overflow-hidden mb-5">
+	<section aria-labelledby="dokumenty-polisy" class="bg-white border border-line rounded-xl overflow-hidden">
 		<div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line-soft">
 			<FileText size={16} class="text-ink-3" />
 			<h2 id="dokumenty-polisy" class="text-[15px] font-semibold text-ink">Dokumenty</h2>
@@ -93,16 +97,18 @@
 			<ul>
 				{#each pliki as p (p.id)}
 					<li class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 border-t border-line-soft first:border-t-0">
-						<span class="flex-[1_1_240px] min-w-0">
+						<span class="flex-[1_1_200px] min-w-0">
 							<button onclick={() => otworz(p)} class="block max-w-full truncate text-left text-[13px] font-medium text-accent-text hover:underline">{p.nazwa}</button>
 							<span class="block text-xs text-ink-3">
 								{RODZAJ_PLIKU[p.rodzaj]} · {rozmiar(p.rozmiar)} · {fmtDzien(p.created_at.slice(0, 10), true)}{p.zrodlo === 'import_pdf' ? ' · z importu PDF' : ''}{kto(p.dodal) ? ` · ${kto(p.dodal)}` : ''}
 							</span>
 						</span>
-						<button onclick={() => otworz(p)} title="Otwórz" aria-label="Otwórz {p.nazwa}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><ExternalLink size={15} /></button>
-						{#if dostepny}
-							<button onclick={() => usun(p)} title="Usuń" aria-label="Usuń {p.nazwa}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-danger hover:bg-danger-soft"><Trash2 size={15} /></button>
-						{/if}
+						<span class="ml-auto flex items-center">
+							<button onclick={() => otworz(p)} title="Otwórz" aria-label="Otwórz {p.nazwa}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><ExternalLink size={15} /></button>
+							{#if dostepny}
+								<button onclick={() => usun(p)} title="Usuń" aria-label="Usuń {p.nazwa}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-danger hover:bg-danger-soft"><Trash2 size={15} /></button>
+							{/if}
+						</span>
 					</li>
 				{/each}
 			</ul>

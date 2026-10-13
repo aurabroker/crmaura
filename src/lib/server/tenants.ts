@@ -13,7 +13,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const RESERVED_FEATURE_KEYS = new Set(['constructor', 'prototype', 'hasownproperty', 'tostring', 'valueof']);
 
-export type TenantPatch = { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null };
+export type TenantPatch = { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null; resend_webhook_secret?: string | null };
+
+// Sekret podpisu webhooka Resend (Resend → Webhooks → Signing secret).
+const WEBHOOK_SECRET_RE = /^whsec_[A-Za-z0-9+/=]{16,200}$/;
 
 // Nadawca e-maili firmy (przypomnienia o płatnościach, odnowienia): „adres@domena” albo
 // „Nazwa <adres@domena>”. Domena musi być zweryfikowana w Resend tej firmy.
@@ -22,7 +25,7 @@ const EMAIL_FROM_RE = /^(?:[^<>\r\n"@]{1,100} <[^\s@<>"]+@[a-z0-9-]+(?:\.[a-z0-9
 // Waliduje ciało PATCH /api/saas-admin/tenants. Zwraca identyfikator firmy i czyste pola do zapisu.
 export function parseTenantPatch(body: unknown): { tenantId: string; patch: TenantPatch } {
 	if (!body || typeof body !== 'object') throw error(400, { message: 'Nieprawidłowe dane.' });
-	const { tenant_id, features, resend_api_key, email_from } = body as Record<string, unknown>;
+	const { tenant_id, features, resend_api_key, email_from, resend_webhook_secret } = body as Record<string, unknown>;
 
 	if (typeof tenant_id !== 'string' || !UUID.test(tenant_id)) {
 		throw error(400, { message: 'Nieprawidłowy identyfikator firmy.' });
@@ -62,6 +65,16 @@ export function parseTenantPatch(body: unknown): { tenantId: string; patch: Tena
 			patch.email_from = email_from.trim();
 		} else {
 			throw error(400, { message: 'Nieprawidłowy adres nadawcy. Wpisz np. „Aura Expert <platnosci@auraexpert.pl>”.' });
+		}
+	}
+
+	if (resend_webhook_secret !== undefined) {
+		if (resend_webhook_secret === null || resend_webhook_secret === '') {
+			patch.resend_webhook_secret = null;
+		} else if (typeof resend_webhook_secret === 'string' && WEBHOOK_SECRET_RE.test(resend_webhook_secret.trim())) {
+			patch.resend_webhook_secret = resend_webhook_secret.trim();
+		} else {
+			throw error(400, { message: 'Nieprawidłowy sekret webhooka — skopiuj „Signing secret” z Resend (zaczyna się od whsec_).' });
 		}
 	}
 

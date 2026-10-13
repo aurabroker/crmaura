@@ -3,11 +3,12 @@
 	import { opiekunZUmowy } from '$lib/policyImport/umowaGeneralna';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, todayStr, ugPodtypCls } from '$lib/utils';
+	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, opisPrzedmiotu, todayStr, ugPodtypCls } from '$lib/utils';
 	import type { Policy } from '$lib/types/database';
 	import type { Snippet } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import {
 		Search, Pencil, FilePlus2, Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus,
 		ChevronDown, ChevronLeft, ChevronRight, X, Download, Upload, FileStack, FileText
@@ -128,7 +129,7 @@
 			return !q ||
 				p.nr_polisy.toLowerCase().includes(q) ||
 				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) ||
-				(p.przedmiot ?? '').toLowerCase().includes(q) ||
+				opisPrzedmiotu(p.przedmiot).toLowerCase().includes(q) ||
 				(p.parent_id ? parentNr(p.parent_id).toLowerCase().includes(q) : false);
 		});
 	});
@@ -179,7 +180,7 @@
 		};
 		const naglowek = ['Nr polisy', 'Typ umowy', 'Umowa generalna', 'Klient', 'Towarzystwo', 'Rodzaj', 'Przedmiot', 'Od', 'Do', 'Składka przypisana', 'Składka zainkasowana', 'Prowizja %', 'Prowizja przypisana', 'Status'];
 		const linie = wybrane.map(p => [
-			p.nr_polisy, p.typ_umowy, p.parent_id ? parentNr(p.parent_id) : '', p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), p.przedmiot,
+			p.nr_polisy, p.typ_umowy, p.parent_id ? parentNr(p.parent_id) : '', p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), opisPrzedmiotu(p.przedmiot),
 			p.data_od, p.data_do, fmtPln(p.skladka_przypisana), fmtPln(p.skladka_zainkasowana), p.prowizja_pct, fmtPln(p.prowizja_przypisana), status(p).tekst
 		].map(pole).join(';'));
 		const blob = new Blob(['\uFEFF' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -368,6 +369,7 @@
 		if (error) { deleteError = error.message; return; }
 		await logAudit('policy_deleted', 'policy', target.id, target.nr_polisy, { reason: deletionReason.trim() });
 		appState.policies = appState.policies.filter((p) => p.id !== target.id);
+		appState.payments = appState.payments.filter((x) => x.polisa_id !== target.id);
 		deleteTarget = null;
 		ctxToast(`Polisa ${target.nr_polisy} przeniesiona do kosza`);
 	}
@@ -603,6 +605,7 @@
 							</td>
 							<td class="px-3 py-2 whitespace-nowrap">
 								<a href="/policies/{p.id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{p.nr_polisy}</a>
+								<Kopiuj tekst={p.nr_polisy} opis="nr polisy" />
 								<span class="block text-xs text-ink-3">
 									{#if p.parent_id}
 										w UG <a href="/policies/{p.parent_id}" class="font-mono hover:text-accent-text hover:underline">{parentNr(p.parent_id)}</a>
@@ -614,7 +617,7 @@
 							</td>
 							<td class="px-3 py-2 min-w-[160px] max-w-[240px]">
 								<a href="/clients/{p.klient_id}" class="block truncate font-medium text-ink hover:text-accent-text">{p.crm_clients?.nazwa ?? '—'}</a>
-								{#if p.przedmiot}<span class="block truncate text-xs text-ink-3" title={p.przedmiot}>{p.przedmiot}</span>{/if}
+								{#if opisPrzedmiotu(p.przedmiot)}<span class="block truncate text-xs text-ink-3" title={opisPrzedmiotu(p.przedmiot)}>{opisPrzedmiotu(p.przedmiot)}</span>{/if}
 							</td>
 							<td class="px-3 py-2 whitespace-nowrap" title={p.crm_insurers?.nazwa ?? undefined}>{nazwaTu(p)}</td>
 							<td class="px-3 py-2">

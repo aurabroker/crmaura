@@ -44,7 +44,9 @@
 			sb.from('crm_vehicles').select('*').order('created_at', { ascending: false })
 		]);
 		portalState.policies = (pol.data ?? []) as Policy[];
-		portalState.payments = (pay.data ?? []) as PolicyPayment[];
+		// Raty tylko polis widocznych w panelu (bez polis z kosza)
+		const widoczne = new Set(portalState.policies.map((p) => p.id));
+		portalState.payments = ((pay.data ?? []) as PolicyPayment[]).filter((r) => widoczne.has(r.polisa_id));
 		portalState.claims = (cl.data ?? []) as Claim[];
 		portalState.vehicles = (veh.data ?? []) as Vehicle[];
 		phase = 'ok';

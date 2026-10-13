@@ -418,3 +418,21 @@ export const trybTestowy = (firma: { features?: Record<string, boolean> | null }
 export const czyTest = (firma: { features?: Record<string, boolean> | null } | null, r: Pick<RenewalRow, 'email'>) =>
 	trybTestowy(firma) || (!!r.email && r.email.trim().toLowerCase() === adresTestowy().trim().toLowerCase());
 export const PREFIKS_TESTU = '[TEST] ';
+
+/** Wniosek założony w trybie testowym — zamiast adresu klienta ma zapisany adres testowy. */
+export const wniosekTestowy = (email: string | null | undefined) =>
+	!!email && email.trim().toLowerCase() === adresTestowy().trim().toLowerCase();
+
+/**
+ * Które certyfikaty automat pomija, a które może zaprosić mimo istniejącego wniosku.
+ * Prawdziwy wniosek (także anulowany albo wygasły) blokuje automat — ponowne zaproszenie to decyzja
+ * doradcy. Wniosek testowy nie blokuje: klient go nie widział, więc po wyłączeniu trybu testowego
+ * automat zastępuje go prawdziwym (`tylkoTestowe` → utworzOdnowienie z `zastap`).
+ */
+export function podzielWnioski(wnioski: { polisa_id: string; email: string | null }[]) {
+	const maWniosek = new Set<string>();
+	const testowe = new Set<string>();
+	for (const w of wnioski) (wniosekTestowy(w.email) ? testowe : maWniosek).add(w.polisa_id);
+	const tylkoTestowe = new Set([...testowe].filter((id) => !maWniosek.has(id)));
+	return { maWniosek, tylkoTestowe };
+}

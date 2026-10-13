@@ -20,6 +20,7 @@
 	import ContextMenu from '$lib/components/ContextMenu.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
+	import PonowneZgloszenia from '$lib/components/PonowneZgloszenia.svelte';
 
 	let { children } = $props();
 	let initialized = $state(false);
@@ -126,4 +127,5 @@
 
 <ContextMenu />
 <ConfirmDialog />
+{#if appState.profile}<PonowneZgloszenia />{/if}
 {/if}
