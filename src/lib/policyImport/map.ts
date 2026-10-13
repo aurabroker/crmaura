@@ -2,8 +2,8 @@
 // Zasada: nic nie trafia do bazy bez zgodności identyfikatora klienta —
 // dopasowanie do złego podmiotu oznaczałoby udostępnienie polisy obcej firmie.
 
-import type { Client, Leasing, Policy, PolicyImportData, Vehicle } from '$lib/types/database';
-import type { ExtractedPolicy, ProductTemplate } from './types';
+import type { Client, Leasing, Policy, PolicyImportData, PolicyRisk, Vehicle } from '$lib/types/database';
+import type { ExtractedPolicy, ProductTemplate, RiskItem } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
 import { poczatekUmowy, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
 
@@ -151,6 +151,16 @@ export function buildDraft(input: BuildInput): Draft {
 			text: `Prowizja ${prowizjaPct}% przejęta z Umowy Generalnej.`
 		});
 
+	// Elementy stałe programu (klauzule, sublimity) są zapisane raz na Umowie Generalnej — na polisie ich nie powtarzamy.
+	const stale = elementyStaleUG(ug);
+	const ryzyka = extracted.ryzyka.filter((r) => !stale.some((s) => tenSamElement(s.przedmiot, r.przedmiot)));
+	const pominiete = extracted.ryzyka.filter((r) => !ryzyka.includes(r));
+	if (pominiete.length && ug)
+		issues.push({
+			level: 'info',
+			text: `Pominięto ${pominiete.length === 1 ? 'element stały' : 'elementy stałe'} programu z Umowy Generalnej ${ug.nr_polisy}: ${pominiete.map((r) => nazwaElementu(r.przedmiot)).join(', ')} — ${pominiete.length === 1 ? 'jest' : 'są'} na karcie umowy.`
+		});
+
 	const raty = buildRaty(extracted);
 	if (!raty.length && extracted.skladka != null)
 		issues.push({
@@ -226,7 +236,7 @@ export function buildDraft(input: BuildInput): Draft {
 		prowizja_zainkasowana: 0,
 		rozliczaj_platnosci: null,
 		// Parametry bez własnych kolumn — pokazywane na karcie polisy.
-		dane_importu: buildDaneImportu(input)
+		dane_importu: buildDaneImportu(input, ryzyka)
 	};
 
 	return {
@@ -569,7 +579,7 @@ function sprawdzKlienta(extracted: ExtractedPolicy, client: Client): Issue[] {
  * klauzule, franszyzy, miejsca ubezpieczenia, konto do wpłat, numer OWU.
  * Bez tego dane odczytane z pliku ginęłyby zaraz po imporcie.
  */
-function buildDaneImportu(input: BuildInput): PolicyImportData | null {
+function buildDaneImportu(input: BuildInput, ryzyka: RiskItem[] = input.extracted.ryzyka): PolicyImportData | null {
 	const { extracted, product, insurerNazwa, fileName } = input;
 	const dane: PolicyImportData = {
 		zrodlo: {
@@ -578,7 +588,7 @@ function buildDaneImportu(input: BuildInput): PolicyImportData | null {
 			plik: fileName ?? undefined,
 			data: new Date().toISOString().slice(0, 10)
 		},
-		ryzyka: extracted.ryzyka.length ? extracted.ryzyka : undefined,
+		ryzyka: ryzyka.length ? ryzyka : undefined,
 		konto_do_wplat: extracted.konto_do_wplat,
 		owu: extracted.produkt_owu,
 		dodatkowe: Object.keys(extracted.dodatkowe).length ? extracted.dodatkowe : undefined
@@ -602,4 +612,31 @@ function buildRaty(extracted: ExtractedPolicy): { nr: number; data: string; kwot
 
 function normNr(nr: string | null | undefined): string {
 	return (nr ?? '').replace(/\s/g, '').toUpperCase();
+}
+
+/**
+ * Elementy stałe programu (klauzule, sublimity obowiązujące na każdej polisie z programu) zapisane
+ * raz na Umowie Generalnej — w jej dane_importu.ryzyka. Karta polisy pokazuje je jako odziedziczone.
+ */
+export function elementyStaleUG(ug: Pick<Policy, 'dane_importu'> | null | undefined): PolicyRisk[] {
+	return ug?.dane_importu?.ryzyka ?? [];
+}
+
+/** Klauzule porównujemy po numerze („Klauzula 004”), resztę po początku nazwy bez znaków i wielkości liter. */
+function kluczElementu(przedmiot: string): string {
+	const klauzula = przedmiot.match(/klauzul[aą]\s*(?:nr\s*)?(\d{3})/i);
+	if (klauzula) return `klauzula-${klauzula[1]}`;
+	return przedmiot.toLowerCase().replace(/[^a-z0-9ąćęłńóśźż]/g, '').slice(0, 30);
+}
+
+export function tenSamElement(a: string, b: string): boolean {
+	const ka = kluczElementu(a);
+	const kb = kluczElementu(b);
+	return !!ka && !!kb && (ka === kb || ka.startsWith(kb) || kb.startsWith(ka));
+}
+
+/** Krótka nazwa elementu do komunikatu: „Klauzula 004” albo nazwa do myślnika. */
+function nazwaElementu(przedmiot: string): string {
+	const klauzula = przedmiot.match(/^(Klauzula\s+\S+)/i);
+	return klauzula ? klauzula[1] : przedmiot.split(' — ')[0].slice(0, 60);
 }

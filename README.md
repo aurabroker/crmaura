@@ -254,7 +254,7 @@ w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
 |-------------|---------|-------|
 | WARTA | Ekstrabiznes Plus | sekcje ryzyk, składki sekcyjne, wiele lokalizacji |
 | ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia |
-| ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk, lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
+| ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk (bez elementów stałych programu — patrz niżej), lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
 | UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
 
 Produkt bez parsera jest widoczny na liście, ale import jest zablokowany.
@@ -289,6 +289,14 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
   aktywności.
 - **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
   z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
+- **Elementy stałe programu.** Klauzule i sublimity obowiązujące na każdej
+  polisie z programu (np. OC beauty: klauzule 004 i 005, sublimit 50 000 zł za
+  szkody wyrządzone pracownikom) są zapisane raz — na Umowie Generalnej
+  (`dane_importu.ryzyka`, sekcja „Elementy stałe programu”). Import pomija
+  takie pozycje na polisie (dopasowanie po numerze klauzuli albo nazwie),
+  a karta polisy pokazuje je jako odziedziczone z umowy. OWU polisy to sam kod
+  (np. `AB-OCZB-01/25`); PDF OWU dodaje się raz do Dokumentów Umowy Generalnej
+  jako typ „OWU”, a karta każdej polisy z umowy pokazuje do niego link.
 - **Suma gwarancyjna.** Szablony OC (ERGO: certyfikat i polisa indywidualna)
   przekazują sumę ubezpieczenia do `suma_gwarancyjna` — korzystają z niej
   odnowienia OC beauty.
