@@ -9,7 +9,8 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import AdminSettings from '$lib/components/AdminSettings.svelte';
 	import PlikiWMailach from '$lib/components/PlikiWMailach.svelte';
-	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark, Upload } from 'lucide-svelte';
+	import PowiadomieniaDzienne from '$lib/components/PowiadomieniaDzienne.svelte';
+	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark, Upload, Bell } from 'lucide-svelte';
 	import { fmtPln, validateVin, assignedPolicyFor } from '$lib/utils';
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import { magazynDostepny, otworzPlikNoty, wyslijPlikNoty } from '$lib/plikiPolis';
@@ -24,13 +25,13 @@
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
 	// --- Tabs ---
-	type SettingsTab = 'vehicles' | 'profile' | 'rodo' | 'dokumenty' | 'kalendarz' | 'system' | 'kancelaria' | 'leasingi' | 'pojazdy' | 'logi';
+	type SettingsTab = 'vehicles' | 'profile' | 'rodo' | 'dokumenty' | 'kalendarz' | 'powiadomienia' | 'system' | 'kancelaria' | 'leasingi' | 'pojazdy' | 'logi';
 	let activeTab = $state<SettingsTab>('vehicles');
 
 	// Deep-link z /admin?tab=... (zachowuje stare linki po scaleniu)
 	onMount(() => {
 		const t = $page.url.searchParams.get('tab') as SettingsTab | null;
-		if (t && (ADMIN_TABS.includes(t) || ['vehicles','profile','rodo','dokumenty','kalendarz'].includes(t))) {
+		if (t && (ADMIN_TABS.includes(t) || ['vehicles','profile','rodo','dokumenty','kalendarz','powiadomienia'].includes(t))) {
 			if (!ADMIN_TABS.includes(t) || isAdmin(appState.profile)) activeTab = t;
 		}
 	});
@@ -353,6 +354,13 @@
 			class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'kalendarz' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
 		>
 			🗓️ Kalendarz
+		</button>
+		<button
+			onclick={() => activeTab = 'powiadomienia'}
+			class="flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors {activeTab === 'powiadomienia' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-700'}"
+		>
+			<Bell size={16} />
+			Powiadomienia
 		</button>
 
 		{#if admin}
@@ -739,6 +747,10 @@
 			</table>
 		</div>
 	</div>
+	{/if}
+
+	{#if activeTab === 'powiadomienia'}
+		<PowiadomieniaDzienne />
 	{/if}
 
 	{#if activeTab === 'kalendarz'}
