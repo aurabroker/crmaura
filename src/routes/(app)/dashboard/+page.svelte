@@ -8,6 +8,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { dndzone } from 'svelte-dnd-action';
 	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check } from 'lucide-svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { isBroker } from '$lib/stores/app.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
 	import type { Policy } from '$lib/types/database';
@@ -560,6 +561,7 @@
 							{:else}
 								<span class="font-mono text-[13px] font-medium">{alert.nr_polisy}</span>
 							{/if}
+							<Kopiuj tekst={alert.nr_polisy} opis="nr polisy" />
 						{/if}
 						<p class="text-ink-2">{alert.opis}</p>
 					</div>
@@ -721,7 +723,7 @@
 				{#each renewalsRows.slice(0, 8) as p}
 					{@const dni = dateDiffDays(today, p.data_do)}
 					<tr class="border-t border-line-soft hover:bg-bg">
-						<td class="px-4 py-2.5 font-mono font-medium whitespace-nowrap"><a href="/policies/{p.id}" class="text-accent-text hover:underline">{p.nr_polisy}</a></td>
+						<td class="px-4 py-2.5 font-mono font-medium whitespace-nowrap"><a href="/policies/{p.id}" class="text-accent-text hover:underline">{p.nr_polisy}</a> <Kopiuj tekst={p.nr_polisy} opis="nr polisy" /></td>
 						<td class="px-3 py-2.5"><a href="/clients/{p.klient_id}" class="font-medium text-ink hover:text-accent-text">{p.crm_clients?.nazwa ?? '—'}</a></td>
 						<td class="px-3 py-2.5 text-ink-2">{p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? '—'}</td>
 						<td class="px-3 py-2.5 whitespace-nowrap">{fmtDzien(p.data_do)} <span class={dni <= 14 ? 'text-warn font-semibold' : 'text-ink-2'}>· {fmtTermin(p.data_do, today)}</span></td>

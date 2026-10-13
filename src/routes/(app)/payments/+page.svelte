@@ -4,6 +4,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import type { PolicyPayment } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { fmtPln, todayStr, fmtDzien, fmtTermin, dateDiffDays, odmiana } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania, ROZLICZONE } from '$lib/platnosci';
@@ -919,7 +920,7 @@
 			{#each appState.alerts.slice(0, 3) as alert}
 				<li class="px-4 py-2 text-[13px] text-ink-2">
 					<span class="font-semibold text-ink">{alert.typ === 'ujemna_prowizja' ? 'Ujemna prowizja' : alert.typ === 'aneks_wymagany' ? 'Aneks wymagany' : 'Rozbieżność prowizji'}</span>
-					{#if alert.nr_polisy} · polisa <span class="font-mono">{alert.nr_polisy}</span>{/if}
+					{#if alert.nr_polisy} · polisa <span class="font-mono">{alert.nr_polisy}</span> <Kopiuj tekst={alert.nr_polisy} opis="nr polisy" />{/if}
 					· {alert.opis}
 				</li>
 			{/each}
@@ -1058,6 +1059,7 @@
 								</td>
 								<td class="px-3 py-2 font-mono text-xs whitespace-nowrap">
 									<a href="/policies/{pay.polisa_id}" class="text-accent-text hover:underline">{pay.crm_policies?.nr_polisy ?? '—'}</a>
+									<Kopiuj tekst={pay.crm_policies?.nr_polisy} opis="nr polisy" />
 								</td>
 								<td class="px-3 py-2 min-w-[180px] max-w-[300px]">
 									{#if pol?.klient_id}

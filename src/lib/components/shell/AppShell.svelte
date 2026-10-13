@@ -9,6 +9,7 @@
 	import { poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { odnowionePolisy } from '$lib/statusPolisy';
 	import GlobalSearch from './GlobalSearch.svelte';
+	import Skroty from './Skroty.svelte';
 	import {
 		LayoutDashboard, Users, FileText, Calculator, Scale, ClipboardList, Settings, Plus, LogOut,
 		ShieldCheck, ChevronDown, AlertTriangle, RefreshCw, Target, Coins, RotateCcw, Trash2, Shield,
@@ -270,6 +271,8 @@
 				>
 					<RotateCcw size={16} class={refreshing ? 'animate-spin' : ''} />
 				</button>
+
+				<Skroty />
 
 				<span class="hidden sm:block w-px h-6 bg-line"></span>
 

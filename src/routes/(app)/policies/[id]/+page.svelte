@@ -9,6 +9,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
 	import WyslijPolise from '$lib/components/WyslijPolise.svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet, Send } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
@@ -249,8 +250,9 @@
 		deleting = false;
 		if (error) { deleteError = error.message; return; }
 		await logAudit('policy_deleted', 'policy', policyId, policy?.nr_polisy, { reason: deletionReason.trim() });
-		// Remove from local state
+		// Polisa i jej raty znikają z list od razu (raty z kosza nie wiszą w Płatnościach)
 		appState.policies = appState.policies.filter(p => p.id !== policyId);
+		appState.payments = appState.payments.filter(x => x.polisa_id !== policyId);
 		goto('/policies');
 	}
 
@@ -540,6 +542,7 @@
 		<div class="flex-[1_1_420px] min-w-0 flex flex-col gap-1.5">
 			<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
 				<h1 class="text-2xl font-semibold text-ink leading-tight break-all">{policy.nr_polisy}</h1>
+				<Kopiuj tekst={policy.nr_polisy} opis="nr polisy" rozmiar={16} skrot="c" />
 				{#if status}<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap {status.cls}">{status.tekst}</span>{/if}
 				{#if ug}<span class="h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold whitespace-nowrap bg-accent-soft text-accent-text">Umowa generalna{policy.ug_podtyp ? ` · ${ugPodtypLabel[policy.ug_podtyp] ?? policy.ug_podtyp}` : ''}</span>{/if}
 			</div>
@@ -569,6 +572,8 @@
 				<button
 					onclick={() => (wysylaniePolisy = true)}
 					disabled={!adresyEmail}
+					data-skrot="w"
+					data-skrot-opis="Wyślij polisę klientowi"
 					title={adresyEmail ? 'E-mail z szablonu programu i PDF polisy w załączniku' : 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta'}
 					class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50"
 				>
@@ -576,7 +581,7 @@
 				</button>
 			{/if}
 			{#if adresyEmail}
-				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail do klienta" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
+				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail do klienta (M)" data-skrot="m" data-skrot-opis="Napisz e-mail do klienta" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
 			{/if}
 			{#if !renewalPolicy && !ug}
 				<!-- Odnowienie: ręcznie, z pliku polisy albo (program OC beauty) wnioskiem klienta. Wyróżnione, gdy termin blisko. -->
@@ -584,6 +589,8 @@
 					<button
 						onclick={(e) => { e.stopPropagation(); renewMenuOpen = !renewMenuOpen; }}
 						aria-expanded={renewMenuOpen}
+						data-skrot="o"
+						data-skrot-opis="Odnów polisę"
 						aria-haspopup="menu"
 						class="h-9 flex items-center gap-1.5 pl-2.5 pr-2 rounded-lg text-sm font-semibold transition-colors
 							{canRenew ? 'bg-accent text-white hover:bg-accent-hover' : 'border border-line bg-white text-ink hover:bg-surface-2'}"
@@ -642,7 +649,7 @@
 					<Plus size={16} /> Dodaj polisę do UG
 				</a>
 			{/if}
-			<a href="/policies/{policyId}/edit" class="h-9 flex items-center gap-1.5 px-3 border border-line rounded-lg bg-white text-sm font-medium text-ink hover:bg-surface-2">
+			<a href="/policies/{policyId}/edit" title="Edytuj polisę (E)" data-skrot="e" data-skrot-opis="Edytuj polisę" class="h-9 flex items-center gap-1.5 px-3 border border-line rounded-lg bg-white text-sm font-medium text-ink hover:bg-surface-2">
 				<Pencil size={15} /> Edytuj
 			</a>
 			<div class="relative">
@@ -782,7 +789,7 @@
 								{#each childWiersze as cp (cp.id)}
 									{@const cst = statusPolisy(cp, { dzis: today, odnowione })}
 									<tr class="border-t border-line-soft hover:bg-bg">
-										<td class="px-4 py-2"><a href="/policies/{cp.id}" class="font-mono text-xs text-accent-text hover:underline">{cp.nr_polisy}</a></td>
+										<td class="px-4 py-2 whitespace-nowrap"><a href="/policies/{cp.id}" class="font-mono text-xs text-accent-text hover:underline">{cp.nr_polisy}</a> <Kopiuj tekst={cp.nr_polisy} opis="nr polisy" /></td>
 										<td class="px-4 py-2 max-w-[200px]"><a href="/clients/{cp.klient_id}" class="block truncate text-ink hover:text-accent-text">{cp.crm_clients?.nazwa ?? '—'}</a></td>
 										<td class="px-4 py-2 whitespace-nowrap text-ink-2">{cp.data_do ? fmtDzien(cp.data_do, true) : 'bezterminowo'}</td>
 										<td class="px-4 py-2 text-right tabular-nums whitespace-nowrap font-medium">{fmtPln(cp.skladka_przypisana)} zł</td>
@@ -892,7 +899,7 @@
 									{#if di.konto_do_wplat}
 										<div class="flex justify-between gap-3 border-b border-line-soft py-1.5">
 											<dt class="text-ink-3 shrink-0">Konto do wpłat</dt>
-											<dd class="text-ink text-right font-mono text-xs break-words">{di.konto_do_wplat}</dd>
+											<dd class="text-ink text-right font-mono text-xs break-words">{di.konto_do_wplat} <Kopiuj tekst={String(di.konto_do_wplat).replace(/\s+/g, '')} opis="nr konta" /></dd>
 										</div>
 									{/if}
 								</dl>
@@ -941,7 +948,7 @@
 					{#if ugNadrzedna}
 						<div class="flex gap-3 py-1.5 border-t border-line-soft">
 							<dt class="w-[118px] shrink-0 text-ink-3">Umowa generalna</dt>
-							<dd class="flex-1 min-w-0"><a href="/policies/{ugNadrzedna.id}" class="font-mono text-xs leading-5 text-accent-text hover:underline break-all">{ugNadrzedna.nr_polisy}</a></dd>
+							<dd class="flex-1 min-w-0"><a href="/policies/{ugNadrzedna.id}" class="font-mono text-xs leading-5 text-accent-text hover:underline break-all">{ugNadrzedna.nr_polisy}</a> <Kopiuj tekst={ugNadrzedna.nr_polisy} opis="nr umowy generalnej" /></dd>
 						</div>
 					{/if}
 					{@render wiersz('Zawarta', policy.data_zawarcia ? fmtDzien(policy.data_zawarcia, true) : null)}
