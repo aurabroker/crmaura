@@ -429,10 +429,15 @@ export const wniosekTestowy = (email: string | null | undefined) =>
  * doradcy. Wniosek testowy nie blokuje: klient go nie widział, więc po wyłączeniu trybu testowego
  * automat zastępuje go prawdziwym (`tylkoTestowe` → utworzOdnowienie z `zastap`).
  */
-export function podzielWnioski(wnioski: { polisa_id: string; email: string | null }[]) {
+/**
+ * Certyfikaty z wnioskiem, które automat ma zostawić doradcy (maWniosek), i te z samymi wnioskami testowymi,
+ * które automat zastępuje prawdziwym linkiem (tylkoTestowe). Wniosek testowy anulowany przez pracownika
+ * to już decyzja doradcy („odnowienie ręczne”) — blokuje automat jak prawdziwy wniosek.
+ */
+export function podzielWnioski(wnioski: { polisa_id: string; email: string | null; status?: string | null }[]) {
 	const maWniosek = new Set<string>();
 	const testowe = new Set<string>();
-	for (const w of wnioski) (wniosekTestowy(w.email) ? testowe : maWniosek).add(w.polisa_id);
+	for (const w of wnioski) (wniosekTestowy(w.email) && w.status !== 'anulowany' ? testowe : maWniosek).add(w.polisa_id);
 	const tylkoTestowe = new Set([...testowe].filter((id) => !maWniosek.has(id)));
 	return { maWniosek, tylkoTestowe };
 }
