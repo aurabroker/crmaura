@@ -91,12 +91,12 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	out.program_ug = grab(tresc, /Program(?:u|em) Ubezpieczenia(?:\s+OC)?\s+nr\s+([A-Z0-9/]+?)[,.;]?(?:\s|$)/i);
 	out.produkt_owu = grab(tresc, /kod\s+(AB-[A-Z]+-\d+\/\d+)/i);
 
-	// Parametry bez kolumn w crm_policies — w kolejności, w jakiej stoją na polisie.
+	// Parametry bez kolumn w crm_policies — w kolejności, w jakiej stoją na polisie. Podstawę zawarcia
+	// zastępuje sam kod WU (produkt_owu); zakres terytorialny, oferta, pośrednik i numer programu
+	// (polisa jest podpięta pod Umowę Generalną) nie wnoszą nic do karty.
 	const pola: [string, RegExp][] = [
 		['Przedmiot ubezpieczenia', /^Przedmiot ubezpieczenia:\s*/],
 		['Działalność przyjęta do ubezpieczenia', /^Działalność przyjęta do ubezpieczenia:\s*/],
-		['Podstawa zawarcia umowy', /^Podstawa zawarcia umowy:\s*/],
-		['Zakres terytorialny', /^Zakres terytorialny:\s*/],
 		['Zakres ubezpieczenia', /^Zakres ubezpieczenia:\s*/],
 		['Franszyza', /^Franszyza:\s*/]
 	];
@@ -108,26 +108,11 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	const postanowieniaTekst = collapse(postanowienia);
 	if (postanowieniaTekst) out.dodatkowe['Postanowienia dodatkowe'] = postanowieniaTekst;
 
-	const klauzule = out.ryzyka.filter((r) => r.sekcja === 'Klauzule dodatkowe').map((r) => r.przedmiot);
-	if (klauzule.length) out.dodatkowe['Klauzule dodatkowe'] = klauzule.join(' | ');
-
-	const oferta = grab(tresc, /na podstawie oferty\s*\n?\s*([A-Z0-9/]+)\./i);
-	if (oferta) out.dodatkowe['Oferta'] = oferta;
-
 	const ubezpieczeni = lista(linie, /^Ubezpieczeni:$/);
-	if (ubezpieczeni.length) {
-		out.dodatkowe['Ubezpieczeni'] = ubezpieczeni.join('; ');
-		out.dodatkowe['Liczba ubezpieczonych'] = String(ubezpieczeni.length);
-	}
+	if (ubezpieczeni.length) out.dodatkowe['Ubezpieczeni'] = ubezpieczeni.join('; ');
 
 	const platnosc = collapse(grab(tresc, /^Warunki płatności składki:\s*(.+)$/m));
 	if (platnosc) out.dodatkowe['Warunki płatności'] = platnosc;
-	if (out.program_ug) out.dodatkowe['Program ubezpieczenia'] = out.program_ug;
-
-	const przygotowal = collapse(grab(tresc, /^Umowa przygotowana przez:\s*(.+)$/m));
-	if (przygotowal) out.dodatkowe['Umowę przygotował(a)'] = przygotowal;
-	const posrednik = grab(tresc, /^Numer Pośrednika:\s*(\d+)/m);
-	if (posrednik) out.dodatkowe['Numer pośrednika'] = posrednik;
 
 	return out;
 }

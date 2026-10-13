@@ -5,6 +5,9 @@
 	import { goto, replaceState } from '$app/navigation';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
+	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
+	import { otworzPlikPolisy, wczytajPlikiPolis, type PlikPolisy } from '$lib/plikiPolis';
+	import { elementyStaleUG } from '$lib/policyImport/map';
 	import { fmtPln, fmtDzien, fmtTermin, inicjaly, odmiana, opisPrzedmiotu, sumyUtratyDochodu } from '$lib/utils';
 	import Modal from '$lib/components/Modal.svelte';
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
@@ -467,7 +470,37 @@
 	$effect(() => {
 		void policyId;
 		maPdfPolisy = false;
+		plikiPolisy = [];
 	});
+
+	// Umowa Generalna polisy: jej elementy stałe (klauzule, sublimity) i dokument OWU dziedziczy każda polisa z umowy.
+	const umowaNadrzedna = $derived(policy?.parent_id ? (appState.policies.find((p) => p.id === policy!.parent_id) ?? null) : null);
+	const elementyStale = $derived(policy?.typ_umowy === 'generalna' ? [] : elementyStaleUG(umowaNadrzedna));
+	let plikiPolisy = $state<PlikPolisy[]>([]);
+	let plikiUmowy = $state<PlikPolisy[]>([]);
+	$effect(() => {
+		const id = umowaNadrzedna?.id ?? null;
+		plikiUmowy = [];
+		if (!id) return;
+		void wczytajPlikiPolis([id]).then((lista) => {
+			if (id === umowaNadrzedna?.id) plikiUmowy = lista;
+		});
+	});
+	// PDF OWU: dokument typu „OWU” na polisie albo na jej Umowie Generalnej — najlepiej z kodem OWU w nazwie pliku.
+	function plikOwu(kod: string | null | undefined): PlikPolisy | null {
+		const owu = [...plikiPolisy, ...plikiUmowy].filter((f) => f.rodzaj === 'owu');
+		if (!owu.length) return null;
+		const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+		const k = kod ? norm(kod) : '';
+		return (k && owu.find((f) => norm(f.nazwa).includes(k))) || (owu.length === 1 ? owu[0] : null);
+	}
+	async function otworzOwu(plik: PlikPolisy) {
+		try {
+			await otworzPlikPolisy(plik.id);
+		} catch (e) {
+			ctxToast(`Nie udało się otworzyć OWU: ${(e as Error).message}`);
+		}
+	}
 
 	// Historia polisy z dziennika audytu.
 	type WpisHistorii = { id: string; action: string; user_name: string | null; user_email: string | null; details: Record<string, unknown> | null; created_at: string };
@@ -837,13 +870,15 @@
 
 			<!-- Dokumenty polisy (PDF w Cloudflare R2) -->
 			<!-- {#key}: przejście na inną polisę (np. certyfikat UG) w trakcie wysyłki nie dopisze pliku do listy złej karty -->
-			{#key policy.id}<DokumentyPolisy polisaId={policy.id} onzmiana={(lista) => (maPdfPolisy = lista.some((f) => f.rodzaj === 'polisa'))} />{/key}
+			{#key policy.id}<DokumentyPolisy polisaId={policy.id} onzmiana={(lista) => { plikiPolisy = lista; maPdfPolisy = lista.some((f) => f.rodzaj === 'polisa'); }} />{/key}
 
-			<!-- Parametry odczytane z pliku polisy (import z PDF) -->
-			{#if policy.dane_importu}
+			<!-- Parametry odczytane z pliku polisy (import z PDF). Na Umowie Generalnej to elementy stałe programu;
+			     polisa z umowy pokazuje je jako odziedziczone, więc sekcja jest też bez własnych danych z importu. -->
+			{#if policy.dane_importu || elementyStale.length}
 				{@const di = policy.dane_importu}
-				{@const ryzyka = di.ryzyka ?? []}
-				{@const dodatkowe = Object.entries(di.dodatkowe ?? {})}
+				{@const ryzyka = di?.ryzyka ?? []}
+				{@const dodatkowe = Object.entries(di?.dodatkowe ?? {})}
+				{@const owuPlik = plikOwu(di?.owu)}
 				<section aria-labelledby="dane-z-polisy" class="bg-white border border-line rounded-xl overflow-hidden">
 					<h2 id="dane-z-polisy">
 						<button
@@ -852,8 +887,8 @@
 							class="w-full flex items-center gap-2 px-4 py-3 text-left hover:bg-bg {importOpen ? 'border-b border-line-soft' : ''}"
 						>
 							<FileText size={16} class="text-ink-3 shrink-0" />
-							<span class="text-[15px] font-semibold text-ink">Dane z polisy</span>
-							{#if di.zrodlo?.produkt}<span class="text-xs text-ink-3 truncate">{di.zrodlo.produkt}</span>{/if}
+							<span class="text-[15px] font-semibold text-ink">{ug ? 'Elementy stałe umowy' : 'Dane z polisy'}</span>
+							{#if di?.zrodlo?.produkt}<span class="text-xs text-ink-3 truncate">{di.zrodlo.produkt}</span>{/if}
 							<ChevronDown size={16} class="ml-auto shrink-0 text-ink-3 transition-transform {importOpen ? 'rotate-180' : ''}" />
 						</button>
 					</h2>
@@ -883,7 +918,24 @@
 									</table>
 								</div>
 							{/if}
-							{#if dodatkowe.length || di.owu || di.konto_do_wplat}
+							{#if elementyStale.length}
+								<div>
+									<p class="text-xs text-ink-3 mb-1.5">
+										Elementy stałe programu — z Umowy Generalnej
+										<a href="/policies/{umowaNadrzedna?.id}" class="font-semibold text-accent-text hover:underline">{umowaNadrzedna?.nr_polisy}</a>
+										(nie są powtarzane na polisie)
+									</p>
+									<ul class="border border-line-soft rounded-lg divide-y divide-line-soft text-[13px]">
+										{#each elementyStale as r}
+											<li class="flex items-center justify-between gap-3 px-3 py-2">
+												<span class="text-ink">{r.przedmiot}</span>
+												{#if r.suma != null}<span class="shrink-0 tabular-nums text-ink-2">{fmtPln(r.suma)} zł</span>{/if}
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{/if}
+							{#if dodatkowe.length || di?.owu || di?.konto_do_wplat}
 								<dl class="grid grid-cols-1 md:grid-cols-2 gap-x-8 text-[13px]">
 									{#each dodatkowe as [klucz, wartosc]}
 										<div class="flex justify-between gap-3 border-b border-line-soft py-1.5">
@@ -891,13 +943,18 @@
 											<dd class="text-ink text-right">{wartosc}</dd>
 										</div>
 									{/each}
-									{#if di.owu}
+									{#if di?.owu}
 										<div class="flex justify-between gap-3 border-b border-line-soft py-1.5">
 											<dt class="text-ink-3 shrink-0">OWU</dt>
-											<dd class="text-ink text-right">{di.owu}</dd>
+											<dd class="text-ink text-right">
+												{di.owu}
+												{#if owuPlik}
+													<button onclick={() => otworzOwu(owuPlik)} title={owuPlik.nazwa} class="ml-1.5 inline-flex items-center gap-1 align-middle text-accent-text font-semibold hover:underline"><Link2 size={12} /> PDF</button>
+												{/if}
+											</dd>
 										</div>
 									{/if}
-									{#if di.konto_do_wplat}
+									{#if di?.konto_do_wplat}
 										<div class="flex justify-between gap-3 border-b border-line-soft py-1.5">
 											<dt class="text-ink-3 shrink-0">Konto do wpłat</dt>
 											<dd class="text-ink text-right font-mono text-xs break-words">{di.konto_do_wplat} <Kopiuj tekst={String(di.konto_do_wplat).replace(/\s+/g, '')} opis="nr konta" /></dd>
@@ -905,9 +962,9 @@
 									{/if}
 								</dl>
 							{/if}
-							{#if di.zrodlo}
+							{#if di?.zrodlo?.plik}
 								<p class="text-xs text-ink-3">
-									Odczytane z pliku{di.zrodlo.plik ? ` ${di.zrodlo.plik}` : ''}{di.zrodlo.ubezpieczyciel ? ` — ${di.zrodlo.ubezpieczyciel}` : ''}{di.zrodlo.data ? `, ${di.zrodlo.data}` : ''}.
+									Odczytane z pliku {di.zrodlo.plik}{di.zrodlo.ubezpieczyciel ? ` — ${di.zrodlo.ubezpieczyciel}` : ''}{di.zrodlo.data ? `, ${di.zrodlo.data}` : ''}.
 								</p>
 							{/if}
 						</div>

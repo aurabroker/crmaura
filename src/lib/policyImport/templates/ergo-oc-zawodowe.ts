@@ -66,19 +66,10 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 		.filter(Boolean) as string[];
 	if (klauzule.length) out.dodatkowe['Klauzule dodatkowe'] = klauzule.join(' | ');
 
+	// Zakres terytorialny, underwriter, liczba ubezpieczonych i numer programu (certyfikat jest
+	// podpięty pod Umowę Generalną) nie wnoszą nic do karty — zostają tylko franszyza i klauzule.
 	const franszyza = collapse(grab(text, /Franszyza redukcyjna:\s*([^\n]+)/i));
 	if (franszyza) out.dodatkowe['Franszyza'] = franszyza;
-
-	const teryt = collapse(grab(text, /Zakres terytorialny:\s*([^.]+)\./i));
-	if (teryt) out.dodatkowe['Zakres terytorialny'] = teryt;
-
-	const underwriter = grab(text, /Underwriter No\.?:\s*(\d+)/i);
-	if (underwriter) out.dodatkowe['Nr underwritera'] = underwriter;
-
-	const liczba = grab(text, /Łączna liczba ubezpieczonych\s*(\d+)/i);
-	if (liczba) out.dodatkowe['Liczba ubezpieczonych'] = liczba;
-
-	if (out.program_ug) out.dodatkowe['Program ubezpieczenia'] = out.program_ug;
 
 	return out;
 }
