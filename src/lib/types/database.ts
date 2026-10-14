@@ -48,6 +48,8 @@ export interface Client {
 	gwarancje?: boolean;
 	/** Identyfikator firmy w BEAUTY (synchronizacja sync-beauty-companies); unikalny w firmie. */
 	beauty_id?: number | string | null;
+	/** Identyfikatory BEAUTY duplikatów scalonych z tym klientem (synchronizacja traktuje je jak ten rekord). */
+	beauty_ids_scalone?: number[] | null;
 	/** Zbiorowe uzupełnianie z GUS: kiedy sprawdzono, wynik i dane z rejestru REGON. */
 	gus_sprawdzono_at?: string | null;
 	gus_wynik?: 'uzupelniono' | 'bez_zmian' | 'nie_znaleziono' | 'zakonczona' | 'zly_nip' | null;

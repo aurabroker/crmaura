@@ -11,8 +11,9 @@
 	import SortTh from '$lib/components/SortTh.svelte';
 	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Download, Database } from 'lucide-svelte';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
-	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
+	import { domyslnyDocelowy, nazwaDoPorownan, nipPoprawny, odswiezPoScaleniu, opisPowiazan, opisWyniku, powiazaniaKlienta, scalKlientow } from '$lib/klienci';
 	import { page } from '$app/stores';
 	import { logAudit } from '$lib/utils/audit';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
@@ -83,37 +84,44 @@
 	let saving = $state(false);
 	let formError = $state('');
 
-	// Duplicate detection
+	// Wykrywanie duplikatów: ten sam NIP, PESEL, REGON (same cyfry), e-mail, telefon albo nazwa (bez ogonków
+	// i znaków). Duplikaty z importu BEAUTY mają zwykle literówkę w NIP, więc sam NIP ich nie łapie — łapie je
+	// e-mail, telefon albo nazwa. Grupy o tym samym zestawie rekordów łączymy (jeden wpis, kilka powodów).
 	let showDuplicates = $state(false);
-	type DupGroup = { reason: string; clients: typeof appState.clients };
+	type DupGroup = { reason: string; powody: string[]; clients: typeof appState.clients };
 	const duplicateGroups = $derived((): DupGroup[] => {
-		const groups: DupGroup[] = [];
-		const nipMap = new Map<string, typeof appState.clients>();
-		const peselMap = new Map<string, typeof appState.clients>();
-		for (const c of appState.clients) {
-			if (c.nip) {
-				const norm = c.nip.replace(/\s/g, '');
-				const arr = nipMap.get(norm) ?? [];
-				arr.push(c);
-				nipMap.set(norm, arr);
+		const kryteria: [string, (c: Client) => string][] = [
+			['NIP', (c) => (cyfry(c.nip).length >= 9 ? cyfry(c.nip) : '')],
+			['PESEL', (c) => cyfry(c.pesel)],
+			['REGON', (c) => (cyfry(c.regon).length >= 9 ? cyfry(c.regon) : '')],
+			['e-mail', (c) => (c.email ?? '').trim().toLowerCase()],
+			['telefon', (c) => (cyfry(c.telefon).length >= 9 ? cyfry(c.telefon).slice(-9) : '')],
+			['nazwa', (c) => nazwaDoPorownan(c.nazwa_skrocona ?? c.nazwa)]
+		];
+		const grupy = new Map<string, DupGroup>();
+		for (const [nazwa, klucz] of kryteria) {
+			const wg = new Map<string, Client[]>();
+			for (const c of appState.clients) {
+				const k = klucz(c);
+				if (!k) continue;
+				wg.set(k, [...(wg.get(k) ?? []), c]);
 			}
-			if (c.pesel) {
-				const arr = peselMap.get(c.pesel) ?? [];
-				arr.push(c);
-				peselMap.set(c.pesel, arr);
+			for (const [k, cs] of wg) {
+				if (cs.length < 2) continue;
+				const ids = cs.map((c) => c.id).sort().join(',');
+				const powod = `${nazwa}: ${nazwa === 'nazwa' ? (cs[0].nazwa_skrocona ?? cs[0].nazwa) : k}`;
+				const g = grupy.get(ids);
+				if (g) g.powody.push(powod);
+				else grupy.set(ids, { reason: ids, powody: [powod], clients: [...cs].sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? '')) });
 			}
 		}
-		for (const [nip, cs] of nipMap) if (cs.length > 1) groups.push({ reason: `Duplikat NIP: ${nip}`, clients: cs });
-		for (const [pesel, cs] of peselMap) if (cs.length > 1) groups.push({ reason: `Duplikat PESEL: ${pesel}`, clients: cs });
-		return groups;
+		return [...grupy.values()];
 	});
 
-	// Klucz grupy = powód + dokładny zestaw ID klientów. Dzięki temu odrzucenie
-	// grupy jako "nie duplikat" chowa ją trwale, ale jeśli do tego samego
-	// NIP/PESEL dołączy NOWY klient, zestaw ID się zmieni i grupa wróci jako nowa.
+	// Klucz grupy = zestaw ID klientów. Odrzucenie grupy jako „nie duplikaty” chowa ją trwale; gdy do zestawu
+	// dołączy NOWY rekord, zestaw się zmieni i grupa wróci jako nowa.
 	function dedupeKey(group: DupGroup): string {
-		const ids = group.clients.map(c => c.id).sort().join(',');
-		return `${group.reason}::${ids}`;
+		return `dup::${group.clients.map(c => c.id).sort().join(',')}`;
 	}
 
 	let dismissedKeys = $state<Set<string>>(new Set());
@@ -138,108 +146,29 @@
 		dismissing = null;
 	}
 
-	// Merge / delete duplicates
-	const KLIENT_ID_TABLES = ['crm_client_contacts', 'crm_policies', 'crm_claims', 'crm_vehicles', 'apk_forms', 'crm_tasks', 'crm_task_history'];
+	// Scalanie duplikatów: wykonuje serwer (POST /api/klienci/scal → funkcja w bazie, jedna transakcja) — przepina
+	// wszystkie powiązania, łączy leady, zapamiętuje identyfikatory BEAUTY i usuwa duplikaty. Pracownik wskazuje
+	// tylko rekord, który zostaje (domyślnie: z polisami, z poprawnym NIP, najstarszy).
 	let mergeTarget = $state<Record<string, string>>({});
 	let mergeError = $state<Record<string, string>>({});
 	let merging = $state<string | null>(null);
-
-	function policyCount(clientId: string) {
-		return appState.policies.filter(p => p.klient_id === clientId && !p.deleted_at).length;
-	}
-	function apkCount(clientId: string) {
-		return appState.apkForms.filter(f => f.klient_id === clientId && f.status === 'submitted').length;
-	}
-	function mustKeep(clientId: string) {
-		return policyCount(clientId) > 0 || apkCount(clientId) > 0;
-	}
+	const docelowyGrupy = (group: DupGroup) => mergeTarget[group.reason] ?? domyslnyDocelowy(group.clients).id;
 
 	async function mergeGroup(group: DupGroup) {
-		const targetId = mergeTarget[group.reason];
-		if (!targetId) { mergeError[group.reason] = 'Wybierz rekord, który ma zostać zachowany.'; return; }
-		const others = group.clients.filter(c => c.id !== targetId);
-		const blocked = others.find(c => mustKeep(c.id));
-		if (blocked) {
-			mergeError[group.reason] = `Rekord "${blocked.nazwa_skrocona ?? blocked.nazwa}" ma przypisaną polisę lub złożone APK i musi zostać zachowany w bazie — wybierz go jako rekord docelowy.`;
-			return;
-		}
+		const targetId = docelowyGrupy(group);
+		const otherIds = group.clients.filter(c => c.id !== targetId).map(c => c.id);
+		if (!targetId || !otherIds.length) { mergeError[group.reason] = 'Wybierz rekord, który ma zostać zachowany.'; return; }
 		merging = group.reason;
 		mergeError[group.reason] = '';
-		const otherIds = others.map(c => c.id);
-
-		// Wnioski o odnowienie i historia e-maili należą do klienta (usunięcie kasuje je razem z nim),
-		// a pracownik nie może ich przepiąć — rekord z nimi musi zostać jako docelowy.
-		const [{ count: nWnioskow }, { count: nEmaili }] = await Promise.all([
-			sb.from('crm_renewals').select('id', { count: 'exact', head: true }).in('klient_id', otherIds),
-			sb.from('crm_client_emails').select('id', { count: 'exact', head: true }).in('klient_id', otherIds)
-		]);
-		if ((nWnioskow ?? 0) > 0 || (nEmaili ?? 0) > 0) {
-			mergeError[group.reason] = 'Usuwany rekord ma wnioski o odnowienie albo historię e-maili — wybierz go jako rekord docelowy.';
+		const w = await scalKlientow(targetId, otherIds);
+		if (!w.ok) {
+			mergeError[group.reason] = w.message;
 			merging = null;
 			return;
 		}
-
-		// Identyfikator firmy z BEAUTY przechodzi na zachowany rekord, gdy ten go nie ma — inaczej
-		// synchronizacja nie znajdzie odpowiednika usuniętego duplikatu. Stan z bazy, bo lista mogła
-		// się zestarzeć (synchronizacja działa w tle).
-		const { data: bidRows } = await sb.from('crm_clients').select('id, beauty_id').in('id', [targetId, ...otherIds]);
-		const bidZ = (id: string) => {
-			const row = (bidRows as { id: string; beauty_id: number | string | null }[] | null)?.find(r => r.id === id);
-			return row ? row.beauty_id : group.clients.find(c => c.id === id)?.beauty_id ?? null;
-		};
-		const beautyId = bidZ(targetId) == null
-			? otherIds.map(bidZ).find(b => b != null) ?? null
-			: null;
-
-		for (const table of KLIENT_ID_TABLES) {
-			await sb.from(table).update({ klient_id: targetId }).in('klient_id', otherIds);
-		}
-		// crm_policies.ubezpieczony_id (drugi ubezpieczony) też wskazuje na klienta —
-		// jeśli go nie przepniemy, usunięcie duplikatu poniżej padnie na FK i wróci przy odświeżeniu.
-		await sb.from('crm_policies').update({ ubezpieczony_id: targetId }).in('ubezpieczony_id', otherIds);
-		const { error: delError } = await sb.from('crm_clients').delete().in('id', otherIds);
-		if (delError) {
-			mergeError[group.reason] = `Nie udało się usunąć duplikatów: ${delError.message}`;
-			merging = null;
-			return;
-		}
-		// Dopiero po usunięciu duplikatów: (beauty_id, tenant_id) jest unikalne.
-		let beautyPrzeniesiony = false;
-		if (beautyId != null) {
-			const { error: bidError } = await sb.from('crm_clients').update({ beauty_id: beautyId } as never).eq('id', targetId);
-			if (bidError) {
-				// Grupa po scaleniu znika z listy, więc komunikat przy niej nie byłby widoczny.
-				alert(`Duplikaty scalone, ale nie udało się przenieść identyfikatora BEAUTY (${beautyId}): ${bidError.message}\nSynchronizacja może odtworzyć usunięty rekord — zgłoś to administratorowi.`);
-			} else beautyPrzeniesiony = true;
-		}
-		await logAudit('clients_merged', 'client', targetId, group.reason, {
-			merged_ids: otherIds,
-			...(beautyId != null ? (beautyPrzeniesiony ? { beauty_id: beautyId } : { beauty_id_blad: beautyId }) : {})
-		});
-
-		const [rC, rP, rCl, rV, rA, rT, rCc] = await Promise.all([
-			wczytajKlientow(),
-			wczytajPolisy(),
-			wczytajSzkody(),
-			wczytajPojazdy(),
-			wczytajFormularzeApk(),
-			wczytajZadania(),
-			wczytajKontakty()
-		]);
-		// Lista z bazy ma już beauty_id zachowanego rekordu; gdy odczyt zawiedzie, poprawiamy ją lokalnie.
-		appState.clients = !rC.error && rC.data
-			? rC.data as typeof appState.clients
-			: appState.clients
-				.filter(c => !otherIds.includes(c.id))
-				.map(c => (beautyPrzeniesiony && c.id === targetId ? { ...c, beauty_id: beautyId } : c));
-		if (!rP.error && rP.data) appState.policies = rP.data as typeof appState.policies;
-		appState.claims = (rCl.data ?? []) as typeof appState.claims;
-		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
-		appState.apkForms = (rA.data ?? []) as typeof appState.apkForms;
-		appState.tasks = (rT.data ?? []) as typeof appState.tasks;
-		appState.clientContacts = (rCc.data ?? []) as typeof appState.clientContacts;
-
+		await odswiezPoScaleniu();
 		merging = null;
+		ctxToast(`Scalono duplikaty. ${opisWyniku(w.data)}`);
 	}
 
 	// ── Portfel klienta: aktywne polisy (ubezpieczający), składka, najbliższe odnowienie ──
@@ -817,41 +746,41 @@
 		<button onclick={() => showDuplicates = false} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>
 	{/snippet}
 	{#if visibleDuplicateGroups.length === 0}
-		<div class="text-center py-6 text-emerald-600 font-medium">✓ Brak nowych duplikatów (NIP / PESEL)</div>
+		<div class="text-center py-6 text-emerald-600 font-medium">✓ Brak nowych duplikatów (NIP, PESEL, REGON, e-mail, telefon, nazwa)</div>
 	{:else}
-		<div class="space-y-4">
-			{#each visibleDuplicateGroups as group}
+		<p class="text-xs text-slate-500 mb-3">
+			Wskaż rekord, który zostaje. Wszystko, co mają pozostałe (polisy, wnioski o odnowienie, e-maile, zgłoszenia, zgody, zadania, szkody, pojazdy, kontakty, APK, lead), przejdzie na niego, puste pola uzupełnią się z usuwanych, a one znikną. Podpowiadamy rekord z polisami i poprawnym NIP.
+		</p>
+		<div class="space-y-4" data-testid="duplikaty">
+			{#each visibleDuplicateGroups as group (group.reason)}
+			{@const docelowy = docelowyGrupy(group)}
 			<div class="border border-amber-200 rounded-lg overflow-hidden">
-				<div class="bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center justify-between">
-					<span>{group.reason}</span>
+				<div class="bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-700 flex flex-wrap items-center justify-between gap-2">
+					<span class="uppercase tracking-wide">{group.powody.join(' · ')}</span>
 					<button onclick={() => dismissGroup(group)} disabled={dismissing === dedupeKey(group)}
-						class="text-xs font-medium text-amber-700 border border-amber-300 rounded px-2 py-0.5 hover:bg-amber-100 disabled:opacity-60 normal-case">
+						class="text-xs font-medium text-amber-700 border border-amber-300 rounded px-2 py-0.5 hover:bg-amber-100 disabled:opacity-60">
 						{dismissing === dedupeKey(group) ? 'Zapisywanie...' : 'To nie są duplikaty'}
 					</button>
 				</div>
 				<div class="divide-y divide-line-soft">
-					{#each group.clients as c}
-					{@const pCount = policyCount(c.id)}
-					{@const aCount = apkCount(c.id)}
-					<div class="flex items-center justify-between px-4 py-2.5 hover:bg-slate-50">
-						<label class="flex items-center gap-2 cursor-pointer">
+					{#each group.clients as c (c.id)}
+					{@const p = powiazaniaKlienta(c.id)}
+					<div class="flex items-start justify-between gap-3 px-4 py-2.5 hover:bg-slate-50 {docelowy === c.id ? 'bg-emerald-50/40' : ''}">
+						<label class="flex items-start gap-2 cursor-pointer min-w-0">
 							<input type="radio" name="merge-{group.reason}" value={c.id}
-								checked={mergeTarget[group.reason] === c.id}
+								checked={docelowy === c.id}
 								onchange={() => { mergeTarget[group.reason] = c.id; mergeError[group.reason] = ''; }}
-								class="accent-blue-600" />
-							<div>
-								<div class="text-sm font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa}</div>
-								{#if c.nazwa_skrocona}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
-								{#if pCount > 0 || aCount > 0}
-									<div class="text-xs text-emerald-600 mt-0.5">
-										{#if pCount > 0}{pCount} polis{pCount === 1 ? 'a' : ''}{/if}
-										{#if pCount > 0 && aCount > 0} · {/if}
-										{#if aCount > 0}{aCount} APK złożone{/if}
-									</div>
-								{/if}
+								class="mt-1 accent-blue-600" />
+							<div class="min-w-0">
+								<div class="text-sm font-medium text-slate-900">{c.nazwa_skrocona ?? c.nazwa} {#if docelowy === c.id}<span class="ml-1 text-[11px] font-semibold text-emerald-700 uppercase">zostaje</span>{/if}</div>
+								{#if c.nazwa_skrocona && c.nazwa_skrocona !== c.nazwa}<div class="text-xs text-slate-400">{c.nazwa}</div>{/if}
+								<div class="text-xs text-slate-500">
+									{c.nip ? `NIP ${c.nip}` : 'bez NIP'}{#if c.nip && !nipPoprawny(c.nip)}<span class="text-warn font-semibold"> (niepełny)</span>{/if}{c.email ? ` · ${c.email}` : ''}{c.telefon ? ` · ${c.telefon}` : ''}{c.created_at ? ` · od ${fmtDzien(c.created_at, true)}` : ''}
+								</div>
+								<div class="text-xs {p.polisy ? 'text-emerald-700' : 'text-slate-400'}">{opisPowiazan(p)}{c.auth_user_id ? ' · logowanie do panelu' : ''}{c.beauty_id != null ? ` · BEAUTY ${c.beauty_id}` : ''}</div>
 							</div>
 						</label>
-						<a href="/clients/{c.id}" onclick={() => showDuplicates = false} class="text-xs text-blue-600 hover:underline">Otwórz →</a>
+						<a href="/clients/{c.id}" onclick={() => showDuplicates = false} class="shrink-0 text-xs text-blue-600 hover:underline">Otwórz →</a>
 					</div>
 					{/each}
 				</div>
@@ -859,11 +788,15 @@
 					{#if mergeError[group.reason]}
 						<div class="mb-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{mergeError[group.reason]}</div>
 					{/if}
-					<button onclick={() => mergeGroup(group)} disabled={merging === group.reason}
-						class="text-xs bg-accent text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
-						{merging === group.reason ? 'Scalanie...' : 'Scal i usuń pozostałe'}
-					</button>
-					<span class="text-xs text-slate-400 ml-2">Wybierz rekord do zachowania, pozostałe zostaną scalone i usunięte.</span>
+					{#if isAdmin(appState.profile)}
+						<button onclick={() => mergeGroup(group)} disabled={merging === group.reason}
+							class="text-xs bg-danger text-white px-3 py-1.5 rounded-lg font-semibold hover:opacity-90 disabled:opacity-60">
+							{merging === group.reason ? 'Scalanie...' : `Scal i usuń ${group.clients.length - 1 === 1 ? 'drugi rekord' : 'pozostałe rekordy'}`}
+						</button>
+						<span class="text-xs text-slate-400 ml-2">Operacji nie da się cofnąć z aplikacji (pełna migawka usuniętych rekordów zostaje w dzienniku).</span>
+					{:else}
+						<span class="text-xs text-slate-400">Scalanie wykonuje administrator firmy.</span>
+					{/if}
 				</div>
 			</div>
 			{/each}

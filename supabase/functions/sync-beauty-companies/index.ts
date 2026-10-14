@@ -14,6 +14,8 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 // - Leady (od 2026-10-12): zainteresowania z formularza (ubezpieczenie, zainteresowania), przychód i data
 //   zgłoszenia trafiają do leada klienta (public.crm_beauty_leady); firma bez polisy i bez leada dostaje lead.
 // - Maile kampanii (email_messages) trafiają do crm_kampanie_maile ze statusem dostarczenia, otwarcia i kliknięcia.
+// - Scalone duplikaty (od 2026-10-14): identyfikatory BEAUTY usuniętych duplikatów (crm_clients.beauty_ids_scalone)
+//   wskazują na zachowany rekord — firma z takim id uzupełnia ten rekord, a nie wraca jako nowy klient.
 // - Treść { "proba": true } liczy, co by się zmieniło, bez zapisu.
 // Wcześniejsza wersja robiła upsert całych rekordów po beauty_id: odtwarzała usunięte duplikaty
 // i co rano przywracała dane z BEAUTY (w tym RODO = NIE).
@@ -31,7 +33,7 @@ const PAGE_SIZE = 1000;
 type Firma = { id: number | string; company: string | null; city: string | null; state: string | null; nip: string | null; regon: string | null; rodo: string | null; email: string | null; phone: string | null; contact: string | null; title: string | null; ubezpieczenie: string | null; zainteresowania: string | null; przychod: string | null; created_at: string | null };
 type Mail = { id: string; company_id: number | null; category_id: string | null; to_email: string | null; status: string | null; sent_at: string | null; delivered_at: string | null; opened_at: string | null; clicked_at: string | null; bounced_at: string | null; created_at: string | null };
 type Kategoria = { id: string; code: string | null; name: string | null; subject: string | null };
-type Klient = { id: string; beauty_id: number | string | null; nazwa: string | null; ulica: string | null; nip: string | null; regon: string | null; email: string | null; telefon: string | null; rodo_zgoda: boolean | null; created_at: string };
+type Klient = { id: string; beauty_id: number | string | null; beauty_ids_scalone?: (number | string)[] | null; nazwa: string | null; ulica: string | null; nip: string | null; regon: string | null; email: string | null; telefon: string | null; rodo_zgoda: boolean | null; created_at: string };
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
@@ -106,7 +108,7 @@ Deno.serve(async (req: Request) => {
       'BEAUTY',
     );
     const klienci = await wszystkie<Klient>(
-      (o) => aura(`crm_clients?select=id,beauty_id,nazwa,ulica,nip,regon,email,telefon,rodo_zgoda,created_at&tenant_id=eq.${AURA_EXPERT_TENANT_ID}&order=id.asc&limit=${PAGE_SIZE}&offset=${o}`),
+      (o) => aura(`crm_clients?select=id,beauty_id,beauty_ids_scalone,nazwa,ulica,nip,regon,email,telefon,rodo_zgoda,created_at&tenant_id=eq.${AURA_EXPERT_TENANT_ID}&order=id.asc&limit=${PAGE_SIZE}&offset=${o}`),
       'CRM klienci',
     );
     const polisy = await wszystkie<{ klient_id: string | null; ubezpieczony_id: string | null }>(
@@ -122,6 +124,8 @@ Deno.serve(async (req: Request) => {
     const poEmailu = new Map<string, Klient[]>();
     const dodajDoMap = (k: Klient) => {
       if (k.beauty_id != null) poBeauty.set(String(k.beauty_id), k);
+      // Duplikaty scalone w CRM: ich firmy z BEAUTY to nadal ten klient (nie zakładamy ich od nowa).
+      for (const b of k.beauty_ids_scalone ?? []) if (!poBeauty.has(String(b))) poBeauty.set(String(b), k);
       const nip = nipCyfry(k.nip);
       if (nip.length === 10) poNip.set(nip, [...(poNip.get(nip) ?? []), k]);
       const em = emailNorm(k.email);
