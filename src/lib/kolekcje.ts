@@ -50,5 +50,14 @@ export const wczytajFormularzeApk = (tenantId?: string) =>
 		return (tenantId ? q.eq('tenant_id', tenantId) : q).order('created_at', { ascending: false }).order('id', { ascending: false }).range(od, d);
 	});
 
+// Wnioski o odnowienie (program OC beauty) — skrót do pulpitu i zakładki APK; odpowiedzi klienta
+// doczytują karta polisy i karta klienta. Przed migracją odnowień zapytanie zwraca błąd → data null.
+export const WNIOSKI_ODNOWIEN_KOLUMNY =
+	'id, tenant_id, polisa_id, klient_id, status, decyzja, email, nr_polisy, klient_nazwa, okres_do, apk_at, apk_odmowa, pdf_path, wyslano_at, otwarto_at, zlozono_at, przypomniano_at, wazny_do, created_at';
+export const wczytajWnioskiOdnowien = () =>
+	wszystkieWiersze((od, d, l) =>
+		sb.from('crm_renewals').select(WNIOSKI_ODNOWIEN_KOLUMNY, licz(l)).order('created_at', { ascending: false }).order('id', { ascending: false }).range(od, d)
+	);
+
 export const wczytajZadania = () =>
 	wszystkieWiersze((od, d, l) => sb.from('crm_tasks').select(TASK_SELECT, licz(l)).order('termin', { ascending: true, nullsFirst: false }).order('id').range(od, d));

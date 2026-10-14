@@ -223,6 +223,17 @@ export interface RenewalRow {
 	updated_at: string;
 }
 
+/**
+ * Skrót wniosku o odnowienie do list w CRM (pulpit, zakładka APK): bez odpowiedzi klienta (apk, wniosek,
+ * ankieta, załączniki), które są potrzebne tylko na karcie polisy i karcie klienta.
+ */
+export type WniosekOdnowienia = Pick<
+	RenewalRow,
+	| 'id' | 'tenant_id' | 'polisa_id' | 'klient_id' | 'status' | 'decyzja' | 'email' | 'nr_polisy' | 'klient_nazwa'
+	| 'okres_do' | 'apk_at' | 'apk_odmowa' | 'pdf_path' | 'wyslano_at' | 'otwarto_at' | 'zlozono_at' | 'przypomniano_at'
+	| 'wazny_do' | 'created_at'
+>;
+
 /** Wpis dziennika wniosku (crm_renewal_events): otwarcie, APK, decyzja — z IP i przeglądarką. */
 export interface RenewalEvent {
 	id: number;

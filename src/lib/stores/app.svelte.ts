@@ -1,4 +1,4 @@
-import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, InsurerBranch, InsurerContact, PolicyBroker, ApkForm, CrmAlert, CrmTask, Leasing, Prospect, VehicleRequest } from '$lib/types/database';
+import type { Profile, Client, ClientContact, Policy, PolicyAnnex, PolicyPayment, Claim, Vehicle, ApkLog, Insurer, InsurerBranch, InsurerContact, PolicyBroker, ApkForm, CrmAlert, CrmTask, Leasing, Prospect, VehicleRequest, WniosekOdnowienia } from '$lib/types/database';
 
 export const appState = $state({
 	profile: null as Profile | null,
@@ -25,6 +25,8 @@ export const appState = $state({
 	tasks: [] as CrmTask[],
 	loading: false,
 	apkForms: [] as ApkForm[],
+	// Wnioski o odnowienie z APK (program OC beauty, crm_renewals) — pulpit i zakładka APK.
+	wnioskiOdnowien: [] as WniosekOdnowienia[],
 	leasings: [] as Leasing[],
 	// Wnioski o dodanie pojazdu czekające na decyzję administratora.
 	vehicleRequests: [] as VehicleRequest[],

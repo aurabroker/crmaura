@@ -10,6 +10,7 @@
 		wczytajPojazdy,
 		wczytajPolisy,
 		wczytajSzkody,
+		wczytajWnioskiOdnowien,
 		wczytajZadania
 	} from '$lib/kolekcje';
 	import { goto } from '$app/navigation';
@@ -62,7 +63,7 @@
 		initialized = true;
 
 		// Kolekcje, które mogą mieć ponad 1000 wierszy (limit jednego zapytania), idą stronami ($lib/kolekcje).
-		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL, rVR, rTasks, rLeasings] = await Promise.all([
+		const [rC, rP, rAnn, rPay, rCl, rV, rA, rI, rPr, rPB, rCC, rAPK, rIB, rIC, rAL, rVR, rTasks, rLeasings, rWn] = await Promise.all([
 			wczytajKlientow(),
 			wczytajPolisy(),
 			wczytajAneksy(),
@@ -80,7 +81,8 @@
 			sb.from('crm_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),
 			sb.from('crm_vehicle_requests').select('*').eq('status', 'oczekuje').order('created_at', { ascending: false }),
 			wczytajZadania(),
-			sb.from('crm_leasings').select('*').order('nazwa')
+			sb.from('crm_leasings').select('*').order('nazwa'),
+			wczytajWnioskiOdnowien()
 		]);
 
 		appState.clients = (rC.data ?? []) as typeof appState.clients;
@@ -101,6 +103,7 @@
 		appState.vehicleRequests = (rVR.data ?? []) as typeof appState.vehicleRequests;
 		appState.tasks = (rTasks.data ?? []) as typeof appState.tasks;
 		appState.leasings = (rLeasings.data ?? []) as typeof appState.leasings;
+		appState.wnioskiOdnowien = (rWn.data ?? []) as typeof appState.wnioskiOdnowien;
 		if (!loginLogged) {
 			loginLogged = true;
 			logAudit('login', 'user', user.id, profile.imie_nazwisko ?? user.email);

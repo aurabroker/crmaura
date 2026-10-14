@@ -1,12 +1,18 @@
 <script lang="ts">
+	// APK w dwóch widokach: wnioski o odnowienie (program OC beauty — klient wypełnia APK i wniosek przez
+	// link z e-maila, tabela crm_renewals) oraz formularze APK z linkiem /form (tabela apk_forms).
 	import { wczytajFormularzeApk, wczytajKlientow } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
+	import { page } from '$app/stores';
 	import { appState } from '$lib/stores/app.svelte';
-	import type { ApkForm } from '$lib/types/database';
+	import type { ApkForm, WniosekOdnowienia } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
-	import { todayStr } from '$lib/utils';
-	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User } from 'lucide-svelte';
+	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
+	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, etapWniosku, otworzPdfApk, podsumujWnioski, wniosekTestowy, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
+	import { dateDiffDays, fmtDzien, fmtTermin, odmiana, todayStr } from '$lib/utils';
+	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User, Eye, FileText, X } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import { apkTokenLink, apkOpenLink, newApkToken } from '$lib/utils/apkLink';
 	import { openStoredFile, copyStoredFileLink } from '$lib/utils/storageLink';
@@ -14,6 +20,74 @@
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 
+	// ---------- Widok: wnioski o odnowienie / formularze APK ----------
+	type Widok = 'wnioski' | 'formularze';
+	const dzis = todayStr();
+	const zAdresu = $page.url.searchParams.get('widok');
+	let wybrany = $state<Widok | null>(zAdresu === 'wnioski' || zAdresu === 'formularze' ? zAdresu : null);
+	const wnioskiPrawdziwe = $derived(appState.wnioskiOdnowien.filter((w) => !wniosekTestowy(w)));
+	// Bez parametru w adresie: wnioski, gdy firma ma choć jeden prawdziwy; inaczej formularze (jak dotąd).
+	const widok = $derived<Widok>(wybrany ?? (wnioskiPrawdziwe.length ? 'wnioski' : 'formularze'));
+
+	// ---------- Wnioski o odnowienie (crm_renewals) ----------
+	const klientWg = $derived(new Map(appState.clients.map((c) => [c.id, c])));
+	const nazwaKlienta = (w: WniosekOdnowienia) => {
+		const c = klientWg.get(w.klient_id);
+		return c?.nazwa_skrocona ?? c?.nazwa ?? w.klient_nazwa ?? '—';
+	};
+	const odnowione = $derived(new Set(appState.policies.filter((p) => p.renewal_of && !p.deleted_at).map((p) => p.renewal_of as string)));
+	const liczby = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowione, dzis));
+
+	// Filtr etapu: testowe wnioski tylko pod „Nieaktywne” (klient ich nie dostał).
+	type FiltrWn = 'wszystkie' | EtapWniosku;
+	const FILTRY_WN: [FiltrWn, string][] = [['wszystkie', 'Wszystkie'], ['czeka', 'Czeka na klienta'], ['apk', 'APK wypełniona'], ['zlozony', 'Złożone'], ['nieaktywny', 'Nieaktywne']];
+	let filtrWn = $state<FiltrWn>('wszystkie');
+	let szukajWn = $state('');
+	const etap = (w: WniosekOdnowienia): EtapWniosku => (wniosekTestowy(w) ? 'nieaktywny' : etapWniosku(w));
+	const pasujeSzukaj = (w: WniosekOdnowienia) => {
+		const q = szukajWn.trim().toLowerCase();
+		return !q || nazwaKlienta(w).toLowerCase().includes(q) || (w.klient_nazwa ?? '').toLowerCase().includes(q) || (w.nr_polisy ?? '').toLowerCase().includes(q);
+	};
+	const wEtapie = (w: WniosekOdnowienia, f: FiltrWn) => (f === 'wszystkie' ? !wniosekTestowy(w) : etap(w) === f);
+	const wnioskiPoSzukaniu = $derived(appState.wnioskiOdnowien.filter(pasujeSzukaj));
+	const liczFiltr = $derived(Object.fromEntries(FILTRY_WN.map(([f]) => [f, wnioskiPoSzukaniu.filter((w) => wEtapie(w, f)).length])) as Record<FiltrWn, number>);
+	const wnioskiWidoczne = $derived(wnioskiPoSzukaniu.filter((w) => wEtapie(w, filtrWn)));
+
+	let bladWn = $state('');
+	async function pdfApkWniosku(w: WniosekOdnowienia) {
+		bladWn = await otworzPdfApk(w.id);
+	}
+	async function pdfWniosku(w: WniosekOdnowienia) {
+		bladWn = '';
+		try {
+			await openStoredFile(BUCKET_ODNOWIEN, w.pdf_path);
+		} catch (e) {
+			bladWn = 'Nie udało się otworzyć PDF wniosku: ' + ((e as { message?: string })?.message ?? String(e));
+		}
+	}
+	const maPdfApk = (w: WniosekOdnowienia) => !!w.apk_at && !w.apk_odmowa;
+	// Ważność linku: tylko dla aktywnych, jeszcze niezłożonych wniosków.
+	const waznosc = (w: WniosekOdnowienia) => {
+		const e = etap(w);
+		if (e !== 'czeka' && e !== 'apk') return null;
+		const d = w.wazny_do.slice(0, 10);
+		const n = dateDiffDays(dzis, d);
+		return { tekst: n < 0 ? 'wygasa' : `ważny ${fmtTermin(d, dzis)}`, pilne: n <= 7 };
+	};
+
+	function wniosekMenu(w: WniosekOdnowienia): CtxItem[] {
+		return [
+			{ label: 'Karta polisy (wniosek, dziennik, pliki)', icon: Eye, onSelect: () => goto(`/policies/${w.polisa_id}`) },
+			{ label: 'Karta klienta', icon: User, onSelect: () => goto(`/clients/${w.klient_id}`) },
+			{ separator: true },
+			{ label: 'Otwórz PDF APK', icon: FileText, disabled: !maPdfApk(w), onSelect: () => pdfApkWniosku(w) },
+			{ label: 'Otwórz PDF wniosku', icon: Download, disabled: !w.pdf_path, onSelect: () => pdfWniosku(w) },
+			{ separator: true },
+			{ label: 'Kopiuj nr certyfikatu', icon: Copy, disabled: !w.nr_polisy, onSelect: () => ctxCopy(w.nr_polisy ?? '', 'nr certyfikatu') }
+		];
+	}
+
+	// ---------- Formularze APK (apk_forms) ----------
 	let pdfSaving = $state<string | null>(null); // form.id currently saving
 	let pdfError = $state('');
 
@@ -220,122 +294,287 @@
 
 <svelte:head><title>APK — AuraCRM</title></svelte:head>
 
-<div class="flex items-center justify-between mb-6">
+<div class="flex flex-wrap items-end justify-between gap-3 mb-5">
 	<div>
 		<h1 class="text-2xl font-semibold text-slate-900">Analiza Potrzeb Klienta (APK)</h1>
-		<p class="text-sm text-slate-500 mt-1">Formularze APK zgodne z KNF art. 8 UDU</p>
+		<p class="text-sm text-slate-500 mt-1">
+			{widok === 'wnioski'
+				? 'Wnioski o odnowienie certyfikatów programu OC beauty — klient wypełnia APK i wniosek przez link z e-maila'
+				: 'Formularze APK zgodne z KNF art. 8 UDU'}
+		</p>
 	</div>
-	<button onclick={() => showNew = true}
-		class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover">
-		<Plus size={15} /> Nowy APK
-	</button>
+	{#if widok === 'formularze'}
+		<button onclick={() => showNew = true}
+			class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover">
+			<Plus size={15} /> Nowy APK
+		</button>
+	{/if}
 </div>
 
-<!-- Filtry -->
-<div class="flex gap-3 mb-5 flex-wrap">
-	<div class="flex items-center gap-2 bg-white border border-line rounded-xl px-4 py-2">
-		<Search size={15} class="text-slate-400" />
-		<input bind:value={search} placeholder="Szukaj klienta / ref..." class="text-sm outline-none placeholder:text-slate-400 w-44" />
-	</div>
-	{#each [['all','Wszystkie'],['draft','Szkice'],['submitted','Złożone']] as [val, label]}
-		<button onclick={() => filterStatus = val}
-			class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors
-				{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
-			{label}
+<!-- Widoki -->
+<div role="tablist" aria-label="Widoki APK" class="flex gap-x-5 border-b border-line mb-4 overflow-x-auto">
+	{#each [['wnioski', 'Wnioski o odnowienie', wnioskiPrawdziwe.length], ['formularze', 'Formularze APK', appState.apkForms.length]] as [id, label, n] (id)}
+		<button
+			role="tab"
+			aria-selected={widok === id}
+			onclick={() => (wybrany = id as Widok)}
+			class="h-10 -mb-px shrink-0 border-b-2 whitespace-nowrap text-sm transition-colors
+				{widok === id ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-2 font-medium hover:text-ink'}"
+		>
+			{label} <span class="font-normal text-ink-3 tabular-nums">{n}</span>
 		</button>
 	{/each}
 </div>
 
-<!-- Stats -->
-<div class="grid grid-cols-3 gap-4 mb-6">
-	<div class="bg-white border border-line rounded-xl p-4 shadow-sm">
-		<p class="text-xs font-medium text-slate-500 mb-1">Wszystkich APK</p>
-		<p class="text-2xl font-bold text-slate-900">{appState.apkForms.length}</p>
-	</div>
-	<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 shadow-sm">
-		<p class="text-xs font-medium text-emerald-600 mb-1">Złożone</p>
-		<p class="text-2xl font-bold text-emerald-700">{appState.apkForms.filter(f => f.status === 'submitted').length}</p>
-	</div>
-	<div class="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
-		<p class="text-xs font-medium text-amber-600 mb-1">Szkice (oczekujące)</p>
-		<p class="text-2xl font-bold text-amber-700">{appState.apkForms.filter(f => f.status === 'draft').length}</p>
-	</div>
-</div>
+{#if widok === 'wnioski'}
+	<!-- Podsumowanie bieżącego cyklu -->
+	<section aria-label="Podsumowanie wniosków" class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-2">
+		<button onclick={() => (filtrWn = 'czeka')} class="text-left bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm hover:border-amber-300">
+			<p class="text-xs font-medium text-amber-600 mb-1">Czeka na klienta</p>
+			<p class="text-2xl font-bold text-amber-700 tabular-nums">{liczby.czeka}</p>
+			<p class="text-xs text-amber-600/80 mt-0.5">link wysłany, APK jeszcze nie ma</p>
+		</button>
+		<button onclick={() => (filtrWn = 'apk')} class="text-left bg-emerald-50 border border-emerald-200 rounded-xl p-4 shadow-sm hover:border-emerald-300">
+			<p class="text-xs font-medium text-emerald-600 mb-1">APK wypełniona</p>
+			<p class="text-2xl font-bold text-emerald-700 tabular-nums">{liczby.apk}</p>
+			<p class="text-xs text-emerald-600/80 mt-0.5">{liczby.odmowy ? `${odmiana(liczby.odmowy, 'świadoma odmowa', 'świadome odmowy', 'świadomych odmów')} APK` : 'bez odmów wypełnienia'}</p>
+		</button>
+		<button onclick={() => (filtrWn = 'zlozony')} class="text-left bg-white border border-line rounded-xl p-4 shadow-sm hover:border-slate-300">
+			<p class="text-xs font-medium text-slate-500 mb-1">Wnioski złożone</p>
+			<p class="text-2xl font-bold text-slate-900 tabular-nums">{liczby.zlozone}</p>
+			<p class="text-xs mt-0.5 {liczby.doWystawienia ? 'text-warn font-semibold' : 'text-slate-400'}">{liczby.doWystawienia ? `${liczby.doWystawienia} do wystawienia nowej polisy` : 'wszystkie załatwione'}</p>
+		</button>
+		<button onclick={() => (filtrWn = 'nieaktywny')} class="text-left bg-white border border-line rounded-xl p-4 shadow-sm hover:border-slate-300">
+			<p class="text-xs font-medium text-slate-500 mb-1">Nieaktywne</p>
+			<p class="text-2xl font-bold text-slate-900 tabular-nums">{appState.wnioskiOdnowien.filter((w) => etap(w) === 'nieaktywny').length}</p>
+			<p class="text-xs text-slate-400 mt-0.5">link wygasł, wniosek anulowany, testowy</p>
+		</button>
+	</section>
+	<p class="text-xs text-slate-400 mb-5">Pierwsze trzy liczby to bieżący cykl: certyfikaty, które kończą się dopiero albo skończyły się najwyżej {CYKL_DNI_WSTECZ} dni temu, bez wniosków testowych. Nowy wniosek wysyłasz z karty polisy (certyfikat programu) albo robi to automat 45 dni przed końcem ochrony.</p>
 
-{#if pdfError}
-	<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{pdfError}</div>
-{/if}
-
-<!-- Lista -->
-{#if filtered.length === 0}
-	<div class="bg-white border border-line rounded-xl p-10 text-center text-slate-400">
-		<ClipboardList size={32} class="mx-auto mb-2 opacity-30" />
-		Brak formularzy APK
+	<!-- Filtry -->
+	<div class="flex flex-wrap items-center gap-2 mb-3">
+		<label class="w-full sm:w-auto sm:flex-[1_1_260px] sm:max-w-[420px] h-9 flex items-center gap-2 px-2.5 border border-line rounded-lg bg-white focus-within:border-accent">
+			<Search size={16} class="text-ink-3 shrink-0" />
+			<span class="sr-only">Szukaj wniosku</span>
+			<input bind:value={szukajWn} placeholder="Klient, nr certyfikatu…" class="flex-1 min-w-0 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3" />
+			{#if szukajWn}
+				<button onclick={() => (szukajWn = '')} aria-label="Wyczyść wyszukiwanie" class="w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={14} /></button>
+			{/if}
+		</label>
+		<div role="group" aria-label="Etap wniosku" class="flex flex-wrap gap-1.5">
+			{#each FILTRY_WN as [id, label] (id)}
+				<button
+					aria-pressed={filtrWn === id}
+					onclick={() => (filtrWn = id)}
+					class="h-9 px-3 rounded-xl text-[13px] font-medium border transition-colors
+						{filtrWn === id ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}"
+				>{label} <span class="tabular-nums">{liczFiltr[id]}</span></button>
+			{/each}
+		</div>
 	</div>
-{:else}
-	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
-		<table class="w-full text-sm text-left">
-			<thead class="bg-slate-50 border-b border-line">
-				<tr>
-					<th class="px-5 py-3 font-semibold text-slate-600">Ref</th>
-					<th class="px-5 py-3 font-semibold text-slate-600">Klient</th>
-					<th class="px-5 py-3 font-semibold text-slate-600">Doradca</th>
-					<th class="px-5 py-3 font-semibold text-slate-600">Data</th>
-					<th class="px-5 py-3 font-semibold text-slate-600">Status</th>
-					<th class="px-5 py-3 font-semibold text-slate-600" title="Czy klient otworzył link">Odczyt</th>
-					<th class="px-5 py-3 font-semibold text-slate-600">Złożony</th>
-					<th class="px-5 py-3"></th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each filtered as f}
-					<tr use:ctxMenu={{ items: () => apkMenu(f), title: f.ref_number }}
-						class="border-t border-line-soft hover:bg-slate-50">
-						<td class="px-5 py-3 font-mono text-xs text-slate-500">{f.ref_number}</td>
-						<td class="px-5 py-3 font-medium">{f.crm_clients?.nazwa_skrocona ?? f.crm_clients?.nazwa ?? f.client_name}</td>
-						<td class="px-5 py-3 text-slate-500">{f.advisor_name ?? '—'}</td>
-						<td class="px-5 py-3 text-slate-500">{f.form_date}</td>
-						<td class="px-5 py-3"><Badge variant={statusVariant(f)}>{statusLabel(f)}</Badge></td>
-						<td class="px-5 py-3">
-							{#if f.apk_tokens?.[0]?.used_at}
-								<span title="Klient otworzył link: {f.apk_tokens[0].used_at!.slice(0,16).replace('T',' ')}"
-									class="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
-									<span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-									Odczytano
-								</span>
-							{:else}
-								<span class="inline-flex items-center gap-1 text-xs text-slate-400">
-									<span class="w-2 h-2 rounded-full bg-slate-300 inline-block"></span>
-									Nie odczytano
-								</span>
-							{/if}
-						</td>
-						<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
-						<td class="px-5 py-3">
-							<div class="flex items-center gap-2">
-								{#if apkOpenLink(f)}
-									<a href={apkOpenLink(f)} target="_blank" rel="noopener"
-										class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
-										<ExternalLink size={12} /> Otwórz
-									</a>
-								{/if}
-								<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
-									class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
-									<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
-								</button>
-								{#if f.pdf_url}
-									<button onclick={() => openPdf(f)} title="Ostatni zapisany PDF"
-										class="text-blue-500 hover:text-blue-700 flex items-center">
-										<Download size={12} />
-									</button>
-								{/if}
-							</div>
-						</td>
+
+	{#if bladWn}
+		<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{bladWn}</div>
+	{/if}
+
+	{#if wnioskiWidoczne.length === 0}
+		<div class="bg-white border border-line rounded-xl p-10 text-center text-slate-400">
+			<ClipboardList size={32} class="mx-auto mb-2 opacity-30" />
+			{appState.wnioskiOdnowien.length ? 'Brak wniosków dla wybranego filtra' : 'Jeszcze nie wysłano żadnego wniosku o odnowienie'}
+		</div>
+	{:else}
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-x-auto">
+			<table class="w-full min-w-[880px] text-sm text-left" data-testid="tabela-wnioskow">
+				<thead class="bg-slate-50 border-b border-line">
+					<tr>
+						<th class="px-5 py-3 font-semibold text-slate-600">Wysłano</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Klient</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Certyfikat</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Status</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">APK</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Złożono</th>
+						<th class="px-5 py-3"></th>
 					</tr>
-				{/each}
-			</tbody>
-		</table>
+				</thead>
+				<tbody>
+					{#each wnioskiWidoczne as w (w.id)}
+						{@const wz = waznosc(w)}
+						{@const test = wniosekTestowy(w)}
+						<tr use:ctxMenu={{ items: () => wniosekMenu(w), title: w.nr_polisy ?? 'Wniosek' }} class="border-t border-line-soft hover:bg-slate-50 {test ? 'opacity-60' : ''}">
+							<td class="px-5 py-3 whitespace-nowrap">
+								<span class="block tabular-nums text-slate-700">{fmtDzien(w.wyslano_at ?? w.created_at, true)}</span>
+								<span class="block text-xs text-slate-400">
+									{#if test}wniosek testowy{:else if !w.wyslano_at}link przekazany ręcznie{:else if w.przypomniano_at}przypomnienie {fmtDzien(w.przypomniano_at, true)}{:else if wz}<span class={wz.pilne ? 'text-warn font-semibold' : ''}>{wz.tekst}</span>{/if}
+								</span>
+							</td>
+							<td class="px-5 py-3 min-w-[160px] max-w-[260px]">
+								<a href="/clients/{w.klient_id}" class="block truncate font-medium text-slate-900 hover:text-accent-text">{nazwaKlienta(w)}</a>
+								{#if w.email && !test}<span class="block truncate text-xs text-slate-400" title={w.email}>{w.email}</span>{/if}
+							</td>
+							<td class="px-5 py-3 whitespace-nowrap">
+								{#if w.nr_polisy}
+									<a href="/policies/{w.polisa_id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{w.nr_polisy}</a>
+									<Kopiuj tekst={w.nr_polisy} opis="nr certyfikatu" />
+								{:else}
+									<a href="/policies/{w.polisa_id}" class="text-xs text-accent-text hover:underline">polisa</a>
+								{/if}
+								{#if w.okres_do}<span class="block text-xs text-slate-400">ochrona do {fmtDzien(w.okres_do, true)}</span>{/if}
+							</td>
+							<td class="px-5 py-3 whitespace-nowrap"><CrmRenewalBadge status={w.status} decyzja={w.decyzja} /></td>
+							<td class="px-5 py-3 whitespace-nowrap">
+								{#if w.apk_odmowa}
+									<Badge variant="warning">Odmowa</Badge>
+									<span class="block text-xs text-slate-400">{fmtDzien(w.apk_at, true)}</span>
+								{:else if w.apk_at}
+									<Badge variant="success">Wypełniona</Badge>
+									<span class="block text-xs text-slate-400">{fmtDzien(w.apk_at, true)}</span>
+								{:else if etap(w) === 'nieaktywny'}
+									<span class="text-xs text-slate-400">—</span>
+								{:else if w.otwarto_at}
+									<span class="inline-flex items-center gap-1 text-xs text-amber-600 font-medium"><span class="w-2 h-2 rounded-full bg-amber-500 inline-block"></span> Link otwarty</span>
+									<span class="block text-xs text-slate-400">{fmtDzien(w.otwarto_at, true)}</span>
+								{:else}
+									<span class="inline-flex items-center gap-1 text-xs text-slate-400"><span class="w-2 h-2 rounded-full bg-slate-300 inline-block"></span> Czeka</span>
+								{/if}
+							</td>
+							<td class="px-5 py-3 text-xs whitespace-nowrap {w.zlozono_at ? 'text-slate-700' : 'text-slate-400'}">
+								{w.zlozono_at ? fmtDzien(w.zlozono_at, true) : '—'}
+								{#if w.status === 'zlozony' && w.decyzja !== 'nie'}
+									<span class="block {odnowione.has(w.polisa_id) ? 'text-emerald-600' : 'text-warn font-semibold'}">{odnowione.has(w.polisa_id) ? 'nowa polisa wystawiona' : 'do wystawienia'}</span>
+								{/if}
+							</td>
+							<td class="px-5 py-3">
+								<div class="flex items-center gap-2">
+									<a href="/policies/{w.polisa_id}" class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50" title="Karta polisy — wniosek, dziennik zdarzeń, pliki">
+										<Eye size={12} /> Polisa
+									</a>
+									{#if maPdfApk(w)}
+										<button onclick={() => pdfApkWniosku(w)} class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50" title="PDF analizy potrzeb">
+											<FileText size={12} /> APK
+										</button>
+									{/if}
+									{#if w.pdf_path}
+										<button onclick={() => pdfWniosku(w)} class="text-blue-500 hover:text-blue-700 flex items-center" title="PDF wniosku">
+											<Download size={12} />
+										</button>
+									{/if}
+								</div>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		<p class="mt-2 text-xs text-slate-400 tabular-nums">{odmiana(wnioskiWidoczne.length, 'wniosek', 'wnioski', 'wniosków')}</p>
+	{/if}
+{:else}
+	<!-- Filtry -->
+	<div class="flex gap-3 mb-5 flex-wrap">
+		<div class="flex items-center gap-2 bg-white border border-line rounded-xl px-4 py-2">
+			<Search size={15} class="text-slate-400" />
+			<input bind:value={search} placeholder="Szukaj klienta / ref..." class="text-sm outline-none placeholder:text-slate-400 w-44" />
+		</div>
+		{#each [['all','Wszystkie'],['draft','Szkice'],['submitted','Złożone']] as [val, label]}
+			<button onclick={() => filterStatus = val}
+				class="px-3 py-2 rounded-xl text-sm font-medium border transition-colors
+					{filterStatus === val ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-500 border-line hover:bg-slate-50'}">
+				{label}
+			</button>
+		{/each}
 	</div>
+
+	<!-- Stats -->
+	<div class="grid grid-cols-3 gap-4 mb-6">
+		<div class="bg-white border border-line rounded-xl p-4 shadow-sm">
+			<p class="text-xs font-medium text-slate-500 mb-1">Wszystkich APK</p>
+			<p class="text-2xl font-bold text-slate-900">{appState.apkForms.length}</p>
+		</div>
+		<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 shadow-sm">
+			<p class="text-xs font-medium text-emerald-600 mb-1">Złożone</p>
+			<p class="text-2xl font-bold text-emerald-700">{appState.apkForms.filter(f => f.status === 'submitted').length}</p>
+		</div>
+		<div class="bg-amber-50 border border-amber-200 rounded-xl p-4 shadow-sm">
+			<p class="text-xs font-medium text-amber-600 mb-1">Szkice (oczekujące)</p>
+			<p class="text-2xl font-bold text-amber-700">{appState.apkForms.filter(f => f.status === 'draft').length}</p>
+		</div>
+	</div>
+
+	{#if pdfError}
+		<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{pdfError}</div>
+	{/if}
+
+	<!-- Lista -->
+	{#if filtered.length === 0}
+		<div class="bg-white border border-line rounded-xl p-10 text-center text-slate-400">
+			<ClipboardList size={32} class="mx-auto mb-2 opacity-30" />
+			Brak formularzy APK
+		</div>
+	{:else}
+		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden">
+			<table class="w-full text-sm text-left">
+				<thead class="bg-slate-50 border-b border-line">
+					<tr>
+						<th class="px-5 py-3 font-semibold text-slate-600">Ref</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Klient</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Doradca</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Data</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Status</th>
+						<th class="px-5 py-3 font-semibold text-slate-600" title="Czy klient otworzył link">Odczyt</th>
+						<th class="px-5 py-3 font-semibold text-slate-600">Złożony</th>
+						<th class="px-5 py-3"></th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each filtered as f}
+						<tr use:ctxMenu={{ items: () => apkMenu(f), title: f.ref_number }}
+							class="border-t border-line-soft hover:bg-slate-50">
+							<td class="px-5 py-3 font-mono text-xs text-slate-500">{f.ref_number}</td>
+							<td class="px-5 py-3 font-medium">{f.crm_clients?.nazwa_skrocona ?? f.crm_clients?.nazwa ?? f.client_name}</td>
+							<td class="px-5 py-3 text-slate-500">{f.advisor_name ?? '—'}</td>
+							<td class="px-5 py-3 text-slate-500">{f.form_date}</td>
+							<td class="px-5 py-3"><Badge variant={statusVariant(f)}>{statusLabel(f)}</Badge></td>
+							<td class="px-5 py-3">
+								{#if f.apk_tokens?.[0]?.used_at}
+									<span title="Klient otworzył link: {f.apk_tokens[0].used_at!.slice(0,16).replace('T',' ')}"
+										class="inline-flex items-center gap-1 text-xs text-emerald-600 font-medium">
+										<span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
+										Odczytano
+									</span>
+								{:else}
+									<span class="inline-flex items-center gap-1 text-xs text-slate-400">
+										<span class="w-2 h-2 rounded-full bg-slate-300 inline-block"></span>
+										Nie odczytano
+									</span>
+								{/if}
+							</td>
+							<td class="px-5 py-3 text-slate-400 text-xs">{f.submitted_at ? f.submitted_at.slice(0,10) : '—'}</td>
+							<td class="px-5 py-3">
+								<div class="flex items-center gap-2">
+									{#if apkOpenLink(f)}
+										<a href={apkOpenLink(f)} target="_blank" rel="noopener"
+											class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">
+											<ExternalLink size={12} /> Otwórz
+										</a>
+									{/if}
+									<button onclick={() => handlePdf(f)} disabled={pdfSaving === f.id}
+										class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+										<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
+									</button>
+									{#if f.pdf_url}
+										<button onclick={() => openPdf(f)} title="Ostatni zapisany PDF"
+											class="text-blue-500 hover:text-blue-700 flex items-center">
+											<Download size={12} />
+										</button>
+									{/if}
+								</div>
+							</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
 {/if}
 
 <!-- Modal: Nowy APK -->

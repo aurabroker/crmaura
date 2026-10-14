@@ -14,8 +14,7 @@
 	import type { Policy, RenewalRow } from '$lib/types/database';
 	import { sb } from '$lib/supabase';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { czyAktywny, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
-	import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
+	import { czyAktywny, wProgramieOcBeauty, wniosekTestowy } from '$lib/components/renewal/crmRenewals';
 	import { nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
 	import { logAudit } from '$lib/utils/audit';
 
@@ -27,7 +26,7 @@
 	// zapytanie zwraca błąd — wtedy kolumna i filtr się nie pokazują.
 	type WniosekSkrot = Pick<RenewalRow, 'polisa_id' | 'status' | 'decyzja' | 'wyslano_at' | 'zlozono_at' | 'created_at' | 'email'>;
 	/** Wniosek z trybu testowego (adres testowy zamiast adresu klienta) — klient go nie dostał. */
-	const testowy = (w: WniosekSkrot) => !!w.email && w.email.trim().toLowerCase() === ADRES_TESTOWY;
+	const testowy = (w: WniosekSkrot) => wniosekTestowy(w);
 	let wnioski = $state<Map<string, WniosekSkrot> | null>(null);
 
 	$effect(() => {

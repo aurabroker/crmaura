@@ -1,5 +1,7 @@
 import { sb } from '$lib/supabase';
-import type { Policy, RenewalEvent } from '$lib/types/database';
+import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
+import type { Policy, RenewalEvent, WniosekOdnowienia } from '$lib/types/database';
+import { dateDiffDays } from '$lib/utils';
 import { OPEN_LINK_TTL, signedStorageUrl } from '$lib/utils/storageLink';
 
 // Wspólne dla karty polisy i listy odnowień w CRM: rozpoznanie certyfikatu z programu OC beauty,
@@ -17,6 +19,64 @@ export const STATUSY_Z_LINKIEM = ['utworzony', 'wyslany', 'otwarty', 'apk'];
 export const czyLinkDziala = (status: string) => STATUSY_Z_LINKIEM.includes(status);
 // Aktywny = każdy poza wygasłym i anulowanym (jak indeks crm_renewals_one_active).
 export const czyAktywny = (status: string) => status !== 'wygasl' && status !== 'anulowany';
+
+/** Wniosek z trybu testowego: e-mail poszedł na adres testowy, nie do klienta. */
+export const wniosekTestowy = (w: { email: string | null }) => !!w.email && w.email.trim().toLowerCase() === ADRES_TESTOWY;
+
+// Etap wniosku z punktu widzenia pracownika — na kim stoi sprawa:
+//   czeka     link u klienta, APK jeszcze nie ma (utworzony / wysłany / otwarty),
+//   apk       APK wypełniona albo świadomie odrzucona, wniosek jeszcze nie złożony,
+//   zlozony   klient złożył wniosek (teraz ruch po stronie brokera),
+//   nieaktywny  link wygasł albo wniosek anulowano.
+export type EtapWniosku = 'czeka' | 'apk' | 'zlozony' | 'nieaktywny';
+export function etapWniosku(w: Pick<WniosekOdnowienia, 'status' | 'apk_at'>): EtapWniosku {
+	if (!czyAktywny(w.status)) return 'nieaktywny';
+	if (w.status === 'zlozony') return 'zlozony';
+	return w.apk_at ? 'apk' : 'czeka';
+}
+
+/** Bieżący cykl odnowień: certyfikat kończy się dopiero albo skończył się najwyżej tyle dni temu. */
+export const CYKL_DNI_WSTECZ = 60;
+export const wBiezacymCyklu = (w: Pick<WniosekOdnowienia, 'okres_do' | 'created_at'>, dzis: string) =>
+	w.okres_do ? dateDiffDays(dzis, w.okres_do) >= -CYKL_DNI_WSTECZ : dateDiffDays(w.created_at.slice(0, 10), dzis) <= 120;
+
+export type PodsumowanieWnioskow = {
+	/** Link u klienta, bez APK. */
+	czeka: number;
+	/** APK wypełniona (także we wnioskach już złożonych). */
+	apk: number;
+	/** Świadome odmowy wypełnienia APK. */
+	odmowy: number;
+	/** Wnioski złożone przez klienta. */
+	zlozone: number;
+	/** Złożone (poza rezygnacją), których certyfikat nie ma jeszcze nowej polisy w CRM. */
+	doWystawienia: number;
+	nieaktywne: number;
+	razem: number;
+};
+
+// Liczby do kafelka na pulpicie i zakładki APK: tylko bieżący cykl, bez wniosków testowych.
+// odnowione: polisy, które mają już następczynię (renewal_of) — ich wnioski są załatwione.
+export function podsumujWnioski(lista: WniosekOdnowienia[], odnowione: ReadonlySet<string>, dzis: string): PodsumowanieWnioskow {
+	const p: PodsumowanieWnioskow = { czeka: 0, apk: 0, odmowy: 0, zlozone: 0, doWystawienia: 0, nieaktywne: 0, razem: 0 };
+	for (const w of lista) {
+		if (wniosekTestowy(w) || !wBiezacymCyklu(w, dzis)) continue;
+		p.razem++;
+		const e = etapWniosku(w);
+		if (e === 'nieaktywny') {
+			p.nieaktywne++;
+			continue;
+		}
+		if (e === 'czeka') p.czeka++;
+		if (w.apk_at && !w.apk_odmowa) p.apk++;
+		if (w.apk_odmowa) p.odmowy++;
+		if (e === 'zlozony') {
+			p.zlozone++;
+			if (w.decyzja !== 'nie' && !odnowione.has(w.polisa_id)) p.doWystawienia++;
+		}
+	}
+	return p;
+}
 
 export type Wariant = 'success' | 'warning' | 'error' | 'info' | 'neutral';
 
