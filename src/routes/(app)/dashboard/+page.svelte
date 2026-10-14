@@ -7,7 +7,8 @@
 	import SectionHeader from '$lib/components/SectionHeader.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { dndzone } from 'svelte-dnd-action';
-	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check } from 'lucide-svelte';
+	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check, ClipboardList } from 'lucide-svelte';
+	import { podsumujWnioski, wniosekTestowy } from '$lib/components/renewal/crmRenewals';
 	import { OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { isBroker } from '$lib/stores/app.svelte';
@@ -295,6 +296,12 @@
 
 	const polisaWg = $derived(new Map(appState.policies.map((p) => [p.id, p])));
 
+	// APK z wniosków o odnowienie (program OC beauty): bieżący cykl, bez wniosków testowych.
+	// Kafelek pokazuje się, gdy firma wysłała choć jeden prawdziwy wniosek.
+	const maWnioskiApk = $derived(appState.wnioskiOdnowien.some((w) => !wniosekTestowy(w)));
+	const odnowionePolisy = $derived(new Set(appState.policies.filter((p) => p.renewal_of && !p.deleted_at).map((p) => p.renewal_of as string)));
+	const apkWnioski = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowionePolisy, today));
+
 	type TypKolejki = 'Rata' | 'Zadanie' | 'Odnowienie';
 	type PozycjaKolejki = {
 		klucz: string;
@@ -496,7 +503,7 @@
 {/if}
 
 <!-- Wymaga działania -->
-<section aria-label="Wymaga działania" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-5">
+<section aria-label="Wymaga działania" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 {maWnioskiApk ? 'lg:grid-cols-3 xl:grid-cols-5' : 'xl:grid-cols-4'}">
 	<a href="/payments" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {overduePayments.length ? 'text-danger' : 'text-ok'}">
 			<CreditCard size={16} />
@@ -527,6 +534,19 @@
 		<span class="text-sm text-ink-2">{slowo(renewals.length, 'polisa', 'polisy', 'polis')} do odnowienia · {renewals60} w 60 dni</span>
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">Plan odnowień →</span>
 	</a>
+	{#if maWnioskiApk}
+		<a href="/apk?widok=wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+			<span class="flex items-center gap-2 text-[13px] font-semibold {apkWnioski.czeka ? 'text-warn' : 'text-ok'}">
+				<ClipboardList size={16} />
+				APK · {apkWnioski.czeka ? 'u klientów' : 'w porządku'}
+			</span>
+			<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{apkWnioski.czeka}</span>
+			<span class="text-sm text-ink-2">{slowo(apkWnioski.czeka, 'wniosek czeka', 'wnioski czekają', 'wniosków czeka')} · {apkWnioski.apk} APK wypełniono{apkWnioski.odmowy ? ` · ${apkWnioski.odmowy} ${slowo(apkWnioski.odmowy, 'odmowa', 'odmowy', 'odmów')}` : ''}</span>
+			<span class="mt-1 text-[13px] font-semibold text-accent-text">
+				{apkWnioski.doWystawienia ? `${apkWnioski.doWystawienia} ${slowo(apkWnioski.doWystawienia, 'złożony do wystawienia', 'złożone do wystawienia', 'złożonych do wystawienia')} →` : 'Wnioski i APK →'}
+			</span>
+		</a>
+	{/if}
 	<a href={unresolvedAlerts.length ? '#alerty' : '/settings?tab=dokumenty'} class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {unresolvedAlerts.length ? 'text-danger' : 'text-ok'}">
 			{#if unresolvedAlerts.length}<AlertTriangle size={16} />{:else}<Check size={16} />{/if}
