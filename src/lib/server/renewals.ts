@@ -5,6 +5,7 @@ import { EMAIL_RE } from '$lib/server/mail';
 import type { WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
 import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
 import { nazwaUbezpieczyciela, ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
+import type { MigawkaZgod } from '$lib/renewals/zgody';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
 // panelu CRM (/api/renewals) i zadania dziennego (/api/cron/renewals). Wszystko działa kluczem
@@ -46,6 +47,10 @@ export type RenewalRow = {
 	wazny_do: string;
 	created_by: string | null;
 	updated_at: string;
+	// Zgody marketingowe podpisane razem z APK (migawka z brzmieniem) i czasy podpisów klienta.
+	zgody: MigawkaZgod | null;
+	podpis_apk_at: string | null;
+	podpis_wniosku_at: string | null;
 };
 
 // ---------- Link: /odnowienie/<id>.<podpis> ----------
@@ -344,14 +349,16 @@ export const opObecnie = (r: Pick<RenewalRow, 'suma' | 'skladka'>): boolean =>
 
 // NIP i REGON klienta z kartoteki do podpowiedzi w ankiecie: same cyfry, tylko w poprawnej długości
 // (NIP 10, REGON 9 albo 14) — „PL 526-025-02-74” → „5260250274”, śmieci → null.
-export type DaneKlienta = { nip: string | null; regon: string | null };
+// Zgody: bieżący stan z kartoteki (null, gdy nigdy nie pytano) — formularz pokazuje go, dopóki klient nie podpisze APK.
+export type DaneKlienta = { nip: string | null; regon: string | null; zgody: { email: boolean; sms: boolean } | null };
 export async function daneKlienta(admin: SupabaseClient, r: Pick<RenewalRow, 'klient_id' | 'tenant_id'>): Promise<DaneKlienta> {
-	const { data } = await admin.from('crm_clients').select('nip, regon, tenant_id').eq('id', r.klient_id).maybeSingle();
-	if (!data || data.tenant_id !== r.tenant_id) return { nip: null, regon: null };
+	const { data } = await admin.from('crm_clients').select('nip, regon, tenant_id, zgoda_email, zgoda_sms').eq('id', r.klient_id).maybeSingle();
+	if (!data || data.tenant_id !== r.tenant_id) return { nip: null, regon: null, zgody: null };
 	const cyfry = (v: unknown) => (typeof v === 'string' ? v.replace(/\D/g, '') : '');
 	const nip = cyfry(data.nip);
 	const regon = cyfry(data.regon);
-	return { nip: nip.length === 10 ? nip : null, regon: regon.length === 9 || regon.length === 14 ? regon : null };
+	const zgody = data.zgoda_email == null && data.zgoda_sms == null ? null : { email: data.zgoda_email === true, sms: data.zgoda_sms === true };
+	return { nip: nip.length === 10 ? nip : null, regon: regon.length === 9 || regon.length === 14 ? regon : null, zgody };
 }
 
 export function widok(r: RenewalRow, klient: DaneKlienta | null = null): WidokOdnowienia {
@@ -380,7 +387,9 @@ export function widok(r: RenewalRow, klient: DaneKlienta | null = null): WidokOd
 			id, typ, nazwa, rozmiar, mime, osoba: osoba ?? null, osoba_nazwa: osoba_nazwa ?? null, zabieg: zabieg ?? null
 		})),
 		nip: klient?.nip ?? null,
-		regon: klient?.regon ?? null
+		regon: klient?.regon ?? null,
+		zgody: r.zgody ? { email: r.zgody.email === true, sms: r.zgody.sms === true } : (klient?.zgody ?? null),
+		podpis_apk_at: r.podpis_apk_at ?? null
 	};
 }
 

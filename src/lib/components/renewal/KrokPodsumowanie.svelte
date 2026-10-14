@@ -4,7 +4,9 @@
 	import type { OdpowiedzZloz } from '$lib/renewals/api';
 	import { DECYZJA_ETYKIETA } from '$lib/renewals/staffApi';
 	import { LICZBA_OSOB, OCHRONA_PRAWNA_SKLADKA, RODZAJE_GABINETU, formatSuma, waliduj_ankiete, type Ankieta } from '$lib/renewals/program';
+	import { PODPIS_BRAK_WNIOSKU } from '$lib/renewals/podpis';
 	import Bledy from './Bledy.svelte';
+	import PolePodpisu from './PolePodpisu.svelte';
 	import WycenaInfo from './WycenaInfo.svelte';
 	import { BTN_CZERWONY, BTN_DRUGI, BTN_GLOWNY, BTN_LINK, KARTA, NAGLOWEK, fmtData, wyslij } from './klient';
 	import type { Krok, Odnowienie } from './stan.svelte';
@@ -59,14 +61,19 @@
 	}
 
 	let krokZBledem = $state<Krok | null>(null);
+	let bladPodpisu = $state('');
 
 	async function wyslijWniosek() {
 		message = '';
 		bledy = [];
+		bladPodpisu = '';
 		krokZBledem = null;
 		const spr = sprawdzWszystko();
-		if (spr.bledy.length || !spr.wniosek.ok) {
-			bledy = spr.bledy;
+		// Wszystkie braki naraz: odpowiedzi w krokach i podpis pod wnioskiem.
+		const brakPodpisu = !s.podpisWniosku;
+		if (brakPodpisu) bladPodpisu = PODPIS_BRAK_WNIOSKU;
+		if (spr.bledy.length || !spr.wniosek.ok || brakPodpisu) {
+			bledy = [...spr.bledy, ...(brakPodpisu ? [PODPIS_BRAK_WNIOSKU] : [])];
 			krokZBledem = spr.krok;
 			potwierdzRezygnacje = false;
 			return;
@@ -80,7 +87,7 @@
 			return;
 		}
 		zajety = true;
-		const r = await wyslij<OdpowiedzZloz>(s.klucz, { akcja: 'zloz', wniosek: spr.wniosek.value, ankieta: s.potrzebnaAnkieta ? spr.ankieta : null });
+		const r = await wyslij<OdpowiedzZloz>(s.klucz, { akcja: 'zloz', wniosek: spr.wniosek.value, ankieta: s.potrzebnaAnkieta ? spr.ankieta : null, podpis: s.podpisWniosku! });
 		zajety = false;
 		if (!r.ok) {
 			// Odpowiedzi zostają w formularzu — klient poprawia i wysyła ponownie.
@@ -187,6 +194,21 @@
 			</p>
 		</div>
 	{/if}
+
+	<!-- Podpis pod wnioskiem (albo rezygnacją): obejmuje decyzję, zmiany, ankietę i załączniki — trafia do PDF wniosku. -->
+	<div class="mt-6">
+		<PolePodpisu
+			wartosc={s.podpisWniosku}
+			onzmiana={(p) => {
+				s.podpisWniosku = p;
+				if (p) bladPodpisu = '';
+			}}
+			tytul={s.decyzja === 'nie' ? 'Podpis pod rezygnacją' : 'Podpis pod wnioskiem'}
+			przycisk={s.decyzja === 'nie' ? 'Podpisz rezygnację' : 'Podpisz wniosek'}
+			blad={bladPodpisu}
+		/>
+		<p class="mt-2 text-xs text-slate-500">Podpis elektroniczny trafi do PDF wniosku razem z datą, godziną i skrótem podpisanej treści.</p>
+	</div>
 
 	<Bledy {message} {bledy} />
 	{#if krokZBledem}

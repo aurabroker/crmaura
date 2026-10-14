@@ -14,8 +14,12 @@
 	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
-	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisZdarzenia, otworzPdfApk, wariantDecyzji, wywolajApi } from './crmRenewals';
-	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2 } from 'lucide-svelte';
+	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, wariantDecyzji, wywolajApi } from './crmRenewals';
+	import { ZGODA_TYTUL } from '$lib/renewals/zgody';
+	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2, PenLine } from 'lucide-svelte';
+
+	// Podpisy klienta (pod APK i pod wnioskiem) z serwera — ze sprawdzeniem, czy treść w bazie jest nadal ta, którą podpisał.
+	type PodpisPanelu = { zakres: 'apk' | 'wniosek'; png: string; podpisano_at: string; ip: string | null; user_agent: string | null; skrot_tresci: string; skrot_podpisu: string; zgodny: boolean };
 
 	interface Props {
 		policy: Policy;
@@ -40,6 +44,9 @@
 	let ankietaOpen = $state(false);
 	let zdarzeniaOpen = $state(false);
 	let historiaOpen = $state(false);
+	let podpisyOpen = $state(false);
+	let podpisy = $state<PodpisPanelu[]>([]);
+	let podpisyBlad = $state('');
 	// PDF ankiety w magazynie (ankieta.pdf): 'nieznany', gdy magazyn nie odpowiedział — przycisk i tak jest.
 	let plikAnkiety = $state<'jest' | 'brak' | 'nieznany' | null>(null);
 
@@ -74,11 +81,20 @@
 			}
 			renewals = (data ?? []) as RenewalRow[];
 			plikAnkiety = null;
+			podpisy = [];
+			podpisyBlad = '';
 			dostepne = true;
 			const r = renewals[0];
 			if (!r) {
 				events = [];
 				return;
+			}
+			if (r.podpis_apk_at || r.podpis_wniosku_at) {
+				wywolajApi<{ podpisy: PodpisPanelu[] }>('POST', '/api/renewals/podpisy', { id: r.id }).then((w) => {
+					if (nr !== zapytanie) return;
+					if (w.ok) podpisy = w.data.podpisy ?? [];
+					else podpisyBlad = w.message;
+				});
 			}
 			const { data: ev, error: e2 } = await sb
 				.from('crm_renewal_events')
@@ -346,8 +362,8 @@
 		return [
 			{ label: 'Wysłano', at: r.wyslano_at },
 			{ label: 'Otwarto', at: r.otwarto_at },
-			{ label: r.apk_odmowa ? 'APK — odmowa' : r.apk_at ? 'APK — wypełniona' : 'APK', at: r.apk_at, uwaga: r.apk_odmowa },
-			{ label: 'Złożono', at: r.zlozono_at },
+			{ label: r.apk_odmowa ? 'APK — odmowa' : r.apk_at ? (r.podpis_apk_at ? 'APK — podpisana' : 'APK — wypełniona') : 'APK', at: r.apk_at, uwaga: r.apk_odmowa },
+			{ label: r.podpis_wniosku_at ? 'Złożono i podpisano' : 'Złożono', at: r.zlozono_at },
 			{ label: 'Przypomniano', at: r.przypomniano_at }
 		];
 	}
@@ -559,11 +575,52 @@
 						{:else if r.apk}
 							{@render wiersze(apkWiersze(r.apk))}
 							<p class="text-xs text-slate-400 mt-1">
-								Wypełniona {fmtDataCzas(r.apk_at)}{r.apk.oswiadczenie ? ' · klient potwierdził zgodność informacji z prawdą' : ''}.
+								Wypełniona {fmtDataCzas(r.apk_at)}{r.apk.oswiadczenie ? ' · klient potwierdził zgodność informacji z prawdą' : ''}{r.podpis_apk_at ? ' · podpisana elektronicznie' : ''}.
 							</p>
 						{/if}
 					{/snippet}
 					{@render rozwijany(r.apk_odmowa ? 'APK — odmowa wypełnienia' : 'Odpowiedzi APK', apkOpen, () => (apkOpen = !apkOpen), apkTresc)}
+				{/if}
+
+				<!-- Podpisy klienta (APK ze zgodami, wniosek) i zgody marketingowe -->
+				{#if r.zgody || r.podpis_apk_at || r.podpis_wniosku_at}
+					{#snippet podpisyTresc()}
+						{#if r.zgody}
+							<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Zgody marketingowe</p>
+							<dl class="text-sm divide-y divide-line-soft" data-testid="renewal-zgody">
+								{#each [['email', r.zgody.email], ['sms', r.zgody.sms]] as [k, v] (k)}
+									<div class="flex items-center gap-3 py-1.5">
+										<dt class="text-slate-500 flex-1">{ZGODA_TYTUL[k as 'email' | 'sms']}</dt>
+										<dd><Badge variant={v ? 'success' : 'neutral'}>{v ? 'zgoda' : 'brak zgody'}</Badge></dd>
+									</div>
+								{/each}
+							</dl>
+							<p class="text-xs text-slate-400 mt-1">Odpowiedzi z {fmtDataCzas(r.zgody.at ?? r.podpis_apk_at)} (wersja treści {r.zgody.wersja}), podpisane razem z APK. Pełne brzmienie zgód jest w PDF APK i w rejestrze zgód.</p>
+						{/if}
+						{#if podpisyBlad}
+							<p class="text-sm text-red-700 mt-3">{podpisyBlad}</p>
+						{:else if podpisy.length}
+							<ul class="mt-3 space-y-3" data-testid="renewal-podpisy">
+								{#each podpisy as p (p.zakres)}
+									<li class="flex flex-wrap items-start gap-4 border border-line rounded-lg p-3">
+										<img src={p.png} alt="Podpis klienta pod {p.zakres === 'apk' ? 'APK' : 'wnioskiem'}" class="h-16 w-40 object-contain bg-white border border-line-soft rounded" />
+										<div class="min-w-0 flex-1 text-sm">
+											<p class="font-medium text-slate-800">{p.zakres === 'apk' ? (r.apk_odmowa ? 'Podpis pod odmową APK i zgodami' : 'Podpis pod analizą potrzeb i zgodami') : 'Podpis pod wnioskiem'}</p>
+											<p class="text-xs text-slate-500">{fmtDataCzas(p.podpisano_at)}{p.ip ? ` · IP ${p.ip}` : ''}{p.user_agent ? ` · ${opisPrzegladarki(p.user_agent)}` : ''}</p>
+											<p class="mt-1">
+												<Badge variant={p.zgodny ? 'success' : 'error'}>{p.zgodny ? 'treść zgodna z podpisaną' : 'treść zmieniona po podpisie'}</Badge>
+											</p>
+											<p class="mt-1 font-mono text-[10px] text-slate-400 break-all" title="SHA-256 podpisanej treści · SHA-256 obrazu podpisu">{p.skrot_tresci.slice(0, 16)}… · {p.skrot_podpisu.slice(0, 16)}…</p>
+										</div>
+									</li>
+								{/each}
+							</ul>
+						{:else if r.podpis_apk_at || r.podpis_wniosku_at}
+							<p class="text-sm text-slate-400 mt-3">Wczytywanie podpisów…</p>
+						{/if}
+						<p class="text-xs text-slate-400 mt-3">Zwykły podpis elektroniczny (eIDAS): obraz podpisu, przebieg ruchu ręki, czas, IP i skrót podpisanej treści. Ślad dowodowy widzą tylko pracownicy firmy.</p>
+					{/snippet}
+					{@render rozwijany(`Podpisy klienta i zgody${podpisy.length ? ` (${podpisy.length})` : ''}`, podpisyOpen, () => (podpisyOpen = !podpisyOpen), podpisyTresc)}
 				{/if}
 
 				{#if r.ankieta}

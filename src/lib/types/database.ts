@@ -40,6 +40,11 @@ export interface Client {
 	rodo_zgoda: boolean;
 	rodo_data: string | null;
 	rodo_kanal: string | null;
+	/** Zgody marketingowe (ostatnia odpowiedź klienta, np. z formularza odnowienia); null = nigdy nie pytano. */
+	zgoda_email?: boolean | null;
+	zgoda_email_at?: string | null;
+	zgoda_sms?: boolean | null;
+	zgoda_sms_at?: string | null;
 	gwarancje?: boolean;
 	/** Identyfikator firmy w BEAUTY (synchronizacja sync-beauty-companies); unikalny w firmie. */
 	beauty_id?: number | string | null;
@@ -221,6 +226,10 @@ export interface RenewalRow {
 	created_by: string | null;
 	created_at: string;
 	updated_at: string;
+	/** Zgody marketingowe podpisane razem z APK (odpowiedzi, wersja, brzmienie) i czasy podpisów klienta. */
+	zgody?: { email: boolean; sms: boolean; wersja: string; teksty?: Record<string, string>; at?: string } | null;
+	podpis_apk_at?: string | null;
+	podpis_wniosku_at?: string | null;
 }
 
 /**
@@ -231,7 +240,7 @@ export type WniosekOdnowienia = Pick<
 	RenewalRow,
 	| 'id' | 'tenant_id' | 'polisa_id' | 'klient_id' | 'status' | 'decyzja' | 'email' | 'nr_polisy' | 'klient_nazwa'
 	| 'okres_do' | 'apk_at' | 'apk_odmowa' | 'pdf_path' | 'wyslano_at' | 'otwarto_at' | 'zlozono_at' | 'przypomniano_at'
-	| 'wazny_do' | 'created_at'
+	| 'wazny_do' | 'created_at' | 'podpis_apk_at' | 'podpis_wniosku_at'
 >;
 
 /** Wpis dziennika wniosku (crm_renewal_events): otwarcie, APK, decyzja — z IP i przeglądarką. */

@@ -5,6 +5,7 @@
 	import type { WidokOdnowienia } from '$lib/renewals/api';
 	import { DECYZJA_ETYKIETA } from '$lib/renewals/staffApi';
 	import { PROGRAM_NAZWA, formatSuma, formatZl, nazwaUbezpieczyciela } from '$lib/renewals/program';
+	import { KLAUZULA_INFORMACYJNA, KLAUZULA_URL } from '$lib/renewals/zgody';
 	import LogoBeautyPolisa from '$lib/components/renewal/LogoBeautyPolisa.svelte';
 	import KrokAnkieta from '$lib/components/renewal/KrokAnkieta.svelte';
 	import KrokApk from '$lib/components/renewal/KrokApk.svelte';
@@ -200,9 +201,9 @@
 					<h2 class="mt-8 text-base font-semibold text-[#2a3b69]">Jak to działa</h2>
 					<ol class="mt-3 space-y-3">
 						{#each [
-							['Analiza potrzeb (APK)', 'kilka pytań o gabinet, około 2 minut. PDF z odpowiedziami przyjdzie od razu e-mailem. Możesz też świadomie odmówić.'],
+							['Analiza potrzeb (APK)', 'kilka pytań o gabinet, około 2 minut, do tego zgody marketingowe (do wyboru) i podpis palcem albo myszą. PDF z odpowiedziami przyjdzie od razu e-mailem. Możesz też świadomie odmówić.'],
 							['Wniosek', 'odnawiasz bez zmian, ze zmianami albo rezygnujesz. Przy zmianach od razu zobaczysz orientacyjną składkę.'],
-							['Podsumowanie i wysłanie', 'sprawdzasz odpowiedzi i wysyłasz wniosek. PDF wniosku przyjdzie drugim e-mailem.']
+							['Podsumowanie i wysłanie', 'sprawdzasz odpowiedzi, podpisujesz wniosek i wysyłasz. PDF wniosku przyjdzie drugim e-mailem.']
 						] as [t, o], i (t)}
 							<li class="flex gap-3">
 								<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#2a3b69] text-sm font-bold text-white">{i + 1}</span>
@@ -214,6 +215,13 @@
 						Jeśli zgłosisz zabiegi wymagające oceny ubezpieczyciela (np. toksyna botulinowa, wypełniacze), dojdzie krótka ankieta Ergo Hestii z
 						dokumentami kwalifikacji.
 					</p>
+
+					<!-- Klauzula informacyjna RODO: informacja przy zbieraniu danych (bez zgody, bez checkboxa). -->
+					<details class="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600" data-testid="klauzula-rodo">
+						<summary class="cursor-pointer font-semibold text-[#2a3b69]">Informacja o przetwarzaniu danych osobowych (RODO)</summary>
+						{#each KLAUZULA_INFORMACYJNA as akapit, i (i)}<p class="mt-2">{akapit}</p>{/each}
+						<p class="mt-2"><a href={KLAUZULA_URL} target="_blank" rel="noopener noreferrer" class="font-semibold text-rose-700 underline underline-offset-2">Pełna klauzula informacyjna (PDF)</a></p>
+					</details>
 
 					<button type="button" class="{BTN_GLOWNY} mt-8 w-full sm:w-auto" onclick={() => idz('apk')}>
 						{s.apkGotowa ? 'Kontynuuj' : 'Rozpocznij'}

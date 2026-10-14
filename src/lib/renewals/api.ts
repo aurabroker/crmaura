@@ -3,6 +3,8 @@
 // (<id odnowienia>-<podpis HMAC>) jest jedynym uprawnieniem.
 
 import type { Apk, Ankieta, Decyzja, TypZalacznika, Wniosek } from './program';
+import type { Podpis } from './podpis';
+import type { Zgody } from './zgody';
 
 export type StatusOdnowienia = 'utworzony' | 'wyslany' | 'otwarty' | 'apk' | 'zlozony' | 'wygasl' | 'anulowany';
 
@@ -52,16 +54,22 @@ export type WidokOdnowienia =
 			// Wypełnione tylko w odpowiedzi GET; null, gdy w kartotece ich nie ma.
 			nip: string | null;
 			regon: string | null;
+			// Zgody marketingowe do pokazania w formularzu: z tego wniosku (po APK), a przed APK — bieżący stan
+			// z kartoteki klienta (null, gdy nigdy nie pytano). Klient może je zmienić przy każdym podpisie APK.
+			zgody: Zgody | null;
+			// Czas podpisu pod APK (albo odmową) — po podpisie klient podpisuje ponownie tylko przy poprawkach.
+			podpis_apk_at: string | null;
 	  };
 
-// POST /api/odnowienie/[token] — jedno z działań:
+// POST /api/odnowienie/[token] — jedno z działań. APK (albo odmowa) i wniosek idą z podpisem klienta
+// (palcem / rysikiem / myszą, format w ./podpis); zgody marketingowe klient podpisuje razem z APK.
 export type Dzialanie =
-	| { akcja: 'apk'; apk: Apk }
-	| { akcja: 'apk_odmowa'; potwierdzenie: true }
+	| { akcja: 'apk'; apk: Apk; zgody: Zgody; podpis: Podpis }
+	| { akcja: 'apk_odmowa'; potwierdzenie: true; zgody: Zgody; podpis: Podpis }
 	// Jednorazowy adres do wgrania pliku prosto do magazynu (supabase-js: uploadToSignedUrl).
 	| { akcja: 'zalacznik_url'; typ: TypZalacznika; nazwa: string; rozmiar: number; mime: string; osoba?: string | null; osoba_nazwa?: string | null; zabieg?: string | null }
 	| { akcja: 'zalacznik_usun'; id: string }
-	| { akcja: 'zloz'; wniosek: Wniosek; ankieta: Ankieta | null };
+	| { akcja: 'zloz'; wniosek: Wniosek; ankieta: Ankieta | null; podpis: Podpis };
 
 export type OdpowiedzZalacznikUrl = { id: string; path: string; token: string; zalacznik: Zalacznik };
 export type OdpowiedzZloz = { ok: true; decyzja: Decyzja; skladka_nowa: number | null; wycena_indywidualna: boolean };
