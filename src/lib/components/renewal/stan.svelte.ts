@@ -2,6 +2,8 @@
 // (APK, wniosek, osoby i dokumenty, ankieta, podsumowanie) czytają i zmieniają jej pola.
 
 import type { OdpowiedzZloz, WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
+import type { Podpis } from '$lib/renewals/podpis';
+import { pusteZgody, type Zgody } from '$lib/renewals/zgody';
 import {
 	MAKS_WYKONAWCOW,
 	SUMY,
@@ -149,6 +151,12 @@ export class Odnowienie {
 	apkZapisana = $state<Apk | null>(null);
 	apkOdmowa = $state(false);
 	apkEdycja = $state(true);
+	// Zgody marketingowe (podpisywane razem z APK) i podpisy klienta. Podpisy nie trafiają do szkicu —
+	// po odświeżeniu strony klient podpisuje ponownie; zgody przychodzą z serwera (ten wniosek albo kartoteka).
+	zgody = $state<Zgody>(pusteZgody());
+	podpisApk = $state<Podpis | null>(null);
+	podpisApkAt = $state<string | null>(null);
+	podpisWniosku = $state<Podpis | null>(null);
 
 	// Wniosek
 	decyzja = $state<Decyzja | ''>('');
@@ -214,6 +222,8 @@ export class Odnowienie {
 		this.apkZapisana = widok.apk_wypelniona && widok.apk ? widok.apk : null;
 		if (widok.apk) this.apkForm = scal(pustaApk(), widok.apk);
 		this.apkEdycja = !this.apkGotowa;
+		if (widok.zgody) this.zgody = { email: widok.zgody.email === true, sms: widok.zgody.sms === true };
+		this.podpisApkAt = widok.podpis_apk_at ?? null;
 		this.ankieta = pustaAnkieta(widok);
 		this.zalaczniki = [...widok.zalaczniki];
 		this.wczytajSzkic();

@@ -12,12 +12,18 @@
 		waliduj_apk,
 		type Apk
 	} from '$lib/renewals/program';
+	import type { WidokOdnowienia } from '$lib/renewals/api';
+	import { PODPIS_BRAK_APK } from '$lib/renewals/podpis';
+	import { KLAUZULA_INFORMACYJNA, KLAUZULA_URL, ZGODY, ZGODY_UWAGA } from '$lib/renewals/zgody';
 	import Bledy from './Bledy.svelte';
-	import { BTN_DRUGI, BTN_GLOWNY, BTN_LINK, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK, fokusNaglowka, wyslij } from './klient';
+	import PolePodpisu from './PolePodpisu.svelte';
+	import { BTN_DRUGI, BTN_GLOWNY, BTN_LINK, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK, fmtDataGodzina, fokusNaglowka, wyslij } from './klient';
 	import { pustaApk, type ApkForm, type Odnowienie } from './stan.svelte';
 
 	// Krok 1: analiza potrzeb (APK) dla OC gabinetu albo świadoma odmowa jej wypełnienia.
 	// Zapisana APK pokazuje się jako skrót z „Popraw” — klient może ją zmienić aż do wysłania wniosku.
+	// Razem z APK (albo odmową) klient odpowiada na zgody marketingowe i podpisuje całość palcem, rysikiem
+	// albo myszą; poprawka APK wymaga nowego podpisu (podpis obejmuje treść).
 	interface Props {
 		s: Odnowienie;
 		ondalej: () => void;
@@ -39,6 +45,8 @@
 	let odmowaOtwarta = $state(false);
 	let odmowaPotw = $state(false);
 	let zapisanoTeraz = $state(false);
+	let bladPodpisu = $state('');
+	const zgodyDoWyslania = () => ({ email: s.zgody.email === true, sms: s.zgody.sms === true });
 
 	// „Nie mam innych” wyklucza pozostałe odpowiedzi.
 	function przelaczInne(k: Inne, on: boolean) {
@@ -50,17 +58,27 @@
 	function wyczysc() {
 		message = '';
 		bledy = [];
+		bladPodpisu = '';
+	}
+
+	// Po zapisie podpis jest zużyty (obejmuje zapisaną treść); czas podpisu z odpowiedzi serwera.
+	function poZapisie(data: WidokOdnowienia) {
+		s.podpisApk = null;
+		s.podpisApkAt = data.stan === 'aktywny' && data.podpis_apk_at ? data.podpis_apk_at : new Date().toISOString();
+		if (data.stan === 'aktywny' && data.zgody) s.zgody = { email: data.zgody.email === true, sms: data.zgody.sms === true };
 	}
 
 	async function zapisz() {
 		wyczysc();
 		const w = waliduj_apk(s.apkForm);
-		if (!w.ok) {
-			bledy = w.bledy;
+		// Wszystkie braki naraz: odpowiedzi i podpis.
+		if (!s.podpisApk) bladPodpisu = PODPIS_BRAK_APK;
+		if (!w.ok || !s.podpisApk) {
+			bledy = [...(w.ok ? [] : w.bledy), ...(s.podpisApk ? [] : [PODPIS_BRAK_APK])];
 			return;
 		}
 		zajety = true;
-		const r = await wyslij(s.klucz, { akcja: 'apk', apk: w.value });
+		const r = await wyslij<WidokOdnowienia>(s.klucz, { akcja: 'apk', apk: w.value, zgody: zgodyDoWyslania(), podpis: s.podpisApk });
 		zajety = false;
 		if (!r.ok) {
 			message = r.message;
@@ -70,18 +88,20 @@
 		s.apkZapisana = w.value;
 		s.apkOdmowa = false;
 		s.apkEdycja = false;
+		poZapisie(r.data);
 		zapisanoTeraz = true;
 		fokusNaglowka();
 	}
 
 	async function zapiszOdmowe() {
 		wyczysc();
-		if (!odmowaPotw) {
-			bledy = ['Zaznacz, że świadomie odmawiasz wypełnienia analizy potrzeb.'];
+		if (!s.podpisApk) bladPodpisu = PODPIS_BRAK_APK;
+		if (!odmowaPotw || !s.podpisApk) {
+			bledy = [...(odmowaPotw ? [] : ['Zaznacz, że świadomie odmawiasz wypełnienia analizy potrzeb.']), ...(s.podpisApk ? [] : [PODPIS_BRAK_APK])];
 			return;
 		}
 		zajety = true;
-		const r = await wyslij(s.klucz, { akcja: 'apk_odmowa', potwierdzenie: true });
+		const r = await wyslij<WidokOdnowienia>(s.klucz, { akcja: 'apk_odmowa', potwierdzenie: true, zgody: zgodyDoWyslania(), podpis: s.podpisApk });
 		zajety = false;
 		if (!r.ok) {
 			message = r.message;
@@ -94,6 +114,7 @@
 		s.apkEdycja = false;
 		odmowaOtwarta = false;
 		odmowaPotw = false;
+		poZapisie(r.data);
 		zapisanoTeraz = true;
 		fokusNaglowka();
 	}
@@ -101,15 +122,25 @@
 	let odmowaEl = $state<HTMLDivElement | null>(null);
 	async function otworzOdmowe() {
 		wyczysc();
+		// Podpis pod odmową to inny dokument niż podpis pod APK.
+		s.podpisApk = null;
 		odmowaOtwarta = true;
 		await tick();
 		odmowaEl?.focus();
+	}
+
+	function zamknijOdmowe() {
+		wyczysc();
+		s.podpisApk = null;
+		odmowaOtwarta = false;
+		odmowaPotw = false;
 	}
 
 	function popraw() {
 		wyczysc();
 		zapisanoTeraz = false;
 		s.apkEdycja = true;
+		s.podpisApk = null;
 		odmowaOtwarta = false;
 		odmowaPotw = false;
 		fokusNaglowka();
@@ -119,6 +150,7 @@
 		wyczysc();
 		if (s.apkZapisana) s.apkForm = { ...pustaApk(), ...s.apkZapisana };
 		s.apkEdycja = false;
+		s.podpisApk = null;
 		fokusNaglowka();
 	}
 
@@ -140,6 +172,40 @@
 		return wiersze;
 	});
 </script>
+
+{#snippet zgodyIPodpis(kontekst: 'apk' | 'odmowa')}
+	<!-- Zgody marketingowe: każda osobno, dobrowolna, domyślnie odznaczona; klient podpisuje je razem z APK (albo odmową). -->
+	<fieldset class="rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="zgody-{kontekst}">
+		<legend class="px-1 text-base font-semibold text-[#2a3b69]">Zgody marketingowe <span class="font-normal text-slate-500">(dobrowolne)</span></legend>
+		<div class="mt-1 space-y-2">
+			{#each ZGODY as z (z.kanal)}
+				<label class={OPCJA}>
+					<input type="checkbox" name="zgoda-{kontekst}-{z.kanal}" bind:checked={s.zgody[z.kanal]} class={ZNACZNIK} />
+					<span>
+						<span class="block font-medium text-slate-900">{z.tytul}</span>
+						<span class="mt-0.5 block text-sm text-slate-600">{z.tresc}</span>
+					</span>
+				</label>
+			{/each}
+		</div>
+		<p class="mt-3 text-xs text-slate-500">{ZGODY_UWAGA}</p>
+		<details class="mt-2 text-xs text-slate-600">
+			<summary class="cursor-pointer font-semibold text-[#2a3b69]">Informacja o przetwarzaniu danych (RODO)</summary>
+			{#each KLAUZULA_INFORMACYJNA as akapit, i (i)}<p class="mt-2">{akapit}</p>{/each}
+			<p class="mt-2"><a href={KLAUZULA_URL} target="_blank" rel="noopener noreferrer" class="underline underline-offset-2">Pełna klauzula informacyjna (PDF)</a></p>
+		</details>
+	</fieldset>
+	<PolePodpisu
+		wartosc={s.podpisApk}
+		onzmiana={(p) => {
+			s.podpisApk = p;
+			if (p) bladPodpisu = '';
+		}}
+		tytul={kontekst === 'odmowa' ? 'Podpis pod odmową i zgodami' : 'Podpis pod analizą potrzeb i zgodami'}
+		przycisk={kontekst === 'odmowa' ? 'Podpisz odmowę' : 'Podpisz analizę potrzeb'}
+		blad={bladPodpisu}
+	/>
+{/snippet}
 
 {#snippet radia(pole: PoleRadio, legenda: string, opcje: [string, string][], kolumny = true)}
 	<fieldset>
@@ -181,7 +247,11 @@
 				{/each}
 			</dl>
 		{/if}
-		<p class="mt-3 text-sm text-slate-500">Możesz to zmienić aż do wysłania wniosku.</p>
+		<p class="mt-3 text-sm text-slate-600" data-testid="apk-podpis-info">
+			{#if s.podpisApkAt}Podpisano elektronicznie {fmtDataGodzina(s.podpisApkAt)}.{/if}
+			Zgody marketingowe: e-mail — <strong>{s.zgody.email ? 'tak' : 'nie'}</strong>, telefon i SMS — <strong>{s.zgody.sms ? 'tak' : 'nie'}</strong>.
+		</p>
+		<p class="mt-3 text-sm text-slate-500">Możesz to zmienić aż do wysłania wniosku (poprawka wymaga nowego podpisu).</p>
 		<div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
 			<button type="button" class={BTN_DRUGI} onclick={popraw}><Pencil size={16} aria-hidden="true" /> Popraw</button>
 			<button type="button" class={BTN_GLOWNY} onclick={ondalej}>Dalej: wniosek</button>
@@ -259,6 +329,7 @@
 			</label>
 
 			{#if !odmowaOtwarta}
+				{@render zgodyIPodpis('apk')}
 				<Bledy {message} {bledy} />
 			{/if}
 
@@ -289,17 +360,12 @@
 						<input type="checkbox" bind:checked={odmowaPotw} class={ZNACZNIK} />
 						<span class="font-medium text-slate-900">Potwierdzam: świadomie odmawiam wypełnienia APK.</span>
 					</label>
+					<div class="mt-4 space-y-6">
+						{@render zgodyIPodpis('odmowa')}
+					</div>
 					<Bledy {message} {bledy} />
 					<div class="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-						<button
-							type="button"
-							class={BTN_DRUGI}
-							onclick={() => {
-								wyczysc();
-								odmowaOtwarta = false;
-								odmowaPotw = false;
-							}}
-						>
+						<button type="button" class={BTN_DRUGI} onclick={zamknijOdmowe}>
 							Jednak wypełnię APK
 						</button>
 						<button type="button" class={BTN_GLOWNY} disabled={zajety} onclick={zapiszOdmowe}>

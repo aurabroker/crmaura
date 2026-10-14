@@ -16,6 +16,7 @@ import {
 	type RenewalRow
 } from '$lib/server/renewals';
 import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, BRAK_PDF_ANKIETY, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
+import { pobierzPodpis, podpisDoPdf } from '$lib/server/podpis';
 
 type PdfEvent = Parameters<typeof pdfWniosku>[0];
 
@@ -59,7 +60,9 @@ async function trescOdmowy(admin: SupabaseClient, r: RenewalRow): Promise<string
 
 async function zapiszPdfApk(event: PdfEvent, admin: SupabaseClient, r: RenewalRow, kto: Klient): Promise<Uint8Array | null> {
 	try {
-		const pdf = await pdfApk(event, r, kto, { trescOdmowy: await trescOdmowy(admin, r) });
+		// Podpis klienta pod APK (wnioski sprzed podpisów go nie mają — PDF powstaje bez bloku podpisu).
+		const [tresc, podpis] = await Promise.all([trescOdmowy(admin, r), pobierzPodpis(admin, r.id, 'apk')]);
+		const pdf = await pdfApk(event, r, kto, { trescOdmowy: tresc, podpis: podpisDoPdf(podpis) });
 		const { error: e } = await admin.storage.from(BUCKET).upload(sciezkaPdfApk(r), pdf, { contentType: 'application/pdf', upsert: true });
 		if (e) throw e;
 		return pdf;
@@ -215,7 +218,7 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 
 	let pdf: Uint8Array | null = null;
 	try {
-		pdf = await pdfWniosku(event, r, kto);
+		pdf = await pdfWniosku(event, r, kto, { podpis: podpisDoPdf(await pobierzPodpis(admin, r.id, 'wniosek')) });
 		const path = `${r.tenant_id}/${r.id}/wniosek-odnowienia.pdf`;
 		const { error: e } = await admin.storage.from(BUCKET).upload(path, pdf, { contentType: 'application/pdf', upsert: true });
 		if (e) throw e;

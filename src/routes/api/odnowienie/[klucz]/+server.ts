@@ -33,6 +33,12 @@ import {
 	type TypZalacznika
 } from '$lib/renewals/program';
 import type { OdpowiedzZalacznikUrl, OdpowiedzZloz } from '$lib/renewals/api';
+import { PODPIS_BRAK_APK, PODPIS_BRAK_WNIOSKU, type ZakresPodpisu } from '$lib/renewals/podpis';
+import { migawkaZgod, walidujZgody, type Zgody } from '$lib/renewals/zgody';
+import { skrotApk, skrotWniosku, sprawdzPodpis, zapiszPodpis, type PodpisSprawdzony } from '$lib/server/podpis';
+import { zapiszZgody } from '$lib/server/zgody';
+import type { Klient } from '$lib/server/renewals';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { RequestHandler } from './$types';
 
 // Strona klienta /odnowienie/[klucz]. Klient nie ma konta: jedynym uprawnieniem jest podpisany klucz
@@ -64,6 +70,27 @@ export const GET: RequestHandler = async ({ params, request, getClientAddress })
 
 const blad = (status: number, message: string, bledy?: string[]) => json({ message, ...(bledy ? { bledy } : {}) }, { status });
 
+// Podpis klienta zapisujemy PRZED zmianą wniosku (skrót z treści, która zaraz zostanie zapisana) — bez
+// zapisanego podpisu APK ani wniosek nie powstają. Po zapisie liczymy skrót jeszcze raz z wiersza z bazy
+// (jsonb może znormalizować zapis) i w razie różnicy poprawiamy go w podpisie.
+async function podpisPrzed(admin: SupabaseClient, r: RenewalRow, zakres: ZakresPodpisu, p: PodpisSprawdzony, skrot: string, kto: Klient, teraz: string): Promise<boolean> {
+	try {
+		await zapiszPodpis(admin, r, zakres, p, skrot, kto, teraz);
+		return true;
+	} catch (e) {
+		console.error('renewals: podpis nie zapisany:', (e as Error)?.message ?? e);
+		await zapiszZdarzenie(admin, r, 'blad_podpisu', kto, { zakres, blad: String((e as Error)?.message ?? e).slice(0, 300) });
+		return false;
+	}
+}
+async function podpisPo(admin: SupabaseClient, zapisany: RenewalRow, zakres: ZakresPodpisu, p: PodpisSprawdzony, skrot: string, kto: Klient, teraz: string): Promise<string> {
+	const zBazy = zakres === 'apk' ? await skrotApk(zapisany) : await skrotWniosku(zapisany);
+	if (zBazy !== skrot) await zapiszPodpis(admin, zapisany, zakres, p, zBazy, kto, teraz).catch((e) => console.error('renewals: poprawka skrótu podpisu:', (e as Error)?.message ?? e));
+	return zBazy;
+}
+const teSameZgody = (r: RenewalRow, z: Zgody) => r.zgody?.email === z.email && r.zgody?.sms === z.sms;
+const BLAD_PODPISU = 'Nie udało się zapisać podpisu. Spróbuj ponownie.';
+
 // Praca po odpowiedzi (PDF, e-maile): na Cloudflare przez waitUntil, lokalnie — czekamy.
 async function wTle(event: Parameters<RequestHandler>[0], praca: Promise<unknown>, opis: string) {
 	const dalej = praca.catch((e) => console.error(`renewals: ${opis}:`, (e as Error)?.message ?? e));
@@ -87,18 +114,28 @@ export const POST: RequestHandler = async (event) => {
 	switch (body.akcja) {
 		case 'apk': {
 			const w = waliduj_apk(body.apk);
-			if (!w.ok) return blad(400, 'Uzupełnij analizę potrzeb.', w.bledy);
-			// Te same odpowiedzi co zapisane — nic nie zmieniamy i nie wysyłamy drugi raz PDF.
-			if (r.apk_at && !r.apk_odmowa && JSON.stringify(r.apk) === JSON.stringify(w.value)) return json(widok(r));
+			const zgody = walidujZgody(body.zgody);
+			const pod = await sprawdzPodpis(body.podpis, PODPIS_BRAK_APK);
+			// Wszystkie braki naraz: odpowiedzi i podpis.
+			if (!w.ok || !pod.ok) return blad(400, 'Uzupełnij analizę potrzeb.', [...(w.ok ? [] : w.bledy), ...(pod.ok ? [] : [pod.blad])]);
+			// Te same odpowiedzi i zgody, już podpisane — nic nie zmieniamy i nie wysyłamy drugi raz PDF.
+			if (r.apk_at && !r.apk_odmowa && r.podpis_apk_at && JSON.stringify(r.apk) === JSON.stringify(w.value) && teSameZgody(r, zgody)) return json(widok(r));
 			const teraz = new Date().toISOString();
-			const zapisany = await zapiszZWersja(admin, r, {
+			const nowe: Partial<RenewalRow> = {
 				apk: w.value,
 				apk_odmowa: false,
 				apk_at: teraz,
+				zgody: migawkaZgod(zgody, teraz),
+				podpis_apk_at: teraz,
 				...(r.status !== 'apk' ? { status: 'apk' } : {})
-			});
+			};
+			const skrot = await skrotApk({ ...r, ...nowe });
+			if (!(await podpisPrzed(admin, r, 'apk', pod.podpis, skrot, kto, teraz))) return blad(500, BLAD_PODPISU);
+			const zapisany = await zapiszZWersja(admin, r, nowe);
 			if (!zapisany) return blad(409, 'Wniosek zmienił się w międzyczasie — odśwież stronę.');
-			await zapiszZdarzenie(admin, r, 'apk', kto);
+			const skrotZBazy = await podpisPo(admin, zapisany, 'apk', pod.podpis, skrot, kto, teraz);
+			await zapiszZgody(admin, zapisany, zgody, kto, teraz);
+			await zapiszZdarzenie(admin, r, 'apk', kto, { podpis: pod.podpis.skrotPodpisu, skrot_tresci: skrotZBazy, zgody });
 			// PDF APK od razu do klienta (osobny dokument; wniosek przyjdzie drugim e-mailem).
 			await wTle(event, poApk(event, admin, zapisany, kto, { aktualizacja: !!r.apk_at }), 'po APK');
 			return json(widok(zapisany));
@@ -106,15 +143,26 @@ export const POST: RequestHandler = async (event) => {
 
 		case 'apk_odmowa': {
 			if (body.potwierdzenie !== true) return blad(400, 'Potwierdź odmowę wypełnienia APK.');
-			if (r.apk_at && r.apk_odmowa) return json(widok(r));
-			const zapisany = await zapiszZWersja(admin, r, {
+			const zgody = walidujZgody(body.zgody);
+			const pod = await sprawdzPodpis(body.podpis, PODPIS_BRAK_APK);
+			if (!pod.ok) return blad(400, 'Podpisz odmowę.', [pod.blad]);
+			if (r.apk_at && r.apk_odmowa && r.podpis_apk_at && teSameZgody(r, zgody)) return json(widok(r));
+			const teraz = new Date().toISOString();
+			const nowe: Partial<RenewalRow> = {
 				apk: null,
 				apk_odmowa: true,
-				apk_at: new Date().toISOString(),
+				apk_at: teraz,
+				zgody: migawkaZgod(zgody, teraz),
+				podpis_apk_at: teraz,
 				...(r.status !== 'apk' ? { status: 'apk' } : {})
-			});
+			};
+			const skrot = await skrotApk({ ...r, ...nowe });
+			if (!(await podpisPrzed(admin, r, 'apk', pod.podpis, skrot, kto, teraz))) return blad(500, BLAD_PODPISU);
+			const zapisany = await zapiszZWersja(admin, r, nowe);
 			if (!zapisany) return blad(409, 'Wniosek zmienił się w międzyczasie — odśwież stronę.');
-			await zapiszZdarzenie(admin, r, 'apk_odmowa', kto, { tresc: APK_ODMOWA_TRESC });
+			const skrotZBazy = await podpisPo(admin, zapisany, 'apk', pod.podpis, skrot, kto, teraz);
+			await zapiszZgody(admin, zapisany, zgody, kto, teraz);
+			await zapiszZdarzenie(admin, r, 'apk_odmowa', kto, { tresc: APK_ODMOWA_TRESC, podpis: pod.podpis.skrotPodpisu, skrot_tresci: skrotZBazy, zgody });
 			await wTle(event, poApk(event, admin, zapisany, kto, { aktualizacja: !!r.apk_at }), 'po odmowie APK');
 			return json(widok(zapisany));
 		}
@@ -185,6 +233,8 @@ export const POST: RequestHandler = async (event) => {
 			const apk = r.apk_odmowa ? null : r.apk;
 			const w = waliduj_wniosek(body.wniosek, apk);
 			if (!w.ok) return blad(400, 'Popraw wniosek.', w.bledy);
+			const pod = await sprawdzPodpis(body.podpis, PODPIS_BRAK_WNIOSKU);
+			if (!pod.ok) return blad(400, 'Podpisz wniosek.', [pod.blad]);
 			const wniosek = w.value;
 			// Klauzula ochrony prawnej, którą certyfikat już ma, nie jest zmianą ani dopłatą.
 			if (wniosek.zmiany && opObecnie(r)) wniosek.zmiany.ochrona_prawna = false;
@@ -237,18 +287,23 @@ export const POST: RequestHandler = async (event) => {
 				: wycena?.rodzaj === 'indywidualna' ? null
 				: r.skladka;
 
-			// Zajęcie wniosku: drugie złożenie (podwójne kliknięcie, druga karta) dostaje 409.
+			// Podpis pod wnioskiem przed złożeniem (skrót z treści, która zaraz zostanie zapisana).
 			const teraz = new Date().toISOString();
+			const skrot = await skrotWniosku({ ...r, decyzja: wniosek.decyzja, wniosek, ankieta, zalaczniki, skladka_nowa });
+			if (!(await podpisPrzed(admin, r, 'wniosek', pod.podpis, skrot, kto, teraz))) return blad(500, BLAD_PODPISU);
+
+			// Zajęcie wniosku: drugie złożenie (podwójne kliknięcie, druga karta) dostaje 409.
 			const { data: zlozony } = await admin
 				.from('crm_renewals')
-				.update({ status: 'zlozony', decyzja: wniosek.decyzja, wniosek, ankieta, zalaczniki, skladka_nowa, zlozono_at: teraz, updated_at: teraz })
+				.update({ status: 'zlozony', decyzja: wniosek.decyzja, wniosek, ankieta, zalaczniki, skladka_nowa, zlozono_at: teraz, podpis_wniosku_at: teraz, updated_at: teraz })
 				.eq('id', r.id)
 				.in('status', ['utworzony', 'wyslany', 'otwarty', 'apk'])
 				.gt('wazny_do', teraz)
 				.select('*')
 				.maybeSingle();
 			if (!zlozony) return blad(409, 'Wniosek został już złożony albo link wygasł.');
-			await zapiszZdarzenie(admin, r, 'zlozenie', kto, { decyzja: wniosek.decyzja });
+			const skrotZBazy = await podpisPo(admin, zlozony as RenewalRow, 'wniosek', pod.podpis, skrot, kto, teraz);
+			await zapiszZdarzenie(admin, r, 'zlozenie', kto, { decyzja: wniosek.decyzja, podpis: pod.podpis.skrotPodpisu, skrot_tresci: skrotZBazy });
 
 			// PDF, e-maile i zadanie idą w tle (Cloudflare: waitUntil), żeby klient nie czekał na wysyłkę.
 			await wTle(event, Promise.all([poZlozeniu(event, admin, zlozony as RenewalRow, kto), usunSierotyPlikow(admin, zlozony as RenewalRow)]), 'po złożeniu');

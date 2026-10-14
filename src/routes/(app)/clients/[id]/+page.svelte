@@ -1064,6 +1064,13 @@
 						<ShieldAlert size={14} aria-hidden="true" /> Brak zgody RODO
 					</a>
 				{/if}
+				{#if client.zgoda_email != null || client.zgoda_sms != null}
+					<!-- Zgody marketingowe z formularza odnowienia (ostatnia odpowiedź klienta, podpisana razem z APK). -->
+					<span class="flex items-center gap-1.5 {client.zgoda_email || client.zgoda_sms ? 'text-ok' : 'text-ink-3'}" title="Zgody marketingowe podpisane w formularzu odnowienia (rejestr zgód)">
+						<ShieldCheck size={14} aria-hidden="true" />
+						Marketing: e-mail {client.zgoda_email ? 'tak' : 'nie'} · SMS {client.zgoda_sms ? 'tak' : 'nie'}{client.zgoda_email_at ? ` · ${fmtDzien(client.zgoda_email_at, true)}` : ''}
+					</span>
+				{/if}
 				<span class="flex items-center gap-1.5">
 					{#if editingOpiekun}
 						<label class="sr-only" for="opiekun-klienta">Opiekun klienta</label>

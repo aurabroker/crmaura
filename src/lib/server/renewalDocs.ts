@@ -1,7 +1,9 @@
 import { esc } from '$lib/server/mail';
 import { newServerPdf } from '$lib/server/pdf';
 import { rysujLogo } from '$lib/server/pdfLogo';
+import type { PodpisPdf } from '$lib/server/podpis';
 import { nowyOkres, opObecnie, type RenewalRow } from '$lib/server/renewals';
+import { ZGODA_TYTUL, ZGODY, opisZgody, type KanalZgody } from '$lib/renewals/zgody';
 import {
 	APK_ODPOWIEDZI,
 	APK_ODMOWA_TRESC,
@@ -336,8 +338,48 @@ export function mailBiuro(r: RenewalRow, linki: { polisa: string; klient: string
 // ---------- PDF wniosku ----------
 
 type PdfEvent = Parameters<typeof newServerPdf>[0];
+type Doc = Awaited<ReturnType<typeof newServerPdf>>['doc'];
 
-export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: string | null; ua: string | null }): Promise<Uint8Array> {
+// Blok podpisu klienta (obraz PNG z pola podpisu, data w czasie polskim, skrót SHA-256 podpisanej treści).
+// Zwykły podpis elektroniczny (eIDAS) — bez określeń „kwalifikowany” ani „równoważny odręcznemu”.
+// Wnioski sprzed podpisów: blok pomijany.
+function blokPodpisu(doc: Doc, font: string, y: number, podpis: PodpisPdf | null | undefined, czego: string): number {
+	if (!podpis) return y;
+	const SZER = 60;
+	const WYS = SZER / 2.5;
+	if (y + WYS + 24 > 276) {
+		doc.addPage();
+		y = 20;
+	}
+	doc.setFont(font, 'bold');
+	doc.setFontSize(9);
+	doc.setTextColor(42, 59, 105);
+	doc.text('Podpis Klienta', 14, y);
+	doc.setTextColor(0);
+	doc.setFont(font, 'normal');
+	y += 2;
+	try {
+		doc.addImage(podpis.png, 'PNG', 14, y, SZER, WYS);
+	} catch (e) {
+		console.error('renewals: podpis w PDF nieczytelny:', (e as Error)?.message ?? e);
+	}
+	doc.setDrawColor(160);
+	doc.setLineWidth(0.3);
+	doc.line(14, y + WYS + 1, 14 + SZER, y + WYS + 1);
+	y += WYS + 5;
+	doc.setFontSize(7);
+	doc.setTextColor(90);
+	const linie: string[] = doc.splitTextToSize(
+		`Podpisano elektronicznie ${dataGodzina(podpis.podpisano_at)} (czas polski) w formularzu ${czego}. Skrót SHA-256 podpisanej treści: ${podpis.skrot_tresci}`,
+		182
+	);
+	doc.text(linie, 14, y);
+	doc.setTextColor(0);
+	doc.setFontSize(9);
+	return y + linie.length * 3.2 + 6;
+}
+
+export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: string | null; ua: string | null }, o: { podpis?: PodpisPdf | null } = {}): Promise<Uint8Array> {
 	const { doc, autoTable, font } = await newServerPdf(event);
 	const nowy = nowyOkres(r.okres_do ?? '');
 	const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
@@ -444,6 +486,9 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 		y = lastY() + 8;
 	}
 
+	// Podpis klienta pod wnioskiem (decyzja, zmiany, ankieta i załączniki objęte skrótem).
+	y = blokPodpisu(doc, font, y, o.podpis, r.decyzja === 'nie' ? 'odnowienia (rezygnacja)' : 'odnowienia (wniosek)');
+
 	const strony = doc.getNumberOfPages();
 	for (let i = 1; i <= strony; i++) {
 		doc.setPage(i);
@@ -465,7 +510,7 @@ export async function pdfApk(
 	event: PdfEvent,
 	r: RenewalRow,
 	kto: { ip: string | null; ua: string | null },
-	o: { trescOdmowy?: string | null } = {}
+	o: { trescOdmowy?: string | null; podpis?: PodpisPdf | null } = {}
 ): Promise<Uint8Array> {
 	const { doc, autoTable, font } = await newServerPdf(event);
 	const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
@@ -532,6 +577,21 @@ export async function pdfApk(
 		tabela([['Klient', 'Oświadczam, że podane informacje są zgodne z prawdą.']], y);
 	}
 	y = lastY() + 8;
+	// Zgody marketingowe w brzmieniu z chwili podpisu (migawka przy wniosku); wnioski sprzed zgód — bez tej sekcji.
+	if (r.zgody) {
+		const z = r.zgody;
+		const tekst = (k: KanalZgody) => z.teksty?.[k] ?? ZGODY.find((x) => x.kanal === k)?.tresc ?? '';
+		y = naglowek('Zgody marketingowe (dobrowolne)', y);
+		tabela(
+			[
+				[ZGODA_TYTUL.email, `${opisZgody(z, 'email')} — ${tekst('email')}`],
+				[ZGODA_TYTUL.sms, `${opisZgody(z, 'sms')} — ${tekst('sms')}`]
+			],
+			y
+		);
+		y = lastY() + 8;
+	}
+	y = blokPodpisu(doc, font, y, o.podpis, odmowa ? 'odnowienia (odmowa wypełnienia APK i zgody)' : 'odnowienia (analiza potrzeb i zgody)');
 	y = naglowek('Propozycja ubezpieczenia', y);
 	tabela(propozycjaApk(r), y);
 	y = lastY() + 8;

@@ -428,7 +428,7 @@
 									<span class="block text-xs text-slate-400">{fmtDzien(w.apk_at, true)}</span>
 								{:else if w.apk_at}
 									<Badge variant="success">Wypełniona</Badge>
-									<span class="block text-xs text-slate-400">{fmtDzien(w.apk_at, true)}</span>
+									<span class="block text-xs text-slate-400">{fmtDzien(w.apk_at, true)}{w.podpis_apk_at ? ' · podpisana' : ''}</span>
 								{:else if etap(w) === 'nieaktywny'}
 									<span class="text-xs text-slate-400">—</span>
 								{:else if w.otwarto_at}
