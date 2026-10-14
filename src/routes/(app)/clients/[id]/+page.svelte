@@ -5,7 +5,9 @@
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
-	import { appState } from '$lib/stores/app.svelte';
+	import { appState, isAdmin } from '$lib/stores/app.svelte';
+	import ScalKlienta from '$lib/components/ScalKlienta.svelte';
+	import { Merge } from 'lucide-svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
 	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
@@ -1012,6 +1014,12 @@
 	}
 
 	let wiecejMenu = $state(false);
+	// Scalanie z innym rekordem (duplikat): po scaleniu zostaje rekord docelowy — gdy to nie ten, przechodzimy na niego.
+	let scalOpen = $state(false);
+	function poScaleniu(docelowyId: string) {
+		if (docelowyId !== clientId) goto(`/clients/${docelowyId}`);
+		else void wczytajWnioski(true);
+	}
 	function wyslijApk() {
 		apkAdvisor = appState.profile?.imie_nazwisko ?? '';
 		showNewApk = true;
@@ -1120,6 +1128,10 @@
 						<button role="menuitem" onclick={openNewTask} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><CheckCircle2 size={15} class="text-ink-3" /> Nowe zadanie</button>
 						<button role="menuitem" onclick={openNewContact} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><UserPlus size={15} class="text-ink-3" /> Dodaj osobę kontaktową</button>
 						<button role="menuitem" onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
+						{#if isAdmin(appState.profile)}
+							<div class="my-1 border-t border-line-soft"></div>
+							<button role="menuitem" onclick={() => (scalOpen = true)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Scal z duplikatem: polisy, wnioski, e-maile i reszta przechodzą na jeden rekord"><Merge size={15} class="text-ink-3" /> Scal z innym klientem…</button>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -2357,6 +2369,11 @@
 		onclose={() => (pisanieEmaila = false)}
 		onwyslano={() => { emaileDla = clientId ?? ''; void wczytajEmaile(); }}
 	/>
+{/if}
+
+<!-- Scalanie z duplikatem (administrator) -->
+{#if client}
+	<ScalKlienta klient={client} open={scalOpen} onclose={() => (scalOpen = false)} onscalono={poScaleniu} />
 {/if}
 
 <!-- Modal: Zadanie -->
