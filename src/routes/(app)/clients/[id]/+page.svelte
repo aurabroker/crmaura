@@ -2099,6 +2099,9 @@
 							<span class="w-2 h-2 rounded-full shrink-0 {priorityDotMap[t.priorytet]}"></span>
 							<div class="flex-1 min-w-0">
 								<span class="text-sm font-medium text-slate-900 {done ? 'line-through text-slate-400' : ''}">{t.tytul}</span>
+								{#if t.renewal_id}
+									<button type="button" onclick={() => (activeTab = 'apk')} class="ml-2 align-middle text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100">Wniosek online →</button>
+								{/if}
 								{#if t.opis}<p class="text-xs text-slate-400 truncate">{t.opis}</p>{/if}
 								{#if t.postep_pct !== undefined && t.czas_trwania_dni}
 									{@const pct = t.postep_pct ?? 0}

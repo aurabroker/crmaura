@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { wczytajZadania } from '$lib/kolekcje';
+	import { wczytajWnioskiOdnowien, wczytajZadania } from '$lib/kolekcje';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, dateDiffDays, todayStr, fmtDzien, fmtTermin, odmiana } from '$lib/utils';
@@ -7,22 +7,40 @@
 	import SectionHeader from '$lib/components/SectionHeader.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { dndzone } from 'svelte-dnd-action';
-	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check, ClipboardList } from 'lucide-svelte';
-	import { podsumujWnioski, polisyKlientow, wniosekTestowy } from '$lib/components/renewal/crmRenewals';
+	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check, ClipboardList, Inbox, Plus, Circle } from 'lucide-svelte';
+	import { adresWniosku, podsumujWnioski, polisyKlientow, wniosekNowy, wniosekTestowy, wnioskiDoObslugi, wnioskiZalatwioneZadaniem } from '$lib/components/renewal/crmRenewals';
+	import { etykietaDecyzji } from '$lib/renewals/staffApi';
+	import { ustawStatusZadania, zadanieOtwarte, zadanieZWniosku, zadaniaPoZmianie } from '$lib/zadania';
+	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
 	import { OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { isBroker } from '$lib/stores/app.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
-	import type { Policy } from '$lib/types/database';
+	import type { CrmTask, Policy, WniosekOdnowienia } from '$lib/types/database';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
+	import { onMount } from 'svelte';
 
+	// Jeden modal zadania dla całego pulpitu: edycja z kolejki / sekcji Zadania albo nowe zadanie
+	// (z pustego formularza albo do wniosku klienta — z gotowym tytułem, klientem i powiązaniem).
 	let taskModalOpen = $state(false);
-	let editingTask = $state<(typeof appState.tasks)[0] | null>(null);
+	let editingTask = $state<CrmTask | null>(null);
+	let presetZadania = $state<{ klientId?: string; klientNazwa?: string; renewalId?: string; tytul?: string; termin?: string }>({});
 
-	function openTask(t: (typeof appState.tasks)[0]) {
+	function openTask(t: CrmTask) {
 		editingTask = t;
+		presetZadania = {};
 		taskModalOpen = true;
+	}
+	function noweZadanie(preset: typeof presetZadania = {}) {
+		editingTask = null;
+		presetZadania = preset;
+		taskModalOpen = true;
+	}
+	function zamknijModal() {
+		taskModalOpen = false;
+		editingTask = null;
+		presetZadania = {};
 	}
 
 	const today = todayStr();
@@ -231,7 +249,6 @@
 		{ id: 'claims_stats', label: 'Statystyki szkód' },
 		{ id: 'premium_chart', label: 'Przypis składki (12 mies.)' },
 		{ id: 'dynamika', label: 'Dynamika' },
-		{ id: 'zadania', label: 'Zadania' },
 	];
 
 	let configMode = $state(false);
@@ -301,9 +318,151 @@
 	const maWnioskiApk = $derived(appState.wnioskiOdnowien.some((w) => !wniosekTestowy(w)));
 	const odnowionePolisy = $derived(new Set(appState.policies.filter((p) => p.renewal_of && !p.deleted_at).map((p) => p.renewal_of as string)));
 	// Pierwsze polisy (wniosek bez certyfikatu) są załatwione, gdy klient dostał polisę po złożeniu wniosku.
-	const apkWnioski = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowionePolisy, today, polisyKlientow(appState.policies)));
+	const polisyKl = $derived(polisyKlientow(appState.policies));
+	// Zadanie z wniosku (crm_tasks.renewal_id): otwarte przed zamkniętym, najnowsze pierwsze.
+	const zadaniaWnioskow = $derived.by(() => {
+		const m = new Map<string, CrmTask>();
+		const lista = appState.tasks
+			.filter(zadanieZWniosku)
+			.sort((a, b) => Number(zadanieOtwarte(b)) - Number(zadanieOtwarte(a)) || (b.created_at ?? '').localeCompare(a.created_at ?? ''));
+		for (const t of lista) if (!m.has(t.renewal_id!)) m.set(t.renewal_id!, t);
+		return m;
+	});
+	// Wniosek zamknięty zadaniem (zakończone / anulowane) schodzi z alertu, choć polisa nie powstała w CRM.
+	const wnioskiZalatwione = $derived(wnioskiZalatwioneZadaniem(appState.tasks));
+	const apkWnioski = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowionePolisy, today, polisyKl, wnioskiZalatwione));
+	// Alert: klienci, którzy złożyli wniosek (i APK) online i czekają na ofertę / polisę.
+	const wnioskiCzekaja = $derived(wnioskiDoObslugi(appState.wnioskiOdnowien, odnowionePolisy, today, polisyKl, wnioskiZalatwione));
+	const wnioskiWg = $derived(new Map(appState.wnioskiOdnowien.map((w) => [w.id, w])));
 
-	type TypKolejki = 'Rata' | 'Zadanie' | 'Odnowienie';
+	const kiedy = (iso: string | null | undefined) => {
+		if (!iso) return '—';
+		const d = dateDiffDays(iso.slice(0, 10), today);
+		return d <= 0 ? 'dziś' : d === 1 ? 'wczoraj' : `${d} dni temu`;
+	};
+	const apkWniosku = (w: WniosekOdnowienia) => (w.apk_odmowa ? 'APK: odmowa' : w.apk_at ? 'APK wypełniona' : 'bez APK');
+
+	// Wystawienie polisy z wniosku: pierwsza polisa — nowa polisa klienta; odnowienie — jak przycisk
+	// „Odnów” na karcie polisy (ten sam rodzaj, przedmiot, pojazd, umowa programu obowiązująca od startu odnowienia).
+	function linkNowejPolisy(w: WniosekOdnowienia): string {
+		const p = w.polisa_id ? polisaWg.get(w.polisa_id) : undefined;
+		if (wniosekNowy(w) || !p) return `/policies/new?klient=${w.klient_id}`;
+		const ug = p.parent_id ? polisaWg.get(p.parent_id) : undefined;
+		const start = p.data_do ? dateDiffDays(today, p.data_do) >= 0 ? new Date(`${p.data_do}T12:00:00Z`) : null : null;
+		if (start) start.setUTCDate(start.getUTCDate() + 1);
+		const ugOdnowienia = ug ? umowaObowiazujaca(umowyProgramu(appState.policies, ug.nr_polisy), start ? start.toISOString().slice(0, 10) : today) : null;
+		return `/policies/new?klient=${p.klient_id}&rodzaj=${encodeURIComponent(p.rodzaj)}&przedmiot=${encodeURIComponent(p.przedmiot ?? '')}&renewal_of=${p.id}${p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}${ugOdnowienia ? `&parent_id=${ugOdnowienia.id}` : ''}`;
+	}
+
+	// Zadanie do wniosku: istniejące otwieramy, brak (wniosek sprzed powiązań) — nowe z gotowym tytułem.
+	function otworzZadanieWniosku(w: WniosekOdnowienia) {
+		const t = zadaniaWnioskow.get(w.id);
+		if (t) return openTask(t);
+		noweZadanie({
+			klientId: w.klient_id,
+			klientNazwa: w.klient_nazwa ?? undefined,
+			renewalId: w.id,
+			tytul: `${wniosekNowy(w) ? 'Pierwsza polisa' : 'Odnowienie'}: ${etykietaDecyzji(w.decyzja, w.rodzaj)} — ${w.klient_nazwa}`,
+			termin: today
+		});
+	}
+
+	// „Załatwione”: wniosek obsłużony poza CRM (np. klient zrezygnował przez telefon) — zamykamy zadanie z wniosku,
+	// a gdy go nie ma, zapisujemy zamknięte zadanie, żeby decyzja została w historii. Do cofnięcia z paska na dole.
+	async function zalatwWniosek(w: WniosekOdnowienia) {
+		const t = zadaniaWnioskow.get(w.id);
+		if (t && zadanieOtwarte(t)) {
+			const blad = await ustawStatusZadania(t, 'zakonczone', appState.profile!.id);
+			if (blad) { toast = { tekst: `Nie udało się zamknąć zadania: ${blad}`, blad: true }; return; }
+			appState.tasks = zadaniaPoZmianie(appState.tasks, t.id, 'zakonczone');
+			toast = {
+				tekst: `Wniosek: ${w.klient_nazwa} — oznaczony jako załatwiony (zadanie zakończone)`,
+				cofnij: async () => {
+					toast = null;
+					const b = await ustawStatusZadania({ ...t, status: 'zakonczone' }, 'otwarte', appState.profile!.id);
+					if (b) { toast = { tekst: `Nie udało się cofnąć: ${b}`, blad: true }; return; }
+					appState.tasks = zadaniaPoZmianie(appState.tasks, t.id, 'otwarte');
+				}
+			};
+			return;
+		}
+		const teraz = new Date().toISOString();
+		const { data, error } = await sb
+			.from('crm_tasks')
+			.insert({
+				tenant_id: appState.profile!.tenant_id,
+				created_by: appState.profile!.id,
+				assigned_to: appState.profile!.id,
+				klient_id: w.klient_id,
+				polisa_id: w.polisa_id,
+				renewal_id: w.id,
+				typy: ['wniosek'],
+				tytul: `Wniosek obsłużony poza CRM — ${w.klient_nazwa}`.slice(0, 200),
+				opis: `${wniosekNowy(w) ? 'Pierwsza polisa' : 'Odnowienie'}: ${etykietaDecyzji(w.decyzja, w.rodzaj)}, złożony ${fmtDzien(w.zlozono_at?.slice(0, 10), true)}. Oznaczono jako załatwiony z pulpitu.`,
+				termin: today,
+				priorytet: 'normalny',
+				status: 'zakonczone',
+				zakonczone_at: teraz,
+				postep_pct: 100
+			} as never)
+			.select('id')
+			.single();
+		if (error || !data) { toast = { tekst: `Nie udało się oznaczyć wniosku: ${error?.message ?? 'brak id'}`, blad: true }; return; }
+		const id = (data as { id: string }).id;
+		await odswiezZadania();
+		toast = {
+			tekst: `Wniosek: ${w.klient_nazwa} — oznaczony jako załatwiony`,
+			cofnij: async () => {
+				toast = null;
+				const { error: e2 } = await sb.from('crm_tasks').delete().eq('id', id);
+				if (e2) { toast = { tekst: `Nie udało się cofnąć: ${e2.message}`, blad: true }; return; }
+				appState.tasks = appState.tasks.filter((x) => x.id !== id);
+			}
+		};
+	}
+
+	// Szybkie zakończenie z sekcji Zadania (kółko przy zadaniu) — z cofnięciem.
+	async function zakonczZadanie(t: CrmTask) {
+		const blad = await ustawStatusZadania(t, 'zakonczone', appState.profile!.id);
+		if (blad) { toast = { tekst: `Nie udało się zakończyć zadania: ${blad}`, blad: true }; return; }
+		appState.tasks = zadaniaPoZmianie(appState.tasks, t.id, 'zakonczone');
+		toast = {
+			tekst: `Zakończono: ${t.tytul}`,
+			cofnij: async () => {
+				toast = null;
+				const b = await ustawStatusZadania({ ...t, status: 'zakonczone' }, t.status, appState.profile!.id);
+				if (b) { toast = { tekst: `Nie udało się cofnąć: ${b}`, blad: true }; return; }
+				appState.tasks = zadaniaPoZmianie(appState.tasks, t.id, t.status);
+			}
+		};
+	}
+
+	async function odswiezZadania() {
+		const { data, error } = await wczytajZadania();
+		if (!error && data) appState.tasks = data as typeof appState.tasks;
+	}
+
+	// Pulpit otwarty cały dzień: wnioski i zadania doczytują się co 2 minuty (gdy karta widoczna) i po powrocie do karty,
+	// żeby alert o złożonym wniosku pojawił się bez odświeżania strony.
+	onMount(() => {
+		let wToku = false;
+		const odswiez = async () => {
+			if (wToku || document.visibilityState !== 'visible') return;
+			wToku = true;
+			try {
+				const [rW] = await Promise.all([wczytajWnioskiOdnowien(), odswiezZadania()]);
+				if (!rW.error && rW.data) appState.wnioskiOdnowien = rW.data as typeof appState.wnioskiOdnowien;
+			} finally {
+				wToku = false;
+			}
+		};
+		const co = setInterval(() => void odswiez(), 120_000);
+		const naPowrot = () => { if (document.visibilityState === 'visible') void odswiez(); };
+		document.addEventListener('visibilitychange', naPowrot);
+		return () => { clearInterval(co); document.removeEventListener('visibilitychange', naPowrot); };
+	});
+
+	type TypKolejki = 'Wniosek' | 'Rata' | 'Zadanie' | 'Odnowienie';
 	type PozycjaKolejki = {
 		klucz: string;
 		typ: TypKolejki;
@@ -314,10 +473,12 @@
 		termin: string;
 		opiekun: string | null;
 		rata?: (typeof appState.payments)[0];
-		zadanie?: (typeof appState.tasks)[0];
+		zadanie?: CrmTask;
+		/** Zadanie z wniosku online — link „Wniosek” obok „Otwórz”. */
+		wniosekHref?: string;
 		polisaId?: string;
 	};
-	const KOLEJNOSC: Record<TypKolejki, number> = { Rata: 0, Zadanie: 1, Odnowienie: 2 };
+	const KOLEJNOSC: Record<TypKolejki, number> = { Wniosek: 0, Rata: 1, Zadanie: 2, Odnowienie: 3 };
 
 	// Raty po terminie i na najbliższe 7 dni, zadania z terminem do 7 dni, odnowienia do 14 dni
 	const kolejka = $derived.by((): PozycjaKolejki[] => {
@@ -344,17 +505,21 @@
 			});
 		const zadania = dashOpenTasks
 			.filter((t) => t.termin && dateDiffDays(today, t.termin) <= 7)
-			.map((t): PozycjaKolejki => ({
-				klucz: 't' + t.id,
-				typ: 'Zadanie',
-				tytul: t.tytul,
-				klient: t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? null,
-				klientHref: t.klient_id ? `/clients/${t.klient_id}` : null,
-				dni: dateDiffDays(today, t.termin!),
-				termin: t.termin!,
-				opiekun: t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? null,
-				zadanie: t
-			}));
+			.map((t): PozycjaKolejki => {
+				const w = t.renewal_id ? wnioskiWg.get(t.renewal_id) : undefined;
+				return {
+					klucz: 't' + t.id,
+					typ: zadanieZWniosku(t) ? 'Wniosek' : 'Zadanie',
+					tytul: t.tytul,
+					klient: t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? null,
+					klientHref: t.klient_id ? `/clients/${t.klient_id}` : null,
+					dni: dateDiffDays(today, t.termin!),
+					termin: t.termin!,
+					opiekun: t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? null,
+					zadanie: t,
+					wniosekHref: w ? adresWniosku(w) : t.renewal_id && t.klient_id ? `/clients/${t.klient_id}?tab=apk` : undefined
+				};
+			});
 		const odnowienia = appState.policies
 			.filter((p) => p.typ_umowy !== 'generalna' && dateDiffDays(today, p.data_do) >= 0 && dateDiffDays(today, p.data_do) <= 14)
 			.map((p): PozycjaKolejki => ({
@@ -382,6 +547,7 @@
 	}
 	const tonTerminu = (dni: number) => (dni < 0 ? 'text-danger font-semibold' : dni <= 3 ? 'text-warn font-semibold' : 'text-ink-2');
 	const tonTypu: Record<TypKolejki, string> = {
+		Wniosek: 'bg-accent-soft text-accent-text',
 		Rata: 'bg-danger-soft text-danger',
 		Zadanie: 'bg-surface-2 text-ink-2',
 		Odnowienie: 'bg-warn-soft text-warn'
@@ -409,6 +575,22 @@
 				zadania: [...zad].sort((a, b) => (a.godzina ?? '99').localeCompare(b.godzina ?? '99'))
 			}));
 	});
+
+	// Sekcja Zadania: po terminie (najstarsze pierwsze), potem dzień po dniu w tym tygodniu, na końcu bez terminu.
+	const ZALEGLE_W_SEKCJI = 8;
+	const BEZ_TERMINU_W_SEKCJI = 5;
+	const grupyZadan = $derived.by(() => {
+		type Grupa = { klucz: string; etykieta: string; ton: string; zadania: CrmTask[]; ukryte: number };
+		const grupy: Grupa[] = [];
+		const zalegle = [...dashOverdueTasks].sort((a, b) => (a.termin ?? '').localeCompare(b.termin ?? '') || (a.godzina ?? '99').localeCompare(b.godzina ?? '99'));
+		if (zalegle.length) grupy.push({ klucz: 'zalegle', etykieta: 'Po terminie', ton: 'text-danger', zadania: zalegle.slice(0, ZALEGLE_W_SEKCJI), ukryte: Math.max(0, zalegle.length - ZALEGLE_W_SEKCJI) });
+		for (const d of tydzien) grupy.push({ klucz: d.data, etykieta: d.etykieta, ton: d.dzis ? 'text-accent-text' : 'text-ink-3', zadania: d.zadania, ukryte: 0 });
+		const bezTerminu = dashOpenTasks.filter((t) => !t.termin);
+		if (bezTerminu.length) grupy.push({ klucz: 'bez-terminu', etykieta: 'Bez terminu', ton: 'text-ink-3', zadania: bezTerminu.slice(0, BEZ_TERMINU_W_SEKCJI), ukryte: Math.max(0, bezTerminu.length - BEZ_TERMINU_W_SEKCJI) });
+		return grupy;
+	});
+	const zadanWnioskowOtwartych = $derived(dashOpenTasks.filter(zadanieZWniosku).length);
+	const tonPriorytetu: Record<CrmTask['priorytet'], string> = { pilny: 'bg-danger', wysoki: 'bg-warn', normalny: '', niski: '' };
 
 	// Portfel w bieżącym roku (bez umów generalnych)
 	const portfel = $derived.by(() => {
@@ -536,17 +718,28 @@
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">Plan odnowień →</span>
 	</a>
 	{#if maWnioskiApk}
-		<a href="/apk?widok=wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
-			<span class="flex items-center gap-2 text-[13px] font-semibold {apkWnioski.czeka ? 'text-warn' : 'text-ok'}">
-				<ClipboardList size={16} />
-				APK · {apkWnioski.czeka ? 'u klientów' : 'w porządku'}
-			</span>
-			<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{apkWnioski.czeka}</span>
-			<span class="text-sm text-ink-2">{slowo(apkWnioski.czeka, 'wniosek czeka', 'wnioski czekają', 'wniosków czeka')} · {apkWnioski.apk} APK wypełniono{apkWnioski.odmowy ? ` · ${apkWnioski.odmowy} ${slowo(apkWnioski.odmowy, 'odmowa', 'odmowy', 'odmów')}` : ''}</span>
-			<span class="mt-1 text-[13px] font-semibold text-accent-text">
-				{apkWnioski.doWystawienia ? `${apkWnioski.doWystawienia} ${slowo(apkWnioski.doWystawienia, 'złożony do wystawienia', 'złożone do wystawienia', 'złożonych do wystawienia')} →` : 'Wnioski i APK →'}
-			</span>
-		</a>
+		{#if wnioskiCzekaja.length}
+			<!-- Złożone wnioski mają pierwszeństwo przed linkami u klientów: klient czeka na ofertę / polisę. -->
+			<a href="#wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-accent/50 hover:border-accent transition-colors">
+				<span class="flex items-center gap-2 text-[13px] font-semibold text-accent-text">
+					<Inbox size={16} />
+					Wnioski · do wystawienia
+				</span>
+				<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{wnioskiCzekaja.length}</span>
+				<span class="text-sm text-ink-2">{slowo(wnioskiCzekaja.length, 'klient czeka', 'klientów czeka', 'klientów czeka')} na ofertę / polisę · {apkWnioski.czeka} {slowo(apkWnioski.czeka, 'link u klienta', 'linki u klientów', 'linków u klientów')}</span>
+				<span class="mt-1 text-[13px] font-semibold text-accent-text">Zobacz wnioski ↓</span>
+			</a>
+		{:else}
+			<a href="/apk?widok=wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+				<span class="flex items-center gap-2 text-[13px] font-semibold {apkWnioski.czeka ? 'text-warn' : 'text-ok'}">
+					<ClipboardList size={16} />
+					APK · {apkWnioski.czeka ? 'u klientów' : 'w porządku'}
+				</span>
+				<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{apkWnioski.czeka}</span>
+				<span class="text-sm text-ink-2">{slowo(apkWnioski.czeka, 'wniosek czeka', 'wnioski czekają', 'wniosków czeka')} · {apkWnioski.apk} APK wypełniono{apkWnioski.odmowy ? ` · ${apkWnioski.odmowy} ${slowo(apkWnioski.odmowy, 'odmowa', 'odmowy', 'odmów')}` : ''}</span>
+				<span class="mt-1 text-[13px] font-semibold text-accent-text">Wnioski i APK →</span>
+			</a>
+		{/if}
 	{/if}
 	<a href={unresolvedAlerts.length ? '#alerty' : '/settings?tab=dokumenty'} class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {unresolvedAlerts.length ? 'text-danger' : 'text-ok'}">
@@ -558,6 +751,50 @@
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">{unresolvedAlerts.length ? 'Zobacz alerty ↓' : 'Dokumenty rozliczeniowe →'}</span>
 	</a>
 </section>
+
+<!-- Wnioski klientów złożone online — klient czeka na ofertę / polisę -->
+{#if wnioskiCzekaja.length > 0}
+	<section id="wnioski" data-testid="alert-wnioski" aria-labelledby="wnioski-h" class="mb-5 bg-white border border-accent/50 rounded-xl overflow-hidden scroll-mt-20">
+		<div class="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 bg-accent-soft border-b border-accent/30">
+			<Inbox size={16} class="text-accent-text shrink-0" />
+			<h2 id="wnioski-h" class="text-[15px] font-semibold text-accent-text">Klienci czekają na ofertę / polisę ({wnioskiCzekaja.length})</h2>
+			<span class="text-[13px] text-ink-2">wniosek i APK wypełnione online — czas na wycenę i wystawienie polisy</span>
+			<a href="/apk?widok=wnioski" class="ml-auto text-[13px] font-semibold text-accent-text hover:underline">Wszystkie wnioski →</a>
+		</div>
+		<ul class="divide-y divide-line-soft">
+			{#each wnioskiCzekaja as w (w.id)}
+				{@const t = zadaniaWnioskow.get(w.id)}
+				{@const nowa = wniosekNowy(w)}
+				{@const dniZadania = t?.termin ? dateDiffDays(today, t.termin) : null}
+				<li class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5" data-testid="wniosek-czeka">
+					<span class="shrink-0 px-2 h-[22px] leading-[22px] rounded-full text-xs font-semibold {nowa ? 'bg-ok-soft text-ok' : 'bg-warn-soft text-warn'}">{nowa ? 'Pierwsza polisa' : 'Odnowienie'}</span>
+					<div class="min-w-[240px] flex-1 text-sm">
+						<a href="/clients/{w.klient_id}" class="font-semibold text-ink hover:text-accent-text">{w.klient_nazwa}</a>
+						{#if w.nr_polisy}<span class="font-mono text-[13px] text-ink-3"> · {w.nr_polisy}</span>{/if}
+						<p class="text-[13px] text-ink-2">
+							{etykietaDecyzji(w.decyzja, w.rodzaj)} · {apkWniosku(w)}{w.podpis_wniosku_at ? ' · podpisany' : ''} · złożony {kiedy(w.zlozono_at)}{!nowa && w.okres_do ? ` · ochrona do ${fmtDzien(w.okres_do)}` : ''}
+							{#if t}
+								· zadanie: {t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? 'nieprzypisane'}{#if dniZadania != null}, <span class={tonTerminu(dniZadania)}>{dniZadania === 0 ? 'termin dziś' : fmtTermin(t.termin!, today)}</span>{/if}
+							{:else}
+								· <span class="text-warn font-semibold">bez zadania</span>
+							{/if}
+						</p>
+					</div>
+					<div class="flex flex-wrap gap-1.5 ml-auto">
+						<a href={adresWniosku(w)} class="h-8 leading-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Wniosek</a>
+						<button onclick={() => otworzZadanieWniosku(w)} class="h-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">{t ? 'Zadanie' : '+ Zadanie'}</button>
+						<a href={linkNowejPolisy(w)} class="h-8 leading-8 px-3 text-[13px] font-semibold rounded-lg bg-accent text-white hover:bg-accent-hover">Wystaw polisę</a>
+						<button
+							onclick={() => zalatwWniosek(w)}
+							title="Wniosek obsłużony poza CRM (np. rezygnacja przez telefon): zamyka zadanie z wniosku i zdejmuje go z alertu. Wystawiona polisa zdejmuje wniosek sama."
+							class="h-8 px-2.5 text-[13px] font-medium rounded-lg text-ink-3 hover:bg-surface-2 hover:text-ink"
+						>Załatwione</button>
+					</div>
+				</li>
+			{/each}
+		</ul>
+	</section>
+{/if}
 
 <!-- Alerty rozliczeniowe -->
 {#if unresolvedAlerts.length > 0}
@@ -605,8 +842,11 @@
 				<h2 id="kolejka-h" class="text-[15px] font-semibold text-ink">Kolejka na dziś</h2>
 				<span class="text-xs text-ink-3">po terminie i najbliższe 7 dni · odnowienia 14 dni</span>
 			</div>
+			<button onclick={() => noweZadanie()} data-testid="kolejka-nowe-zadanie" class="h-7 flex items-center gap-1 pl-2 pr-2.5 rounded-full text-[13px] font-semibold bg-accent text-white hover:bg-accent-hover transition-colors">
+				<Plus size={14} /> Zadanie
+			</button>
 			<div role="group" aria-label="Filtr kolejki" class="flex flex-wrap gap-1.5 ml-auto">
-				{#each [['wszystko', 'Wszystko', kolejka.length], ['Rata', 'Raty', licznikKolejki('Rata')], ['Zadanie', 'Zadania', licznikKolejki('Zadanie')], ['Odnowienie', 'Odnowienia', licznikKolejki('Odnowienie')]] as [id, label, n]}
+				{#each [['wszystko', 'Wszystko', kolejka.length], ['Wniosek', 'Wnioski', licznikKolejki('Wniosek')], ['Rata', 'Raty', licznikKolejki('Rata')], ['Zadanie', 'Zadania', licznikKolejki('Zadanie')], ['Odnowienie', 'Odnowienia', licznikKolejki('Odnowienie')]] as [id, label, n]}
 					<button
 						aria-pressed={filtrKolejki === id}
 						onclick={() => { filtrKolejki = id as typeof filtrKolejki; kolejkaCala = false; }}
@@ -642,6 +882,9 @@
 						{#if q.rata}
 							<button onclick={() => oznaczOplacona(q.rata!)} class="shrink-0 h-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Opłacona</button>
 						{:else if q.zadanie}
+							{#if q.wniosekHref}
+								<a href={q.wniosekHref} class="shrink-0 h-8 leading-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-accent-text hover:bg-surface-2">Wniosek</a>
+							{/if}
 							<button onclick={() => openTask(q.zadanie!)} class="shrink-0 h-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Otwórz</button>
 						{:else}
 							<a href="/policies/{q.polisaId}" class="shrink-0 h-8 leading-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Polisa</a>
@@ -660,29 +903,66 @@
 	</section>
 
 	<div class="flex flex-col gap-4 min-w-0">
-		<!-- Ten tydzień -->
-		<section aria-labelledby="tydzien-h" class="bg-white border border-line rounded-xl overflow-hidden">
-			<div class="flex items-center px-4 py-3 border-b border-line-soft">
-				<h2 id="tydzien-h" class="text-[15px] font-semibold text-ink">Ten tydzień</h2>
-				{#if appState.tenantFeatures['kalendarz']}
-					<a href="/calendar" class="ml-auto text-[13px] font-semibold text-accent-text hover:underline">Kalendarz →</a>
-				{/if}
+		<!-- Zadania: po terminie, ten tydzień dzień po dniu, bez terminu; dodawanie i szybkie zakończenie -->
+		<section aria-labelledby="zadania-h" data-testid="sekcja-zadania" class="bg-white border border-line rounded-xl overflow-hidden">
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3 border-b border-line-soft">
+				<div class="flex flex-col min-w-0">
+					<h2 id="zadania-h" class="text-[15px] font-semibold text-ink">Zadania</h2>
+					<span class="text-xs text-ink-3">
+						{odmiana(dashOpenTasks.length, 'otwarte', 'otwarte', 'otwartych')}{dashOverdueTasks.length ? ` · ${dashOverdueTasks.length} po terminie` : ''}{zadanWnioskowOtwartych ? ` · ${zadanWnioskowOtwartych} z wniosków` : ''}
+					</span>
+				</div>
+				<div class="ml-auto flex items-center gap-3">
+					<button onclick={() => noweZadanie()} data-testid="zadania-nowe" class="h-8 flex items-center gap-1 pl-2 pr-2.5 rounded-lg bg-accent text-white text-[13px] font-semibold hover:bg-accent-hover transition-colors">
+						<Plus size={14} /> Nowe
+					</button>
+					{#if appState.tenantFeatures['kalendarz']}
+						<a href="/calendar" class="text-[13px] font-semibold text-accent-text hover:underline whitespace-nowrap">Wszystkie →</a>
+					{/if}
+				</div>
 			</div>
 			<div class="px-4 py-3 flex flex-col gap-3">
-				{#each tydzien as d}
+				{#each grupyZadan as g (g.klucz)}
 					<div class="flex gap-3">
-						<span class="shrink-0 w-[76px] text-xs font-semibold pt-0.5 {d.dzis ? 'text-accent-text' : 'text-ink-3'}">{d.etykieta}</span>
-						<span class="flex-1 min-w-0 flex flex-col gap-1.5">
-							{#each d.zadania as t}
-								<button onclick={() => openTask(t)} class="flex gap-2.5 text-[13px] text-left text-ink hover:text-accent-text min-w-0">
-									<span class="shrink-0 w-10 font-mono text-ink-3">{t.godzina ? t.godzina.slice(0, 5) : '—'}</span>
-									<span class="min-w-0 truncate"><span class="font-medium">{t.tytul}</span>{#if t.crm_clients?.nazwa}<span class="text-ink-3"> · {t.crm_clients.nazwa}</span>{/if}</span>
-								</button>
+						<span class="shrink-0 w-[84px] text-xs font-semibold pt-0.5 {g.ton}">{g.etykieta}</span>
+						<ul class="flex-1 min-w-0 flex flex-col gap-1.5">
+							{#each g.zadania as t (t.id)}
+								{@const klient = t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? null}
+								<li class="flex items-start gap-2 min-w-0">
+									<button onclick={() => zakonczZadanie(t)} aria-label="Oznacz jako zakończone: {t.tytul}" title="Oznacz jako zakończone" class="shrink-0 mt-px text-ink-3 hover:text-ok transition-colors">
+										<Circle size={15} />
+									</button>
+									<button onclick={() => openTask(t)} class="flex-1 min-w-0 flex items-center gap-2 text-[13px] text-left text-ink hover:text-accent-text">
+										{#if zadanieZWniosku(t)}
+											<span class="shrink-0 px-1.5 rounded text-[11px] font-semibold bg-accent-soft text-accent-text">Wniosek</span>
+										{/if}
+										{#if t.godzina}
+											<span class="shrink-0 font-mono text-ink-3">{t.godzina.slice(0, 5)}</span>
+										{/if}
+										<span class="min-w-0 truncate"><span class="font-medium">{t.tytul}</span>{#if klient}<span class="text-ink-3"> · {klient}</span>{/if}</span>
+										{#if g.klucz === 'zalegle' && t.termin}
+											<span class="shrink-0 text-xs text-danger">{fmtDzien(t.termin)}</span>
+										{/if}
+										{#if tonPriorytetu[t.priorytet]}
+											<span class="shrink-0 w-1.5 h-1.5 rounded-full {tonPriorytetu[t.priorytet]}" title="Priorytet: {t.priorytet}"></span>
+										{/if}
+									</button>
+								</li>
 							{/each}
-						</span>
+							{#if g.ukryte}
+								<li>
+									<button onclick={() => { filtrKolejki = 'wszystko'; kolejkaCala = true; document.getElementById('kolejka')?.scrollIntoView({ behavior: 'smooth' }); }} class="text-xs font-semibold text-accent-text hover:underline">
+										+{g.ukryte} więcej w kolejce →
+									</button>
+								</li>
+							{/if}
+						</ul>
 					</div>
 				{:else}
-					<p class="text-sm text-ink-3 py-2">Brak zadań z terminem w najbliższych 7 dniach.</p>
+					<p class="text-sm text-ink-3 py-2">
+						Brak otwartych zadań na najbliższe 7 dni.
+						<button onclick={() => noweZadanie()} class="font-semibold text-accent-text hover:underline">Dodaj zadanie</button>
+					</p>
 				{/each}
 			</div>
 		</section>
@@ -949,54 +1229,6 @@
 			</div>
 		</div>
 
-		{:else if widget.id === 'zadania'}
-		{#if appState.tenantFeatures['kalendarz']}
-		{@const openTasks = appState.tasks.filter(t => t.status === 'otwarte' || t.status === 'w_toku')}
-		{@const overdueTasks = openTasks.filter(t => t.termin && t.termin < new Date().toISOString().slice(0,10))}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden h-full">
-			<div class="px-5 py-4 border-b border-line flex items-center justify-between">
-				<h2 class="font-semibold text-slate-900 text-sm flex items-center gap-2">
-					✓ Zadania
-				</h2>
-				<a href="/calendar" class="text-xs text-blue-600 hover:underline">Zobacz wszystkie</a>
-			</div>
-			<div class="grid grid-cols-2 divide-x divide-line-soft border-b border-line-soft">
-				<div class="px-4 py-3 text-center">
-					<div class="text-xl font-bold text-slate-900">{openTasks.length}</div>
-					<div class="text-xs text-slate-400 mt-0.5">Otwarte</div>
-				</div>
-				<div class="px-4 py-3 text-center">
-					<div class="text-xl font-bold {overdueTasks.length > 0 ? 'text-red-600' : 'text-slate-400'}">{overdueTasks.length}</div>
-					<div class="text-xs text-slate-400 mt-0.5">Przeterminowane</div>
-				</div>
-			</div>
-			<ul class="divide-y divide-line-soft">
-				{#each openTasks.slice(0, 5) as t}
-					{@const pct = t.postep_pct ?? 0}
-					{@const overdue = t.termin && t.termin < new Date().toISOString().slice(0,10)}
-					<li class="px-4 py-2.5 cursor-pointer hover:bg-slate-50 transition-colors" onclick={() => openTask(t)}>
-						<div class="flex items-center gap-2 mb-1">
-							<span class="text-sm font-medium text-slate-800 flex-1 truncate">{t.tytul}</span>
-							{#if t.termin}
-								<span class="text-xs shrink-0 {overdue ? 'text-red-500' : 'text-slate-400'}">{t.termin}</span>
-							{/if}
-						</div>
-						{#if t.czas_trwania_dni}
-							<div class="flex items-center gap-2">
-								<div class="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-									<div class="h-full rounded-full {pct >= 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-blue-500' : 'bg-amber-400'}"
-										style="width:{pct}%"></div>
-								</div>
-								<span class="text-xs text-slate-400 shrink-0">{pct}%</span>
-							</div>
-						{/if}
-					</li>
-				{:else}
-					<li class="px-4 py-6 text-center text-slate-400 text-sm">Brak otwartych zadań</li>
-				{/each}
-			</ul>
-		</div>
-		{/if}
 		{/if}
 
 	</div>
@@ -1013,10 +1245,11 @@
 <TaskModal
 	open={taskModalOpen}
 	editingTask={editingTask}
-	onclose={() => { taskModalOpen = false; editingTask = null; }}
-	onsaved={async () => {
-		taskModalOpen = false; editingTask = null;
-		const { data } = await wczytajZadania();
-		appState.tasks = (data ?? []) as typeof appState.tasks;
-	}}
+	presetKlientId={presetZadania.klientId ?? ''}
+	presetKlientNazwa={presetZadania.klientNazwa ?? ''}
+	presetRenewalId={presetZadania.renewalId ?? ''}
+	presetTytul={presetZadania.tytul ?? ''}
+	presetTermin={presetZadania.termin ?? ''}
+	onclose={zamknijModal}
+	onsaved={zamknijModal}
 />

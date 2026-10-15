@@ -1,6 +1,6 @@
 import { sb } from '$lib/supabase';
 import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
-import type { Policy, RenewalEvent, WniosekOdnowienia } from '$lib/types/database';
+import type { CrmTask, Policy, RenewalEvent, WniosekOdnowienia } from '$lib/types/database';
 import { dateDiffDays } from '$lib/utils';
 import { OPEN_LINK_TTL, signedStorageUrl } from '$lib/utils/storageLink';
 
@@ -75,10 +75,41 @@ export function wniosekZalatwiony(w: Pick<WniosekOdnowienia, 'rodzaj' | 'polisa_
 	return (polisyKl.get(w.klient_id) ?? []).some((c) => c >= od);
 }
 
+/**
+ * Wnioski załatwione ręcznie: zadanie z wniosku (crm_tasks.renewal_id) zamknięte — zakończone albo anulowane —
+ * choć polisa nie powstała w CRM (np. klient zrezygnował przez telefon). Otwarte zadanie do tego samego wniosku
+ * ma pierwszeństwo: wniosek wciąż czeka.
+ */
+export function wnioskiZalatwioneZadaniem(tasks: Pick<CrmTask, 'renewal_id' | 'status'>[]): Set<string> {
+	const otwarte = new Set<string>();
+	const zamkniete = new Set<string>();
+	for (const t of tasks) {
+		if (!t.renewal_id) continue;
+		if (t.status === 'otwarte' || t.status === 'w_toku') otwarte.add(t.renewal_id);
+		else zamkniete.add(t.renewal_id);
+	}
+	return new Set([...zamkniete].filter((id) => !otwarte.has(id)));
+}
+
+/** Czy złożony wniosek (poza rezygnacją) wciąż czeka na polisę: ani polisa w CRM, ani zamknięte zadanie z wniosku. */
+export const wniosekCzekaNaPolise = (
+	w: Pick<WniosekOdnowienia, 'status' | 'decyzja' | 'rodzaj' | 'polisa_id' | 'klient_id' | 'zlozono_at' | 'id'>,
+	odnowione: ReadonlySet<string>,
+	polisyKl: ReadonlyMap<string, string[]> = new Map(),
+	zalatwione: ReadonlySet<string> = new Set()
+) => w.status === 'zlozony' && w.decyzja !== 'nie' && !zalatwione.has(w.id) && !wniosekZalatwiony(w, odnowione, polisyKl);
+
 // Liczby do kafelka na pulpicie i zakładki APK: tylko bieżący cykl, bez wniosków testowych.
 // odnowione: polisy, które mają już następczynię (renewal_of) — ich wnioski są załatwione.
 // polisyKl: polisy klientów (pierwsza polisa jest załatwiona, gdy klient dostał polisę po złożeniu wniosku).
-export function podsumujWnioski(lista: WniosekOdnowienia[], odnowione: ReadonlySet<string>, dzis: string, polisyKl: ReadonlyMap<string, string[]> = new Map()): PodsumowanieWnioskow {
+// zalatwione: wnioski zamknięte zadaniem (wnioskiZalatwioneZadaniem).
+export function podsumujWnioski(
+	lista: WniosekOdnowienia[],
+	odnowione: ReadonlySet<string>,
+	dzis: string,
+	polisyKl: ReadonlyMap<string, string[]> = new Map(),
+	zalatwione: ReadonlySet<string> = new Set()
+): PodsumowanieWnioskow {
 	const p: PodsumowanieWnioskow = { czeka: 0, apk: 0, odmowy: 0, zlozone: 0, doWystawienia: 0, nieaktywne: 0, razem: 0 };
 	for (const w of lista) {
 		if (wniosekTestowy(w) || !wBiezacymCyklu(w, dzis)) continue;
@@ -93,10 +124,26 @@ export function podsumujWnioski(lista: WniosekOdnowienia[], odnowione: ReadonlyS
 		if (w.apk_odmowa) p.odmowy++;
 		if (e === 'zlozony') {
 			p.zlozone++;
-			if (w.decyzja !== 'nie' && !wniosekZalatwiony(w, odnowione, polisyKl)) p.doWystawienia++;
+			if (wniosekCzekaNaPolise(w, odnowione, polisyKl, zalatwione)) p.doWystawienia++;
 		}
 	}
 	return p;
+}
+
+/**
+ * Alert na pulpicie: wnioski, na które klient czeka — złożone online (poza rezygnacją) w bieżącym cyklu,
+ * bez wniosków testowych, jeszcze bez polisy w CRM i bez zamkniętego zadania z wniosku. Najnowsze na górze.
+ */
+export function wnioskiDoObslugi(
+	lista: WniosekOdnowienia[],
+	odnowione: ReadonlySet<string>,
+	dzis: string,
+	polisyKl: ReadonlyMap<string, string[]> = new Map(),
+	zalatwione: ReadonlySet<string> = new Set()
+): WniosekOdnowienia[] {
+	return lista
+		.filter((w) => !wniosekTestowy(w) && wBiezacymCyklu(w, dzis) && wniosekCzekaNaPolise(w, odnowione, polisyKl, zalatwione))
+		.sort((a, b) => (b.zlozono_at ?? '').localeCompare(a.zlozono_at ?? ''));
 }
 
 /** Dokąd prowadzi wniosek w CRM: karta polisy (odnowienie) albo karta klienta → APK (pierwsza polisa). */
