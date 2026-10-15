@@ -10,7 +10,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, adresWniosku, etapWniosku, otworzPdfApk, podsumujWnioski, polisyKlientow, wniosekNowy, wniosekTestowy, wniosekZalatwiony, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
+	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, adresWniosku, etapWniosku, otworzPdfApk, podsumujWnioski, polisyKlientow, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
 	import { dateDiffDays, fmtDzien, fmtTermin, odmiana, todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User, Eye, FileText, X } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
@@ -38,7 +38,9 @@
 	const odnowione = $derived(new Set(appState.policies.filter((p) => p.renewal_of && !p.deleted_at).map((p) => p.renewal_of as string)));
 	// Pierwsza polisa (wniosek bez certyfikatu) jest załatwiona, gdy klient dostał polisę po złożeniu wniosku.
 	const polisyKl = $derived(polisyKlientow(appState.policies));
-	const liczby = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowione, dzis, polisyKl));
+	// Wniosek zamknięty zadaniem z pulpitu („Załatwione”) liczy się jak załatwiony, choć polisa nie powstała w CRM.
+	const zalatwioneZadaniem = $derived(wnioskiZalatwioneZadaniem(appState.tasks));
+	const liczby = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowione, dzis, polisyKl, zalatwioneZadaniem));
 
 	// Filtr etapu: testowe wnioski tylko pod „Nieaktywne” (klient ich nie dostał).
 	type FiltrWn = 'wszystkie' | EtapWniosku;
@@ -446,7 +448,7 @@
 							<td class="px-5 py-3 text-xs whitespace-nowrap {w.zlozono_at ? 'text-slate-700' : 'text-slate-400'}">
 								{w.zlozono_at ? fmtDzien(w.zlozono_at, true) : '—'}
 								{#if w.status === 'zlozony' && w.decyzja !== 'nie'}
-									{@const zalatwiony = wniosekZalatwiony(w, odnowione, polisyKl)}
+									{@const zalatwiony = wniosekZalatwiony(w, odnowione, polisyKl) || zalatwioneZadaniem.has(w.id)}
 									<span class="block {zalatwiony ? 'text-emerald-600' : 'text-warn font-semibold'}">{zalatwiony ? (wniosekNowy(w) ? 'polisa wystawiona' : 'nowa polisa wystawiona') : 'do wystawienia'}</span>
 								{/if}
 							</td>

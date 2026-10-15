@@ -4,12 +4,13 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import type { CrmTask } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
-	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon, Target, User, ExternalLink } from 'lucide-svelte';
+	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon, Target, User, ExternalLink, FileText } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
+	import { TYP_ZADANIA_ETYKIETA, adresWnioskuZadania, zadanieZWniosku } from '$lib/zadania';
 
 	// Schedule-X — komponent-wrapper (izomorficzny) importujemy statycznie,
 	// a ciężki rdzeń (referuje DOM) ładujemy dynamicznie w onMount (SPA, ssr=false).
@@ -133,8 +134,8 @@
 		const d = t.termin!.slice(0, 10);
 		const who = t.assigned_profile?.imie_nazwisko ?? t.assigned_profile?.email ?? '';
 		const rel = t.crm_clients?.nazwa ?? t.crm_prospects?.nazwa ?? '';
-		// Znacznik na kafelku: 🎯 dla zadań prospektowych, 👤 dla klienckich.
-		const marker = t.prospect_id ? '🎯 ' : t.klient_id ? '👤 ' : '';
+		// Znacznik na kafelku: 📄 zadanie z wniosku online, 🎯 dla zadań prospektowych, 👤 dla klienckich.
+		const marker = zadanieZWniosku(t) ? '📄 ' : t.prospect_id ? '🎯 ' : t.klient_id ? '👤 ' : '';
 		const base = {
 			id: t.id,
 			title: marker + t.tytul,
@@ -344,6 +345,12 @@
 				disabled: !t.polisa_id,
 				onSelect: () => goto(`/policies/${t.polisa_id}`)
 			},
+			{
+				label: 'Wniosek klienta (online)',
+				icon: FileText,
+				disabled: !adresWnioskuZadania(t),
+				onSelect: () => goto(adresWnioskuZadania(t)!)
+			},
 			{ separator: true },
 			{ label: 'Dodaj zadanie', icon: Plus, onSelect: () => openNew(t.termin ?? undefined) },
 			{ separator: true },
@@ -513,6 +520,17 @@
 							<div class="flex items-center gap-2 flex-wrap">
 								<span class="font-medium text-slate-900 {done ? 'line-through text-slate-400' : ''}">{t.tytul}</span>
 								<span class="text-xs px-2 py-0.5 rounded-full font-semibold {priorityClsMap[t.priorytet]}">{t.priorytet}</span>
+								{#if zadanieZWniosku(t)}
+									{@const href = adresWnioskuZadania(t)}
+									{#if href}
+										<a href={href} class="text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 flex items-center gap-1"><FileText size={11} /> Wniosek klienta →</a>
+									{:else}
+										<span class="text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-50 text-blue-700 border border-blue-100">Wniosek klienta</span>
+									{/if}
+								{/if}
+								{#each (t.typy ?? []).filter((ty) => ty !== 'wniosek') as ty (ty)}
+									<span class="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">{TYP_ZADANIA_ETYKIETA[ty] ?? ty}</span>
+								{/each}
 								{#if overdue}
 									<span class="text-xs px-2 py-0.5 rounded-full font-semibold bg-red-100 text-red-700 flex items-center gap-1">
 										<AlertCircle size={11} /> Przeterminowane
@@ -585,6 +603,19 @@
 					<span class="font-semibold text-slate-800 truncate">{linkedName || '—'}</span>
 				</span>
 				<span class="flex items-center gap-1 text-xs font-semibold text-blue-700 shrink-0 whitespace-nowrap">Otwórz kartę <ExternalLink size={13} /></span>
+			</a>
+		{/if}
+		{#if editingTask && zadanieZWniosku(editingTask)}
+			{@const hrefWniosku = adresWnioskuZadania(editingTask)}
+			<!-- Zadanie z wniosku online (odnowienie / pierwsza polisa): wejście we wniosek klienta -->
+			<a href={hrefWniosku ?? '#'} onclick={() => { showModal = false; formError = ''; }}
+				class="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors">
+				<span class="flex items-center gap-2 min-w-0">
+					<FileText size={16} class="text-blue-600 shrink-0" />
+					<span class="text-xs uppercase font-semibold text-blue-500 shrink-0">Wniosek</span>
+					<span class="text-sm text-slate-800 truncate">Zadanie powstało po złożeniu wniosku online przez klienta</span>
+				</span>
+				<span class="flex items-center gap-1 text-xs font-semibold text-blue-700 shrink-0 whitespace-nowrap">Otwórz wniosek <ExternalLink size={13} /></span>
 			</a>
 		{/if}
 		<div>

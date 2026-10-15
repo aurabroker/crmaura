@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { wczytajZadania } from '$lib/kolekcje';
+	import { TYP_ZADANIA_ETYKIETA } from '$lib/zadania';
 	import { sb } from '$lib/supabase';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
@@ -353,7 +354,8 @@
 		{ val: 'telefon', label: 'Telefon' },
 		{ val: 'oferta', label: 'Oferta' }
 	];
-	const taskTypeLabels: Record<string, string> = Object.fromEntries(taskTypeOptions.map(o => [o.val, o.label]));
+	// Etykiety wspólne z resztą CRM (także „wniosek” — zadania z wniosków online).
+	const taskTypeLabels: Record<string, string> = TYP_ZADANIA_ETYKIETA;
 
 	const today = new Date().toISOString().slice(0, 10);
 

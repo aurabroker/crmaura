@@ -497,6 +497,8 @@ export interface CrmTask {
 	klient_id: string | null;
 	polisa_id: string | null;
 	prospect_id: string | null;
+	/** Wniosek online (crm_renewals), z którego powstało zadanie — odnowienie albo pierwsza polisa. */
+	renewal_id?: string | null;
 	extra_assignees?: string[];
 	typy?: string[];
 	czas_trwania_dni?: number | null;

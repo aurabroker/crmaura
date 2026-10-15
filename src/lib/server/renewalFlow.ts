@@ -345,10 +345,14 @@ async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boo
 		tenant_id: r.tenant_id,
 		klient_id: r.klient_id,
 		polisa_id: r.polisa_id,
+		// Powiązanie z wnioskiem: pulpit pokazuje alert „klient czeka na ofertę/polisę” i prowadzi z zadania do wniosku.
+		renewal_id: r.id,
+		typy: ['wniosek'],
 		assigned_to: klient?.opiekun_id ?? r.created_by ?? null,
 		tytul: tytul.slice(0, 200),
 		opis,
-		termin: dodajDni(dzisWarszawa(), r.decyzja === 'nie' || poTerminie ? 1 : 2),
+		// Pierwsza polisa: klient dopiero czeka na ofertę — odpowiadamy następnego dnia roboczego, nie za dwa.
+		termin: dodajDni(dzisWarszawa(), nowa || r.decyzja === 'nie' || poTerminie ? 1 : 2),
 		priorytet: poTerminie ? 'pilny' : r.decyzja === 'bez_zmian' && !sygnaly.length ? 'normalny' : 'wysoki',
 		// Status jawnie: domyślny w bazie („Oczekujące”) aplikacja nie traktuje jako otwarte zadanie.
 		status: 'otwarte'
