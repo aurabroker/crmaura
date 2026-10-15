@@ -3,7 +3,7 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { CrmTask } from '$lib/types/database';
-	import Modal from '$lib/components/Modal.svelte';
+	import TaskModal from '$lib/components/TaskModal.svelte';
 	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon, Target, User, ExternalLink, FileText } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -25,49 +25,11 @@
 	let filterStatus = $state<FilterStatus>('all');
 	let filterPriority = $state<FilterPriority>('all');
 	let search = $state('');
+	// Karta zadania to wspólny TaskModal (jak na pulpicie i kartach klienta / leada).
 	let showModal = $state(false);
 	let editingTask = $state<CrmTask | null>(null);
-	let saving = $state(false);
-	let formError = $state('');
-
-	// Prospects list for modal
-	let prospects = $state<Array<{id: string; nazwa: string}>>([]);
-
-	// form fields
-	let fTytul = $state('');
-	let fOpis = $state('');
-	let fTermin = $state('');
-	let fGodzina = $state('');
-	let fPriorytet = $state<CrmTask['priorytet']>('normalny');
-	let fAssigned = $state('');
-	let fKlient = $state('');
-	let fPolisa = $state('');
-	let fProspect = $state('');
-	let fExtraAssignees = $state<string[]>([]);
-	let fCzasTrwania = $state('');
-	let fPostep = $state(0);
-	let fStatus = $state<CrmTask['status']>('otwarte');
-
-	// Zadanie powiązane z Prospektem/Klientem — powiązanie jest "na sztywno":
-	// pokazujemy je jako klikalny link do karty, a selecty przypisania chowamy.
-	const isProspectTask = $derived(!!editingTask?.prospect_id);
-	const isLinkedTask = $derived(!!editingTask && (!!editingTask.prospect_id || !!editingTask.klient_id));
-	const editingProspectName = $derived(
-		editingTask?.crm_prospects?.nazwa
-		?? prospects.find(p => p.id === editingTask?.prospect_id)?.nazwa
-		?? ''
-	);
-	const editingClientName = $derived(
-		editingTask?.crm_clients?.nazwa
-		?? appState.clients.find(c => c.id === editingTask?.klient_id)?.nazwa
-		?? ''
-	);
-	const linkedName = $derived(isProspectTask ? editingProspectName : editingClientName);
-	const linkedHref = $derived(
-		editingTask?.prospect_id ? `/prospects/${editingTask.prospect_id}`
-		: editingTask?.klient_id ? `/clients/${editingTask.klient_id}`
-		: ''
-	);
+	// Termin nowego zadania z kliknięcia w dzień kalendarza.
+	let presetTermin = $state('');
 
 	let history = $state<import('$lib/types/database').CrmTaskHistory[]>([]);
 	async function loadHistory() {
@@ -159,8 +121,6 @@
 	let eventsService: any = null;
 
 	onMount(async () => {
-		const { data } = await sb.from('crm_prospects').select('id, nazwa').order('nazwa');
-		prospects = data ?? [];
 		await loadHistory();
 
 		// Rdzeń Schedule-X — dynamiczny import (browser-only).
@@ -225,61 +185,20 @@
 
 	function openNew(date?: string) {
 		editingTask = null;
-		fTytul = ''; fOpis = ''; fTermin = date ?? ''; fPriorytet = 'normalny';
-		fAssigned = appState.profile?.id ?? '';
-		fKlient = ''; fPolisa = ''; fProspect = ''; fStatus = 'otwarte';
-		fExtraAssignees = []; fCzasTrwania = ''; fPostep = 0; fGodzina = '';
-		formError = ''; showModal = true;
+		presetTermin = date ?? '';
+		showModal = true;
 	}
 
 	function openEdit(t: CrmTask) {
 		editingTask = t;
-		fTytul = t.tytul; fOpis = t.opis ?? ''; fTermin = t.termin ?? '';
-		fGodzina = t.godzina ? t.godzina.slice(0, 5) : '';
-		fPriorytet = t.priorytet; fAssigned = t.assigned_to ?? '';
-		fKlient = t.klient_id ?? ''; fPolisa = t.polisa_id ?? '';
-		fProspect = t.prospect_id ?? '';
-		fStatus = t.status;
-		fExtraAssignees = t.extra_assignees ?? [];
-		fCzasTrwania = t.czas_trwania_dni ? String(t.czas_trwania_dni) : '';
-		fPostep = t.postep_pct ?? 0;
-		formError = ''; showModal = true;
+		presetTermin = '';
+		showModal = true;
 	}
 
 	async function reloadTasks() {
 		const { data, error } = await wczytajZadania();
 		if (!error && data) appState.tasks = data as typeof appState.tasks;
 		await loadHistory();
-	}
-
-	async function saveTask() {
-		if (!fTytul.trim()) { formError = 'Podaj tytuł zadania.'; return; }
-		saving = true; formError = '';
-		const payload = {
-			tenant_id: appState.profile!.tenant_id,
-			created_by: appState.profile!.id,
-			assigned_to: fAssigned || null,
-			klient_id: fKlient || null,
-			polisa_id: fPolisa || null,
-			prospect_id: fProspect || null,
-			tytul: fTytul.trim(),
-			opis: fOpis || null,
-			termin: fTermin || null,
-			godzina: fGodzina || null,
-			priorytet: fPriorytet,
-			status: fStatus,
-			extra_assignees: fExtraAssignees,
-			czas_trwania_dni: fCzasTrwania ? parseInt(fCzasTrwania) : null,
-			postep_pct: fPostep,
-			zakonczone_at: fStatus === 'zakonczone' ? new Date().toISOString() : null,
-		};
-		const { error } = editingTask
-			? await sb.from('crm_tasks').update(payload).eq('id', editingTask.id)
-			: await sb.from('crm_tasks').insert([payload]);
-		saving = false;
-		if (error) { formError = error.message; return; }
-		showModal = false;
-		await reloadTasks();
 	}
 
 	async function toggleStatus(t: CrmTask) {
@@ -399,9 +318,6 @@
 	};
 
 	const statusIcon = (t: CrmTask) => t.status === 'zakonczone' ? CheckCircle2 : t.status === 'w_toku' ? Clock : Circle;
-
-	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
-	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 </script>
 
 <svelte:head><title>Kalendarz — CRM</title></svelte:head>
@@ -584,146 +500,15 @@
 {/if}
 
 <!-- Modal -->
-<Modal windowed title={editingTask ? 'Edytuj zadanie' : 'Nowe zadanie'} open={showModal} onclose={() => { showModal = false; formError = ''; }}>
-	{#snippet footer()}
-		<button onclick={() => { showModal = false; formError = ''; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveTask} disabled={saving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
-			{saving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
-		</button>
-	{/snippet}
-	{#if formError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>{/if}
-	<div class="space-y-3">
-		{#if isLinkedTask}
-			<!-- Powiązanie na sztywno + wejście w kartę prospekta/klienta -->
-			<a href={linkedHref} onclick={() => { showModal = false; formError = ''; }}
-				class="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors">
-				<span class="flex items-center gap-2 min-w-0">
-					{#if isProspectTask}<Target size={16} class="text-blue-600 shrink-0" />{:else}<User size={16} class="text-blue-600 shrink-0" />{/if}
-					<span class="text-xs uppercase font-semibold text-blue-500 shrink-0">{isProspectTask ? 'Prospekt' : 'Klient'}</span>
-					<span class="font-semibold text-slate-800 truncate">{linkedName || '—'}</span>
-				</span>
-				<span class="flex items-center gap-1 text-xs font-semibold text-blue-700 shrink-0 whitespace-nowrap">Otwórz kartę <ExternalLink size={13} /></span>
-			</a>
-		{/if}
-		{#if editingTask && zadanieZWniosku(editingTask)}
-			{@const hrefWniosku = adresWnioskuZadania(editingTask)}
-			<!-- Zadanie z wniosku online (odnowienie / pierwsza polisa): wejście we wniosek klienta -->
-			<a href={hrefWniosku ?? '#'} onclick={() => { showModal = false; formError = ''; }}
-				class="flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors">
-				<span class="flex items-center gap-2 min-w-0">
-					<FileText size={16} class="text-blue-600 shrink-0" />
-					<span class="text-xs uppercase font-semibold text-blue-500 shrink-0">Wniosek</span>
-					<span class="text-sm text-slate-800 truncate">Zadanie powstało po złożeniu wniosku online przez klienta</span>
-				</span>
-				<span class="flex items-center gap-1 text-xs font-semibold text-blue-700 shrink-0 whitespace-nowrap">Otwórz wniosek <ExternalLink size={13} /></span>
-			</a>
-		{/if}
-		<div>
-			<label class={labelCls}>Tytuł *</label>
-			<input bind:value={fTytul} class={inputCls} placeholder="Co trzeba zrobić?" />
-		</div>
-		<div>
-			<label class={labelCls}>Opis</label>
-			<textarea bind:value={fOpis} class="{inputCls} resize-none" rows="2" placeholder="Szczegóły..."></textarea>
-		</div>
-		<div class="grid grid-cols-3 gap-3">
-			<div>
-				<label class={labelCls}>Termin</label>
-				<input type="date" bind:value={fTermin} class={inputCls} />
-			</div>
-			<div>
-				<label class={labelCls}>Godzina</label>
-				<input type="time" bind:value={fGodzina} class={inputCls} />
-				<p class="text-xs text-slate-400 mt-1">puste = całodniowe</p>
-			</div>
-			<div>
-				<label class={labelCls}>Priorytet</label>
-				<select bind:value={fPriorytet} class={inputCls}>
-					<option value="niski">Niski</option>
-					<option value="normalny">Normalny</option>
-					<option value="wysoki">Wysoki</option>
-					<option value="pilny">Pilny</option>
-				</select>
-			</div>
-		</div>
-		<!-- Status / Czas trwania / Przypisz — jeden wiersz -->
-		<div class="grid grid-cols-3 gap-3">
-			<div>
-				<label class={labelCls}>Status</label>
-				<select bind:value={fStatus} class={inputCls}>
-					<option value="otwarte">Otwarte</option>
-					<option value="w_toku">W toku</option>
-					<option value="zakonczone">Zakończone</option>
-					<option value="anulowane">Anulowane</option>
-				</select>
-			</div>
-			<div>
-				<label class={labelCls}>Czas trwania (dni)</label>
-				<input type="number" bind:value={fCzasTrwania} min="1" class={inputCls} placeholder="np. 7" />
-			</div>
-			<div>
-				<label class={labelCls}>Przypisz do</label>
-				<select bind:value={fAssigned} class={inputCls}>
-					<option value="">— nieprzypisane —</option>
-					{#each appState.brokers as b}<option value={b.id}>{b.imie_nazwisko ?? b.email}</option>{/each}
-				</select>
-			</div>
-		</div>
-		{#if !isLinkedTask}
-		<!-- Powiązanie (tylko dla zadań tworzonych w kalendarzu; powiązane są zablokowane w chipie) -->
-		<div class="grid grid-cols-3 gap-3">
-			<div>
-				<label class={labelCls}>Klient</label>
-				<select bind:value={fKlient} class={inputCls}>
-					<option value="">— brak —</option>
-					{#each appState.clients as c}<option value={c.id}>{c.nazwa}</option>{/each}
-				</select>
-			</div>
-			<div>
-				<label class={labelCls}>Prospect</label>
-				<select bind:value={fProspect} class={inputCls}>
-					<option value="">— brak —</option>
-					{#each prospects as p}<option value={p.id}>{p.nazwa}</option>{/each}
-				</select>
-			</div>
-			<div>
-				<label class={labelCls}>Polisa</label>
-				<select bind:value={fPolisa} class={inputCls}>
-					<option value="">— brak —</option>
-					{#each appState.policies.filter(p => !fKlient || p.klient_id === fKlient) as p}
-						<option value={p.id}>{p.nr_polisy}</option>
-					{/each}
-				</select>
-			</div>
-		</div>
-		{/if}
-		<div>
-			<label class={labelCls}>Dodatkowe osoby</label>
-			<div class="flex flex-wrap gap-2 mt-1">
-				{#each appState.brokers.filter(b => b.id !== fAssigned) as b}
-					<label class="flex items-center gap-1.5 cursor-pointer text-sm">
-						<input type="checkbox"
-							checked={fExtraAssignees.includes(b.id)}
-							onchange={() => {
-								if (fExtraAssignees.includes(b.id)) {
-									fExtraAssignees = fExtraAssignees.filter(x => x !== b.id);
-								} else {
-									fExtraAssignees = [...fExtraAssignees, b.id];
-								}
-							}}
-							class="w-4 h-4 accent-blue-600"
-						/>
-						{b.imie_nazwisko ?? b.email}
-					</label>
-				{/each}
-			</div>
-		</div>
-		<div>
-			<label class={labelCls}>Postęp: {fPostep}%</label>
-			<input type="range" bind:value={fPostep} min="0" max="100" step="5" class="w-full accent-blue-600" />
-		</div>
-	</div>
-</Modal>
+<!-- Karta zadania (wspólna z pulpitem i kartami klienta / leada) -->
+<TaskModal
+	windowed
+	open={showModal}
+	editingTask={editingTask}
+	{presetTermin}
+	onclose={() => { showModal = false; editingTask = null; }}
+	onsaved={loadHistory}
+/>
 
 <style>
 	/* Schedule-X — dopasowanie do wyglądu aplikacji (IBM Plex, akcent, ramki).

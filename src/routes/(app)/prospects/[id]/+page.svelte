@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { wczytajZadania } from '$lib/kolekcje';
-	import { TYP_ZADANIA_ETYKIETA } from '$lib/zadania';
+	import { TYP_ZADANIA_ETYKIETA, ustawStatusZadania } from '$lib/zadania';
+	import TaskModal from '$lib/components/TaskModal.svelte';
 	import { sb } from '$lib/supabase';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { appState } from '$lib/stores/app.svelte';
@@ -329,31 +329,10 @@
 		return new Date(dt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 	}
 
-	// ---- Tasks (formularz inline — bez modala) ----
+	// ---- Zadania leada: wspólna karta zadania (TaskModal) z leadem na sztywno; lead z kartoteki niesie też klienta ----
 	let tasks = $state<CrmTask[]>([]);
 	let showTaskForm = $state(false);
 	let editingTask = $state<CrmTask | null>(null);
-
-	// pola formularza zadania
-	let tfTytul = $state('');
-	let tfOpis = $state('');
-	let tfTermin = $state('');
-	let tfPriorytet = $state<CrmTask['priorytet']>('normalny');
-	let tfStatus = $state<CrmTask['status']>('otwarte');
-	let tfAssignees = $state<string[]>([]); // max 3 osoby
-	let tfCzasTrwania = $state('');
-	let tfPostep = $state(0);
-	let tfTypy = $state<string[]>([]);
-	let tfSaving = $state(false);
-	let tfError = $state('');
-
-	const MAX_ASSIGNEES = 3;
-	const taskTypeOptions = [
-		{ val: 'spotkanie', label: 'Spotkanie' },
-		{ val: 'email', label: 'E-mail' },
-		{ val: 'telefon', label: 'Telefon' },
-		{ val: 'oferta', label: 'Oferta' }
-	];
 	// Etykiety wspólne z resztą CRM (także „wniosek” — zadania z wniosków online).
 	const taskTypeLabels: Record<string, string> = TYP_ZADANIA_ETYKIETA;
 
@@ -367,30 +346,13 @@
 		tasks = (data ?? []) as CrmTask[];
 	}
 
-	function resetTaskForm() {
-		tfTytul = ''; tfOpis = ''; tfTermin = ''; tfPriorytet = 'normalny'; tfStatus = 'otwarte';
-		tfAssignees = appState.profile?.id ? [appState.profile.id] : [];
-		tfCzasTrwania = ''; tfPostep = 0; tfTypy = []; tfError = '';
-	}
-
 	function openNewTask() {
 		editingTask = null;
-		resetTaskForm();
 		showTaskForm = true;
 	}
 
 	function openEditTask(t: CrmTask) {
 		editingTask = t;
-		tfTytul = t.tytul;
-		tfOpis = t.opis ?? '';
-		tfTermin = t.termin ?? '';
-		tfPriorytet = t.priorytet;
-		tfStatus = t.status;
-		tfAssignees = [t.assigned_to, ...(t.extra_assignees ?? [])].filter(Boolean).slice(0, MAX_ASSIGNEES) as string[];
-		tfCzasTrwania = t.czas_trwania_dni ? String(t.czas_trwania_dni) : '';
-		tfPostep = t.postep_pct ?? 0;
-		tfTypy = t.typy ?? [];
-		tfError = '';
 		showTaskForm = true;
 	}
 
@@ -399,59 +361,18 @@
 		editingTask = null;
 	}
 
-	function toggleAssignee(id: string) {
-		if (tfAssignees.includes(id)) tfAssignees = tfAssignees.filter(x => x !== id);
-		else if (tfAssignees.length < MAX_ASSIGNEES) tfAssignees = [...tfAssignees, id];
-	}
-
-	function toggleTaskType(val: string) {
-		if (tfTypy.includes(val)) tfTypy = tfTypy.filter(x => x !== val);
-		else tfTypy = [...tfTypy, val];
-	}
-
-	async function refreshGlobalTasks() {
-		const { data, error } = await wczytajZadania();
-		if (!error && data) appState.tasks = data as typeof appState.tasks;
-	}
-
-	async function saveTaskInline() {
-		if (!prospect) return;
-		if (!tfTytul.trim()) { tfError = 'Podaj tytuł zadania.'; return; }
-		tfSaving = true; tfError = '';
-		const [main, ...extra] = tfAssignees;
-		const payload = {
-			tenant_id: prospect.tenant_id,
-			created_by: appState.profile!.id,
-			assigned_to: main || null,
-			prospect_id: prospect.id,
-			klient_id: null,
-			polisa_id: null,
-			tytul: tfTytul.trim(),
-			opis: tfOpis.trim() || null,
-			termin: tfTermin || null,
-			priorytet: tfPriorytet,
-			status: tfStatus,
-			extra_assignees: extra.length > 0 ? extra : null,
-			typy: tfTypy.length > 0 ? tfTypy : null,
-			czas_trwania_dni: tfCzasTrwania ? parseInt(tfCzasTrwania) : null,
-			postep_pct: tfPostep
-		};
-		if (editingTask) {
-			await sb.from('crm_tasks').update(payload).eq('id', editingTask.id);
-		} else {
-			await sb.from('crm_tasks').insert([payload]);
-		}
-		tfSaving = false;
-		showTaskForm = false;
+	// Po zapisie z karty zadania: lead „nowy” przechodzi w „w kontakcie”, lista zadań leada odświeża się
+	// (zadania w pamięci całego CRM odświeża sam TaskModal).
+	async function poZapisieZadania() {
 		editingTask = null;
 		await promoteToWKontakcie();
 		await loadTasks();
-		await refreshGlobalTasks();
 	}
 
 	async function toggleTaskStatus(t: CrmTask) {
 		const next = t.status === 'zakonczone' ? 'otwarte' : 'zakonczone';
-		await sb.from('crm_tasks').update({ status: next }).eq('id', t.id);
+		const blad = await ustawStatusZadania(t, next, appState.profile!.id);
+		if (blad) ctxToast(`Nie udało się zmienić statusu: ${blad}`);
 		await loadTasks();
 	}
 
@@ -749,97 +670,10 @@
 					<span class="bg-blue-100 text-blue-700 text-xs font-bold px-1.5 py-0.5 rounded-full">{tasks.filter(t => t.status !== 'zakonczone').length}</span>
 				{/if}
 			</h2>
-			{#if showTaskForm}
-				<button onclick={cancelTaskForm} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border border-line text-slate-600 rounded-lg hover:bg-slate-50">
-					<X size={12} /> Zamknij
-				</button>
-			{:else}
-				<button onclick={openNewTask} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover">
-					<Plus size={12} /> Nowe zadanie
-				</button>
-			{/if}
+			<button onclick={openNewTask} class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover">
+				<Plus size={12} /> Nowe zadanie
+			</button>
 		</div>
-
-		<!-- Formularz zadania (inline — pojawia się w panelu, bez modala) -->
-		{#if showTaskForm}
-			<div class="px-5 py-4 border-b border-line-soft bg-slate-50/70 space-y-3">
-				{#if tfError}<div class="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">{tfError}</div>{/if}
-				<input bind:value={tfTytul} placeholder="Tytuł zadania *" class={inputCls} />
-				<textarea bind:value={tfOpis} rows="2" placeholder="Opis (opcjonalnie)" class="{inputCls} resize-none"></textarea>
-
-				<div class="grid grid-cols-2 gap-2">
-					<div>
-						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Termin</label>
-						<input type="date" bind:value={tfTermin} class={inputCls} />
-					</div>
-					<div>
-						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Priorytet</label>
-						<select bind:value={tfPriorytet} class={inputCls}>
-							<option value="niski">Niski</option>
-							<option value="normalny">Normalny</option>
-							<option value="wysoki">Wysoki</option>
-							<option value="pilny">Pilny</option>
-						</select>
-					</div>
-					<div>
-						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</label>
-						<select bind:value={tfStatus} class={inputCls}>
-							<option value="otwarte">Otwarte</option>
-							<option value="w_toku">W toku</option>
-							<option value="zakonczone">Zakończone</option>
-							<option value="anulowane">Anulowane</option>
-						</select>
-					</div>
-					<div>
-						<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Czas trwania (dni)</label>
-						<input type="number" min="1" bind:value={tfCzasTrwania} placeholder="np. 7" class={inputCls} />
-					</div>
-				</div>
-
-				<!-- Typ zadania -->
-				<div>
-					<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Typ</label>
-					<div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
-						{#each taskTypeOptions as opt}
-							<label class="flex items-center gap-1.5 cursor-pointer text-sm text-slate-700">
-								<input type="checkbox" checked={tfTypy.includes(opt.val)} onchange={() => toggleTaskType(opt.val)} class="w-4 h-4 accent-blue-600" />
-								{opt.label}
-							</label>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Przypisz do (max 3) -->
-				<div>
-					<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-						Przypisz do <span class="normal-case font-normal text-slate-400">(max 3 — wybrano {tfAssignees.length})</span>
-					</label>
-					<div class="flex flex-wrap gap-x-4 gap-y-1.5 mt-1">
-						{#each appState.brokers as b}
-							{@const checked = tfAssignees.includes(b.id)}
-							{@const disabled = !checked && tfAssignees.length >= MAX_ASSIGNEES}
-							<label class="flex items-center gap-1.5 text-sm {disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer text-slate-700'}">
-								<input type="checkbox" {checked} {disabled} onchange={() => toggleAssignee(b.id)} class="w-4 h-4 accent-blue-600" />
-								{b.imie_nazwisko ?? b.email}
-							</label>
-						{/each}
-					</div>
-				</div>
-
-				<!-- Postęp -->
-				<div>
-					<label class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Postęp: {tfPostep}%</label>
-					<input type="range" min="0" max="100" step="5" bind:value={tfPostep} class="w-full accent-blue-600" />
-				</div>
-
-				<div class="flex items-center gap-2 pt-1">
-					<button onclick={saveTaskInline} disabled={tfSaving} class="px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">
-						{tfSaving ? 'Zapisywanie...' : (editingTask ? 'Zapisz zmiany' : 'Dodaj zadanie')}
-					</button>
-					<button onclick={cancelTaskForm} class="px-3 py-1.5 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-				</div>
-			</div>
-		{/if}
 
 		{#if tasks.length === 0}
 			<div class="px-6 py-6 text-center text-slate-400 text-sm">Brak zadań — dodaj pierwsze zadanie dla tej firmy</div>
@@ -905,6 +739,20 @@
 			</ul>
 		{/if}
 	</div>
+
+	<!-- Karta zadania: lead na sztywno; lead z kartoteki niesie też klienta (zadanie widać na obu kartach) -->
+	{#if prospect}
+		<TaskModal
+			open={showTaskForm}
+			editingTask={editingTask}
+			presetProspectId={prospect.id}
+			presetProspectNazwa={prospect.nazwa}
+			presetKlientId={prospect.klient_id ?? ''}
+			presetKlientNazwa={prospect.crm_clients?.nazwa ?? prospect.nazwa}
+			onclose={cancelTaskForm}
+			onsaved={poZapisieZadania}
+		/>
+	{/if}
 
 	<!-- Activity feed -->
 	<div class="bg-white border border-line rounded-xl shadow-sm">

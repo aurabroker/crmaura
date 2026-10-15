@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { wczytajFormularzeApk, wczytajKlientow, wczytajKontakty, wczytajPojazdy, wczytajPolisy, wczytajSzkody } from '$lib/kolekcje';
+	import { ustawStatusZadania, zadaniaPoZmianie } from '$lib/zadania';
 	import { tick, untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
@@ -817,9 +818,12 @@
 		showTaskModal = true;
 	}
 
+	// Zmiana statusu jak na pulpicie i w kalendarzu: data zakończenia, postęp, wpis do rejestru; odświeżamy
+	// listę klienta i zadania w pamięci całego CRM (kolejka na pulpicie).
 	async function toggleTaskStatus(t: CrmTask) {
 		const next = t.status === 'zakonczone' ? 'otwarte' : 'zakonczone';
-		await sb.from('crm_tasks').update({ status: next }).eq('id', t.id);
+		await ustawStatusZadania(t, next, appState.profile!.id);
+		appState.tasks = zadaniaPoZmianie(appState.tasks, t.id, next);
 		await loadTasks();
 	}
 
