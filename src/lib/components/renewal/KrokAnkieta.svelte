@@ -122,7 +122,7 @@
 			<legend class={LEGENDA}>2. Zabiegi kosmetologiczne</legend>
 			<p class="text-sm text-slate-600">Zabiegi wykonywane w gabinecie (zaznaczone we wniosku):</p>
 			<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-800" data-testid="ankieta-zabiegi">
-				{#each s.zm.zabiegi_ankieta as z (z)}<li>{z}</li>{/each}
+				{#each s.zabiegiAnkiety as z (z)}<li>{z}</li>{/each}
 			</ul>
 			<div class="mt-4 space-y-4">
 				<div>

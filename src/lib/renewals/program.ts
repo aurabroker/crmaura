@@ -202,7 +202,10 @@ export const APK_ODMOWA_TRESC =
 
 // ---------- Wniosek ----------
 
-export type Decyzja = 'bez_zmian' | 'zmiany' | 'nie';
+// Rodzaj wniosku: odnowienie certyfikatu (decyzje bez_zmian / zmiany / nie) albo pierwsza polisa
+// klienta bez certyfikatu (decyzje nowa / nie). Oba idą tym samym linkiem i tą samą stroną.
+export type RodzajWniosku = 'odnowienie' | 'nowa';
+export type Decyzja = 'bez_zmian' | 'zmiany' | 'nie' | 'nowa';
 
 export type Zmiany = {
 	// Nowa suma gwarancyjna — dowolny wariant programu inny niż obecny (także niższy). Nazwa pola z czasów,
@@ -243,7 +246,33 @@ export type Ankieta = {
 	oswiadczenie: boolean;
 };
 
-export type Wniosek = { decyzja: Decyzja; zmiany: Zmiany | null; nie_powod: string; potwierdzenie_nie: boolean };
+// Dane firmy podane przez klienta we wniosku o pierwszą polisę (podpowiedziane z kartoteki, klient poprawia).
+export type Firma = { nazwa: string; nip: string; regon: string; ulica: string; kod: string; miasto: string; email: string; telefon: string };
+// Wniosek o pierwszą polisę: firma, początek ochrony i oświadczenia. Wybrane warianty (suma, ochrona prawna,
+// zabiegi wymagające ankiety, osoby i dokumenty, rodzaj gabinetu i liczba osób przy odmowie APK) są w `zmiany`
+// — tak samo jak przy odnowieniu ze zmianami, więc PDF, e-maile i panel CRM czytają je jedną drogą.
+export type NowaPolisa = { firma: Firma; ochrona_od: string; oswiadczenia: boolean };
+export type Wniosek = { decyzja: Decyzja; zmiany: Zmiany | null; nie_powod: string; potwierdzenie_nie: boolean; nowa?: NowaPolisa | null };
+
+// Pierwsza polisa: ochrona od jutra najwcześniej, najdalej za 90 dni; link ważny 30 dni.
+export const NOWA_OCHRONA_OD_MIN_DNI = 1;
+export const NOWA_OCHRONA_OD_MAX_DNI = 90;
+export const NOWY_LINK_DNI = 30;
+
+// „2026-10-15” + n dni (bez strefy czasowej — same daty kalendarzowe).
+export function przesunDate(data: string, dni: number): string {
+	const d = new Date(`${data}T12:00:00Z`);
+	d.setUTCDate(d.getUTCDate() + dni);
+	return d.toISOString().slice(0, 10);
+}
+// Okres 12 miesięcy od podanego dnia (jak nowy okres przy odnowieniu).
+export function okresOdDaty(od: string): { od: string; do: string } {
+	const d = new Date(`${od}T12:00:00Z`);
+	d.setUTCFullYear(d.getUTCFullYear() + 1);
+	d.setUTCDate(d.getUTCDate() - 1);
+	return { od, do: d.toISOString().slice(0, 10) };
+}
+export const zakresOchronyOd = (dzis: string) => ({ min: przesunDate(dzis, NOWA_OCHRONA_OD_MIN_DNI), max: przesunDate(dzis, NOWA_OCHRONA_OD_MAX_DNI), domyslna: przesunDate(dzis, NOWA_OCHRONA_OD_MIN_DNI) });
 
 export const TYPY_ZALACZNIKOW = {
 	dyplom: 'Dyplom kosmetologa (studia licencjackie lub magisterskie)',
@@ -305,6 +334,12 @@ export function brakiDokumentow(
 }
 export const ZALACZNIK_TYPY_MIME = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 
+// Oświadczenia pod wnioskiem o pierwszą polisę (klient zaznacza jedno pole; teksty trafiają do PDF).
+export const OSWIADCZENIA_NOWEJ = [
+	'Oświadczam, że podane informacje są prawdziwe i kompletne, a w gabinecie wykonywane są zabiegi z list programu dla wskazanego rodzaju działalności oraz zabiegi wymagające ankiety wskazane w tym wniosku.',
+	'Wnioskuję o objęcie ochroną ubezpieczeniową na warunkach Programu Ubezpieczenia OC (umowa generalna STU Ergo Hestia SA). Wiem, że pełny zakres ochrony i wyłączenia określają Warunki Ubezpieczenia programu, które otrzymam przed wystawieniem certyfikatu, a ostateczną składkę potwierdza doradca.'
+] as const;
+
 export const OSWIADCZENIE_ANKIETY =
 	'Oświadczam, że udzieliłem/am powyższych informacji zgodnie ze swoją najlepszą wiedzą i że znane mi są sankcje ' +
 	'przewidziane w art. 815 § 3 Kodeksu cywilnego za udzielenie Ubezpieczycielowi nieprawdziwych informacji ' +
@@ -344,6 +379,33 @@ export function waliduj_apk(raw: unknown): Wynik<Apk> {
 	return bledy.length ? { ok: false, bledy } : { ok: true, value: apk };
 }
 
+// Osoby wykonujące zgłaszane zabiegi (z żądania klienta) i braki w ich opisie — wspólne dla odnowienia i pierwszej polisy.
+function parsujWykonawcow(raw: unknown, zgloszone: string[], bledy: string[]): Wykonawca[] {
+	const lista = Array.isArray(raw) ? raw.slice(0, MAKS_WYKONAWCOW + 1) : [];
+	if (lista.length > MAKS_WYKONAWCOW) bledy.push(`Można podać najwyżej ${MAKS_WYKONAWCOW} osób.`);
+	const ids = new Set<string>();
+	const wykonawcy: Wykonawca[] = [];
+	for (const o of lista.slice(0, MAKS_WYKONAWCOW)) {
+		const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
+		const id = typeof x.id === 'string' && ID_WYKONAWCY.test(x.id) && !ids.has(x.id) ? x.id : null;
+		if (!id) continue;
+		ids.add(id);
+		wykonawcy.push({
+			id,
+			imie_nazwisko: str(x.imie_nazwisko, 200),
+			zabiegi: Array.isArray(x.zabiegi) ? Array.from(new Set(x.zabiegi.filter((t): t is string => typeof t === 'string' && zgloszone.includes(t)))) : []
+		});
+	}
+	if (!wykonawcy.length) bledy.push('Podaj osoby, które będą wykonywać zgłaszane zabiegi.');
+	for (const w of wykonawcy) {
+		if (!w.imie_nazwisko) bledy.push('Podaj imię i nazwisko każdej osoby wykonującej zabiegi.');
+		else if (!w.zabiegi.length) bledy.push(`Zaznacz, które zabiegi wykonuje: ${w.imie_nazwisko}.`);
+	}
+	const bezWykonawcy = zgloszone.filter((t) => !wykonawcy.some((w) => w.zabiegi.includes(t)));
+	if (wykonawcy.length && bezWykonawcy.length) bledy.push(`Wskaż, kto wykonuje: ${bezWykonawcy.join('; ')}.`);
+	return wykonawcy;
+}
+
 // pomijajWykonawcow: krok „Wniosek” na stronie — osoby i dokumenty klient podaje w następnym kroku.
 export function waliduj_wniosek(raw: unknown, apk: Apk | null, o: { pomijajWykonawcow?: boolean } = {}): Wynik<Wniosek> {
 	const r = (raw ?? {}) as Record<string, unknown>;
@@ -372,29 +434,7 @@ export function waliduj_wniosek(raw: unknown, apk: Apk | null, o: { pomijajWykon
 		wykonawcy: []
 	};
 	const zgloszone = zabiegiWniosku(zmiany);
-	if (zgloszone.length && !o.pomijajWykonawcow) {
-		const raw = Array.isArray(z.wykonawcy) ? z.wykonawcy.slice(0, MAKS_WYKONAWCOW + 1) : [];
-		if (raw.length > MAKS_WYKONAWCOW) bledy.push(`Można podać najwyżej ${MAKS_WYKONAWCOW} osób.`);
-		const ids = new Set<string>();
-		for (const o of raw.slice(0, MAKS_WYKONAWCOW)) {
-			const x = (o && typeof o === 'object' ? o : {}) as Record<string, unknown>;
-			const id = typeof x.id === 'string' && ID_WYKONAWCY.test(x.id) && !ids.has(x.id) ? x.id : null;
-			if (!id) continue;
-			ids.add(id);
-			zmiany.wykonawcy.push({
-				id,
-				imie_nazwisko: str(x.imie_nazwisko, 200),
-				zabiegi: Array.isArray(x.zabiegi) ? Array.from(new Set(x.zabiegi.filter((t): t is string => typeof t === 'string' && zgloszone.includes(t)))) : []
-			});
-		}
-		if (!zmiany.wykonawcy.length) bledy.push('Podaj osoby, które będą wykonywać zgłaszane zabiegi.');
-		for (const w of zmiany.wykonawcy) {
-			if (!w.imie_nazwisko) bledy.push('Podaj imię i nazwisko każdej osoby wykonującej zabiegi.');
-			else if (!w.zabiegi.length) bledy.push(`Zaznacz, które zabiegi wykonuje: ${w.imie_nazwisko}.`);
-		}
-		const bezWykonawcy = zgloszone.filter((t) => !zmiany.wykonawcy.some((w) => w.zabiegi.includes(t)));
-		if (zmiany.wykonawcy.length && bezWykonawcy.length) bledy.push(`Wskaż, kto wykonuje: ${bezWykonawcy.join('; ')}.`);
-	}
+	if (zgloszone.length && !o.pomijajWykonawcow) zmiany.wykonawcy = parsujWykonawcow(z.wykonawcy, zgloszone, bledy);
 	if (zmiany.adres && (!zmiany.adres.ulica || !/^\d{2}-\d{3}$/.test(zmiany.adres.kod) || !zmiany.adres.miasto)) {
 		bledy.push('Podaj pełny nowy adres działalności (ulica, kod pocztowy w formacie 00-000, miejscowość).');
 	}
@@ -407,6 +447,83 @@ export function waliduj_wniosek(raw: unknown, apk: Apk | null, o: { pomijajWykon
 		if (!zmiany.osoby) bledy.push('Do wyceny nowej sumy podaj liczbę osób wykonujących zabiegi.');
 	}
 	return bledy.length ? { ok: false, bledy: Array.from(new Set(bledy)) } : { ok: true, value: { decyzja, zmiany, nie_powod: '', potwierdzenie_nie: false } };
+}
+
+// Wniosek o pierwszą polisę (klient bez certyfikatu): decyzja „nowa” (wnioskuję) albo „nie” (rezygnuję).
+// dzis: data w czasie polskim (serwer) — początek ochrony musi mieścić się w oknie od jutra do 90 dni.
+export function waliduj_wniosek_nowy(raw: unknown, apk: Apk | null, o: { pomijajWykonawcow?: boolean; dzis: string }): Wynik<Wniosek> {
+	const r = (raw ?? {}) as Record<string, unknown>;
+	const bledy: string[] = [];
+	const decyzja = oneOf(r.decyzja, ['nowa', 'nie'] as const);
+	if (!decyzja) return { ok: false, bledy: ['Wybierz odpowiedź: wnioskuję o ubezpieczenie albo rezygnuję.'] };
+	if (decyzja === 'nie') {
+		if (r.potwierdzenie_nie !== true) bledy.push('Potwierdź rezygnację z ubezpieczenia.');
+		return bledy.length ? { ok: false, bledy } : { ok: true, value: { decyzja, zmiany: null, nie_powod: str(r.nie_powod, 2000), potwierdzenie_nie: true, nowa: null } };
+	}
+
+	const n = (r.nowa && typeof r.nowa === 'object' ? r.nowa : {}) as Record<string, unknown>;
+	const f = (n.firma && typeof n.firma === 'object' ? n.firma : {}) as Record<string, unknown>;
+	const firma: Firma = {
+		nazwa: str(f.nazwa, 300),
+		nip: nipBezPrefiksu(f.nip),
+		regon: bezSeparatorow(f.regon, 40),
+		ulica: str(f.ulica, 200),
+		kod: str(f.kod, 10),
+		miasto: str(f.miasto, 100),
+		email: str(f.email, 320).toLowerCase(),
+		telefon: str(f.telefon, 40)
+	};
+	if (!firma.nazwa) bledy.push('Podaj nazwę firmy (albo imię i nazwisko przy działalności).');
+	if (!poprawnyNip(firma.nip)) bledy.push('Podaj poprawny NIP (10 cyfr).');
+	if (firma.regon && !/^(\d{9}|\d{14})$/.test(firma.regon)) bledy.push('REGON ma 9 albo 14 cyfr (albo zostaw pole puste).');
+	if (!firma.ulica || !/^\d{2}-\d{3}$/.test(firma.kod) || !firma.miasto) bledy.push('Podaj pełny adres gabinetu (ulica, kod pocztowy w formacie 00-000, miejscowość).');
+	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(firma.email)) bledy.push('Podaj poprawny adres e-mail — na niego wyślemy dokumenty.');
+	if (firma.telefon.replace(/\D/g, '').length < 9) bledy.push('Podaj numer telefonu (co najmniej 9 cyfr).');
+
+	const ochrona_od = str(n.ochrona_od, 10);
+	const okno = zakresOchronyOd(o.dzis);
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(ochrona_od)) bledy.push('Podaj, od kiedy ma zacząć się ochrona.');
+	else if (ochrona_od < okno.min || ochrona_od > okno.max) bledy.push(`Ochrona może zacząć się najwcześniej jutro i najpóźniej za ${NOWA_OCHRONA_OD_MAX_DNI} dni.`);
+
+	const z = (r.zmiany ?? {}) as Record<string, unknown>;
+	const sumaRaw = Number(z.wyzsza_suma);
+	const zmiany: Zmiany = {
+		wyzsza_suma: SUMY.includes(sumaRaw as Suma) ? (sumaRaw as Suma) : null,
+		ochrona_prawna: z.ochrona_prawna === true,
+		adres: null,
+		nowe_zabiegi: [],
+		zabiegi_ankieta: listOf(z.zabiegi_ankieta, ZABIEGI_ANKIETA),
+		inne: str(z.inne, 3000),
+		rodzaje: listOf(z.rodzaje, RODZAJE_KEYS),
+		osoby: oneOf(z.osoby, OSOBY_KEYS),
+		wykonawcy: []
+	};
+	if (!zmiany.wyzsza_suma) bledy.push('Wybierz sumę gwarancyjną.');
+	// Rodzaj gabinetu i liczba osób: z APK, a przy odmowie APK — z wniosku (bez nich nie ma wyceny).
+	if (!apk) {
+		if (!zmiany.rodzaje.length) bledy.push('Zaznacz rodzaj działalności.');
+		if (!zmiany.osoby) bledy.push('Podaj liczbę osób wykonujących zabiegi.');
+	}
+	const zgloszone = zabiegiWniosku(zmiany);
+	if (zgloszone.length && !o.pomijajWykonawcow) zmiany.wykonawcy = parsujWykonawcow(z.wykonawcy, zgloszone, bledy);
+	const oswiadczenia = n.oswiadczenia === true;
+	if (!oswiadczenia) bledy.push('Potwierdź oświadczenia na końcu wniosku.');
+	return bledy.length
+		? { ok: false, bledy: Array.from(new Set(bledy)) }
+		: { ok: true, value: { decyzja, zmiany, nie_powod: '', potwierdzenie_nie: false, nowa: { firma, ochrona_od, oswiadczenia: true } } };
+}
+
+// Składka pierwszej polisy wg taryfy programu; ubezpieczyciel wycenia sam przy zabiegach z ankietą i powyżej 8 osób.
+export function wycenaNowej(w: Wniosek, apk: Apk | null): Wycena | null {
+	const z = w.zmiany;
+	const suma = z?.wyzsza_suma;
+	if (w.decyzja !== 'nowa' || !z || !suma) return null;
+	if (z.zabiegi_ankieta.length) return { rodzaj: 'indywidualna', powod: 'zabiegi wymagające ankiety podlegają ocenie ubezpieczyciela' };
+	const rodzaje = apk?.rodzaje.length ? apk.rodzaje : z.rodzaje;
+	const osoby = apk?.osoby || z.osoby;
+	const kategoria = kategoriaZRodzajow(rodzaje);
+	if (!kategoria || !osoby) return { rodzaj: 'indywidualna', powod: 'brak danych do wyceny' };
+	return skladkaProgramu({ kategoria, suma, osoby, ochronaPrawna: z.ochrona_prawna });
 }
 
 // NIP: 10 cyfr, ostatnia to cyfra kontrolna — suma iloczynów 9 pierwszych cyfr i wag 6,5,7,2,3,4,5,6,7

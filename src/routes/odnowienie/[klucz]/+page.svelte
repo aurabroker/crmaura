@@ -3,8 +3,8 @@
 	import { page } from '$app/state';
 	import { CalendarClock, CheckCircle2, Link2Off, Mail, RefreshCw, XCircle } from 'lucide-svelte';
 	import type { WidokOdnowienia } from '$lib/renewals/api';
-	import { DECYZJA_ETYKIETA } from '$lib/renewals/staffApi';
-	import { PROGRAM_NAZWA, formatSuma, formatZl, nazwaUbezpieczyciela } from '$lib/renewals/program';
+	import { etykietaDecyzji } from '$lib/renewals/staffApi';
+	import { PROGRAM_NAZWA, SUMY, formatSuma, formatZl, nazwaUbezpieczyciela } from '$lib/renewals/program';
 	import { KLAUZULA_INFORMACYJNA, KLAUZULA_URL } from '$lib/renewals/zgody';
 	import LogoBeautyPolisa from '$lib/components/renewal/LogoBeautyPolisa.svelte';
 	import KrokAnkieta from '$lib/components/renewal/KrokAnkieta.svelte';
@@ -12,6 +12,7 @@
 	import KrokKwalifikacje from '$lib/components/renewal/KrokKwalifikacje.svelte';
 	import KrokPodsumowanie from '$lib/components/renewal/KrokPodsumowanie.svelte';
 	import KrokWniosek from '$lib/components/renewal/KrokWniosek.svelte';
+	import KrokWniosekNowy from '$lib/components/renewal/KrokWniosekNowy.svelte';
 	import Postep from '$lib/components/renewal/Postep.svelte';
 	import { Odnowienie, type Krok } from '$lib/components/renewal/stan.svelte';
 	import {
@@ -74,10 +75,12 @@
 
 	const w = $derived(s?.widok ?? null);
 	const decyzjaWyniku = $derived(s?.wynik?.decyzja ?? s?.decyzja ?? '');
+	// Pierwsza polisa (klient bez certyfikatu) — te same kroki, inne teksty i krok „Wniosek”.
+	const nowa = $derived(!!widok && 'rodzaj' in widok && widok.rodzaj === 'nowa');
 </script>
 
 <svelte:head>
-	<title>Odnowienie ubezpieczenia OC — BeautyPolisa</title>
+	<title>{nowa ? 'Ubezpieczenie OC gabinetu — wniosek' : 'Odnowienie ubezpieczenia OC'} — BeautyPolisa</title>
 	<meta name="robots" content="noindex, nofollow" />
 	<!-- Adres zawiera klucz dostępu — nie wysyłamy go w nagłówku Referer. -->
 	<meta name="referrer" content="no-referrer" />
@@ -88,7 +91,7 @@
 		<div class="mx-auto flex max-w-2xl flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-4">
 			<LogoBeautyPolisa class="h-7 sm:h-8" />
 			<span class="hidden h-6 w-px bg-slate-300 sm:block" aria-hidden="true"></span>
-			<p class="text-sm text-slate-600 sm:text-base">odnowienie ubezpieczenia OC</p>
+			<p class="text-sm text-slate-600 sm:text-base">{nowa ? 'ubezpieczenie OC gabinetu' : 'odnowienie ubezpieczenia OC'}</p>
 		</div>
 	</header>
 
@@ -120,7 +123,7 @@
 					<CalendarClock size={36} class="mx-auto text-amber-500" aria-hidden="true" />
 					<h1 class="mt-3 text-xl font-bold text-[#2a3b69]">Link wygasł</h1>
 					<p class="mt-2 text-slate-600">
-						Termin złożenia wniosku przez ten link minął. Jeśli chcesz odnowić ubezpieczenie, napisz do nas — przygotujemy nowy wniosek.
+						Termin złożenia wniosku przez ten link minął. Jeśli chcesz ubezpieczyć gabinet, napisz do nas — przygotujemy nowy wniosek.
 					</p>
 				{:else if widok.stan === 'anulowany'}
 					<XCircle size={36} class="mx-auto text-slate-400" aria-hidden="true" />
@@ -132,7 +135,7 @@
 					<CheckCircle2 size={36} class="mx-auto text-emerald-600" aria-hidden="true" />
 					<h1 class="mt-3 text-xl font-bold text-[#2a3b69]">Wniosek został już złożony {fmtDataGodzina(widok.zlozono_at)}</h1>
 					<p class="mt-2 text-slate-700">
-						Decyzja: <strong>{DECYZJA_ETYKIETA[widok.decyzja] ?? widok.decyzja}</strong>
+						Decyzja: <strong>{etykietaDecyzji(widok.decyzja, widok.rodzaj)}</strong>
 					</p>
 					<p class="mt-1 text-sm text-slate-500">
 						{widok.klient}{#if widok.nr_polisy}, certyfikat {widok.nr_polisy}{/if}
@@ -153,7 +156,59 @@
 				<Postep kroki={s.kroki} aktualny={s.krok} onwybierz={idz} />
 			{/if}
 
-			{#if s.krok === 'start'}
+			{#if s.krok === 'start' && s.nowa}
+				<!-- Pierwsza polisa: bez obecnego certyfikatu — program, warianty sumy i droga do certyfikatu. -->
+				<section class={KARTA} aria-labelledby="krok-naglowek" data-testid="intro">
+					<h1 id="krok-naglowek" tabindex="-1" class={NAGLOWEK}>Ubezpieczenie OC gabinetu — analiza potrzeb i wniosek</h1>
+					<p class="mt-2 text-slate-600">
+						Przygotowaliśmy dla Ciebie wniosek o ubezpieczenie odpowiedzialności cywilnej gabinetu w programie Beauty❤️Polisa. Wypełnij go online — około 5 minut.
+					</p>
+
+					<dl class="mt-6 divide-y divide-slate-100 rounded-xl border border-slate-200">
+						{#each [
+							['Ubezpieczający', w.klient],
+							['Ubezpieczyciel', nazwaUbezpieczyciela(w.ubezpieczyciel)],
+							['Program', w.program ?? PROGRAM_NAZWA],
+							['Okres ubezpieczenia', '12 miesięcy od dnia, który wskażesz we wniosku (najwcześniej od jutra)'],
+							['Suma gwarancyjna do wyboru', SUMY.map(formatSuma).join(', ')],
+							['Link ważny do', fmtData(w.wazny_do)]
+						] as [k, v] (k)}
+							<div class="px-4 py-3 sm:grid sm:grid-cols-5 sm:gap-4">
+								<dt class="text-sm text-slate-500 sm:col-span-2">{k}</dt>
+								<dd class="font-medium text-slate-900 break-words sm:col-span-3">{v}</dd>
+							</div>
+						{/each}
+					</dl>
+
+					<h2 class="mt-8 text-base font-semibold text-[#2a3b69]">Jak to działa</h2>
+					<ol class="mt-3 space-y-3">
+						{#each [
+							['Analiza potrzeb (APK)', 'kilka pytań o gabinet, około 2 minut, do tego zgody marketingowe (do wyboru) i podpis palcem albo myszą. PDF z odpowiedziami przyjdzie od razu e-mailem. Możesz też świadomie odmówić.'],
+							['Wniosek', 'dane gabinetu, początek ochrony, suma gwarancyjna i ochrona prawna — od razu zobaczysz orientacyjną składkę według taryfy programu.'],
+							['Podsumowanie i wysłanie', 'sprawdzasz odpowiedzi, podpisujesz wniosek i wysyłasz. PDF wniosku przyjdzie drugim e-mailem, a doradca przygotuje certyfikat.']
+						] as [t, o], i (t)}
+							<li class="flex gap-3">
+								<span class="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#2a3b69] text-sm font-bold text-white">{i + 1}</span>
+								<p class="pt-1 text-slate-700"><strong class="text-slate-900">{t}</strong> — {o}</p>
+							</li>
+						{/each}
+					</ol>
+					<p class="mt-4 text-sm text-slate-500">
+						Jeśli wykonujesz zabiegi wymagające oceny ubezpieczyciela (np. toksyna botulinowa, wypełniacze), dojdzie krótka ankieta Ergo Hestii z
+						dokumentami kwalifikacji.
+					</p>
+
+					<details class="mt-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600" data-testid="klauzula-rodo">
+						<summary class="cursor-pointer font-semibold text-[#2a3b69]">Informacja o przetwarzaniu danych osobowych (RODO)</summary>
+						{#each KLAUZULA_INFORMACYJNA as akapit, i (i)}<p class="mt-2">{akapit}</p>{/each}
+						<p class="mt-2"><a href={KLAUZULA_URL} target="_blank" rel="noopener noreferrer" class="font-semibold text-rose-700 underline underline-offset-2">Pełna klauzula informacyjna (PDF)</a></p>
+					</details>
+
+					<button type="button" class="{BTN_GLOWNY} mt-8 w-full sm:w-auto" onclick={() => idz('apk')}>
+						{s.apkGotowa ? 'Kontynuuj' : 'Rozpocznij'}
+					</button>
+				</section>
+			{:else if s.krok === 'start'}
 				<section class={KARTA} aria-labelledby="krok-naglowek" data-testid="intro">
 					<h1 id="krok-naglowek" tabindex="-1" class={NAGLOWEK}>Odnowienie ubezpieczenia OC gabinetu</h1>
 					<p class="mt-2 text-slate-600">
@@ -229,6 +284,8 @@
 				</section>
 			{:else if s.krok === 'apk'}
 				<KrokApk {s} ondalej={() => idz('wniosek')} onwstecz={() => idz('start')} />
+			{:else if s.krok === 'wniosek' && s.nowa}
+				<KrokWniosekNowy {s} ondalej={() => idz(obok('wniosek', 1))} onwstecz={() => idz('apk')} />
 			{:else if s.krok === 'wniosek'}
 				<KrokWniosek {s} ondalej={() => idz(obok('wniosek', 1))} onwstecz={() => idz('apk')} />
 			{:else if s.krok === 'kwalifikacje'}
@@ -239,7 +296,12 @@
 				<KrokPodsumowanie {s} onidz={idz} onwyslano={poWyslaniu} />
 			{:else if s.krok === 'wyslano'}
 				<section class={KARTA} aria-labelledby="krok-naglowek" data-testid="wyslano-{decyzjaWyniku}">
-					{#if decyzjaWyniku === 'nie'}
+					{#if decyzjaWyniku === 'nie' && s.nowa}
+						<CheckCircle2 size={40} class="text-slate-500" aria-hidden="true" />
+						<h1 id="krok-naglowek" tabindex="-1" class="{NAGLOWEK} mt-3">Rezygnacja została zapisana</h1>
+						<p class="mt-3 text-slate-700">Zapisaliśmy, że nie wnioskujesz o ubezpieczenie OC gabinetu w programie.</p>
+						<p class="mt-3 text-slate-700">Jeśli zmienisz zdanie, napisz do nas — przygotujemy nowy wniosek.</p>
+					{:else if decyzjaWyniku === 'nie'}
 						<CheckCircle2 size={40} class="text-slate-500" aria-hidden="true" />
 						<h1 id="krok-naglowek" tabindex="-1" class="{NAGLOWEK} mt-3">Rezygnacja została zapisana</h1>
 						<p class="mt-3 text-slate-700">
@@ -247,6 +309,32 @@
 							<strong>{w.okres_obecny.do ? fmtData(w.okres_obecny.do) : 'z końcem obecnego okresu'}</strong>.
 						</p>
 						<p class="mt-3 text-slate-700">Jeśli zmienisz zdanie przed tym dniem, napisz do nas — przygotujemy odnowienie.</p>
+					{:else if s.nowa}
+						<CheckCircle2 size={40} class="text-emerald-600" aria-hidden="true" />
+						<h1 id="krok-naglowek" tabindex="-1" class="{NAGLOWEK} mt-3">Dziękujemy! Wniosek został wysłany</h1>
+						<p class="mt-3 text-slate-700">
+							Doradca sprawdzi wniosek i przygotuje certyfikat na okres
+							<strong>{fmtData(s.okresNowy.od)} – {fmtData(s.okresNowy.do)}</strong>.
+						</p>
+						<p class="mt-3 text-slate-700" data-testid="wynik-skladka">
+							{#if s.wynik?.wycena_indywidualna}
+								Składka zostanie wyceniona indywidualnie — doradca skontaktuje się z Tobą.
+							{:else if s.wynik?.skladka_nowa != null}
+								Składka orientacyjna: <strong>{formatZl(s.wynik.skladka_nowa)}</strong>. Doradca potwierdzi ostateczną składkę i sposób płatności.
+							{:else}
+								Doradca potwierdzi składkę i zakres ubezpieczenia.
+							{/if}
+						</p>
+						<p class="mt-3 text-slate-700">Potwierdzenie złożenia wniosku (PDF) wyślemy na Twój adres e-mail.</p>
+						{#if ankietaWyslana}
+							<div class="mt-5 flex items-start gap-3 rounded-xl border border-[#2a3b69]/20 bg-[#2a3b69]/5 p-4 text-[#2a3b69]">
+								<Mail size={20} class="mt-0.5 shrink-0" aria-hidden="true" />
+								<p>
+									<strong>Ankieta Ergo Hestii:</strong> sprawdź skrzynkę e-mail — wyślemy PDF ankiety. Wydrukuj ją, podpisz i odeślij zgodnie z
+									instrukcją w wiadomości.
+								</p>
+							</div>
+						{/if}
 					{:else}
 						<CheckCircle2 size={40} class="text-emerald-600" aria-hidden="true" />
 						<h1 id="krok-naglowek" tabindex="-1" class="{NAGLOWEK} mt-3">Dziękujemy! Wniosek został wysłany</h1>

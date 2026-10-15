@@ -10,6 +10,9 @@
 	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, Shield, X, ChevronLeft, ChevronRight, UserRound } from 'lucide-svelte';
 	import type { CrmTask } from '$lib/types/database';
 	import { fmtDzien } from '$lib/utils';
+	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
+	import { wywolajApi } from '$lib/components/renewal/crmRenewals';
+	import type { OdnowienieUtworzone } from '$lib/renewals/staffApi';
 	import {
 		ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania,
 		stanMaila, type MailKampanii, type Zgloszenie
@@ -272,6 +275,59 @@
 		}
 		await sb.from('crm_prospects').update({ klient_id: klientId }).eq('id', prospect.id);
 		await load();
+	}
+
+	// Pierwsza polisa OC beauty: link do APK i wniosku dla leada (klient bez certyfikatu). Lead spoza kartoteki
+	// najpierw trafia do Klientów (convertToClient) — wniosek jest zawsze przypięty do klienta.
+	let wniosekPracuje = $state<'' | 'email' | 'link'>('');
+	let wniosekLink = $state('');
+	async function wyslijWniosek(tryb: 'email' | 'link') {
+		if (!prospect || wniosekPracuje) return;
+		if (!prospect.klient_id) {
+			await convertToClient();
+			if (!prospect?.klient_id) return;
+		}
+		wniosekPracuje = tryb;
+		try {
+			const body = { klient_id: prospect.klient_id, tryb, oczekiwany_test: appState.tenantFeatures?.odnowienia_test === true };
+			let w = await wywolajApi<OdnowienieUtworzone>('POST', '/api/renewals', body);
+			if (!w.ok && w.status === 409 && w.aktywny) {
+				const tak = await askConfirm({
+					title: 'Ten klient ma już aktywny wniosek o pierwszą polisę.',
+					message: 'Utworzyć nowy i unieważnić poprzedni link?',
+					detail: 'Poprzedni link przestanie działać od razu.',
+					confirmLabel: 'Utwórz nowy',
+					cancelLabel: 'Zostaw obecny'
+				});
+				if (!tak) return;
+				w = await wywolajApi<OdnowienieUtworzone>('POST', '/api/renewals', { ...body, zastap: true });
+			}
+			if (!w.ok) {
+				alert(w.message);
+				return;
+			}
+			wniosekLink = w.data.link ?? '';
+			if (tryb === 'email') {
+				ctxToast(w.data.test ? `TEST: wniosek wysłany na adres testowy ${w.data.adres ?? ''}` : `Wysłano link do APK i wniosku${w.data.adres ? ` na ${w.data.adres}` : ''}`);
+			} else {
+				try {
+					await navigator.clipboard.writeText(wniosekLink);
+					ctxToast('Skopiowano link do APK i wniosku');
+				} catch {
+					ctxToast('Link utworzony — skopiuj go z pola poniżej');
+				}
+			}
+			await sb.from('crm_prospect_activities').insert([{
+				tenant_id: prospect.tenant_id,
+				prospect_id: prospect.id,
+				author_id: appState.profile?.id ?? null,
+				typ: 'notatka',
+				tresc: tryb === 'email' ? `Wysłano klientowi link do APK i wniosku o pierwszą polisę OC (e-mail${w.data.adres ? `: ${w.data.adres}` : ''}).` : 'Utworzono link do APK i wniosku o pierwszą polisę OC (do przekazania klientowi).'
+			}] as never);
+			await load();
+		} finally {
+			wniosekPracuje = '';
+		}
 	}
 
 	const typLabels = { notatka: 'Notatka', komentarz: 'Komentarz', wiadomosc: 'Wiadomość' };
@@ -657,6 +713,38 @@
 			</div>
 		{/if}
 	</div>
+
+	<!-- Pierwsza polisa OC beauty: link do APK i wniosku (ten sam formularz co odnowienia, bez certyfikatu) -->
+	{#if prospect}
+		<div class="bg-white border border-line rounded-xl shadow-sm px-6 py-4" data-testid="lead-pierwsza-polisa">
+			<div class="flex flex-wrap items-center gap-3">
+				<div class="min-w-0 flex-1">
+					<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2"><Send size={15} class="text-rose-500" /> APK i wniosek o pierwszą polisę OC</h2>
+					<p class="text-[13px] text-ink-3 mt-0.5">
+						Klient wypełnia analizę potrzeb i wniosek online (dane gabinetu, początek ochrony, suma, ochrona prawna), podpisuje palcem albo myszą. PDF-y i zadanie trafią do CRM{prospect.klient_id ? '' : ' — lead zostanie najpierw dodany do Klientów'}.
+					</p>
+				</div>
+				<div class="flex flex-wrap gap-2">
+					<button onclick={() => wyslijWniosek('email')} disabled={!!wniosekPracuje} class="h-9 px-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-60">
+						{wniosekPracuje === 'email' ? 'Wysyłanie…' : 'Wyślij e-mailem'}
+					</button>
+					<button onclick={() => wyslijWniosek('link')} disabled={!!wniosekPracuje} class="h-9 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 disabled:opacity-60">
+						{wniosekPracuje === 'link' ? 'Tworzenie…' : 'Utwórz link'}
+					</button>
+				</div>
+			</div>
+			{#if wniosekLink}
+				<div class="mt-3 flex flex-wrap items-center gap-2 text-sm bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+					<span class="text-xs font-semibold text-blue-700 uppercase tracking-wide">Link dla klienta</span>
+					<input readonly value={wniosekLink} onfocus={(e) => e.currentTarget.select()} class="flex-1 min-w-[240px] border border-blue-200 bg-white rounded-md px-2 py-1 text-xs font-mono text-slate-700" />
+					<button type="button" onclick={() => (wniosekLink = '')} class="text-blue-400 hover:text-blue-700" aria-label="Ukryj link">✕</button>
+				</div>
+			{/if}
+			{#if prospect.klient_id}
+				<p class="mt-2 text-xs text-ink-3">Przebieg wniosku (APK, podpisy, PDF-y) jest na <a href="/clients/{prospect.klient_id}?tab=apk" class="font-semibold text-accent-text hover:underline">karcie klienta → APK</a>.</p>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Ubezpieczenia (na równi z boxem Klienta) -->
 	<div class="bg-white border border-line rounded-xl shadow-sm">

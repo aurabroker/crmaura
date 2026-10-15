@@ -15,8 +15,9 @@ import {
 	type Klient,
 	type RenewalRow
 } from '$lib/server/renewals';
-import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, BRAK_PDF_ANKIETY, DECYZJA_TEKST, opisZmian } from '$lib/server/renewalDocs';
+import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, BRAK_PDF_ANKIETY, decyzjaTekst, opisNowej, opisSkladki, opisZmian } from '$lib/server/renewalDocs';
 import { pobierzPodpis, podpisDoPdf } from '$lib/server/podpis';
+import { formatSuma } from '$lib/renewals/program';
 
 type PdfEvent = Parameters<typeof pdfWniosku>[0];
 
@@ -121,7 +122,8 @@ async function zapiszEmailKlienta(admin: SupabaseClient, r: RenewalRow, adres: s
 	const { error: e } = await admin.from('crm_client_emails').insert({
 		tenant_id: r.tenant_id,
 		klient_id: r.klient_id,
-		polisa_ids: [r.polisa_id],
+		// Wniosek o pierwszą polisę nie ma jeszcze polisy.
+		polisa_ids: r.polisa_id ? [r.polisa_id] : [],
 		rodzaj: 'odnowienie',
 		adres: adres.slice(0, 320),
 		temat: temat.slice(0, 500),
@@ -270,8 +272,9 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 		}
 
 		// Do biura same linki: pliki (PDF APK, PDF wniosku, PDF ankiety, załączniki klienta) otwiera się w CRM.
+		// Pierwsza polisa nie ma karty polisy — wniosek jest na karcie klienta (zakładka APK).
 		const crm = new URL(event.url).origin;
-		const mb = mailBiuro(r, { polisa: `${crm}/policies/${r.polisa_id}`, klient: `${crm}/clients/${r.klient_id}?tab=zalaczniki` }, kto, ankietaWZalaczniku);
+		const mb = mailBiuro(r, { polisa: r.polisa_id ? `${crm}/policies/${r.polisa_id}` : `${crm}/clients/${r.klient_id}?tab=apk`, klient: `${crm}/clients/${r.klient_id}?tab=zalaczniki` }, kto, ankietaWZalaczniku);
 		const wb = await wyslijEmail(firma.resend_api_key, {
 			from: nadawca(),
 			to: [test ? adresTestowy() : biuro()],
@@ -284,26 +287,54 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 	} else {
 		await zapiszZdarzenie(admin, r, 'blad_email_klient', null, { blad: 'Firma nie ma klucza Resend (SAAS Admin).' });
 	}
+	if (r.rodzaj === 'nowa') await odnotujWLeadzie(admin, r);
 	return r;
+}
+
+// Pierwsza polisa: lead klienta (Sprzedaż) dostaje wpis o złożonym wniosku, a etap „nowy” / „w kontakcie”
+// przechodzi na „oferta wysłana” (lead zamknie się jako „wygrany” sam, gdy klient dostanie polisę).
+// Rezygnacja — tylko notatka; etap zostaje decyzją doradcy. Błędy nie przerywają niczego (dziennik).
+async function odnotujWLeadzie(admin: SupabaseClient, r: RenewalRow) {
+	try {
+		const { data: lead } = await admin.from('crm_prospects').select('id, status').eq('klient_id', r.klient_id).eq('tenant_id', r.tenant_id).order('created_at').limit(1).maybeSingle();
+		if (!lead) return;
+		const n = r.wniosek?.nowa;
+		const tresc =
+			r.decyzja === 'nie'
+				? `Klient zrezygnował z ubezpieczenia (wniosek online)${r.wniosek?.nie_powod ? `: ${r.wniosek.nie_powod}` : '.'}`
+				: `Klient złożył wniosek o polisę OC online: suma ${r.wniosek?.zmiany?.wyzsza_suma ? formatSuma(r.wniosek.zmiany.wyzsza_suma) : '—'}, ochrona od ${n?.ochrona_od ?? '—'}, składka ${opisSkladki(r)}.`;
+		await admin.from('crm_prospect_activities').insert({ tenant_id: r.tenant_id, prospect_id: lead.id, typ: 'notatka', tresc });
+		if (r.decyzja === 'nowa' && ['nowy', 'w_kontakcie'].includes(lead.status)) {
+			await admin.from('crm_prospects').update({ status: 'oferta_wyslana', status_zmieniony_at: new Date().toISOString() }).eq('id', lead.id);
+		}
+	} catch (e) {
+		console.error('renewals: lead po wniosku:', (e as Error)?.message ?? e);
+		await zapiszZdarzenie(admin, r, 'blad_leada', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
+	}
 }
 
 // Zwraca id i opis zadania (do dopisania uwag po PDF-ach) albo null, gdy zadanie nie powstało.
 async function zadanieDlaDoradcy(admin: SupabaseClient, r: RenewalRow, test: boolean): Promise<{ id: string; opis: string } | null> {
 	const { data: klient } = await admin.from('crm_clients').select('opiekun_id').eq('id', r.klient_id).maybeSingle();
+	const nowa = r.rodzaj === 'nowa';
 	const tytul =
 		(test ? PREFIKS_TESTU : '') +
-		(r.decyzja === 'bez_zmian'
-			? `Odnowienie bez zmian: wystaw certyfikat — ${r.klient_nazwa}`
-			: r.decyzja === 'zmiany'
-				? `Odnowienie ze zmianami: sprawdź i potwierdź składkę — ${r.klient_nazwa}`
-				: `Klient rezygnuje z odnowienia — ${r.klient_nazwa}`);
-	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta);
+		(nowa
+			? r.decyzja === 'nie'
+				? `Klient rezygnuje z pierwszej polisy — ${r.klient_nazwa}`
+				: `Pierwsza polisa: sprawdź wniosek i wystaw certyfikat — ${r.klient_nazwa}`
+			: r.decyzja === 'bez_zmian'
+				? `Odnowienie bez zmian: wystaw certyfikat — ${r.klient_nazwa}`
+				: r.decyzja === 'zmiany'
+					? `Odnowienie ze zmianami: sprawdź i potwierdź składkę — ${r.klient_nazwa}`
+					: `Klient rezygnuje z odnowienia — ${r.klient_nazwa}`);
+	const zmiany = [...(nowa ? opisNowej(r.wniosek) : []), ...opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta, r.rodzaj)];
 	const sygnaly = sygnalyApk(r);
 	// Link gaśnie z końcem ochrony, więc to tylko zabezpieczenie (np. wniosek wysłany tuż przed północą).
-	const poTerminie = !!r.okres_do && !!r.zlozono_at && dzisWarszawa() > r.okres_do;
+	const poTerminie = !nowa && !!r.okres_do && !!r.zlozono_at && dzisWarszawa() > r.okres_do;
 	const opis = [
 		...(test ? [`Wniosek testowy — e-maile z tego wniosku poszły na adres testowy (${adresTestowy()}), nie do klienta.`] : []),
-		`${DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? r.decyzja} (wniosek online, certyfikat ${r.nr_polisy ?? '—'}).`,
+		nowa ? `${decyzjaTekst(r)} (wniosek online o pierwszą polisę w programie OC beauty; składka ${opisSkladki(r)}).` : `${decyzjaTekst(r)} (wniosek online, certyfikat ${r.nr_polisy ?? '—'}).`,
 		...(poTerminie ? [`⚠ Wniosek złożony po końcu ochrony (${r.okres_do}) — sprawdź ciągłość ubezpieczenia.`] : []),
 		...zmiany.map((z) => `• ${z}`),
 		...sygnaly.map((z) => `• ${z}`),

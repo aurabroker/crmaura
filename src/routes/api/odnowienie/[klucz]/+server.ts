@@ -3,7 +3,9 @@ import { getAdminClient } from '$lib/server/auth';
 import {
 	BUCKET,
 	czyAktywny,
+	czyNowa,
 	daneKlienta,
+	dzisWarszawa,
 	klientZadania,
 	odnowieniePoKluczu,
 	opObecnie,
@@ -29,6 +31,8 @@ import {
 	waliduj_ankiete,
 	waliduj_apk,
 	waliduj_wniosek,
+	waliduj_wniosek_nowy,
+	wycenaNowej,
 	wycenaWniosku,
 	type TypZalacznika
 } from '$lib/renewals/program';
@@ -231,18 +235,22 @@ export const POST: RequestHandler = async (event) => {
 		case 'zloz': {
 			if (!r.apk_at) return blad(400, 'Najpierw wypełnij analizę potrzeb (APK) albo zaznacz odmowę jej wypełnienia.');
 			const apk = r.apk_odmowa ? null : r.apk;
-			const w = waliduj_wniosek(body.wniosek, apk);
+			// Pierwsza polisa: inne reguły (firma, początek ochrony, suma obowiązkowa); reszta drogi ta sama.
+			const nowa = czyNowa(r);
+			const w = nowa ? waliduj_wniosek_nowy(body.wniosek, apk, { dzis: dzisWarszawa() }) : waliduj_wniosek(body.wniosek, apk);
 			if (!w.ok) return blad(400, 'Popraw wniosek.', w.bledy);
 			const pod = await sprawdzPodpis(body.podpis, PODPIS_BRAK_WNIOSKU);
 			if (!pod.ok) return blad(400, 'Podpisz wniosek.', [pod.blad]);
 			const wniosek = w.value;
-			// Klauzula ochrony prawnej, którą certyfikat już ma, nie jest zmianą ani dopłatą.
-			if (wniosek.zmiany && opObecnie(r)) wniosek.zmiany.ochrona_prawna = false;
-			// Nowa suma — dowolny wariant programu poza obecnym (strona nie pozwala wybrać obecnej, serwer sprawdza sam).
-			const nowaSuma = wniosek.zmiany?.wyzsza_suma;
-			const suma = sumaObecna(r);
-			if (nowaSuma != null && suma != null && nowaSuma === suma) {
-				return blad(400, 'Popraw wniosek.', ['Nowa suma gwarancyjna jest taka sama jak obecna — wybierz inną albo odznacz „Inna suma gwarancyjna”.']);
+			if (!nowa) {
+				// Klauzula ochrony prawnej, którą certyfikat już ma, nie jest zmianą ani dopłatą.
+				if (wniosek.zmiany && opObecnie(r)) wniosek.zmiany.ochrona_prawna = false;
+				// Nowa suma — dowolny wariant programu poza obecnym (strona nie pozwala wybrać obecnej, serwer sprawdza sam).
+				const nowaSuma = wniosek.zmiany?.wyzsza_suma;
+				const suma = sumaObecna(r);
+				if (nowaSuma != null && suma != null && nowaSuma === suma) {
+					return blad(400, 'Popraw wniosek.', ['Nowa suma gwarancyjna jest taka sama jak obecna — wybierz inną albo odznacz „Inna suma gwarancyjna”.']);
+				}
 			}
 
 			// Pliki, które naprawdę są w magazynie (nieudane wysyłki odpadają).
@@ -280,7 +288,7 @@ export const POST: RequestHandler = async (event) => {
 				ankieta = a.value;
 			}
 
-			const wycena = wycenaWniosku(wniosek, apk, r.skladka != null ? Number(r.skladka) : null, opObecnie(r));
+			const wycena = nowa ? wycenaNowej(wniosek, apk) : wycenaWniosku(wniosek, apk, r.skladka != null ? Number(r.skladka) : null, opObecnie(r));
 			const skladka_nowa =
 				wniosek.decyzja === 'nie' ? null
 				: wycena?.rodzaj === 'kwota' ? wycena.kwota

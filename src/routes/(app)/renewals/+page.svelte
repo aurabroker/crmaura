@@ -39,7 +39,8 @@
 				const { data, error } = await q.order('created_at', { ascending: false });
 				if (anulowane || error) return;
 				const m = new Map<string, WniosekSkrot>();
-				for (const r of (data ?? []) as WniosekSkrot[]) if (!m.has(r.polisa_id)) m.set(r.polisa_id, r);
+				// Wnioski o pierwszą polisę (bez certyfikatu) nie dotyczą listy odnowień.
+				for (const r of (data ?? []) as WniosekSkrot[]) if (r.polisa_id && !m.has(r.polisa_id)) m.set(r.polisa_id, r);
 				wnioski = m;
 			} catch {
 				// brak tabeli albo sieci — strona działa bez kolumny wniosków

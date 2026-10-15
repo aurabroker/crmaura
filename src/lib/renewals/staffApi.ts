@@ -1,8 +1,9 @@
 // Kontrakt panelu CRM z serwerem dla odnowień (nagłówek Authorization: Bearer <sesja pracownika>).
 //
-// POST   /api/renewals        { polisa_id, tryb: 'email' | 'link', zastap?: true }
+// POST   /api/renewals        { polisa_id, tryb: 'email' | 'link', zastap?: true }           odnowienie certyfikatu
+//                             { klient_id, tryb: 'email' | 'link', zastap?: true }           pierwsza polisa (bez certyfikatu)
 //        → 200 OdnowienieUtworzone
-//        → 409 { message, aktywny: true }   gdy polisa ma aktywny wniosek, a nie podano zastap
+//        → 409 { message, aktywny: true }   gdy polisa (albo klient) ma aktywny wniosek, a nie podano zastap
 //        → 400 { message }                  np. polisa spoza programu OC beauty, już odnowiona,
 //                                           brak e-maila klienta (tryb email), brak klucza Resend
 // POST   /api/renewals/link   { id }   → 200 { link }   link do istniejącego, aktywnego wniosku
@@ -42,5 +43,12 @@ export const STATUS_ODNOWIENIA_ETYKIETA: Record<string, string> = {
 export const DECYZJA_ETYKIETA: Record<string, string> = {
 	bez_zmian: 'Odnowienie bez zmian',
 	zmiany: 'Odnowienie ze zmianami',
-	nie: 'Rezygnacja z odnowienia'
+	nie: 'Rezygnacja z odnowienia',
+	nowa: 'Wniosek o ubezpieczenie'
 };
+
+/** Etykieta decyzji z uwzględnieniem rodzaju wniosku: przy pierwszej polisie „nie” to rezygnacja z ubezpieczenia. */
+export const etykietaDecyzji = (decyzja: string | null | undefined, rodzaj: string | null | undefined = 'odnowienie'): string =>
+	!decyzja ? '—' : rodzaj === 'nowa' && decyzja === 'nie' ? 'Rezygnacja z ubezpieczenia' : (DECYZJA_ETYKIETA[decyzja] ?? decyzja);
+
+export const RODZAJ_WNIOSKU_ETYKIETA: Record<string, string> = { odnowienie: 'Odnowienie certyfikatu', nowa: 'Pierwsza polisa' };

@@ -4,7 +4,21 @@ import { env } from '$env/dynamic/private';
 import { EMAIL_RE } from '$lib/server/mail';
 import type { WidokOdnowienia, Zalacznik } from '$lib/renewals/api';
 import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
-import { nazwaUbezpieczyciela, ochronaPrawnaWSkladce, sumaZeSkladki, type Apk, type Ankieta, type Wniosek } from '$lib/renewals/program';
+import {
+	NOWY_LINK_DNI,
+	PROGRAM_NAZWA,
+	UBEZPIECZYCIEL,
+	nazwaUbezpieczyciela,
+	ochronaPrawnaWSkladce,
+	okresOdDaty,
+	sumaZeSkladki,
+	zakresOchronyOd,
+	type Apk,
+	type Ankieta,
+	type Firma,
+	type RodzajWniosku,
+	type Wniosek
+} from '$lib/renewals/program';
 import type { MigawkaZgod } from '$lib/renewals/zgody';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
@@ -19,7 +33,9 @@ const AKTYWNE = ['utworzony', 'wyslany', 'otwarty', 'apk'] as const;
 export type RenewalRow = {
 	id: string;
 	tenant_id: string;
-	polisa_id: string;
+	// Pierwsza polisa (rodzaj 'nowa') nie ma certyfikatu — polisa_id puste, okres_obecny i składka też.
+	polisa_id: string | null;
+	rodzaj: RodzajWniosku;
 	klient_id: string;
 	status: string;
 	decyzja: string | null;
@@ -256,6 +272,110 @@ export async function utworzOdnowienie(
 	return data as RenewalRow;
 }
 
+// ---------- Pierwsza polisa: klient bez certyfikatu ----------
+
+export type KlientDoWniosku = {
+	id: string;
+	tenant_id: string;
+	nazwa: string;
+	email: string | null;
+	opiekun_id: string | null;
+	firma: Firma;
+};
+
+// Klient z kartoteki, dla którego pracownik wysyła link do APK i wniosku o pierwszą polisę. Dane firmy
+// trafiają do formularza jako podpowiedź (klient je poprawia). Rzuca 400/404 z komunikatem dla pracownika.
+export async function klientDoWniosku(admin: SupabaseClient, tenantId: string, klientId: string): Promise<KlientDoWniosku> {
+	if (!UUID.test(klientId ?? '')) throw error(400, { message: 'Nieprawidłowy klient.' });
+	const { data: k, error: e } = await admin
+		.from('crm_clients')
+		.select('id, tenant_id, nazwa, nip, regon, ulica, email, telefon, opiekun_id')
+		.eq('id', klientId)
+		.eq('tenant_id', tenantId)
+		.maybeSingle();
+	if (e) throw error(500, { message: 'Nie udało się wczytać klienta.' });
+	if (!k) throw error(404, { message: 'Nie znaleziono klienta.' });
+	// „ul. Bolkowska 2A/28, 01-466 Warszawa” → ulica, kod, miejscowość (gdy adres jest w jednym polu).
+	const adres = String(k.ulica ?? '').trim();
+	const m = /^(.*?),?\s*(\d{2}-\d{3})\s+(.+)$/.exec(adres);
+	const cyfry = (v: unknown) => (typeof v === 'string' ? v.replace(/\D/g, '') : '');
+	const email = EMAIL_RE.test(k.email ?? '') ? k.email!.trim() : null;
+	return {
+		id: k.id,
+		tenant_id: k.tenant_id,
+		nazwa: k.nazwa,
+		email,
+		opiekun_id: k.opiekun_id,
+		firma: {
+			nazwa: k.nazwa ?? '',
+			nip: cyfry(k.nip).length === 10 ? cyfry(k.nip) : '',
+			regon: [9, 14].includes(cyfry(k.regon).length) ? cyfry(k.regon) : '',
+			ulica: m ? m[1].trim() : adres,
+			kod: m ? m[2] : '',
+			miasto: m ? m[3].trim() : '',
+			email: email ?? '',
+			telefon: String(k.telefon ?? '').trim()
+		}
+	};
+}
+
+// Tworzy wniosek o pierwszą polisę (status „utworzony”, link ważny 30 dni). Gdy klient ma aktywny taki
+// wniosek: przy `zastap` unieważnia go, inaczej rzuca 409 { aktywny: true }.
+export async function utworzNowyWniosek(admin: SupabaseClient, k: KlientDoWniosku, o: { zastap?: boolean; utworzyl?: string | null }): Promise<RenewalRow> {
+	const { data: aktywne } = await admin
+		.from('crm_renewals')
+		.select('id, status')
+		.eq('klient_id', k.id)
+		.is('polisa_id', null)
+		.not('status', 'in', '(wygasl,anulowany)');
+	if (aktywne?.length) {
+		if (!o.zastap) throw error(409, { message: 'Ten klient ma już aktywny wniosek o pierwszą polisę.', aktywny: true } as App.Error);
+		for (const a of aktywne) {
+			await admin.from('crm_renewals').update({ status: 'anulowany', updated_at: new Date().toISOString() }).eq('id', a.id);
+			await zapiszZdarzenie(admin, { id: a.id, tenant_id: k.tenant_id }, 'anulowanie', null, { powod: 'zastąpiony nowym wnioskiem', przez: o.utworzyl ?? null });
+		}
+	}
+	const test = trybTestowy(await ustawieniaFirmy(admin, k.tenant_id));
+	const { data, error: e } = await admin
+		.from('crm_renewals')
+		.insert({
+			tenant_id: k.tenant_id,
+			polisa_id: null,
+			rodzaj: 'nowa',
+			klient_id: k.id,
+			status: 'utworzony',
+			email: test ? adresTestowy() : k.email,
+			nr_polisy: null,
+			tu_nazwa: UBEZPIECZYCIEL,
+			program: PROGRAM_NAZWA,
+			klient_nazwa: k.nazwa,
+			suma: null,
+			skladka: null,
+			okres_od: null,
+			okres_do: null,
+			wazny_do: koniecDniaWarszawa(dzisWarszawa(NOWY_LINK_DNI)),
+			created_by: o.utworzyl ?? null
+		})
+		.select('*')
+		.single();
+	if (e || !data) {
+		if (e?.code === '23505') throw error(409, { message: 'Ten klient ma już aktywny wniosek o pierwszą polisę.', aktywny: true } as App.Error);
+		throw error(500, { message: 'Nie udało się utworzyć wniosku.' });
+	}
+	await zapiszZdarzenie(admin, data, 'utworzenie', null, { przez: o.utworzyl ?? 'pracownik', rodzaj: 'nowa' });
+	if (test) await zapiszZdarzenie(admin, data, 'tryb_testowy', null, { adres: adresTestowy() });
+	return data as RenewalRow;
+}
+
+export const czyNowa = (r: Pick<RenewalRow, 'rodzaj'>) => r.rodzaj === 'nowa';
+
+// Nowy okres ubezpieczenia: po odnowieniu — od dnia po końcu certyfikatu; przy pierwszej polisie — od dnia,
+// który klient wskazał we wniosku (przed złożeniem: od jutra, orientacyjnie).
+export function okresNowyWniosku(r: Pick<RenewalRow, 'rodzaj' | 'okres_do' | 'wniosek'>): { od: string; do: string } {
+	if (r.rodzaj === 'nowa') return okresOdDaty(r.wniosek?.nowa?.ochrona_od || dzisWarszawa(1));
+	return nowyOkres(r.okres_do ?? dzisWarszawa());
+}
+
 // ---------- Dziennik zdarzeń ----------
 
 export type Klient = { ip: string | null; ua: string | null };
@@ -310,6 +430,8 @@ export async function odnowieniePoKluczu(admin: SupabaseClient, klucz: string): 
 // Certyfikat odnowiony w CRM inną drogą (polisa z renewal_of) albo usunięty: wniosek online jest
 // nieaktualny — anulujemy go, żeby klient nie składał wniosku i nie dostawał przypomnień.
 export async function anulujNieaktualny(admin: SupabaseClient, r: Pick<RenewalRow, 'id' | 'tenant_id' | 'polisa_id'>): Promise<boolean> {
+	// Wniosek o pierwszą polisę nie ma certyfikatu, który mógłby się zdezaktualizować.
+	if (!r.polisa_id) return false;
 	const [{ data: nastepca }, { data: polisa }] = await Promise.all([
 		admin.from('crm_policies').select('id').eq('renewal_of', r.polisa_id).is('deleted_at', null).limit(1),
 		admin.from('crm_policies').select('id, deleted_at').eq('id', r.polisa_id).maybeSingle()
@@ -350,34 +472,38 @@ export const opObecnie = (r: Pick<RenewalRow, 'suma' | 'skladka'>): boolean =>
 // NIP i REGON klienta z kartoteki do podpowiedzi w ankiecie: same cyfry, tylko w poprawnej długości
 // (NIP 10, REGON 9 albo 14) — „PL 526-025-02-74” → „5260250274”, śmieci → null.
 // Zgody: bieżący stan z kartoteki (null, gdy nigdy nie pytano) — formularz pokazuje go, dopóki klient nie podpisze APK.
-export type DaneKlienta = { nip: string | null; regon: string | null; zgody: { email: boolean; sms: boolean } | null };
-export async function daneKlienta(admin: SupabaseClient, r: Pick<RenewalRow, 'klient_id' | 'tenant_id'>): Promise<DaneKlienta> {
+// Pierwsza polisa: także dane firmy do podpowiedzi we wniosku (nazwa, adres, e-mail, telefon).
+export type DaneKlienta = { nip: string | null; regon: string | null; zgody: { email: boolean; sms: boolean } | null; firma: Firma | null };
+export async function daneKlienta(admin: SupabaseClient, r: Pick<RenewalRow, 'klient_id' | 'tenant_id' | 'rodzaj'>): Promise<DaneKlienta> {
 	const { data } = await admin.from('crm_clients').select('nip, regon, tenant_id, zgoda_email, zgoda_sms').eq('id', r.klient_id).maybeSingle();
-	if (!data || data.tenant_id !== r.tenant_id) return { nip: null, regon: null, zgody: null };
+	if (!data || data.tenant_id !== r.tenant_id) return { nip: null, regon: null, zgody: null, firma: null };
 	const cyfry = (v: unknown) => (typeof v === 'string' ? v.replace(/\D/g, '') : '');
 	const nip = cyfry(data.nip);
 	const regon = cyfry(data.regon);
 	const zgody = data.zgoda_email == null && data.zgoda_sms == null ? null : { email: data.zgoda_email === true, sms: data.zgoda_sms === true };
-	return { nip: nip.length === 10 ? nip : null, regon: regon.length === 9 || regon.length === 14 ? regon : null, zgody };
+	const firma = r.rodzaj === 'nowa' ? await klientDoWniosku(admin, r.tenant_id, r.klient_id).then((k) => k.firma).catch(() => null) : null;
+	return { nip: nip.length === 10 ? nip : null, regon: regon.length === 9 || regon.length === 14 ? regon : null, zgody, firma };
 }
 
 export function widok(r: RenewalRow, klient: DaneKlienta | null = null): WidokOdnowienia {
 	if (r.status === 'anulowany') return { stan: 'anulowany' };
 	if (r.status === 'wygasl') return { stan: 'wygasl' };
 	if (r.status === 'zlozony') {
-		return { stan: 'zlozony', klient: r.klient_nazwa ?? '', nr_polisy: r.nr_polisy, decyzja: r.decyzja as 'bez_zmian', zlozono_at: r.zlozono_at ?? '' };
+		return { stan: 'zlozony', rodzaj: r.rodzaj ?? 'odnowienie', klient: r.klient_nazwa ?? '', nr_polisy: r.nr_polisy, decyzja: r.decyzja as 'bez_zmian', zlozono_at: r.zlozono_at ?? '' };
 	}
+	const nowa = r.rodzaj === 'nowa';
 	return {
 		stan: 'aktywny',
+		rodzaj: r.rodzaj ?? 'odnowienie',
 		status: r.status as 'otwarty',
 		klient: r.klient_nazwa ?? '',
 		nr_polisy: r.nr_polisy,
 		ubezpieczyciel: nazwaUbezpieczyciela(r.tu_nazwa),
 		program: r.program,
-		suma: sumaObecna(r),
-		skladka: r.skladka,
+		suma: nowa ? null : sumaObecna(r),
+		skladka: nowa ? null : r.skladka,
 		okres_obecny: { od: r.okres_od, do: r.okres_do },
-		okres_nowy: nowyOkres(r.okres_do ?? dzisWarszawa()),
+		okres_nowy: okresNowyWniosku(r),
 		wazny_do: r.wazny_do,
 		apk_wypelniona: !!r.apk_at && !r.apk_odmowa,
 		apk_odmowa: r.apk_odmowa,
@@ -389,7 +515,9 @@ export function widok(r: RenewalRow, klient: DaneKlienta | null = null): WidokOd
 		nip: klient?.nip ?? null,
 		regon: klient?.regon ?? null,
 		zgody: r.zgody ? { email: r.zgody.email === true, sms: r.zgody.sms === true } : (klient?.zgody ?? null),
-		podpis_apk_at: r.podpis_apk_at ?? null
+		podpis_apk_at: r.podpis_apk_at ?? null,
+		firma: nowa ? (klient?.firma ?? null) : null,
+		ochrona_od: nowa ? zakresOchronyOd(dzisWarszawa()) : null
 	};
 }
 
@@ -443,10 +571,11 @@ export const wniosekTestowy = (email: string | null | undefined) =>
  * które automat zastępuje prawdziwym linkiem (tylkoTestowe). Wniosek testowy anulowany przez pracownika
  * to już decyzja doradcy („odnowienie ręczne”) — blokuje automat jak prawdziwy wniosek.
  */
-export function podzielWnioski(wnioski: { polisa_id: string; email: string | null; status?: string | null }[]) {
+export function podzielWnioski(wnioski: { polisa_id: string | null; email: string | null; status?: string | null }[]) {
 	const maWniosek = new Set<string>();
 	const testowe = new Set<string>();
-	for (const w of wnioski) (wniosekTestowy(w.email) && w.status !== 'anulowany' ? testowe : maWniosek).add(w.polisa_id);
+	// Wnioski o pierwszą polisę (bez certyfikatu) nie dotyczą automatu odnowień.
+	for (const w of wnioski) if (w.polisa_id) (wniosekTestowy(w.email) && w.status !== 'anulowany' ? testowe : maWniosek).add(w.polisa_id);
 	const tylkoTestowe = new Set([...testowe].filter((id) => !maWniosek.has(id)));
 	return { maWniosek, tylkoTestowe };
 }

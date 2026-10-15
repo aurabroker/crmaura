@@ -7,7 +7,7 @@ import { EMAIL_RE, bezAdresow, esc, wyslijEmail, type Wiadomosc, type WynikWysyl
 import { ustawieniaWysylki } from './emailKlienta';
 import { adresTestowy, dodajDni } from './renewals';
 import { ETYKIETA_ZAINTERESOWANIA, ZRODLO_LEADA } from '$lib/sprzedaz';
-import { DECYZJA_ETYKIETA, STATUS_ODNOWIENIA_ETYKIETA } from '$lib/renewals/staffApi';
+import { STATUS_ODNOWIENIA_ETYKIETA, etykietaDecyzji } from '$lib/renewals/staffApi';
 
 export const SEKCJE = [
 	['leady', 'Nowe leady i ponowne zgłoszenia'],
@@ -67,7 +67,7 @@ export function poczatekOkresu(s: Pick<Subskrypcja, 'ostatnio_wyslano_at'>, tera
 
 type Lead = { id: string; nazwa: string; zrodlo: string | null; branza: string | null; zainteresowania: string[] | null; liczba_zgloszen: number | null; status: string; created_at: string; ostatnie_zgloszenie_at: string | null };
 type PolisaK = { id: string; nr_polisy: string; data_do: string; rodzaj: string | null; skladka_przypisana: number | null; crm_clients: { nazwa: string; nazwa_skrocona?: string | null } | null };
-type Wniosek = { id: string; polisa_id: string; nr_polisy: string | null; klient_nazwa: string | null; status: string; decyzja: string | null; email: string | null; updated_at: string; okres_do: string | null };
+type Wniosek = { id: string; polisa_id: string | null; rodzaj: string | null; nr_polisy: string | null; klient_nazwa: string | null; status: string; decyzja: string | null; email: string | null; updated_at: string; okres_do: string | null };
 type Mail = { id: string; rodzaj: string; adres: string; temat: string; dostawa: string | null; wyslano_at: string; klient_id: string; crm_clients: { nazwa: string; nazwa_skrocona?: string | null } | null };
 type Rata = { id: string; nr_raty: number; data_platnosci: string; kwota: number; status: string; data_oplacenia: string | null; polisa_id: string; crm_policies: { nr_polisy: string; typ_umowy: string | null; rozliczaj_platnosci: boolean | null; crm_clients: { nazwa: string; nazwa_skrocona?: string | null } | null } | null };
 type Zadanie = { id: string; tytul: string; termin: string | null; priorytet: string | null; assigned_to: string | null; extra_assignees: string[] | null; crm_clients: { nazwa: string; nazwa_skrocona?: string | null } | null };
@@ -120,7 +120,7 @@ export async function zbierzDane(admin: SupabaseClient, tenantId: string, profil
 			admin.from('crm_policies').select('renewal_of').eq('tenant_id', tenantId).is('deleted_at', null).not('renewal_of', 'is', null).limit(5000),
 			admin
 				.from('crm_renewals')
-				.select('id, polisa_id, nr_polisy, klient_nazwa, status, decyzja, email, updated_at, okres_do')
+				.select('id, polisa_id, rodzaj, nr_polisy, klient_nazwa, status, decyzja, email, updated_at, okres_do')
 				.eq('tenant_id', tenantId)
 				.gte('updated_at', od)
 				.order('updated_at', { ascending: false })
@@ -258,8 +258,8 @@ function blokOdnowien(d: Dane, crm: string): Blok | null {
 	if (!o) return null;
 	const wnioski = lista(
 		o.wnioski.map((w) => ({
-			glowne: `${w.klient_nazwa ?? '—'} · ${w.nr_polisy ?? ''}`,
-			opis: `${STATUS_ODNOWIENIA_ETYKIETA[w.status] ?? w.status}${w.decyzja ? ` — ${DECYZJA_ETYKIETA[w.decyzja] ?? w.decyzja}` : ''}`,
+			glowne: `${w.klient_nazwa ?? '—'} · ${w.rodzaj === 'nowa' ? 'pierwsza polisa' : (w.nr_polisy ?? '')}`,
+			opis: `${STATUS_ODNOWIENIA_ETYKIETA[w.status] ?? w.status}${w.decyzja ? ` — ${etykietaDecyzji(w.decyzja, w.rodzaj)}` : ''}`,
 			prawa: godz(w.updated_at)
 		})),
 		'Brak zmian we wnioskach klientów.'

@@ -19,7 +19,8 @@
 	let { s, ondalej, onwstecz }: Props = $props();
 
 	let bledy = $state<string[]>([]);
-	const termin = $derived(fmtData(terminSzkolenia(s.widok.okres_nowy.od)));
+	// Początek ochrony: po odnowieniu z serwera, przy pierwszej polisie — z wniosku.
+	const termin = $derived(fmtData(terminSzkolenia(s.okresNowy.od)));
 
 	// Pierwsza osoba od razu — klient nie musi szukać przycisku.
 	onMount(() => {
