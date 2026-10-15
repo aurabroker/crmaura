@@ -8,29 +8,40 @@
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import {
 		APK_ODMOWA_TRESC, APK_ODPOWIEDZI, APK_PYTANIA, LICZBA_OSOB, OCHRONA_PRAWNA_SKLADKA, OSWIADCZENIE_ANKIETY,
-		RODZAJE_GABINETU, formatSuma, formatZl, opisZalacznika, wycenaWniosku,
-		type Ankieta, type Apk
+		RODZAJE_GABINETU, formatSuma, formatZl, okresOdDaty, opisZalacznika, wycenaNowej, wycenaWniosku,
+		type Ankieta, type Apk, type RodzajWniosku
 	} from '$lib/renewals/program';
-	import { ADRES_TESTOWY, DECYZJA_ETYKIETA, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
+	import { ADRES_TESTOWY, etykietaDecyzji, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, wariantDecyzji, wywolajApi } from './crmRenewals';
 	import { ZGODA_TYTUL } from '$lib/renewals/zgody';
-	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2, PenLine } from 'lucide-svelte';
+	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2, Mail } from 'lucide-svelte';
 
+	// Panel wniosku w CRM — dwa zastosowania:
+	//  - karta polisy (policy): odnowienie certyfikatu z programu OC beauty,
+	//  - karta klienta (klientId, rodzaj 'nowa'): wniosek o pierwszą polisę klienta bez certyfikatu.
 	// Podpisy klienta (pod APK i pod wnioskiem) z serwera — ze sprawdzeniem, czy treść w bazie jest nadal ta, którą podpisał.
 	type PodpisPanelu = { zakres: 'apk' | 'wniosek'; png: string; podpisano_at: string; ip: string | null; user_agent: string | null; skrot_tresci: string; skrot_podpisu: string; zgodny: boolean };
 
 	interface Props {
-		policy: Policy;
+		/** Certyfikat (odnowienie). Przy pierwszej polisie pusty. */
+		policy?: Policy | null;
+		/** Klient (pierwsza polisa, rodzaj 'nowa'). */
+		klientId?: string | null;
+		rodzaj?: RodzajWniosku;
 		/** E-mail klienta z kartoteki — tylko do komunikatu po wysyłce. */
 		email?: string | null;
 		/** Polisa ma już następczynię w CRM — nowego wniosku nie wysyłamy. */
 		odnowiona?: boolean;
+		/** Pierwsza polisa: przyciski wysyłki w nagłówku panelu (karta klienta nie ma menu „Odnów polisę”). */
+		przyciski?: boolean;
 	}
-	let { policy, email = null, odnowiona = false }: Props = $props();
+	let { policy = null, klientId = null, rodzaj = 'odnowienie', email = null, odnowiona = false, przyciski = false }: Props = $props();
 
 	const BUCKET = 'renewal-files';
+	const nowa = $derived(rodzaj === 'nowa');
+	const tenantId = $derived(policy?.tenant_id ?? appState.profile?.tenant_id ?? '');
 
 	let renewals = $state<RenewalRow[]>([]);
 	let events = $state<RenewalEvent[]>([]);
@@ -61,18 +72,18 @@
 	// Tryb testowy firmy (SAAS Admin) albo wniosek utworzony w tym trybie (ma zapisany adres testowy).
 	const trybTestowy = $derived(appState.tenantFeatures?.odnowienia_test === true);
 	const wniosekTestowy = $derived(latest?.email?.trim().toLowerCase() === ADRES_TESTOWY);
+	// Klucz tego, co panel pokazuje (polisa albo klient) — zmiana przeładowuje listę.
+	const klucz = $derived(nowa ? `k:${klientId ?? ''}` : `p:${policy?.id ?? ''}`);
 
-	// Odpowiedzi spóźnione po zmianie polisy (nawigacja między kartami) są pomijane.
+	// Odpowiedzi spóźnione po zmianie polisy/klienta (nawigacja między kartami) są pomijane.
 	let zapytanie = 0;
-	async function zaladuj(polisaId = policy.id) {
+	async function zaladuj(dla = klucz) {
 		const nr = ++zapytanie;
 		try {
-			const { data, error } = await sb
-				.from('crm_renewals')
-				.select('*')
-				.eq('polisa_id', polisaId)
-				.order('created_at', { ascending: false });
-			if (nr !== zapytanie) return;
+			let q = sb.from('crm_renewals').select('*');
+			q = nowa ? q.eq('klient_id', klientId ?? '').is('polisa_id', null) : q.eq('polisa_id', policy?.id ?? '');
+			const { data, error } = await q.order('created_at', { ascending: false });
+			if (nr !== zapytanie || dla !== klucz) return;
 			if (error) {
 				dostepne = false;
 				renewals = [];
@@ -123,11 +134,11 @@
 	}
 
 	$effect(() => {
-		const polisaId = policy.id;
+		const dla = klucz;
 		untrack(() => {
 			blad = '';
 			link = '';
-			zaladuj(polisaId);
+			zaladuj(dla);
 		});
 	});
 
@@ -155,23 +166,23 @@
 		}
 	}
 
-	/** Nowy wniosek: e-mail do klienta albo sam link. Wywoływane z menu „Odnów polisę”. */
+	/** Nowy wniosek: e-mail do klienta albo sam link. Karta polisy woła z menu „Odnów polisę”, karta klienta — z przycisków. */
 	export async function utworz(tryb: TrybWyslania) {
 		if (pracuje) return;
 		blad = '';
 		pracuje = tryb;
 		try {
 			// Serwer odrzuca wysyłkę, gdy ekran pokazuje tryb testowy, a firma ma go już wyłączony.
-			const body = { polisa_id: policy.id, tryb, oczekiwany_test: trybTestowy };
+			const body = { ...(nowa ? { klient_id: klientId } : { polisa_id: policy?.id }), tryb, oczekiwany_test: trybTestowy };
 			let w = await wywolajApi<OdnowienieUtworzone>('POST', '/api/renewals', body);
-			if (!w.ok && w.status === 409 && !w.aktywny) {
-				const { data: t } = await sb.from('crm_tenants').select('features').eq('id', policy.tenant_id).maybeSingle();
+			if (!w.ok && w.status === 409 && !w.aktywny && tenantId) {
+				const { data: t } = await sb.from('crm_tenants').select('features').eq('id', tenantId).maybeSingle();
 				const f = (t as { features?: Record<string, boolean> | null } | null)?.features;
 				if (t) appState.tenantFeatures = f ?? {};
 			}
 			if (!w.ok && w.status === 409 && w.aktywny) {
 				const tak = await askConfirm({
-					title: 'Ten certyfikat ma już aktywny wniosek.',
+					title: nowa ? 'Ten klient ma już aktywny wniosek o pierwszą polisę.' : 'Ten certyfikat ma już aktywny wniosek.',
 					message: 'Utworzyć nowy i unieważnić poprzedni link?',
 					detail: 'Poprzedni link przestanie działać od razu.',
 					confirmLabel: 'Utwórz nowy',
@@ -229,9 +240,9 @@
 	async function anuluj(r: RenewalRow) {
 		if (pracuje) return;
 		const tak = await askConfirm({
-			title: 'Anulować wniosek o odnowienie?',
+			title: nowa ? 'Anulować wniosek o pierwszą polisę?' : 'Anulować wniosek o odnowienie?',
 			message: 'Link wysłany klientowi przestanie działać.',
-			detail: 'Nowy wniosek wyślesz z menu „Odnów polisę”.',
+			detail: nowa ? 'Nowy wniosek wyślesz przyciskiem „Wyślij link”.' : 'Nowy wniosek wyślesz z menu „Odnów polisę”.',
 			confirmLabel: 'Anuluj wniosek',
 			cancelLabel: 'Wróć'
 		});
@@ -288,29 +299,39 @@
 		if (!w) return [];
 		if (w.decyzja === 'nie') return [{ k: 'Powód rezygnacji', v: w.nie_powod || 'nie podano' }];
 		const z = w.zmiany;
-		if (w.decyzja !== 'zmiany' || !z) return [];
+		if ((w.decyzja !== 'zmiany' && w.decyzja !== 'nowa') || !z) return [];
 		const out: Wiersz[] = [];
+		// Pierwsza polisa: dane firmy i początek ochrony podane przez klienta.
+		const n = w.decyzja === 'nowa' ? w.nowa : null;
+		if (n) {
+			const okres = okresOdDaty(n.ochrona_od);
+			out.push({ k: 'Ubezpieczający', v: `${n.firma.nazwa} · NIP ${n.firma.nip}${n.firma.regon ? ` · REGON ${n.firma.regon}` : ''}` });
+			out.push({ k: 'Adres gabinetu', v: `${n.firma.ulica}, ${n.firma.kod} ${n.firma.miasto}` });
+			out.push({ k: 'Kontakt', v: `${n.firma.email} · ${n.firma.telefon}` });
+			out.push({ k: 'Okres ubezpieczenia', v: `${fmtData(okres.od)} – ${fmtData(okres.do)}` });
+		}
 		if (z.wyzsza_suma) {
 			out.push({ k: 'Suma gwarancyjna', v: `${formatSuma(z.wyzsza_suma)}${r.suma ? ` (obecnie ${formatSuma(r.suma)})` : ''}` });
 		}
 		if (z.ochrona_prawna) out.push({ k: 'Ochrona prawna', v: `tak — klauzula 7, +${OCHRONA_PRAWNA_SKLADKA} zł rocznie` });
+		else if (n) out.push({ k: 'Ochrona prawna', v: 'nie' });
 		if (z.adres) out.push({ k: 'Nowy adres działalności', v: `${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}` });
 		if (z.nowe_zabiegi?.length) out.push({ k: 'Nowe zabiegi', v: z.nowe_zabiegi });
 		if (z.zabiegi_ankieta?.length) out.push({ k: 'Zabiegi wymagające ankiety', v: z.zabiegi_ankieta });
 		if (r.ankieta?.inne_zabiegi?.trim()) out.push({ k: 'Inne zabiegi do oceny ryzyka (ankieta)', v: r.ankieta.inne_zabiegi.trim() });
 		if (z.rodzaje?.length) out.push({ k: 'Rodzaj działalności', v: rodzajeNazwy(z.rodzaje) });
 		if (z.osoby) out.push({ k: 'Osoby wykonujące zabiegi', v: osobyNazwa(z.osoby) });
-		if (z.inne) out.push({ k: 'Inne zmiany', v: z.inne });
+		if (z.inne) out.push({ k: n ? 'Uwagi klienta' : 'Inne zmiany', v: z.inne });
 		return out;
 	}
 
-	// Składka po odnowieniu: zapisana przez serwer albo „do wyceny”, gdy taryfa jej nie wyznacza.
+	// Składka po odnowieniu (albo pierwszej polisy): zapisana przez serwer albo „do wyceny”, gdy taryfa jej nie wyznacza.
 	function skladka(r: RenewalRow): { kwota: string; opis: string } | null {
 		const w = r.wniosek;
 		if (r.status !== 'zlozony' || !w || w.decyzja === 'nie') return null;
 		let wycena: ReturnType<typeof wycenaWniosku> = null;
 		try {
-			wycena = wycenaWniosku(w, r.apk, r.skladka);
+			wycena = w.decyzja === 'nowa' ? wycenaNowej(w, r.apk) : wycenaWniosku(w, r.apk, r.skladka);
 		} catch {
 			wycena = null;
 		}
@@ -370,6 +391,7 @@
 
 	const przyciskCls =
 		'inline-flex items-center gap-1.5 text-xs border border-line rounded-lg px-2.5 py-1.5 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50';
+	const tytul = $derived(nowa ? 'Wniosek o pierwszą polisę — program OC beauty' : 'Wniosek o odnowienie — program OC beauty');
 </script>
 
 {#snippet wiersze(lista: Wiersz[])}
@@ -434,18 +456,29 @@
 {#if dostepne}
 	<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden mb-5" data-testid="renewal-panel">
 		<div class="px-5 py-3 border-b border-line-soft bg-slate-50 flex flex-wrap items-center gap-3">
-			<p class="text-sm font-semibold text-slate-700">Wniosek o odnowienie — program OC beauty</p>
+			<p class="text-sm font-semibold text-slate-700">{tytul}</p>
 			{#if trybTestowy || wniosekTestowy}
 				<span class="text-xs font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-300 rounded px-2 py-0.5" data-testid="renewal-test-mode">
 					{trybTestowy ? `Tryb testowy — e-maile idą na ${ADRES_TESTOWY}, nie do klienta` : 'Wniosek testowy'}
 				</span>
 			{/if}
 			{#if latest}
-				<CrmRenewalBadge status={latest.status} />
-				{#if pracuje === 'email' || pracuje === 'link'}
-					<span class="text-xs text-slate-400">{pracuje === 'email' ? 'Wysyłanie nowego wniosku…' : 'Tworzenie nowego linku…'}</span>
+				<CrmRenewalBadge status={latest.status} rodzaj={latest.rodzaj} />
+			{/if}
+			{#if pracuje === 'email' || pracuje === 'link'}
+				<span class="text-xs text-slate-400">{pracuje === 'email' ? 'Wysyłanie nowego wniosku…' : 'Tworzenie nowego linku…'}</span>
+			{/if}
+			<div class="ml-auto flex flex-wrap items-center gap-2">
+				{#if przyciski && (!latest || !czyLinkDziala(latest.status))}
+					<!-- Pierwsza polisa: nowy link, gdy nie ma aktywnego (aktywny — „Kopiuj link”; zastąpienie przez menu klienta). -->
+					<button type="button" onclick={() => utworz('email')} disabled={!!pracuje} class="inline-flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 bg-accent text-white font-semibold hover:bg-accent-hover disabled:opacity-50" data-testid="nowa-email">
+						<Mail size={12} /> Wyślij link e-mailem
+					</button>
+					<button type="button" onclick={() => utworz('link')} disabled={!!pracuje} class={przyciskCls} data-testid="nowa-link">
+						<Link2 size={12} /> Utwórz link
+					</button>
 				{/if}
-				<div class="ml-auto flex flex-wrap items-center gap-2">
+				{#if latest}
 					{#if czyLinkDziala(latest.status)}
 						<button type="button" onclick={() => kopiujLink(latest!)} disabled={!!pracuje} class={przyciskCls}>
 							<Copy size={12} /> {pracuje === 'kopiuj' ? 'Kopiowanie…' : 'Kopiuj link'}
@@ -488,14 +521,16 @@
 							<Ban size={12} /> {pracuje === 'anuluj' ? 'Anulowanie…' : 'Anuluj wniosek'}
 						</button>
 					{/if}
-				</div>
-			{/if}
+				{/if}
+			</div>
 		</div>
 
 		{#if !latest}
 			<p class="px-5 py-4 text-sm text-slate-500">
 				{#if pracuje}
 					Tworzenie wniosku…
+				{:else if nowa}
+					Klient nie dostał jeszcze linku do APK i wniosku o pierwszą polisę. Wyślij go e-mailem albo utwórz link do przekazania (np. SMS-em){email ? '' : ' — klient nie ma adresu e-mail, więc tylko link'}. Link jest ważny 30 dni.
 				{:else if odnowiona}
 					Polisa jest już odnowiona w CRM — wniosek nie jest potrzebny.
 				{:else}
@@ -528,11 +563,11 @@
 					<div class="rounded-lg border border-line p-4 space-y-3" data-testid="renewal-decision">
 						<div class="flex flex-wrap items-center gap-3">
 							<span class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Decyzja klienta</span>
-							<Badge variant={wariantDecyzji(r.decyzja)}>{DECYZJA_ETYKIETA[r.decyzja] ?? r.decyzja}</Badge>
+							<Badge variant={wariantDecyzji(r.decyzja)}>{etykietaDecyzji(r.decyzja, r.rodzaj)}</Badge>
 							{#if r.zlozono_at}<span class="text-xs text-slate-400">{fmtDataCzas(r.zlozono_at)}</span>{/if}
 							{#if sk}
 								<span class="ml-auto text-sm text-slate-600" data-testid="renewal-premium">
-									Nowa składka:
+									{nowa ? 'Składka:' : 'Nowa składka:'}
 									<strong class={sk.kwota === 'do wyceny' ? 'text-amber-700' : 'text-slate-900'}>{sk.kwota}</strong>
 									{#if sk.opis}<span class="block text-xs text-slate-400 text-right">{sk.opis}</span>{/if}
 								</span>
@@ -695,8 +730,8 @@
 						{#each starsze as h (h.id)}
 							<li class="flex flex-wrap items-center gap-3 px-5 py-2 text-sm">
 								<span class="text-slate-500 w-24">{fmtData(h.created_at)}</span>
-								<CrmRenewalBadge status={h.status} />
-								{#if h.decyzja}<Badge variant={wariantDecyzji(h.decyzja)}>{DECYZJA_ETYKIETA[h.decyzja] ?? h.decyzja}</Badge>{/if}
+								<CrmRenewalBadge status={h.status} rodzaj={h.rodzaj} />
+								{#if h.decyzja}<Badge variant={wariantDecyzji(h.decyzja)}>{etykietaDecyzji(h.decyzja, h.rodzaj)}</Badge>{/if}
 								<span class="text-xs text-slate-400">
 									wysłano {fmtData(h.wyslano_at)}{h.zlozono_at ? ` · złożono ${fmtData(h.zlozono_at)}` : ''}
 								</span>

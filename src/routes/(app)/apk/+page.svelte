@@ -10,7 +10,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, etapWniosku, otworzPdfApk, podsumujWnioski, wniosekTestowy, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
+	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, adresWniosku, etapWniosku, otworzPdfApk, podsumujWnioski, polisyKlientow, wniosekNowy, wniosekTestowy, wniosekZalatwiony, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
 	import { dateDiffDays, fmtDzien, fmtTermin, odmiana, todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User, Eye, FileText, X } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
@@ -36,7 +36,9 @@
 		return c?.nazwa_skrocona ?? c?.nazwa ?? w.klient_nazwa ?? '—';
 	};
 	const odnowione = $derived(new Set(appState.policies.filter((p) => p.renewal_of && !p.deleted_at).map((p) => p.renewal_of as string)));
-	const liczby = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowione, dzis));
+	// Pierwsza polisa (wniosek bez certyfikatu) jest załatwiona, gdy klient dostał polisę po złożeniu wniosku.
+	const polisyKl = $derived(polisyKlientow(appState.policies));
+	const liczby = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowione, dzis, polisyKl));
 
 	// Filtr etapu: testowe wnioski tylko pod „Nieaktywne” (klient ich nie dostał).
 	type FiltrWn = 'wszystkie' | EtapWniosku;
@@ -46,7 +48,7 @@
 	const etap = (w: WniosekOdnowienia): EtapWniosku => (wniosekTestowy(w) ? 'nieaktywny' : etapWniosku(w));
 	const pasujeSzukaj = (w: WniosekOdnowienia) => {
 		const q = szukajWn.trim().toLowerCase();
-		return !q || nazwaKlienta(w).toLowerCase().includes(q) || (w.klient_nazwa ?? '').toLowerCase().includes(q) || (w.nr_polisy ?? '').toLowerCase().includes(q);
+		return !q || nazwaKlienta(w).toLowerCase().includes(q) || (w.klient_nazwa ?? '').toLowerCase().includes(q) || (w.nr_polisy ?? '').toLowerCase().includes(q) || (wniosekNowy(w) && 'pierwsza polisa'.includes(q));
 	};
 	const wEtapie = (w: WniosekOdnowienia, f: FiltrWn) => (f === 'wszystkie' ? !wniosekTestowy(w) : etap(w) === f);
 	const wnioskiPoSzukaniu = $derived(appState.wnioskiOdnowien.filter(pasujeSzukaj));
@@ -77,7 +79,7 @@
 
 	function wniosekMenu(w: WniosekOdnowienia): CtxItem[] {
 		return [
-			{ label: 'Karta polisy (wniosek, dziennik, pliki)', icon: Eye, onSelect: () => goto(`/policies/${w.polisa_id}`) },
+			{ label: wniosekNowy(w) ? 'Karta klienta → APK (wniosek, dziennik, pliki)' : 'Karta polisy (wniosek, dziennik, pliki)', icon: Eye, onSelect: () => goto(adresWniosku(w)) },
 			{ label: 'Karta klienta', icon: User, onSelect: () => goto(`/clients/${w.klient_id}`) },
 			{ separator: true },
 			{ label: 'Otwórz PDF APK', icon: FileText, disabled: !maPdfApk(w), onSelect: () => pdfApkWniosku(w) },
@@ -299,7 +301,7 @@
 		<h1 class="text-2xl font-semibold text-slate-900">Analiza Potrzeb Klienta (APK)</h1>
 		<p class="text-sm text-slate-500 mt-1">
 			{widok === 'wnioski'
-				? 'Wnioski o odnowienie certyfikatów programu OC beauty — klient wypełnia APK i wniosek przez link z e-maila'
+				? 'Wnioski klientów w programie OC beauty (odnowienia certyfikatów i pierwsze polisy) — klient wypełnia APK i wniosek przez link z e-maila'
 				: 'Formularze APK zgodne z KNF art. 8 UDU'}
 		</p>
 	</div>
@@ -313,7 +315,7 @@
 
 <!-- Widoki -->
 <div role="tablist" aria-label="Widoki APK" class="flex gap-x-5 border-b border-line mb-4 overflow-x-auto">
-	{#each [['wnioski', 'Wnioski o odnowienie', wnioskiPrawdziwe.length], ['formularze', 'Formularze APK', appState.apkForms.length]] as [id, label, n] (id)}
+	{#each [['wnioski', 'Wnioski klientów', wnioskiPrawdziwe.length], ['formularze', 'Formularze APK', appState.apkForms.length]] as [id, label, n] (id)}
 		<button
 			role="tab"
 			aria-selected={widok === id}
@@ -350,7 +352,7 @@
 			<p class="text-xs text-slate-400 mt-0.5">link wygasł, wniosek anulowany, testowy</p>
 		</button>
 	</section>
-	<p class="text-xs text-slate-400 mb-5">Pierwsze trzy liczby to bieżący cykl: certyfikaty, które kończą się dopiero albo skończyły się najwyżej {CYKL_DNI_WSTECZ} dni temu, bez wniosków testowych. Nowy wniosek wysyłasz z karty polisy (certyfikat programu) albo robi to automat 45 dni przed końcem ochrony.</p>
+	<p class="text-xs text-slate-400 mb-5">Pierwsze trzy liczby to bieżący cykl: certyfikaty, które kończą się dopiero albo skończyły się najwyżej {CYKL_DNI_WSTECZ} dni temu, oraz wnioski o pierwszą polisę z ostatnich 120 dni — bez wniosków testowych. Odnowienie wysyłasz z karty polisy (albo robi to automat 45 dni przed końcem ochrony); link do APK i wniosku o pierwszą polisę — z karty klienta (zakładka APK) albo z karty leada.</p>
 
 	<!-- Filtry -->
 	<div class="flex flex-wrap items-center gap-2 mb-3">
@@ -413,7 +415,10 @@
 								{#if w.email && !test}<span class="block truncate text-xs text-slate-400" title={w.email}>{w.email}</span>{/if}
 							</td>
 							<td class="px-5 py-3 whitespace-nowrap">
-								{#if w.nr_polisy}
+								{#if wniosekNowy(w)}
+									<a href={adresWniosku(w)} class="text-xs font-semibold text-rose-700 hover:underline">pierwsza polisa</a>
+									<span class="block text-xs text-slate-400">klient bez certyfikatu</span>
+								{:else if w.nr_polisy}
 									<a href="/policies/{w.polisa_id}" class="font-mono text-xs font-medium text-accent-text hover:underline">{w.nr_polisy}</a>
 									<Kopiuj tekst={w.nr_polisy} opis="nr certyfikatu" />
 								{:else}
@@ -421,7 +426,7 @@
 								{/if}
 								{#if w.okres_do}<span class="block text-xs text-slate-400">ochrona do {fmtDzien(w.okres_do, true)}</span>{/if}
 							</td>
-							<td class="px-5 py-3 whitespace-nowrap"><CrmRenewalBadge status={w.status} decyzja={w.decyzja} /></td>
+							<td class="px-5 py-3 whitespace-nowrap"><CrmRenewalBadge status={w.status} decyzja={w.decyzja} rodzaj={w.rodzaj} /></td>
 							<td class="px-5 py-3 whitespace-nowrap">
 								{#if w.apk_odmowa}
 									<Badge variant="warning">Odmowa</Badge>
@@ -441,13 +446,14 @@
 							<td class="px-5 py-3 text-xs whitespace-nowrap {w.zlozono_at ? 'text-slate-700' : 'text-slate-400'}">
 								{w.zlozono_at ? fmtDzien(w.zlozono_at, true) : '—'}
 								{#if w.status === 'zlozony' && w.decyzja !== 'nie'}
-									<span class="block {odnowione.has(w.polisa_id) ? 'text-emerald-600' : 'text-warn font-semibold'}">{odnowione.has(w.polisa_id) ? 'nowa polisa wystawiona' : 'do wystawienia'}</span>
+									{@const zalatwiony = wniosekZalatwiony(w, odnowione, polisyKl)}
+									<span class="block {zalatwiony ? 'text-emerald-600' : 'text-warn font-semibold'}">{zalatwiony ? (wniosekNowy(w) ? 'polisa wystawiona' : 'nowa polisa wystawiona') : 'do wystawienia'}</span>
 								{/if}
 							</td>
 							<td class="px-5 py-3">
 								<div class="flex items-center gap-2">
-									<a href="/policies/{w.polisa_id}" class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50" title="Karta polisy — wniosek, dziennik zdarzeń, pliki">
-										<Eye size={12} /> Polisa
+									<a href={adresWniosku(w)} class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50" title={wniosekNowy(w) ? 'Karta klienta → APK — wniosek, dziennik zdarzeń, pliki' : 'Karta polisy — wniosek, dziennik zdarzeń, pliki'}>
+										<Eye size={12} /> {wniosekNowy(w) ? 'Klient' : 'Polisa'}
 									</a>
 									{#if maPdfApk(w)}
 										<button onclick={() => pdfApkWniosku(w)} class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50" title="PDF analizy potrzeb">

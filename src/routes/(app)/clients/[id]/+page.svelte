@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { wczytajFormularzeApk, wczytajKlientow, wczytajKontakty, wczytajPojazdy, wczytajPolisy, wczytajSzkody } from '$lib/kolekcje';
-	import { untrack } from 'svelte';
+	import { tick, untrack } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
 	import { sb, SB_URL } from '$lib/supabase';
@@ -29,7 +29,8 @@
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, rozmiarPliku, wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
+	import CrmRenewalPanel from '$lib/components/renewal/CrmRenewalPanel.svelte';
+	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, adresWniosku, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, rozmiarPliku, wProgramieOcBeauty, wniosekNowy } from '$lib/components/renewal/crmRenewals';
 	import { opisZalacznika } from '$lib/renewals/program';
 
 	let pdfSaving = $state<string | null>(null);
@@ -458,9 +459,9 @@
 	// ── Wnioski o odnowienie (program OC beauty): dziennik zdarzeń, pliki, APK z wniosków ──
 	// Lista wniosków klienta to jedno zapytanie przy otwarciu karty — z niej liczy się zakładka APK.
 	// Dziennik i pliki w magazynie dopiero po wejściu w zakładkę. Pracownik tylko czyta (RLS).
-	type WniosekKlienta = Pick<RenewalRow, 'id' | 'tenant_id' | 'polisa_id' | 'status' | 'decyzja' | 'nr_polisy' | 'apk_at' | 'apk_odmowa' | 'zalaczniki' | 'pdf_path' | 'created_at' | 'zlozono_at' | 'wniosek'>;
-	// wniosek — osoby wykonujące zabiegi (opis dyplomów i certyfikatów: czyje są).
-	const WNIOSKI_KOLUMNY = 'id, tenant_id, polisa_id, status, decyzja, nr_polisy, apk_at, apk_odmowa, zalaczniki, wniosek, pdf_path, created_at, zlozono_at';
+	type WniosekKlienta = Pick<RenewalRow, 'id' | 'tenant_id' | 'polisa_id' | 'rodzaj' | 'klient_id' | 'status' | 'decyzja' | 'nr_polisy' | 'apk_at' | 'apk_odmowa' | 'zalaczniki' | 'pdf_path' | 'created_at' | 'zlozono_at' | 'wniosek'>;
+	// wniosek — osoby wykonujące zabiegi (opis dyplomów i certyfikatów: czyje są). rodzaj — odnowienie albo pierwsza polisa (bez certyfikatu).
+	const WNIOSKI_KOLUMNY = 'id, tenant_id, polisa_id, rodzaj, klient_id, status, decyzja, nr_polisy, apk_at, apk_odmowa, zalaczniki, wniosek, pdf_path, created_at, zlozono_at';
 	let wnioski = $state<WniosekKlienta[]>([]);
 	let wnioskiDla = '';
 	let wnioskiNr = 0;
@@ -487,7 +488,7 @@
 	}
 
 	const wniosekPoId = $derived(new Map(wnioski.map(w => [w.id, w])));
-	const nrCertyfikatu = (w: WniosekKlienta) => w.nr_polisy ?? nrPolisy.get(w.polisa_id) ?? 'certyfikat';
+	const nrCertyfikatu = (w: WniosekKlienta) => (wniosekNowy(w) ? 'pierwsza polisa' : (w.nr_polisy ?? (w.polisa_id ? nrPolisy.get(w.polisa_id) : null) ?? 'certyfikat'));
 	// APK wypełniona albo świadomie odrzucona na stronie wniosku (apk_at = chwila odpowiedzi).
 	const apkWnioski = $derived(wnioski.filter(w => !!w.apk_at || w.apk_odmowa));
 
@@ -980,8 +981,10 @@
 			if (f.submitted_at) dodaj({ klucz: `as-${f.id}`, at: f.submitted_at, tekst: f.client_declined ? `Klient odmówił wypełnienia APK ${f.ref_number}` : `Klient wypełnił APK ${f.ref_number}`, kto: null, ton: 'accent' });
 		}
 		for (const w of wnioski) {
-			dodaj({ klucz: `w-${w.id}`, at: w.created_at, tekst: `Wniosek o odnowienie ${nrCertyfikatu(w)} wysłany klientowi`, kto: null, ton: 'accent', href: `/policies/${w.polisa_id}` });
-			if (w.zlozono_at) dodaj({ klucz: `wz-${w.id}`, at: w.zlozono_at, tekst: `Klient złożył wniosek o odnowienie ${nrCertyfikatu(w)}`, kto: null, ton: 'accent', href: `/policies/${w.polisa_id}` });
+			const nowy = wniosekNowy(w);
+			const href = nowy ? undefined : adresWniosku(w);
+			dodaj({ klucz: `w-${w.id}`, at: w.created_at, tekst: nowy ? 'Link do APK i wniosku o pierwszą polisę utworzony' : `Wniosek o odnowienie ${nrCertyfikatu(w)} wysłany klientowi`, kto: null, ton: 'accent', href });
+			if (w.zlozono_at) dodaj({ klucz: `wz-${w.id}`, at: w.zlozono_at, tekst: nowy ? (w.decyzja === 'nie' ? 'Klient zrezygnował z pierwszej polisy (wniosek online)' : 'Klient złożył wniosek o pierwszą polisę') : `Klient złożył wniosek o odnowienie ${nrCertyfikatu(w)}`, kto: null, ton: 'accent', href });
 		}
 		for (const e of emaile) {
 			{
@@ -1014,6 +1017,14 @@
 	}
 
 	let wiecejMenu = $state(false);
+	// Pierwsza polisa OC beauty (klient bez certyfikatu): panel wniosku jest w zakładce APK; z menu „Więcej”
+	// przełączamy zakładkę i wysyłamy link (panel musi być zamontowany).
+	let panelNowej = $state<ReturnType<typeof CrmRenewalPanel> | null>(null);
+	async function wyslijPierwszaPolise(tryb: 'email' | 'link') {
+		activeTab = 'apk';
+		await tick();
+		panelNowej?.utworz(tryb);
+	}
 	// Scalanie z innym rekordem (duplikat): po scaleniu zostaje rekord docelowy — gdy to nie ten, przechodzimy na niego.
 	let scalOpen = $state(false);
 	function poScaleniu(docelowyId: string) {
@@ -1128,6 +1139,9 @@
 						<button role="menuitem" onclick={openNewTask} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><CheckCircle2 size={15} class="text-ink-3" /> Nowe zadanie</button>
 						<button role="menuitem" onclick={openNewContact} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><UserPlus size={15} class="text-ink-3" /> Dodaj osobę kontaktową</button>
 						<button role="menuitem" onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
+						<div class="my-1 border-t border-line-soft"></div>
+						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('email'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Klient bez certyfikatu OC beauty: APK, dane gabinetu, suma, podpisy — przez link z e-maila"><Send size={15} class="text-ink-3" /> Pierwsza polisa: wyślij APK i wniosek</button>
+						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('link'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Link size={15} class="text-ink-3" /> Pierwsza polisa: utwórz link</button>
 						{#if isAdmin(appState.profile)}
 							<div class="my-1 border-t border-line-soft"></div>
 							<button role="menuitem" onclick={() => (scalOpen = true)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Scal z duplikatem: polisy, wnioski, e-maile i reszta przechodzą na jeden rekord"><Merge size={15} class="text-ink-3" /> Scal z innym klientem…</button>
@@ -1790,6 +1804,8 @@
 		</section>
 
 	{:else if activeTab === 'apk'}
+		<!-- Pierwsza polisa OC beauty: link do APK i wniosku dla klienta bez certyfikatu (ten sam formularz co odnowienia). -->
+		<CrmRenewalPanel bind:this={panelNowej} klientId={clientId} rodzaj="nowa" email={client?.email ?? null} przyciski />
 		<div class="flex items-center justify-between mb-4">
 			<p class="text-sm text-slate-500">Formularze APK dla tego klienta</p>
 			<button onclick={() => { apkAdvisor = appState.profile?.imie_nazwisko ?? ''; showNewApk = true; }}
@@ -1927,7 +1943,7 @@
 													<FileText size={12} /> Utwórz PDF APK
 												</button>
 											{/if}
-											<a href="/policies/{w.polisa_id}" class="text-xs text-blue-600 hover:underline">Karta polisy →</a>
+											{#if !wniosekNowy(w)}<a href="/policies/{w.polisa_id}" class="text-xs text-blue-600 hover:underline">Karta polisy →</a>{/if}
 										</div>
 									</td>
 								</tr>
@@ -1964,8 +1980,12 @@
 					{@const lista = plikiWniosku(w)}
 					<div class="bg-white border border-line rounded-xl overflow-x-auto" data-testid="renewal-files-group">
 						<div class="flex flex-wrap items-center gap-3 px-5 py-3 border-b border-line-soft bg-slate-50">
-							<a href="/policies/{w.polisa_id}" class="text-sm font-semibold text-blue-700 hover:underline">{nrCertyfikatu(w)}</a>
-							<CrmRenewalBadge status={w.status} decyzja={w.decyzja} />
+							{#if wniosekNowy(w)}
+								<button type="button" onclick={() => (activeTab = 'apk')} class="text-sm font-semibold text-blue-700 hover:underline">{nrCertyfikatu(w)}</button>
+							{:else}
+								<a href="/policies/{w.polisa_id}" class="text-sm font-semibold text-blue-700 hover:underline">{nrCertyfikatu(w)}</a>
+							{/if}
+							<CrmRenewalBadge status={w.status} decyzja={w.decyzja} rodzaj={w.rodzaj} />
 							<span class="text-xs text-slate-400">{w.zlozono_at ? `złożono ${fmtDateTime(w.zlozono_at)}` : `utworzono ${fmtDateTime(w.created_at)}`}</span>
 						</div>
 						{#if lista.length}

@@ -2,7 +2,7 @@ import { esc } from '$lib/server/mail';
 import { newServerPdf } from '$lib/server/pdf';
 import { rysujLogo } from '$lib/server/pdfLogo';
 import type { PodpisPdf } from '$lib/server/podpis';
-import { nowyOkres, opObecnie, type RenewalRow } from '$lib/server/renewals';
+import { okresNowyWniosku, opObecnie, type RenewalRow } from '$lib/server/renewals';
 import { ZGODA_TYTUL, ZGODY, opisZgody, type KanalZgody } from '$lib/renewals/zgody';
 import {
 	APK_ODPOWIEDZI,
@@ -12,8 +12,10 @@ import {
 	LICZBA_OSOB,
 	LUKI_OCHRONY,
 	LUKI_OCHRONY_WU,
+	NOWY_LINK_DNI,
 	OCHRONA_PRAWNA_LIMIT,
 	OCHRONA_PRAWNA_SKLADKA,
+	OSWIADCZENIA_NOWEJ,
 	OSWIADCZENIE_ANKIETY,
 	PROGRAM_NR,
 	RODZAJE_GABINETU,
@@ -29,6 +31,7 @@ import {
 	skladkaProgramu,
 	type Ankieta,
 	type Apk,
+	type RodzajWniosku,
 	type Suma,
 	type Wniosek
 } from '$lib/renewals/program';
@@ -43,7 +46,26 @@ const KONTAKT = 'odnowienia@auraexpert.pl';
 // Logo w prawym górnym rogu PDF (mm; prawy margines 14 mm).
 const LOGO_PDF_SZER = 46;
 
-export const DECYZJA_TEKST = { bez_zmian: 'TAK — odnowienie bez zmian', zmiany: 'TAK — odnowienie ze zmianami', nie: 'NIE — rezygnacja z odnowienia' } as const;
+export const DECYZJA_TEKST = { bez_zmian: 'TAK — odnowienie bez zmian', zmiany: 'TAK — odnowienie ze zmianami', nie: 'NIE — rezygnacja z odnowienia', nowa: 'TAK — wniosek o zawarcie ubezpieczenia' } as const;
+// Tekst decyzji z uwzględnieniem rodzaju wniosku (przy pierwszej polisie „nie” to rezygnacja z ubezpieczenia).
+export const decyzjaTekst = (r: Pick<RenewalRow, 'decyzja' | 'rodzaj'>): string =>
+	r.rodzaj === 'nowa' && r.decyzja === 'nie' ? 'NIE — rezygnacja z ubezpieczenia' : (DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? r.decyzja ?? '—');
+const nowaPolisa = (r: Pick<RenewalRow, 'rodzaj'>) => r.rodzaj === 'nowa';
+const nowyOkres = (r: Pick<RenewalRow, 'rodzaj' | 'okres_do' | 'wniosek'>) => okresNowyWniosku(r);
+
+// Pierwsza polisa: dane firmy i początek ochrony podane przez klienta (zadanie, e-mail do biura, PDF).
+export function opisNowej(w: Wniosek | null): string[] {
+	const n = w?.nowa;
+	if (!n) return [];
+	const f = n.firma;
+	const okres = okresNowyWniosku({ rodzaj: 'nowa', okres_do: null, wniosek: w });
+	return [
+		`Ubezpieczający: ${f.nazwa}, NIP ${f.nip}${f.regon ? `, REGON ${f.regon}` : ''}`,
+		`Adres gabinetu: ${f.ulica}, ${f.kod} ${f.miasto}`,
+		`Kontakt: ${f.email}, tel. ${f.telefon}`,
+		`Okres ubezpieczenia: ${data(okres.od)} – ${data(okres.do)}`
+	];
+}
 
 const data = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split('-').reverse().join('.') : '—');
 const dataGodzina = (iso: string | null | undefined) =>
@@ -76,8 +98,9 @@ const przycisk = (href: string, tekst: string) =>
 // ---------- Zaproszenie i przypomnienie ----------
 
 export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = false) {
+	if (nowaPolisa(r)) return mailZaproszenieNowej(r, link, przypomnienie);
 	const koniec = data(r.okres_do);
-	const nowy = nowyOkres(r.okres_do ?? '');
+	const nowy = nowyOkres(r);
 	const temat = przypomnienie
 		? `Przypomnienie: odnowienie ubezpieczenia OC — certyfikat ${r.nr_polisy ?? ''} kończy się ${koniec}`
 		: `Odnowienie ubezpieczenia OC gabinetu — certyfikat ${r.nr_polisy ?? ''} kończy się ${koniec}`;
@@ -102,6 +125,38 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 		link,
 		'',
 		`We wniosku: analiza potrzeb (APK), potwierdzenie odnowienia bez zmian${skladka ? ` (składka ${skladka})` : ''} albo ze zmianami, możliwość rezygnacji.`,
+		`Link jest ważny do ${dataGodzina(r.wazny_do)}. Pytania? Odpowiedz na tę wiadomość.`,
+		'',
+		STOPKA
+	].join('\n');
+	return { temat, html, tekst };
+}
+
+// Pierwsza polisa: zaproszenie do APK i wniosku o zawarcie ubezpieczenia (klient bez certyfikatu).
+function mailZaproszenieNowej(r: RenewalRow, link: string, przypomnienie: boolean) {
+	const temat = przypomnienie
+		? `Przypomnienie: wniosek o ubezpieczenie OC gabinetu — ${r.klient_nazwa ?? ''}`
+		: `Ubezpieczenie OC gabinetu — analiza potrzeb i wniosek online dla ${r.klient_nazwa ?? ''}`;
+	const html = ramka(przypomnienie ? 'Przypomnienie o wniosku' : 'Ubezpieczenie OC gabinetu', `
+    <p style="margin:0 0 14px;">Dzień dobry,</p>
+    <p style="margin:0 0 14px;">${przypomnienie ? 'przypominamy o wniosku o ubezpieczenie OC w programie Beauty❤️Polisa (STU Ergo Hestia SA) dla ' : 'przygotowaliśmy dla '}<strong>${esc(r.klient_nazwa)}</strong>${przypomnienie ? '.' : ' wniosek o ubezpieczenie OC gabinetu w programie Beauty❤️Polisa (STU Ergo Hestia SA).'}
+      Wypełnij go online — zajmie to około 5 minut, a certyfikat przygotujemy po sprawdzeniu wniosku.</p>
+    ${przycisk(link, 'Przejdź do analizy potrzeb i wniosku')}
+    <p style="margin:0 0 10px;">We wniosku:</p>
+    <ul style="margin:0 0 14px;padding-left:20px;">
+      <li>krótka analiza potrzeb (APK) z podpisem,</li>
+      <li>dane gabinetu, początek ochrony, suma gwarancyjna (100.000, 200.000 albo 300.000 zł) i ochrona prawna — od razu z orientacyjną składką,</li>
+      <li>podpis pod wnioskiem; PDF-y przyjdą e-mailem.</li>
+    </ul>
+    <p style="margin:0 0 10px;font-size:13px;color:#64748b;">Link jest ważny ${NOWY_LINK_DNI} dni — do ${esc(dataGodzina(r.wazny_do))}. Pytania? Odpowiedz na tę wiadomość.</p>`);
+	const tekst = [
+		'Dzień dobry,',
+		'',
+		`${przypomnienie ? 'przypominamy o wniosku' : 'przygotowaliśmy wniosek'} o ubezpieczenie OC gabinetu w programie Beauty❤️Polisa (STU Ergo Hestia SA) dla ${r.klient_nazwa}.`,
+		'Wypełnij go online (około 5 minut):',
+		link,
+		'',
+		'We wniosku: analiza potrzeb (APK), dane gabinetu, początek ochrony, suma gwarancyjna i ochrona prawna z orientacyjną składką, podpis.',
 		`Link jest ważny do ${dataGodzina(r.wazny_do)}. Pytania? Odpowiedz na tę wiadomość.`,
 		'',
 		STOPKA
@@ -135,19 +190,21 @@ function wariantySum(r: RenewalRow): string {
 		...linie,
 		`Ochrona prawna (klauzula 7): +${formatZl(OCHRONA_PRAWNA_SKLADKA)} rocznie.`,
 		skladka,
-		'Sumę i ewentualne zmiany zakresu wskazujesz we wniosku o odnowienie.'
+		nowaPolisa(r) ? 'Sumę, ochronę prawną i początek ochrony wskazujesz we wniosku o zawarcie ubezpieczenia.' : 'Sumę i ewentualne zmiany zakresu wskazujesz we wniosku o odnowienie.'
 	].join('\n');
 }
 
 // Propozycja ubezpieczenia po APK (PDF APK). Gdy zgłoszone potrzeby wykraczają poza program — informacja wprost.
 export function propozycjaApk(r: RenewalRow): [string, string][] {
-	const nowy = nowyOkres(r.okres_do ?? '');
+	const nowy = nowyOkres(r);
 	const umowa = r.program ? `Umowy Generalnej na OC dla branży beauty (${r.program})` : 'Umowy Generalnej na OC dla branży beauty';
 	const wiersze: [string, string][] = [
 		[
 			'Proponowane ubezpieczenie',
-			`Odnowienie ubezpieczenia OC zawodowego na okres ${data(nowy.od)} – ${data(nowy.do)} w ramach ${umowa}, ` +
-				`${UBEZPIECZYCIEL}, na warunkach tej umowy.`
+			nowaPolisa(r)
+				? `Zawarcie ubezpieczenia OC zawodowego gabinetu na 12 miesięcy od dnia wskazanego we wniosku w ramach ${umowa}, ${UBEZPIECZYCIEL}, na warunkach tej umowy.`
+				: `Odnowienie ubezpieczenia OC zawodowego na okres ${data(nowy.od)} – ${data(nowy.do)} w ramach ${umowa}, ` +
+					`${UBEZPIECZYCIEL}, na warunkach tej umowy.`
 		],
 		['Warianty sumy gwarancyjnej', wariantySum(r)],
 		[
@@ -178,12 +235,14 @@ export function propozycjaApk(r: RenewalRow): [string, string][] {
 
 export function mailApk(r: RenewalRow, link: string, aktualizacja = false) {
 	const odmowa = r.apk_odmowa || !r.apk;
-	const temat = `${odmowa ? 'Odmowa wypełnienia analizy potrzeb (APK)' : 'Analiza potrzeb (APK)'}${aktualizacja ? ' — wersja poprawiona' : ''} — certyfikat ${r.nr_polisy ?? ''}`;
+	const nowa = nowaPolisa(r);
+	const przed = nowa ? 'przed zawarciem ubezpieczenia OC' : 'przed odnowieniem ubezpieczenia OC';
+	const temat = `${odmowa ? 'Odmowa wypełnienia analizy potrzeb (APK)' : 'Analiza potrzeb (APK)'}${aktualizacja ? ' — wersja poprawiona' : ''} — ${nowa ? r.klient_nazwa ?? '' : `certyfikat ${r.nr_polisy ?? ''}`}`;
 	const akapity = [
 		odmowa
-			? `zapisaliśmy, że świadomie odmawiasz wypełnienia analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. W załączonym PDF jest potwierdzenie odmowy i propozycja ubezpieczenia wynikająca z Umowy Generalnej na OC dla branży beauty — zachowaj go.`
-			: `dziękujemy za wypełnienie analizy potrzeb (APK) przed odnowieniem ubezpieczenia OC dla ${r.klient_nazwa}. W załączonym PDF są Twoje odpowiedzi i propozycja ubezpieczenia wynikająca z Umowy Generalnej na OC dla branży beauty — zachowaj go.`,
-		'Wniosek o odnowienie dokończysz pod tym samym linkiem. Po wysłaniu wniosku przyślemy drugi e-mail z PDF wniosku.'
+			? `zapisaliśmy, że świadomie odmawiasz wypełnienia analizy potrzeb (APK) ${przed} dla ${r.klient_nazwa}. W załączonym PDF jest potwierdzenie odmowy i propozycja ubezpieczenia wynikająca z Umowy Generalnej na OC dla branży beauty — zachowaj go.`
+			: `dziękujemy za wypełnienie analizy potrzeb (APK) ${przed} dla ${r.klient_nazwa}. W załączonym PDF są Twoje odpowiedzi i propozycja ubezpieczenia wynikająca z Umowy Generalnej na OC dla branży beauty — zachowaj go.`,
+		`${nowa ? 'Wniosek o ubezpieczenie' : 'Wniosek o odnowienie'} dokończysz pod tym samym linkiem. Po wysłaniu wniosku przyślemy drugi e-mail z PDF wniosku.`
 	];
 	const html = ramka(odmowa ? 'Odmowa wypełnienia APK' : 'Analiza potrzeb (APK)', `
     <p style="margin:0 0 14px;">Dzień dobry,</p>
@@ -197,18 +256,21 @@ export function mailApk(r: RenewalRow, link: string, aktualizacja = false) {
 // ---------- Opis decyzji (wspólny dla e-maili i PDF) ----------
 
 // ankieta: zabiegi z pozycji „Inny – prosimy opisać” też są zmianą, o którą prosi klient (doradca je wycenia).
-export function opisZmian(w: Wniosek | null, apk: Apk | null, ankieta: Pick<Ankieta, 'inne_zabiegi'> | null = null): string[] {
-	if (!w || w.decyzja !== 'zmiany' || !w.zmiany) return [];
+// rodzaj 'nowa': te same pola opisują zakres pierwszej polisy (suma zamiast „nowej sumy”, uwagi zamiast „innych zmian”).
+export function opisZmian(w: Wniosek | null, apk: Apk | null, ankieta: Pick<Ankieta, 'inne_zabiegi'> | null = null, rodzaj: RodzajWniosku = 'odnowienie'): string[] {
+	const nowa = rodzaj === 'nowa';
+	if (!w || (w.decyzja !== 'zmiany' && w.decyzja !== 'nowa') || !w.zmiany) return [];
 	const z = w.zmiany;
 	const linie: string[] = [];
-	if (z.wyzsza_suma) linie.push(`Nowa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
-	if (z.ochrona_prawna) linie.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł rocznie, limit ${formatSuma(OCHRONA_PRAWNA_LIMIT)})`);
+	if (z.wyzsza_suma) linie.push(`${nowa ? 'Suma gwarancyjna' : 'Nowa suma gwarancyjna'}: ${formatSuma(z.wyzsza_suma)}`);
+	if (nowa) linie.push(z.ochrona_prawna ? `Klauzula ochrony prawnej: tak (+${OCHRONA_PRAWNA_SKLADKA} zł rocznie, limit ${formatSuma(OCHRONA_PRAWNA_LIMIT)})` : 'Klauzula ochrony prawnej: nie');
+	else if (z.ochrona_prawna) linie.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł rocznie, limit ${formatSuma(OCHRONA_PRAWNA_LIMIT)})`);
 	if (z.adres) linie.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 	if (z.nowe_zabiegi.length) linie.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join('; ')}`);
 	if (z.zabiegi_ankieta.length) linie.push(`Zabiegi wymagające ankiety: ${z.zabiegi_ankieta.join('; ')}`);
 	if (ankieta?.inne_zabiegi?.trim()) linie.push(`Inne zabiegi do oceny ryzyka (ankieta, „Inny”): ${ankieta.inne_zabiegi.trim()}`);
 	for (const w of z.wykonawcy ?? []) linie.push(`Wykonuje: ${w.imie_nazwisko} — ${w.zabiegi.join('; ')}`);
-	if (z.inne) linie.push(`Inne: ${z.inne}`);
+	if (z.inne) linie.push(`${nowa ? 'Uwagi klienta' : 'Inne'}: ${z.inne}`);
 	if (!apk && z.rodzaje.length) linie.push(`Rodzaj działalności (do wyceny): ${z.rodzaje.map(rodzajNazwa).join(', ')}`);
 	if (!apk && z.osoby) linie.push(`Liczba osób (do wyceny): ${osobyNazwa(z.osoby)}`);
 	return linie;
@@ -217,9 +279,9 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null, ankieta: Pick<Anki
 const rodzajNazwa = (k: string) => RODZAJE_GABINETU.find((r) => r.key === k)?.nazwa ?? k;
 const osobyNazwa = (k: string) => LICZBA_OSOB.find((o) => o.key === k)?.nazwa ?? k;
 
-export function opisSkladki(r: RenewalRow): string {
+export function opisSkladki(r: Pick<RenewalRow, 'decyzja' | 'skladka_nowa'>): string {
 	if (r.decyzja === 'nie') return '—';
-	if (r.skladka_nowa != null) return formatZl(Number(r.skladka_nowa)) + (r.decyzja === 'zmiany' ? ' (orientacyjnie wg programu, potwierdzi doradca)' : '');
+	if (r.skladka_nowa != null) return formatZl(Number(r.skladka_nowa)) + (r.decyzja === 'zmiany' || r.decyzja === 'nowa' ? ' (orientacyjnie wg programu, potwierdzi doradca)' : '');
 	return 'do indywidualnej wyceny przez doradcę';
 }
 
@@ -249,11 +311,23 @@ export const BRAK_PDF_ANKIETY =
 
 // ankietaWZalaczniku: PDF ankiety Ergo Hestii (osobny dokument do podpisu) dołączony do e-maila.
 export function mailPotwierdzenie(r: RenewalRow, apkWZalaczniku = false, ankietaWZalaczniku = !!r.ankieta) {
-	const nowy = nowyOkres(r.okres_do ?? '');
+	const nowy = nowyOkres(r);
 	const ankieta = !!r.ankieta;
 	const ankietaPdf = ankieta && ankietaWZalaczniku;
+	const nowa = nowaPolisa(r);
 	const akapity: string[] = [];
-	if (r.decyzja === 'bez_zmian') {
+	if (nowa && r.decyzja === 'nowa') {
+		akapity.push(`przyjęliśmy wniosek o ubezpieczenie OC gabinetu dla ${r.klient_nazwa}. Doradca sprawdzi wniosek, potwierdzi składkę i przygotuje certyfikat na okres ${data(nowy.od)}–${data(nowy.do)}.`);
+		if (ankieta) {
+			akapity.push(
+				ankietaPdf
+					? `Zabiegi, które wskazano, wymagają ankiety ERGO Hestia. Ankieta to osobny PDF „Ankieta ERGO Hestia” w załączniku — wydrukuj go, podpisz ankietę i odeślij jej skan na ${KONTAKT} (wystarczy odpowiedzieć na tę wiadomość). Bez podpisanej ankiety ubezpieczyciel nie obejmie tych zabiegów ochroną.`
+					: `Zabiegi, które wskazano, wymagają ankiety ERGO Hestia. PDF ankiety do podpisu prześlemy w osobnej wiadomości — wydrukuj go, podpisz i odeślij skan na ${KONTAKT}. Bez podpisanej ankiety ubezpieczyciel nie obejmie tych zabiegów ochroną.`
+			);
+		}
+	} else if (nowa) {
+		akapity.push(`przyjęliśmy informację, że nie wnioskujesz o ubezpieczenie OC gabinetu dla ${r.klient_nazwa}. Jeśli zmienisz zdanie, odpowiedz na tę wiadomość — przygotujemy nowy wniosek.`);
+	} else if (r.decyzja === 'bez_zmian') {
 		akapity.push(`przyjęliśmy wniosek o odnowienie ubezpieczenia OC bez zmian dla ${r.klient_nazwa}. Przygotujemy odnowienie certyfikatu na okres ${data(nowy.od)}–${data(nowy.do)}.`);
 	} else if (r.decyzja === 'zmiany') {
 		akapity.push(`przyjęliśmy wniosek o odnowienie ubezpieczenia OC ze zmianami dla ${r.klient_nazwa}. Doradca sprawdzi zmiany i potwierdzi zakres oraz składkę przed wystawieniem certyfikatu na okres ${data(nowy.od)}–${data(nowy.do)}.`);
@@ -274,8 +348,11 @@ export function mailPotwierdzenie(r: RenewalRow, apkWZalaczniku = false, ankieta
 		(pliki.length === 1 ? 'W załączniku przesyłamy PDF z treścią wniosku.' : `W załącznikach przesyłamy ${pliki.slice(0, -1).join(', ')} i ${pliki[pliki.length - 1]}.`) +
 			(apkWZalaczniku ? '' : ' Analizę potrzeb (APK) wysłaliśmy wcześniej osobnym e-mailem.')
 	);
-	const temat =
-		r.decyzja === 'nie'
+	const temat = nowa
+		? r.decyzja === 'nie'
+			? `Rezygnacja z ubezpieczenia OC — ${r.klient_nazwa ?? ''}`
+			: `Wniosek o ubezpieczenie OC przyjęty — ${r.klient_nazwa ?? ''}${ankieta ? ' (ankieta do podpisu)' : ''}`
+		: r.decyzja === 'nie'
 			? `Rezygnacja z odnowienia ubezpieczenia OC — certyfikat ${r.nr_polisy ?? ''}`
 			: `Wniosek o odnowienie ubezpieczenia OC przyjęty — certyfikat ${r.nr_polisy ?? ''}${ankieta ? ' (ankieta do podpisu)' : ''}`;
 	const html = ramka(r.decyzja === 'nie' ? 'Rezygnacja przyjęta' : 'Wniosek przyjęty', `
@@ -300,36 +377,43 @@ export function sygnalyApk(r: RenewalRow): string[] {
 
 // ankietaPdf: czy PDF ankiety powstał (jest w CRM i poszedł do klienta). Gdy nie — biuro wysyła ankietę samo.
 export function mailBiuro(r: RenewalRow, linki: { polisa: string; klient: string }, kto: { ip: string | null }, ankietaPdf = !!r.ankieta) {
-	const zmiany = [...opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta), ...sygnalyApk(r)];
+	const nowa = nowaPolisa(r);
+	const zmiany = [...(nowa ? opisNowej(r.wniosek) : []), ...opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta, r.rodzaj), ...sygnalyApk(r)];
 	const ankietaBezPdf = !!r.ankieta && !ankietaPdf;
-	const temat = `[Odnowienie] ${DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? r.decyzja} — ${r.klient_nazwa} — cert. ${r.nr_polisy ?? '—'}${r.ankieta ? ' — ANKIETA' : ''}`;
+	const nowy = nowyOkres(r);
+	const temat = nowa
+		? `[Pierwsza polisa] ${decyzjaTekst(r)} — ${r.klient_nazwa}${r.ankieta ? ' — ANKIETA' : ''}`
+		: `[Odnowienie] ${decyzjaTekst(r)} — ${r.klient_nazwa} — cert. ${r.nr_polisy ?? '—'}${r.ankieta ? ' — ANKIETA' : ''}`;
 	const wiersze: [string, string][] = [
 		['Klient', r.klient_nazwa ?? '—'],
-		['Certyfikat', `${r.nr_polisy ?? '—'} (${data(r.okres_od)}–${data(r.okres_do)})`],
-		['Decyzja', DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? '—'],
+		...(nowa
+			? ([['Wniosek', `pierwsza polisa w programie OC beauty${r.decyzja === 'nowa' ? ` — ochrona ${data(nowy.od)}–${data(nowy.do)}` : ''}`]] as [string, string][])
+			: ([['Certyfikat', `${r.nr_polisy ?? '—'} (${data(r.okres_od)}–${data(r.okres_do)})`]] as [string, string][])),
+		['Decyzja', decyzjaTekst(r)],
 		['Składka', opisSkladki(r)],
 		['APK', r.apk_odmowa ? 'klient odmówił wypełnienia APK' : 'wypełniona'],
-		['Ochrona prawna w obecnym certyfikacie', opObecnie(r) ? 'tak (zostaje)' : 'nie'],
+		...(nowa ? [] : ([['Ochrona prawna w obecnym certyfikacie', opObecnie(r) ? 'tak (zostaje)' : 'nie']] as [string, string][])),
 		['Złożono', `${dataGodzina(r.zlozono_at)}${kto.ip ? `, IP ${kto.ip}` : ''}`],
 		...(r.wniosek?.nie_powod ? ([['Powód rezygnacji', r.wniosek.nie_powod]] as [string, string][]) : []),
 		...(ankietaBezPdf ? ([['Ankieta ERGO Hestia', BRAK_PDF_ANKIETY]] as [string, string][]) : []),
 		['Dokumenty w CRM', ['PDF analizy potrzeb (APK)', 'PDF wniosku', ...(r.ankieta && ankietaPdf ? ['PDF ankiety ERGO Hestia (do podpisu klienta)'] : []), ...(r.zalaczniki?.length ? [`załączniki klienta: ${r.zalaczniki.length}`] : [])].join(', ')],
 		...(r.zalaczniki?.length ? ([['Załączniki klienta', r.zalaczniki.map((z) => `${opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy)}: ${z.nazwa}`).join('; ')]] as [string, string][]) : [])
 	];
-	const html = ramka('Wniosek o odnowienie', `
+	const naglowekZmian = nowa ? 'Dane wniosku:' : 'Zmiany i uwagi:';
+	const html = ramka(nowa ? 'Wniosek o pierwszą polisę' : 'Wniosek o odnowienie', `
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:14px;">
       ${wiersze.map(([k, v]) => `<tr><td style="padding:6px 10px 6px 0;font-weight:600;color:#475569;vertical-align:top;white-space:nowrap;">${esc(k)}</td><td style="padding:6px 0;">${esc(v)}</td></tr>`).join('\n      ')}
     </table>
-    ${zmiany.length ? `<p style="margin:0 0 6px;font-weight:600;">Zmiany i uwagi:</p><ul style="margin:0 0 14px;padding-left:20px;">${zmiany.map((z) => `<li>${esc(z)}</li>`).join('')}</ul>` : ''}
+    ${zmiany.length ? `<p style="margin:0 0 6px;font-weight:600;">${naglowekZmian}</p><ul style="margin:0 0 14px;padding-left:20px;">${zmiany.map((z) => `<li>${esc(z)}</li>`).join('')}</ul>` : ''}
     ${r.ankieta ? `<p style="margin:0 0 14px;color:#be123c;font-weight:600;">${ankietaBezPdf ? `${esc(BRAK_PDF_ANKIETY)}${r.email ? ' W potwierdzeniu napisaliśmy klientowi, że PDF ankiety prześlemy w osobnej wiadomości.' : ''}` : 'Klient wypełnił ankietę Ergo Hestii — czekamy na podpisany egzemplarz.'}</p>` : ''}
     <p style="margin:0 0 6px;">Pliki (PDF APK, PDF wniosku${r.ankieta && ankietaPdf ? ', PDF ankiety ERGO Hestia' : ''} i załączniki klienta) są w CRM — bez załączników w tej wiadomości:</p>
-    ${przycisk(linki.polisa, 'Otwórz wniosek na karcie polisy')}
+    ${przycisk(linki.polisa, nowa ? 'Otwórz wniosek na karcie klienta' : 'Otwórz wniosek na karcie polisy')}
     <p style="margin:0 0 14px;"><a href="${esc(linki.klient)}" style="color:#2a3b69;">Karta klienta → Załączniki</a></p>`);
 	const tekst = [
 		...wiersze.map(([k, v]) => `${k}: ${v}`),
-		...(zmiany.length ? ['', 'Zmiany i uwagi:', ...zmiany.map((z) => `- ${z}`)] : []),
+		...(zmiany.length ? ['', naglowekZmian, ...zmiany.map((z) => `- ${z}`)] : []),
 		'',
-		`Wniosek na karcie polisy: ${linki.polisa}`,
+		`${nowa ? 'Wniosek na karcie klienta' : 'Wniosek na karcie polisy'}: ${linki.polisa}`,
 		`Załączniki na karcie klienta: ${linki.klient}`
 	].join('\n');
 	return { temat, html, tekst };
@@ -381,7 +465,8 @@ function blokPodpisu(doc: Doc, font: string, y: number, podpis: PodpisPdf | null
 
 export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: string | null; ua: string | null }, o: { podpis?: PodpisPdf | null } = {}): Promise<Uint8Array> {
 	const { doc, autoTable, font } = await newServerPdf(event);
-	const nowy = nowyOkres(r.okres_do ?? '');
+	const nowy = nowyOkres(r);
+	const nowa = nowaPolisa(r);
 	const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
 	const tabela = (body: [string, string][], startY: number, head?: [string, string]) =>
 		autoTable(doc, {
@@ -411,33 +496,47 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 	rysujLogo(doc, 196 - LOGO_PDF_SZER, 10, LOGO_PDF_SZER);
 	doc.setFont(font, 'bold');
 	doc.setFontSize(16);
-	doc.text('Wniosek o odnowienie ubezpieczenia OC', 14, 18);
+	doc.text(nowa ? 'Wniosek o zawarcie ubezpieczenia OC' : 'Wniosek o odnowienie ubezpieczenia OC', 14, 18);
 	doc.setFont(font, 'normal');
 	doc.setFontSize(9);
 	doc.setTextColor(100);
 	doc.text(`${r.program ?? ''} · ${UBEZPIECZYCIEL} · BeautyPolisa`, 14, 24);
 	doc.setTextColor(0);
 
+	const f = r.wniosek?.nowa?.firma;
 	tabela(
-		[
-			['Ubezpieczający / Ubezpieczony', r.klient_nazwa ?? '—'],
-			['Certyfikat', r.nr_polisy ?? '—'],
-			['Ubezpieczyciel', nazwaUbezpieczyciela(r.tu_nazwa)],
-			['Obecny okres ubezpieczenia', `${data(r.okres_od)} – ${data(r.okres_do)}`],
-			['Okres po odnowieniu', r.decyzja === 'nie' ? '—' : `${data(nowy.od)} – ${data(nowy.do)}`],
-			['Suma gwarancyjna (obecna)', r.suma ? formatSuma(Number(r.suma)) : 'zgodnie z obecnym certyfikatem'],
-			['Składka (obecna)', r.skladka != null ? formatZl(Number(r.skladka)) : '—'],
-			['Składka po odnowieniu', opisSkladki(r)],
-			['Decyzja', DECYZJA_TEKST[r.decyzja as keyof typeof DECYZJA_TEKST] ?? '—'],
-			['Złożono', `${dataGodzina(r.zlozono_at)} (wniosek elektroniczny)`]
-		],
+		nowa
+			? [
+					['Ubezpieczający / Ubezpieczony', f?.nazwa || r.klient_nazwa || '—'],
+					['NIP / REGON', f ? `${f.nip}${f.regon ? ` / ${f.regon}` : ''}` : '—'],
+					['Adres gabinetu', f ? `${f.ulica}, ${f.kod} ${f.miasto}` : '—'],
+					['E-mail / telefon', f ? `${f.email} / ${f.telefon}` : r.email ?? '—'],
+					['Ubezpieczyciel', nazwaUbezpieczyciela(r.tu_nazwa)],
+					['Okres ubezpieczenia', r.decyzja === 'nie' ? '—' : `${data(nowy.od)} – ${data(nowy.do)} (12 miesięcy)`],
+					['Suma gwarancyjna', r.wniosek?.zmiany?.wyzsza_suma ? formatSuma(r.wniosek.zmiany.wyzsza_suma) : '—'],
+					['Składka', opisSkladki(r)],
+					['Decyzja', decyzjaTekst(r)],
+					['Złożono', `${dataGodzina(r.zlozono_at)} (wniosek elektroniczny)`]
+				]
+			: [
+					['Ubezpieczający / Ubezpieczony', r.klient_nazwa ?? '—'],
+					['Certyfikat', r.nr_polisy ?? '—'],
+					['Ubezpieczyciel', nazwaUbezpieczyciela(r.tu_nazwa)],
+					['Obecny okres ubezpieczenia', `${data(r.okres_od)} – ${data(r.okres_do)}`],
+					['Okres po odnowieniu', r.decyzja === 'nie' ? '—' : `${data(nowy.od)} – ${data(nowy.do)}`],
+					['Suma gwarancyjna (obecna)', r.suma ? formatSuma(Number(r.suma)) : 'zgodnie z obecnym certyfikatem'],
+					['Składka (obecna)', r.skladka != null ? formatZl(Number(r.skladka)) : '—'],
+					['Składka po odnowieniu', opisSkladki(r)],
+					['Decyzja', decyzjaTekst(r)],
+					['Złożono', `${dataGodzina(r.zlozono_at)} (wniosek elektroniczny)`]
+				],
 		30
 	);
 
 	let y = lastY() + 8;
-	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta);
+	const zmiany = opisZmian(r.wniosek, r.apk_odmowa ? null : r.apk, r.ankieta, r.rodzaj);
 	if (zmiany.length) {
-		y = naglowek('Zmiany wskazane przez klienta', y);
+		y = naglowek(nowa ? 'Zakres ubezpieczenia wskazany przez klienta' : 'Zmiany wskazane przez klienta', y);
 		tabela(zmiany.map((z, i) => [`${i + 1}.`, z] as [string, string]), y);
 		y = lastY() + 8;
 		if (r.wniosek?.zmiany?.ochrona_prawna) {
@@ -446,11 +545,16 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 			y = lastY() + 8;
 		}
 	}
+	if (nowa && r.decyzja === 'nowa' && r.wniosek?.nowa?.oswiadczenia) {
+		y = naglowek('Oświadczenia klienta', y);
+		tabela(OSWIADCZENIA_NOWEJ.map((t, i) => [`${i + 1}.`, t] as [string, string]), y);
+		y = lastY() + 8;
+	}
 	if (r.decyzja === 'nie') {
-		y = naglowek('Rezygnacja z odnowienia', y);
+		y = naglowek(nowa ? 'Rezygnacja z ubezpieczenia' : 'Rezygnacja z odnowienia', y);
 		tabela(
 			[
-				['Oświadczenie', `Klient potwierdził rezygnację z odnowienia. Ochrona kończy się ${data(r.okres_do)}.`],
+				['Oświadczenie', nowa ? 'Klient potwierdził, że nie wnioskuje o ubezpieczenie OC w programie.' : `Klient potwierdził rezygnację z odnowienia. Ochrona kończy się ${data(r.okres_do)}.`],
 				...(r.wniosek?.nie_powod ? ([['Powód', r.wniosek.nie_powod]] as [string, string][]) : [])
 			],
 			y
@@ -487,7 +591,7 @@ export async function pdfWniosku(event: PdfEvent, r: RenewalRow, kto: { ip: stri
 	}
 
 	// Podpis klienta pod wnioskiem (decyzja, zmiany, ankieta i załączniki objęte skrótem).
-	y = blokPodpisu(doc, font, y, o.podpis, r.decyzja === 'nie' ? 'odnowienia (rezygnacja)' : 'odnowienia (wniosek)');
+	y = blokPodpisu(doc, font, y, o.podpis, nowa ? (r.decyzja === 'nie' ? 'wniosku o ubezpieczenie (rezygnacja)' : 'wniosku o ubezpieczenie') : r.decyzja === 'nie' ? 'odnowienia (rezygnacja)' : 'odnowienia (wniosek)');
 
 	const strony = doc.getNumberOfPages();
 	for (let i = 1; i <= strony; i++) {
@@ -541,6 +645,7 @@ export async function pdfApk(
 		return y + 3;
 	};
 	const odmowa = r.apk_odmowa || !r.apk;
+	const nowa = nowaPolisa(r);
 
 	rysujLogo(doc, 196 - LOGO_PDF_SZER, 10, LOGO_PDF_SZER);
 	doc.setFont(font, 'bold');
@@ -549,19 +654,27 @@ export async function pdfApk(
 	doc.setFont(font, 'normal');
 	doc.setFontSize(9);
 	doc.setTextColor(100);
-	doc.text(`Odnowienie ubezpieczenia OC · ${r.program ?? ''} · ${UBEZPIECZYCIEL} · BeautyPolisa`, 14, 24);
+	doc.text(`${nowa ? 'Zawarcie ubezpieczenia OC' : 'Odnowienie ubezpieczenia OC'} · ${r.program ?? ''} · ${UBEZPIECZYCIEL} · BeautyPolisa`, 14, 24);
 	doc.setTextColor(0);
 
 	tabela(
-		[
-			['Klient (Ubezpieczony)', r.klient_nazwa ?? '—'],
-			['Certyfikat', r.nr_polisy ?? '—'],
-			['Ubezpieczyciel', nazwaUbezpieczyciela(r.tu_nazwa)],
-			['Obecny okres ubezpieczenia', `${data(r.okres_od)} – ${data(r.okres_do)}`],
-			['Suma gwarancyjna (obecna)', r.suma ? formatSuma(Number(r.suma)) : 'zgodnie z obecnym certyfikatem'],
-			['Data i godzina', `${dataGodzina(r.apk_at)} (formularz elektroniczny)`],
-			['Agent ubezpieczeniowy', DYSTRYBUTOR]
-		],
+		nowa
+			? [
+					['Klient (Ubezpieczony)', r.klient_nazwa ?? '—'],
+					['Ubezpieczyciel', nazwaUbezpieczyciela(r.tu_nazwa)],
+					['Rodzaj wniosku', 'pierwsza polisa w programie (klient bez certyfikatu)'],
+					['Data i godzina', `${dataGodzina(r.apk_at)} (formularz elektroniczny)`],
+					['Agent ubezpieczeniowy', DYSTRYBUTOR]
+				]
+			: [
+					['Klient (Ubezpieczony)', r.klient_nazwa ?? '—'],
+					['Certyfikat', r.nr_polisy ?? '—'],
+					['Ubezpieczyciel', nazwaUbezpieczyciela(r.tu_nazwa)],
+					['Obecny okres ubezpieczenia', `${data(r.okres_od)} – ${data(r.okres_do)}`],
+					['Suma gwarancyjna (obecna)', r.suma ? formatSuma(Number(r.suma)) : 'zgodnie z obecnym certyfikatem'],
+					['Data i godzina', `${dataGodzina(r.apk_at)} (formularz elektroniczny)`],
+					['Agent ubezpieczeniowy', DYSTRYBUTOR]
+				],
 		30
 	);
 	let y = lastY() + 8;
@@ -591,7 +704,8 @@ export async function pdfApk(
 		);
 		y = lastY() + 8;
 	}
-	y = blokPodpisu(doc, font, y, o.podpis, odmowa ? 'odnowienia (odmowa wypełnienia APK i zgody)' : 'odnowienia (analiza potrzeb i zgody)');
+	const czego = nowa ? 'wniosku o ubezpieczenie' : 'odnowienia';
+	y = blokPodpisu(doc, font, y, o.podpis, odmowa ? `${czego} (odmowa wypełnienia APK i zgody)` : `${czego} (analiza potrzeb i zgody)`);
 	y = naglowek('Propozycja ubezpieczenia', y);
 	tabela(propozycjaApk(r), y);
 	y = lastY() + 8;
@@ -601,11 +715,12 @@ export async function pdfApk(
 	}
 	doc.setFontSize(8.5);
 	doc.setTextColor(80);
+	const przed = nowa ? 'przed zawarciem ubezpieczenia' : 'przed odnowieniem ubezpieczenia';
 	const info = doc.splitTextToSize(
 		(odmowa
-			? 'Klient odmówił wypełnienia analizy przed odnowieniem ubezpieczenia — propozycja nie uwzględnia jego wymagań i potrzeb. '
-			: 'Analiza została przeprowadzona przed odnowieniem ubezpieczenia na podstawie informacji przekazanych przez Klienta. ') +
-			'Dokument przekazano Klientowi na trwałym nośniku (PDF w wiadomości e-mail). Wniosek o odnowienie stanowi osobny dokument.',
+			? `Klient odmówił wypełnienia analizy ${przed} — propozycja nie uwzględnia jego wymagań i potrzeb. `
+			: `Analiza została przeprowadzona ${przed} na podstawie informacji przekazanych przez Klienta. `) +
+			`Dokument przekazano Klientowi na trwałym nośniku (PDF w wiadomości e-mail). ${nowa ? 'Wniosek o zawarcie ubezpieczenia' : 'Wniosek o odnowienie'} stanowi osobny dokument.`,
 		182
 	);
 	doc.text(info, 14, y);

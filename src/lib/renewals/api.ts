@@ -2,7 +2,7 @@
 // Klient nie ma sesji ani dostępu do bazy: wszystko idzie przez te żądania, a klucz z adresu
 // (<id odnowienia>-<podpis HMAC>) jest jedynym uprawnieniem.
 
-import type { Apk, Ankieta, Decyzja, TypZalacznika, Wniosek } from './program';
+import type { Apk, Ankieta, Decyzja, Firma, RodzajWniosku, TypZalacznika, Wniosek } from './program';
 import type { Podpis } from './podpis';
 import type { Zgody } from './zgody';
 
@@ -27,6 +27,7 @@ export type WidokOdnowienia =
 	| { stan: 'wygasl' | 'anulowany' }
 	| {
 			stan: 'zlozony';
+			rodzaj: RodzajWniosku;
 			klient: string;
 			nr_polisy: string | null;
 			decyzja: Decyzja;
@@ -34,6 +35,8 @@ export type WidokOdnowienia =
 	  }
 	| {
 			stan: 'aktywny';
+			// odnowienie certyfikatu albo pierwsza polisa (bez certyfikatu: okres_obecny pusty, suma i składka null).
+			rodzaj: RodzajWniosku;
 			status: StatusOdnowienia;
 			klient: string;
 			nr_polisy: string | null;
@@ -59,6 +62,10 @@ export type WidokOdnowienia =
 			zgody: Zgody | null;
 			// Czas podpisu pod APK (albo odmową) — po podpisie klient podpisuje ponownie tylko przy poprawkach.
 			podpis_apk_at: string | null;
+			// Pierwsza polisa: dane firmy z kartoteki do podpowiedzi we wniosku i okno dat początku ochrony
+			// (od jutra do 90 dni, w czasie polskim). Przy odnowieniu null.
+			firma: Firma | null;
+			ochrona_od: { min: string; max: string; domyslna: string } | null;
 	  };
 
 // POST /api/odnowienie/[token] — jedno z działań. APK (albo odmowa) i wniosek idą z podpisem klienta

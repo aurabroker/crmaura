@@ -2,7 +2,7 @@
 	import { tick } from 'svelte';
 	import { AlertTriangle, Send } from 'lucide-svelte';
 	import type { OdpowiedzZloz } from '$lib/renewals/api';
-	import { DECYZJA_ETYKIETA } from '$lib/renewals/staffApi';
+	import { etykietaDecyzji } from '$lib/renewals/staffApi';
 	import { LICZBA_OSOB, OCHRONA_PRAWNA_SKLADKA, RODZAJE_GABINETU, formatSuma, waliduj_ankiete, type Ankieta } from '$lib/renewals/program';
 	import { PODPIS_BRAK_WNIOSKU } from '$lib/renewals/podpis';
 	import Bledy from './Bledy.svelte';
@@ -29,15 +29,18 @@
 	let potwierdzRezygnacje = $state(false);
 	let potwierdzEl = $state<HTMLDivElement | null>(null);
 
+	const nowa = $derived(s.nowa);
+	const firma = $derived(s.wniosek.nowa?.firma ?? null);
 	const zmianyOpis = $derived.by(() => {
 		if (!z) return [] as string[];
 		const l: string[] = [];
-		if (z.wyzsza_suma) l.push(`Nowa suma gwarancyjna: ${formatSuma(z.wyzsza_suma)}`);
-		if (z.ochrona_prawna) l.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł/rok)`);
+		if (z.wyzsza_suma) l.push(`${nowa ? 'Suma gwarancyjna' : 'Nowa suma gwarancyjna'}: ${formatSuma(z.wyzsza_suma)}`);
+		if (nowa) l.push(z.ochrona_prawna ? `Klauzula ochrony prawnej: tak (+${OCHRONA_PRAWNA_SKLADKA} zł/rok)` : 'Klauzula ochrony prawnej: nie');
+		else if (z.ochrona_prawna) l.push(`Klauzula ochrony prawnej (+${OCHRONA_PRAWNA_SKLADKA} zł/rok)`);
 		if (z.adres) l.push(`Nowy adres działalności: ${z.adres.ulica}, ${z.adres.kod} ${z.adres.miasto}`);
 		if (z.nowe_zabiegi.length) l.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join(', ')}`);
 		if (z.zabiegi_ankieta.length) l.push(`Zabiegi wymagające ankiety: ${z.zabiegi_ankieta.join(', ')}`);
-		if (z.inne.trim()) l.push(`Inne: ${z.inne.trim()}`);
+		if (z.inne.trim()) l.push(`${nowa ? 'Uwagi' : 'Inne'}: ${z.inne.trim()}`);
 		if (z.rodzaje.length) l.push(`Działalność: ${z.rodzaje.map((r) => RODZAJE_GABINETU.find((x) => x.key === r)?.nazwa ?? r).join(', ')}`);
 		if (z.osoby) l.push(`Osoby wykonujące zabiegi: ${LICZBA_OSOB.find((o) => o.key === z.osoby)?.nazwa ?? z.osoby}`);
 		return l;
@@ -116,10 +119,19 @@
 
 	<dl class="mt-6 space-y-5" data-testid="podsumowanie">
 		<div>
-			{@render wiersz('Ubezpieczenie', null)}
+			{@render wiersz('Ubezpieczenie', nowa && s.decyzja === 'nowa' ? 'wniosek' : null)}
 			<dd class="mt-1 text-slate-900">
-				{w.klient}{#if w.nr_polisy}, certyfikat {w.nr_polisy}{/if}
-				<span class="block text-sm text-slate-600">Nowy okres: {fmtData(w.okres_nowy.od)} – {fmtData(w.okres_nowy.do)}</span>
+				{#if nowa && firma && s.decyzja === 'nowa'}
+					{firma.nazwa}{#if firma.nip}, NIP {firma.nip}{/if}
+					<span class="block text-sm text-slate-600">{firma.ulica}, {firma.kod} {firma.miasto} · {firma.email} · {firma.telefon}</span>
+					<span class="block text-sm text-slate-600">Okres ubezpieczenia: {fmtData(s.okresNowy.od)} – {fmtData(s.okresNowy.do)}</span>
+				{:else if nowa}
+					{w.klient}
+					<span class="block text-sm text-slate-600">Pierwsza polisa OC gabinetu w programie</span>
+				{:else}
+					{w.klient}{#if w.nr_polisy}, certyfikat {w.nr_polisy}{/if}
+					<span class="block text-sm text-slate-600">Nowy okres: {fmtData(w.okres_nowy.od)} – {fmtData(w.okres_nowy.do)}</span>
+				{/if}
 			</dd>
 		</div>
 
@@ -133,7 +145,7 @@
 		<div>
 			{@render wiersz('Decyzja', 'wniosek')}
 			<dd class="mt-1 text-lg font-semibold {s.decyzja === 'nie' ? 'text-red-800' : 'text-[#2a3b69]'}">
-				{s.decyzja ? DECYZJA_ETYKIETA[s.decyzja] : '—'}
+				{s.decyzja ? etykietaDecyzji(s.decyzja, w.rodzaj) : '—'}
 			</dd>
 			{#if zmianyOpis.length}
 				<dd class="mt-2">
@@ -147,7 +159,7 @@
 			{/if}
 		</div>
 
-		{#if s.decyzja === 'zmiany'}
+		{#if s.decyzja === 'zmiany' || (s.decyzja === 'nowa' && s.wycena)}
 			<div>
 				{@render wiersz('Składka', null)}
 				<dd class="mt-2"><WycenaInfo wycena={s.wycena} skladkaObecna={w.skladka} /></dd>
@@ -190,7 +202,9 @@
 		<div class="mt-6 rounded-2xl border-2 border-red-600 bg-red-50 p-4">
 			<p class="flex items-start gap-3 font-semibold text-red-800">
 				<AlertTriangle size={22} class="mt-0.5 shrink-0" aria-hidden="true" />
-				<span>Uwaga: ochrona ubezpieczeniowa wygaśnie {koniecOchrony}. Od tego dnia gabinet nie ma ubezpieczenia OC.</span>
+				<span>
+					{#if nowa}Zapiszemy, że nie wnioskujesz o ubezpieczenie OC gabinetu w programie.{:else}Uwaga: ochrona ubezpieczeniowa wygaśnie {koniecOchrony}. Od tego dnia gabinet nie ma ubezpieczenia OC.{/if}
+				</span>
 			</p>
 		</div>
 	{/if}
@@ -224,12 +238,14 @@
 			class="mt-6 rounded-2xl border-2 border-red-700 bg-white p-5 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-600"
 			data-testid="potwierdz-nie"
 		>
-			<p id="potwierdz-nie-tytul" class="text-lg font-bold text-red-800">Na pewno rezygnujesz z odnowienia?</p>
-			<p class="mt-1 text-slate-700">Po wysłaniu ochrona wygaśnie {koniecOchrony} i gabinet zostanie bez ubezpieczenia OC.</p>
+			<p id="potwierdz-nie-tytul" class="text-lg font-bold text-red-800">{nowa ? 'Na pewno rezygnujesz z ubezpieczenia?' : 'Na pewno rezygnujesz z odnowienia?'}</p>
+			<p class="mt-1 text-slate-700">
+				{#if nowa}Po wysłaniu zapiszemy rezygnację — gabinet pozostanie bez ubezpieczenia OC w programie.{:else}Po wysłaniu ochrona wygaśnie {koniecOchrony} i gabinet zostanie bez ubezpieczenia OC.{/if}
+			</p>
 			<div class="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
 				<button type="button" class={BTN_DRUGI} onclick={() => (potwierdzRezygnacje = false)}>Nie, wracam</button>
 				<button type="button" class={BTN_CZERWONY} disabled={zajety} onclick={wyslijWniosek}>
-					{zajety ? 'Wysyłanie…' : 'Tak, rezygnuję z odnowienia'}
+					{zajety ? 'Wysyłanie…' : nowa ? 'Tak, rezygnuję z ubezpieczenia' : 'Tak, rezygnuję z odnowienia'}
 				</button>
 			</div>
 		</div>

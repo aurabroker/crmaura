@@ -55,9 +55,30 @@ export type PodsumowanieWnioskow = {
 	razem: number;
 };
 
+/** Wniosek o pierwszą polisę (klient bez certyfikatu) — bez polisy w CRM do chwili wystawienia. */
+export const wniosekNowy = (w: Pick<WniosekOdnowienia, 'rodzaj' | 'polisa_id'>) => w.rodzaj === 'nowa' || !w.polisa_id;
+
+/** Polisy klientów (klient_id → daty utworzenia) — do sprawdzenia, czy po złożonym wniosku o pierwszą polisę powstała już polisa. */
+export function polisyKlientow(policies: Pick<Policy, 'klient_id' | 'created_at' | 'deleted_at'>[]): Map<string, string[]> {
+	const m = new Map<string, string[]>();
+	for (const p of policies) if (!p.deleted_at && p.created_at) m.set(p.klient_id, [...(m.get(p.klient_id) ?? []), p.created_at]);
+	return m;
+}
+
+/**
+ * Czy złożony wniosek jest załatwiony: odnowienie — certyfikat ma następczynię (renewal_of);
+ * pierwsza polisa — klient dostał polisę po złożeniu wniosku.
+ */
+export function wniosekZalatwiony(w: Pick<WniosekOdnowienia, 'rodzaj' | 'polisa_id' | 'klient_id' | 'zlozono_at'>, odnowione: ReadonlySet<string>, polisyKl: ReadonlyMap<string, string[]> = new Map()): boolean {
+	if (!wniosekNowy(w)) return !!w.polisa_id && odnowione.has(w.polisa_id);
+	const od = w.zlozono_at ?? '';
+	return (polisyKl.get(w.klient_id) ?? []).some((c) => c >= od);
+}
+
 // Liczby do kafelka na pulpicie i zakładki APK: tylko bieżący cykl, bez wniosków testowych.
 // odnowione: polisy, które mają już następczynię (renewal_of) — ich wnioski są załatwione.
-export function podsumujWnioski(lista: WniosekOdnowienia[], odnowione: ReadonlySet<string>, dzis: string): PodsumowanieWnioskow {
+// polisyKl: polisy klientów (pierwsza polisa jest załatwiona, gdy klient dostał polisę po złożeniu wniosku).
+export function podsumujWnioski(lista: WniosekOdnowienia[], odnowione: ReadonlySet<string>, dzis: string, polisyKl: ReadonlyMap<string, string[]> = new Map()): PodsumowanieWnioskow {
 	const p: PodsumowanieWnioskow = { czeka: 0, apk: 0, odmowy: 0, zlozone: 0, doWystawienia: 0, nieaktywne: 0, razem: 0 };
 	for (const w of lista) {
 		if (wniosekTestowy(w) || !wBiezacymCyklu(w, dzis)) continue;
@@ -72,11 +93,15 @@ export function podsumujWnioski(lista: WniosekOdnowienia[], odnowione: ReadonlyS
 		if (w.apk_odmowa) p.odmowy++;
 		if (e === 'zlozony') {
 			p.zlozone++;
-			if (w.decyzja !== 'nie' && !odnowione.has(w.polisa_id)) p.doWystawienia++;
+			if (w.decyzja !== 'nie' && !wniosekZalatwiony(w, odnowione, polisyKl)) p.doWystawienia++;
 		}
 	}
 	return p;
 }
+
+/** Dokąd prowadzi wniosek w CRM: karta polisy (odnowienie) albo karta klienta → APK (pierwsza polisa). */
+export const adresWniosku = (w: Pick<WniosekOdnowienia, 'rodzaj' | 'polisa_id' | 'klient_id'>) =>
+	wniosekNowy(w) ? `/clients/${w.klient_id}?tab=apk` : `/policies/${w.polisa_id}`;
 
 export type Wariant = 'success' | 'warning' | 'error' | 'info' | 'neutral';
 
@@ -139,7 +164,9 @@ export const ZDARZENIA: Record<string, string> = {
 	pdf_apk_utworzony: 'Utworzono PDF APK z zapisanych odpowiedzi (na żądanie w CRM)',
 	przypomnienie: 'Wysłano przypomnienie',
 	anulowanie: 'Anulowano wniosek',
-	wygasniecie: 'Link wygasł'
+	wygasniecie: 'Link wygasł',
+	tryb_testowy: 'Wniosek testowy (e-maile na adres testowy)',
+	blad_leada: 'Nie udało się zapisać wniosku w leadzie (Sprzedaż)'
 };
 
 export const opisZdarzenia = (e: Pick<RenewalEvent, 'zdarzenie' | 'szczegoly'>) => {

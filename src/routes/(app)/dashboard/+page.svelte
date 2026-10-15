@@ -8,7 +8,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { dndzone } from 'svelte-dnd-action';
 	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check, ClipboardList } from 'lucide-svelte';
-	import { podsumujWnioski, wniosekTestowy } from '$lib/components/renewal/crmRenewals';
+	import { podsumujWnioski, polisyKlientow, wniosekTestowy } from '$lib/components/renewal/crmRenewals';
 	import { OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { isBroker } from '$lib/stores/app.svelte';
@@ -300,7 +300,8 @@
 	// Kafelek pokazuje się, gdy firma wysłała choć jeden prawdziwy wniosek.
 	const maWnioskiApk = $derived(appState.wnioskiOdnowien.some((w) => !wniosekTestowy(w)));
 	const odnowionePolisy = $derived(new Set(appState.policies.filter((p) => p.renewal_of && !p.deleted_at).map((p) => p.renewal_of as string)));
-	const apkWnioski = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowionePolisy, today));
+	// Pierwsze polisy (wniosek bez certyfikatu) są załatwione, gdy klient dostał polisę po złożeniu wniosku.
+	const apkWnioski = $derived(podsumujWnioski(appState.wnioskiOdnowien, odnowionePolisy, today, polisyKlientow(appState.policies)));
 
 	type TypKolejki = 'Rata' | 'Zadanie' | 'Odnowienie';
 	type PozycjaKolejki = {
