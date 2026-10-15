@@ -156,6 +156,12 @@
 	));
 	const showGwarancje = $derived(!!client?.gwarancje || clientGwarancje.length > 0);
 
+	// Zakładka Flota: niepotrzebna u klienta indywidualnego (osoba) i u klienta beauty (import BEAUTY albo
+	// certyfikat z programu OC beauty). Zostaje, gdy klient ma już pojazdy albo polisy komunikacyjne / flotowe.
+	const klientBeauty = $derived(client?.beauty_id != null || clientPolicies.some((p) => wProgramieOcBeauty(p, appState.policies)));
+	const polisyPojazdow = $derived(clientPolicies.some((p) => !!p.pojazd_id || ['komunikacja', 'flota'].includes(p.rodzaj ?? '')));
+	const showPojazdy = $derived(clientVehicles.length > 0 || polisyPojazdow || (client?.typ !== 'osoba' && !klientBeauty));
+
 	// Zakładka Polisy: aktywne i archiwum — sortowanie po kliknięciu w nagłówek kolumny.
 	const dzisPolisy = new Date().toISOString().slice(0, 10);
 	const activePolicies = $derived(clientPolicies.filter(p => p.data_do === null || p.data_do >= dzisPolisy));
@@ -199,8 +205,12 @@
 		if (t && untrack(() => (tabs as string[]).includes(t))) untrack(() => (activeTab = t as TabKey));
 	});
 	const tabs = $derived(
-		['przeglad', 'polisy', 'pojazdy', ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zalaczniki', 'dziennik', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
+		['przeglad', 'polisy', ...(showPojazdy ? ['pojazdy'] : []), ...(showGwarancje ? ['gwarancje'] : []), 'szkody', 'saldo', 'kontakty', 'apk', 'zalaczniki', 'dziennik', 'zadania', 'emaile', ...(isAuraTenant ? ['mailing'] : [])] as TabKey[]
 	);
+	// Zakładka znikła (np. Flota po doczytaniu danych klienta) — wracamy do Przeglądu.
+	$effect(() => {
+		if (!tabs.includes(untrack(() => activeTab))) untrack(() => (activeTab = 'przeglad'));
+	});
 
 	// ── Mailing GetResponse (tylko Aura Expert) ───────────────────────────────
 	type GrMessage = { id: string; subject: string; sentOn: string | null; openedOn: string | null; opened: boolean; openCount: number };
@@ -1142,7 +1152,9 @@
 						<div class="my-1 border-t border-line-soft"></div>
 						<button role="menuitem" onclick={openNewTask} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><CheckCircle2 size={15} class="text-ink-3" /> Nowe zadanie</button>
 						<button role="menuitem" onclick={openNewContact} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><UserPlus size={15} class="text-ink-3" /> Dodaj osobę kontaktową</button>
-						<button role="menuitem" onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
+						{#if showPojazdy}
+							<button role="menuitem" onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
+						{/if}
 						<div class="my-1 border-t border-line-soft"></div>
 						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('email'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Klient bez certyfikatu OC beauty: APK, dane gabinetu, suma, podpisy — przez link z e-maila"><Send size={15} class="text-ink-3" /> Pierwsza polisa: wyślij APK i wniosek</button>
 						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('link'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Link size={15} class="text-ink-3" /> Pierwsza polisa: utwórz link</button>
