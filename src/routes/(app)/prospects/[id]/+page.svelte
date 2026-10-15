@@ -7,7 +7,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { goto } from '$app/navigation';
-	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, Shield, X, ChevronLeft, ChevronRight, UserRound } from 'lucide-svelte';
+	import { ArrowLeft, Building2, Phone, Mail, MapPin, Tag, Send, Pencil, UserPlus, Trash2, CheckCircle2, Circle, Clock, Plus, AlertCircle, X, ChevronLeft, ChevronRight, UserRound } from 'lucide-svelte';
 	import type { CrmTask } from '$lib/types/database';
 	import { fmtDzien } from '$lib/utils';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
@@ -31,18 +31,6 @@
 		zatrudnienie: number | null;
 		broker_id: string | null;
 		status: string;
-		ubez_zycie: 'maja' | 'nie_maja' | null;
-		ubez_zycie_opis: string | null;
-		ubez_medyczne: 'maja' | 'nie_maja' | null;
-		ubez_medyczne_opis: string | null;
-		ubez_flota: 'maja' | 'nie_maja' | null;
-		ubez_flota_opis: string | null;
-		ubez_majatek: 'maja' | 'nie_maja' | null;
-		ubez_majatek_opis: string | null;
-		ubez_gwarancje: 'maja' | 'nie_maja' | null;
-		ubez_gwarancje_opis: string | null;
-		ubez_inne: 'maja' | 'nie_maja' | null;
-		ubez_inne_opis: string | null;
 		created_at: string;
 		crm_profiles?: { imie_nazwisko: string } | null;
 		klient_id: string | null;
@@ -124,7 +112,6 @@
 			.single();
 		prospect = p as Prospect | null;
 		void wczytajZgloszeniaIMaile();
-		syncUbezFromProspect();
 
 		const { data: acts } = await sb.from('crm_prospect_activities')
 			.select('*, crm_profiles(imie_nazwisko)')
@@ -489,49 +476,6 @@
 	const inputCls = 'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
 	const labelCls = 'block text-sm font-medium text-slate-700 mb-1';
 
-	// ---- Ubezpieczenia posiadane (Życie / Medyczne / Flota / Majątek / Gwarancje / Inne) ----
-	const UBEZ_OPIS_MAX = 150;
-	const ubezCategories = [
-		{ key: 'zycie', label: 'Życie' },
-		{ key: 'medyczne', label: 'Medyczne' },
-		{ key: 'flota', label: 'Flota' },
-		{ key: 'majatek', label: 'Majątek' },
-		{ key: 'gwarancje', label: 'Gwarancje' },
-		{ key: 'inne', label: 'Inne' }
-	] as const;
-
-	type UbezVal = { status: 'maja' | 'nie_maja' | ''; opis: string };
-	let ubez = $state<Record<string, UbezVal>>(
-		Object.fromEntries(ubezCategories.map((c) => [c.key, { status: '', opis: '' }]))
-	);
-	let ubezSaving = $state(false);
-	let ubezSaved = $state(false);
-
-	function syncUbezFromProspect() {
-		if (!prospect) return;
-		for (const c of ubezCategories) {
-			const p = prospect as unknown as Record<string, string | null>;
-			ubez[c.key] = {
-				status: (p[`ubez_${c.key}`] as UbezVal['status']) ?? '',
-				opis: p[`ubez_${c.key}_opis`] ?? ''
-			};
-		}
-	}
-
-	async function saveUbez() {
-		if (!prospect) return;
-		ubezSaving = true; ubezSaved = false;
-		const payload: Record<string, string | null> = {};
-		for (const c of ubezCategories) {
-			payload[`ubez_${c.key}`] = ubez[c.key].status || null;
-			payload[`ubez_${c.key}_opis`] = ubez[c.key].opis.trim().slice(0, UBEZ_OPIS_MAX) || null;
-		}
-		await sb.from('crm_prospects').update(payload).eq('id', prospect.id);
-		prospect = { ...prospect, ...payload } as Prospect;
-		ubezSaving = false;
-		ubezSaved = true;
-		setTimeout(() => { ubezSaved = false; }, 2000);
-	}
 </script>
 
 <svelte:head><title>{prospect?.nazwa ?? 'Prospect'} — CRM</title></svelte:head>
@@ -573,7 +517,7 @@
 	{@const zatrud = extractZatrudnienie(prospect)}
 	{@const www = extractWWW(prospect.notatki)}
 
-	<!-- Górny rząd: Klient + Ubezpieczenia (na równi) -->
+	<!-- Górny rząd: Klient + APK i wniosek o pierwszą polisę (na równi). Ramka „Ubezpieczenia posiadane” usunięta 2026-10-15 (kolumny ubez_* zostają w bazie). -->
 	<div class="grid grid-cols-2 gap-5 mb-5 items-start">
 
 	<!-- Klient -->
@@ -745,39 +689,6 @@
 			{/if}
 		</div>
 	{/if}
-
-	<!-- Ubezpieczenia (na równi z boxem Klienta) -->
-	<div class="bg-white border border-line rounded-xl shadow-sm">
-		<div class="px-6 py-4 border-b border-line-soft flex items-center justify-between">
-			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2">
-				<Shield size={15} class="text-indigo-500" /> Ubezpieczenia
-			</h2>
-			<button onclick={saveUbez} disabled={ubezSaving} class="px-3 py-1.5 text-xs font-semibold bg-accent text-white rounded-lg hover:bg-accent-hover disabled:opacity-60">
-				{ubezSaving ? 'Zapisywanie...' : ubezSaved ? 'Zapisano ✓' : 'Zapisz'}
-			</button>
-		</div>
-		<div class="p-4 grid grid-cols-2 gap-x-4 gap-y-2.5">
-			{#each ubezCategories as cat}
-				<div class="flex items-center gap-2.5">
-					<span class="text-sm font-medium text-slate-700 w-16 shrink-0">{cat.label}</span>
-					<div class="flex gap-2.5 shrink-0">
-						<label class="flex items-center gap-1 text-xs cursor-pointer text-slate-600">
-							<input type="radio" name="ubez_{cat.key}" value="maja" bind:group={ubez[cat.key].status} class="accent-blue-600" /> Mają
-						</label>
-						<label class="flex items-center gap-1 text-xs cursor-pointer text-slate-600">
-							<input type="radio" name="ubez_{cat.key}" value="nie_maja" bind:group={ubez[cat.key].status} class="accent-blue-600" /> Nie mają
-						</label>
-					</div>
-					<input
-						bind:value={ubez[cat.key].opis}
-						maxlength={UBEZ_OPIS_MAX}
-						placeholder="Opis"
-						class="flex-1 min-w-0 border border-line rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-					/>
-				</div>
-			{/each}
-		</div>
-	</div>
 
 	</div>
 	<!-- /górny rząd -->
