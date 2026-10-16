@@ -25,10 +25,12 @@
 	type Filtr = 'wszystkie' | 'po-terminie' | 'tydzien' | 'pozniej' | 'oplacone';
 	let filtr = $state<Filtr>('wszystkie');
 	let filterMonth = $state('all');
-	// Głębokie linki, np. /payments?filtr=po-terminie
+	// Głębokie linki, np. /payments?filtr=po-terminie albo /payments?import=ergo (Rozliczenia → import noty TU)
 	onMount(() => {
 		const f = $page.url.searchParams.get('filtr') as Filtr | null;
 		if (f && ['po-terminie', 'tydzien', 'pozniej', 'oplacone'].includes(f)) filtr = f;
+		const im = $page.url.searchParams.get('import');
+		if (im && im in TU_NOTY) openImport(im as ImportMode);
 	});
 	let search = $state('');
 	let showModal = $state(false);
