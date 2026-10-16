@@ -67,6 +67,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			.eq('tenant_id', f.id)
 			.in('parent_id', ugIds)
 			.is('deleted_at', null)
+			// Certyfikat zakończony decyzją (nie odnawiamy) nie dostaje zaproszenia.
+			.is('zakonczona_od', null)
 			.gte('data_do', dzis)
 			.lte('data_do', granica)
 			.order('data_do');

@@ -12,7 +12,10 @@
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
 	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
+	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu, klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
+	import { przywrocKlienta } from '$lib/zakonczenie';
+	import KlientNieaktywny from '$lib/components/KlientNieaktywny.svelte';
+	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
 	import type { Szablon } from '$lib/szablonyEmail';
 	import { logAudit } from '$lib/utils/audit';
@@ -21,7 +24,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
-	import { Pencil, Plus, Car, FileText, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip, Phone, Ellipsis, ShieldCheck, ShieldAlert, Users, AlertTriangle } from 'lucide-svelte';
+	import { Pencil, Plus, Car, FileText, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip, Phone, Ellipsis, ShieldCheck, ShieldAlert, Users, AlertTriangle, UserX, UserCheck } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken } from '$lib/utils/apkLink';
@@ -164,8 +167,9 @@
 
 	// Zakładka Polisy: aktywne i archiwum — sortowanie po kliknięciu w nagłówek kolumny.
 	const dzisPolisy = new Date().toISOString().slice(0, 10);
-	const activePolicies = $derived(clientPolicies.filter(p => p.data_do === null || p.data_do >= dzisPolisy));
-	const archivedPolicies = $derived(clientPolicies.filter(p => p.data_do !== null && p.data_do < dzisPolisy && p.deleted_at === null));
+	// Aktywność z końca ochrony: data_do albo wcześniejsze zakończenie decyzją (od dnia).
+	const activePolicies = $derived(clientPolicies.filter(p => polisaAktywna(p, dzisPolisy)));
+	const archivedPolicies = $derived(clientPolicies.filter(p => !polisaAktywna(p, dzisPolisy) && p.deleted_at === null));
 	const kolumnyPolis = {
 		nr: (p: Policy) => p.nr_polisy,
 		tu: (p: Policy) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
@@ -898,7 +902,7 @@
 	const doZaplaty = $derived(ratyNieoplacone.reduce((s, r) => s + Number(r.kwota ?? 0), 0));
 	const polisyZZaleglaRata = $derived(new Set(ratyPoTerminie.map(r => r.polisa_id)));
 
-	const aktywneWlasne = $derived(ownPolicies.filter(p => p.data_do === null || p.data_do >= dzis));
+	const aktywneWlasne = $derived(ownPolicies.filter(p => polisaAktywna(p, dzis)));
 	const skladkaAktywnych = $derived(aktywneWlasne.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
 	const prowizjaAktywnych = $derived(aktywneWlasne.reduce((s, p) => s + Number(p.prowizja_przypisana ?? 0), 0));
 	const najblizszeOdnowienie = $derived(
@@ -1031,6 +1035,17 @@
 	}
 
 	let wiecejMenu = $state(false);
+	// Klient nieaktywny (zakończenie działalności): okno z powodem, datą i zakończeniem polis; przywrócenie z banera.
+	let nieaktywnyOpen = $state(false);
+	let przywracam = $state(false);
+	async function przywrocAktywnosc() {
+		if (!client) return;
+		przywracam = true;
+		const blad = await przywrocKlienta(client);
+		przywracam = false;
+		if (blad) ctxToast(`Nie udało się przywrócić aktywności: ${blad}`);
+		else ctxToast('Klient znów aktywny');
+	}
 	// Pierwsza polisa OC beauty (klient bez certyfikatu): panel wniosku jest w zakładce APK; z menu „Więcej”
 	// przełączamy zakładkę i wysyłamy link (panel musi być zamontowany).
 	let panelNowej = $state<ReturnType<typeof CrmRenewalPanel> | null>(null);
@@ -1076,9 +1091,17 @@
 				{#if client.nazwa_skrocona && client.nazwa_skrocona !== client.nazwa}<p class="text-[13px] text-ink-3">{client.nazwa}</p>{/if}
 			</div>
 			<div class="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[13px] text-ink-2">
+				{#if klientNieaktywny(client)}
+					<span class="flex items-center gap-1.5 text-danger font-semibold" data-testid="klient-nieaktywny-znacznik" title={client.nieaktywny_notatka ?? ''}>
+						<UserX size={14} aria-hidden="true" /> {opisNieaktywnosci(client)}
+					</span>
+				{/if}
 				{#if client.gus_wynik === 'zakonczona'}
 					<span class="flex items-center gap-1.5 text-danger font-semibold" title="Według rejestru REGON (GUS) firma zakończyła działalność">
 						<ShieldAlert size={14} aria-hidden="true" /> Działalność zakończona{client.gus_dane?.data_zakonczenia ? ` ${fmtDzien(client.gus_dane.data_zakonczenia, true)}` : ''} (GUS)
+						{#if !klientNieaktywny(client)}
+							<button type="button" onclick={() => (nieaktywnyOpen = true)} class="ml-1 font-semibold text-accent-text hover:underline">oznacz jako nieaktywnego</button>
+						{/if}
 					</span>
 				{:else if client.gus_wynik === 'zly_nip'}
 					<span class="flex items-center gap-1.5 text-warn font-semibold" title="NIP nie przechodzi kontroli sumy — sprawdź go w danych klienta"><ShieldAlert size={14} aria-hidden="true" /> Błędny NIP</span>
@@ -1158,8 +1181,13 @@
 						<div class="my-1 border-t border-line-soft"></div>
 						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('email'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Klient bez certyfikatu OC beauty: APK, dane gabinetu, suma, podpisy — przez link z e-maila"><Send size={15} class="text-ink-3" /> Pierwsza polisa: wyślij APK i wniosek</button>
 						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('link'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Link size={15} class="text-ink-3" /> Pierwsza polisa: utwórz link</button>
+						<div class="my-1 border-t border-line-soft"></div>
+						{#if klientNieaktywny(client)}
+							<button role="menuitem" onclick={przywrocAktywnosc} disabled={przywracam} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2 disabled:opacity-60"><UserCheck size={15} class="text-ink-3" /> Przywróć aktywność klienta</button>
+						{:else}
+							<button role="menuitem" onclick={() => (nieaktywnyOpen = true)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Zakończenie lub zawieszenie działalności, rezygnacja z usług — klient znika z domyślnej listy i z odnowień"><UserX size={15} class="text-ink-3" /> Klient nieaktywny…</button>
+						{/if}
 						{#if isAdmin(appState.profile)}
-							<div class="my-1 border-t border-line-soft"></div>
 							<button role="menuitem" onclick={() => (scalOpen = true)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Scal z duplikatem: polisy, wnioski, e-maile i reszta przechodzą na jeden rekord"><Merge size={15} class="text-ink-3" /> Scal z innym klientem…</button>
 						{/if}
 					</div>
@@ -1167,6 +1195,21 @@
 			</div>
 		</div>
 	</div>
+
+	{#if klientNieaktywny(client)}
+		<div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 rounded-xl bg-danger-soft border border-red-200 text-sm" data-testid="klient-nieaktywny-baner">
+			<UserX size={16} class="text-danger shrink-0" />
+			<span class="font-semibold text-danger">{opisNieaktywnosci(client)}</span>
+			{#if client.nieaktywny_notatka}<span class="text-ink-2">{client.nieaktywny_notatka}</span>{/if}
+			<span class="text-ink-3">Bez odnowień i przypomnień; nie ma go na domyślnej liście klientów.</span>
+			<button onclick={przywrocAktywnosc} disabled={przywracam} class="ml-auto h-7 px-2.5 rounded-lg bg-white border border-red-200 text-[13px] font-semibold text-danger hover:bg-red-50 disabled:opacity-60">{przywracam ? 'Przywracanie…' : 'Przywróć aktywność'}</button>
+		</div>
+	{/if}
+	<KlientNieaktywny
+		client={nieaktywnyOpen ? client : null}
+		onclose={() => (nieaktywnyOpen = false)}
+		onzapisano={(w) => { ctxToast(`Klient oznaczony jako nieaktywny${w.zakonczonePolisy ? ` · zakończono ${odmiana(w.zakonczonePolisy, 'polisę', 'polisy', 'polis')}` : ''}${w.bledyPolis.length ? ` · nie udało się: ${w.bledyPolis.join('; ')}` : ''}`); }}
+	/>
 
 	<!-- Podsumowanie -->
 	<section aria-label="Podsumowanie klienta" class="grid grid-cols-2 lg:grid-cols-4 bg-white border border-line rounded-xl overflow-hidden mb-4">

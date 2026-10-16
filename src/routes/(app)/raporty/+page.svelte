@@ -6,7 +6,7 @@
 	import { appState, isAdmin, isBroker } from '$lib/stores/app.svelte';
 	import { dateDiffDays, fmtDzien, odmiana, todayStr } from '$lib/utils';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { nazwaRodzaju, nazwaTu, odnowionePolisy } from '$lib/statusPolisy';
+	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy } from '$lib/statusPolisy';
 	import { logAudit } from '$lib/utils/audit';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import {
@@ -141,7 +141,7 @@
 		const odnowione = odnowionePolisy(appState.policies);
 		const zadaniaPolis = new Set(appState.tasks.filter((t) => t.polisa_id && (t.status === 'otwarte' || t.status === 'w_toku')).map((t) => t.polisa_id as string));
 		const lista = polisyLiczone
-			.filter((p) => p.data_do && p.data_do >= dzis && dateDiffDays(dzis, p.data_do) <= horyzont && !odnowione.has(p.id))
+			.filter((p) => p.data_do && p.data_do >= dzis && dateDiffDays(dzis, p.data_do) <= horyzont && !odnowione.has(p.id) && !nieOdnawiana(p))
 			.sort((a, b) => a.data_do.localeCompare(b.data_do));
 		const bezZadania = lista.filter((p) => !zadaniaPolis.has(p.id)).length;
 		const skladka = lista.reduce((a, p) => a + Number(p.skladka_przypisana ?? 0), 0);

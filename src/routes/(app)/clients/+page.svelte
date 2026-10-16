@@ -9,7 +9,7 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
-	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Download, Database } from 'lucide-svelte';
+	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Download, Database, UserX, UserCheck } from 'lucide-svelte';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
@@ -18,6 +18,9 @@
 	import { logAudit } from '$lib/utils/audit';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, inicjaly, miastoZAdresu, odmiana, todayStr } from '$lib/utils';
+	import { klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
+	import KlientNieaktywny from '$lib/components/KlientNieaktywny.svelte';
+	import { przywrocKlienta } from '$lib/zakonczenie';
 
 	function clientMenu(c: Client): CtxItem[] {
 		return [
@@ -28,6 +31,9 @@
 				onSelect: () => window.open(`/clients/${c.id}`, '_blank', 'noopener')
 			},
 			{ label: 'Edytuj dane', icon: Pencil, onSelect: () => goto(`/clients/${c.id}/edit`) },
+			klientNieaktywny(c)
+				? { label: 'Przywróć aktywność klienta', icon: UserCheck, onSelect: () => przywroc(c) }
+				: { label: 'Klient nieaktywny…', icon: UserX, onSelect: () => (nieaktywnyTarget = c) },
 			{ separator: true },
 			{
 				label: 'Nowa polisa dla klienta',
@@ -58,6 +64,14 @@
 			{ label: 'Kopiuj e-mail', icon: Copy, disabled: !c.email, onSelect: () => ctxCopy(c.email, 'e-mail') },
 			{ label: 'Kopiuj telefon', icon: Copy, disabled: !c.telefon, onSelect: () => ctxCopy(c.telefon, 'telefon') }
 		];
+	}
+
+	// Klient nieaktywny (zakończenie działalności): domyślnie poza listą; przełącznik pokazuje ich z oznaczeniem.
+	let pokazNieaktywnych = $state(false);
+	let nieaktywnyTarget = $state<Client | null>(null);
+	async function przywroc(c: Client) {
+		const blad = await przywrocKlienta(c);
+		ctxToast(blad ? `Nie udało się przywrócić aktywności: ${blad}` : `${c.nazwa_skrocona ?? c.nazwa}: klient znów aktywny`);
 	}
 
 	let search = $state('');
@@ -177,7 +191,7 @@
 	const portfele = $derived.by(() => {
 		const m = new Map<string, Portfel>();
 		for (const p of appState.policies) {
-			if (p.deleted_at || (p.data_do !== null && p.data_do < dzis)) continue;
+			if (p.deleted_at || !polisaAktywna(p, dzis)) continue;
 			let w = m.get(p.klient_id);
 			if (!w) { w = { polisy: 0, skladka: 0, odnowienie: null, tu: new Set(), rodzaje: new Set() }; m.set(p.klient_id, w); }
 			w.polisy++;
@@ -191,7 +205,8 @@
 
 	type Wiersz = { c: Client; p: Portfel | undefined; opiekun: string | null };
 	const opiekunWg = $derived(new Map(appState.brokers.map(b => [b.id, b.imie_nazwisko || b.email])));
-	const wiersze = $derived<Wiersz[]>(appState.clients.map(c => ({
+	const nieaktywni = $derived(appState.clients.filter((c) => klientNieaktywny(c)).length);
+	const wiersze = $derived<Wiersz[]>(appState.clients.filter((c) => pokazNieaktywnych || !klientNieaktywny(c)).map(c => ({
 		c,
 		p: portfele.get(c.id),
 		opiekun: c.opiekun_id ? (opiekunWg.get(c.opiekun_id) ?? null) : null
@@ -487,6 +502,12 @@
 
 <!-- Filtry -->
 <div class="flex flex-wrap items-center gap-2 mb-3">
+	{#if nieaktywni > 0 || pokazNieaktywnych}
+		<label class="h-9 flex items-center gap-2 px-2.5 border border-line rounded-lg bg-white text-sm text-ink-2 cursor-pointer" title="Klienci oznaczeni jako nieaktywni (zakończenie działalności, rezygnacja) są domyślnie poza listą">
+			<input type="checkbox" bind:checked={pokazNieaktywnych} class="w-4 h-4 accent-accent" />
+			Pokaż nieaktywnych <span class="tabular-nums text-ink-3">{nieaktywni}</span>
+		</label>
+	{/if}
 	<label class="w-full sm:w-auto sm:flex-[1_1_280px] sm:max-w-[420px] h-9 flex items-center gap-2 px-2.5 border border-line rounded-lg bg-white focus-within:border-accent">
 		<Search size={16} class="text-ink-3 shrink-0" />
 		<span class="sr-only">Filtruj listę</span>
@@ -576,6 +597,7 @@
 					<a href="/clients/{c.id}" class="flex-1 min-w-0">
 						<span class="flex items-start justify-between gap-2">
 							<span class="font-medium text-ink truncate">{nazwaKlienta(c)}</span>
+						{#if klientNieaktywny(c)}<span class="shrink-0 px-1.5 rounded text-[11px] font-semibold bg-danger-soft text-danger" title={opisNieaktywnosci(c)}>Nieaktywny</span>{/if}
 							{#if !c.rodo_zgoda}<span class="shrink-0 px-2 rounded-full bg-danger-soft text-danger text-xs font-semibold leading-5">Brak zgody</span>{/if}
 						</span>
 						<span class="block text-xs text-ink-3">{podpis(c)}{opiekun ? ` · ${opiekun}` : ''}</span>
@@ -617,7 +639,7 @@
 							</td>
 							<td class="px-3 {py} max-w-[380px]">
 								<a href="/clients/{c.id}" title={c.nazwa_skrocona ? c.nazwa : undefined} class="block text-ink hover:text-accent-text">
-									<span class="block truncate font-medium">{nazwaKlienta(c)}</span>
+									<span class="block truncate font-medium">{nazwaKlienta(c)}{#if klientNieaktywny(c)} <span class="inline-block align-middle px-1.5 rounded text-[11px] font-semibold bg-danger-soft text-danger" title={opisNieaktywnosci(c)}>Nieaktywny</span>{/if}</span>
 									{#if !kompakt}<span class="block truncate text-xs text-ink-3">{podpis(c)}</span>{/if}
 								</a>
 							</td>
@@ -662,6 +684,12 @@
 		</span>
 	</div>
 </section>
+
+<KlientNieaktywny
+	client={nieaktywnyTarget}
+	onclose={() => (nieaktywnyTarget = null)}
+	onzapisano={(w) => ctxToast(`${w.klient.nazwa_skrocona ?? w.klient.nazwa}: klient nieaktywny${w.zakonczonePolisy ? ` · zakończono ${odmiana(w.zakonczonePolisy, 'polisę', 'polisy', 'polis')}` : ''}`)}
+/>
 
 {#if toast}
 	<Toast tekst={toast.tekst} blad={toast.blad} oncofnij={toast.cofnij} onzamknij={() => (toast = null)} />

@@ -109,9 +109,11 @@ export async function zbierzDane(admin: SupabaseClient, tenantId: string, profil
 		const [{ data: pol }, { data: odn }, { data: wn }] = await Promise.all([
 			admin
 				.from('crm_policies')
-				.select('id, nr_polisy, data_do, rodzaj, skladka_przypisana, crm_clients!klient_id(nazwa, nazwa_skrocona)')
+				.select('id, nr_polisy, data_do, rodzaj, skladka_przypisana, crm_clients!klient_id(nazwa, nazwa_skrocona, aktywny)')
 				.eq('tenant_id', tenantId)
 				.is('deleted_at', null)
+				// Polisa zakończona decyzją (nie odnawiamy) nie jest „kończącą się”.
+				.is('zakonczona_od', null)
 				.or(BEZ_UG)
 				.gte('data_do', dzis)
 				.lte('data_do', dodajDni(dzis, DNI_ODNOWIEN))
@@ -127,7 +129,8 @@ export async function zbierzDane(admin: SupabaseClient, tenantId: string, profil
 				.limit(50)
 		]);
 		const odnowione = new Set(((odn ?? []) as { renewal_of: string }[]).map((x) => x.renewal_of));
-		const konczace = ((pol ?? []) as unknown as PolisaK[]).filter((p) => !odnowione.has(p.id));
+		// Klient nieaktywny (zakończył działalność) nie dostaje przypomnień o odnowieniu.
+		const konczace = ((pol ?? []) as unknown as PolisaK[]).filter((p) => !odnowione.has(p.id) && (p.crm_clients as { aktywny?: boolean } | null)?.aktywny !== false);
 		const test = adresTestowy().trim().toLowerCase();
 		d.odnowienia = {
 			konczace: konczace.slice(0, 15),

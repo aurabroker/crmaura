@@ -14,12 +14,14 @@
 		ChevronDown, ChevronLeft, ChevronRight, X, Download, Upload, FileStack, FileText
 	} from 'lucide-svelte';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { nazwaRodzaju, nazwaTu, odnowionePolisy, statusPolisy } from '$lib/statusPolisy';
+	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy, polisaAktywna, polisaWygasla, statusPolisy } from '$lib/statusPolisy';
+	import ZakonczPolise from '$lib/components/ZakonczPolise.svelte';
 	import { page } from '$app/stores';
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { Ban } from 'lucide-svelte';
 	import { logAudit } from '$lib/utils/audit';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
@@ -86,17 +88,23 @@
 	});
 	const opiekunKlienta = $derived(new Map(appState.clients.map(c => [c.id, c.opiekun_id])));
 
-	type Segment = 'wszystkie' | 'aktywne' | 'wygasaja' | 'zalegle' | 'zakonczone';
+	// „Wygasłe bez decyzji” — po końcu okresu, bez odnowienia i bez decyzji „zakończ”; „Zakończone” — zakończone decyzją
+	// albo odnowione (poprzedniczki). Aktywność liczy się z końca ochrony (data_do albo wcześniejsze zakończenie od dnia).
+	type Segment = 'wszystkie' | 'aktywne' | 'wygasaja' | 'zalegle' | 'wygasle' | 'zakonczone';
 	let segment = $state<Segment>('wszystkie');
-	const aktywna = (p: Policy) => !(p.data_do && p.data_do < dzis);
+	const aktywna = (p: Policy) => polisaAktywna(p, dzis);
 	function wSegmencie(p: Policy, s: Segment): boolean {
 		if (s === 'wszystkie') return true;
 		if (s === 'aktywne') return aktywna(p);
-		if (s === 'wygasaja') return aktywna(p) && !!p.data_do && dateDiffDays(dzis, p.data_do) <= 30 && !odnowione.has(p.id);
+		if (s === 'wygasaja') return aktywna(p) && !!p.data_do && dateDiffDays(dzis, p.data_do) <= 30 && !odnowione.has(p.id) && !nieOdnawiana(p);
 		if (s === 'zalegle') return zZaleglaRata.has(p.id);
-		return !aktywna(p);
+		if (s === 'wygasle') return polisaWygasla(p, dzis) && !odnowione.has(p.id);
+		return !aktywna(p) && (nieOdnawiana(p) || odnowione.has(p.id));
 	}
-	const SEGMENTY: [Segment, string][] = [['wszystkie', 'Wszystkie'], ['aktywne', 'Aktywne'], ['wygasaja', 'Wygasają w 30 dni'], ['zalegle', 'Z ratą po terminie'], ['zakonczone', 'Zakończone']];
+	const SEGMENTY: [Segment, string][] = [['wszystkie', 'Wszystkie'], ['aktywne', 'Aktywne'], ['wygasaja', 'Wygasają w 30 dni'], ['zalegle', 'Z ratą po terminie'], ['wygasle', 'Wygasłe bez decyzji'], ['zakonczone', 'Zakończone']];
+
+	// Okno „Zakończ polisę” (menu prawego przycisku).
+	let zakonczTarget = $state<Policy | null>(null);
 
 	// Filtry (typ umowy tylko poza widokiem „Umowy generalne” z menu)
 	let fTypUmowy = $state<'' | 'jednostkowa' | 'generalna' | 'w_ug'>('');
@@ -394,6 +402,12 @@
 					} as CtxItem]
 				: []),
 			{ label: 'Zgłoś szkodę', icon: AlertTriangle, onSelect: () => openClaimFor(p) },
+			{
+				label: p.zakonczona_od ? 'Polisa zakończona (cofnij na karcie)' : 'Zakończ polisę…',
+				icon: Ban,
+				disabled: isUG || !!p.zakonczona_od,
+				onSelect: () => (zakonczTarget = p)
+			},
 			{ separator: true },
 			{
 				label: 'Karta klienta',
@@ -812,3 +826,10 @@
 	<input bind:value={deletionReason} placeholder="Powód usunięcia..." class={inputCls} />
 </Modal>
 {/if}
+
+<!-- Zakończ polisę (menu prawego przycisku): od dnia albo na koniec okresu -->
+<ZakonczPolise
+	policy={zakonczTarget}
+	onclose={() => (zakonczTarget = null)}
+	onzakonczono={(w) => ctxToast(`Polisa ${w.polisa.nr_polisy} zakończona${w.usunieteRaty ? ` · usunięto ${w.usunieteRaty} rat` : ''}`)}
+/>

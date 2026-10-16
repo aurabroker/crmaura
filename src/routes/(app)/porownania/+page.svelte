@@ -4,7 +4,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { dateDiffDays, odmiana, todayStr } from '$lib/utils';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { nazwaRodzaju, odnowionePolisy } from '$lib/statusPolisy';
+	import { nazwaRodzaju, nieOdnawiana, odnowionePolisy } from '$lib/statusPolisy';
 	import type { Policy } from '$lib/types/database';
 	import Kolumny from '$lib/components/wykresy/Kolumny.svelte';
 	import {
@@ -66,7 +66,7 @@
 				przypis: s.przypis, prowizja: s.prowizja, stawka: s.przypis ? (s.prowizja / s.przypis) * 100 : 0,
 				polisy: s.polisy, srednia: s.polisy ? s.przypis / s.polisy : 0, klienci: s.klienci.size,
 				zaleglosc: zalegle.reduce((a, r) => a + Number(r.kwota ?? 0), 0), ratZaleglych: zalegle.length,
-				odnowienia60: polisyEncji.filter((p) => p.data_do && p.data_do >= dzis && dateDiffDays(dzis, p.data_do) <= 60 && !odnowione.has(p.id)).length
+				odnowienia60: polisyEncji.filter((p) => p.data_do && p.data_do >= dzis && dateDiffDays(dzis, p.data_do) <= 60 && !odnowione.has(p.id) && !nieOdnawiana(p)).length
 			};
 		})
 	);

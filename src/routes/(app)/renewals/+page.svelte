@@ -4,7 +4,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, opisPrzedmiotu, todayStr } from '$lib/utils';
 	import type { Snippet } from 'svelte';
-	import { Search, Eye, ExternalLink, RefreshCw, Pencil, User, Copy, X, Download, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { Search, Eye, ExternalLink, RefreshCw, Pencil, User, Copy, X, Download, ChevronLeft, ChevronRight, Ban } from 'lucide-svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
@@ -15,7 +15,8 @@
 	import { sb } from '$lib/supabase';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
 	import { czyAktywny, wProgramieOcBeauty, wniosekTestowy } from '$lib/components/renewal/crmRenewals';
-	import { nazwaRodzaju, nazwaTu } from '$lib/statusPolisy';
+	import { nazwaRodzaju, nazwaTu, nieOdnawiana } from '$lib/statusPolisy';
+	import ZakonczPolise from '$lib/components/ZakonczPolise.svelte';
 	import { logAudit } from '$lib/utils/audit';
 
 	const dzis = todayStr();
@@ -89,9 +90,12 @@
 	const OKNA = [30, 60, 90, 180] as const;
 	type Okno = (typeof OKNA)[number];
 	let okno = $state<Okno>(60);
+	// Polisa zakończona decyzją (nie odnawiamy / wypowiedziana) nie jest kandydatem do odnowienia.
 	const kandydaci = $derived(
-		appState.policies.filter((p) => !p.deleted_at && !!p.data_do && dni(p) >= -WSTECZ && dni(p) <= 180)
+		appState.policies.filter((p) => !p.deleted_at && !!p.data_do && !nieOdnawiana(p) && dni(p) >= -WSTECZ && dni(p) <= 180)
 	);
+	// Okno „Zakończ polisę” z Odnowień: domyślnie na koniec okresu, powód „brak odnowienia”.
+	let zakonczTarget = $state<Policy | null>(null);
 	const wOknie = $derived(kandydaci.filter((p) => dni(p) <= okno));
 
 	type Segment = Stan | 'wszystkie';
@@ -183,6 +187,7 @@
 			n
 				? { label: `Otwórz odnowienie ${n.nr_polisy}`, icon: RefreshCw, onSelect: () => goto(`/policies/${n.id}`) }
 				: { label: 'Odnów polisę', icon: RefreshCw, disabled: p.typ_umowy === 'generalna', onSelect: () => goto(odnowUrl(p)) },
+			{ label: 'Nie odnawiamy — zakończ polisę…', icon: Ban, disabled: !!n || p.typ_umowy === 'generalna', onSelect: () => (zakonczTarget = p) },
 			{ label: 'Edytuj', icon: Pencil, onSelect: () => goto(`/policies/${p.id}/edit`) },
 			{ separator: true },
 			{ label: 'Karta klienta', icon: User, disabled: !p.klient_id, onSelect: () => goto(`/clients/${p.klient_id}`) },
@@ -367,7 +372,10 @@
 						{/if}
 					</a>
 					{#if moznaOdnowic(p)}
-						<a href={odnowUrl(p)} aria-label="Odnów polisę {p.nr_polisy}" title="Odnów" class="shrink-0 w-9 h-9 flex items-center justify-center border border-line rounded-lg text-ink-2 hover:bg-surface-2"><RefreshCw size={15} /></a>
+						<span class="shrink-0 flex flex-col gap-1.5">
+							<a href={odnowUrl(p)} aria-label="Odnów polisę {p.nr_polisy}" title="Odnów" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg text-ink-2 hover:bg-surface-2"><RefreshCw size={15} /></a>
+							<button onclick={() => (zakonczTarget = p)} aria-label="Nie odnawiamy: zakończ polisę {p.nr_polisy}" title="Nie odnawiamy — zakończ polisę" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg text-ink-2 hover:bg-surface-2"><Ban size={15} /></button>
+						</span>
 					{/if}
 				</li>
 			{/each}
@@ -421,7 +429,10 @@
 							</td>
 							<td class="px-3 py-1.5 text-right whitespace-nowrap">
 								{#if moznaOdnowic(p)}
-									<a href={odnowUrl(p)} class="inline-flex h-8 items-center gap-1.5 px-2.5 border border-line rounded-lg bg-white text-[13px] font-medium text-ink hover:bg-surface-2"><RefreshCw size={14} class="text-ink-3" /> Odnów</a>
+									<span class="inline-flex gap-1.5">
+										<a href={odnowUrl(p)} class="inline-flex h-8 items-center gap-1.5 px-2.5 border border-line rounded-lg bg-white text-[13px] font-medium text-ink hover:bg-surface-2"><RefreshCw size={14} class="text-ink-3" /> Odnów</a>
+										<button onclick={() => (zakonczTarget = p)} title="Nie odnawiamy — zakończ polisę na koniec okresu" aria-label="Nie odnawiamy: zakończ polisę {p.nr_polisy}" class="inline-flex h-8 items-center gap-1.5 px-2.5 border border-line rounded-lg bg-white text-[13px] font-medium text-ink-2 hover:bg-surface-2"><Ban size={14} class="text-ink-3" /> Nie odnawiamy</button>
+									</span>
 								{/if}
 							</td>
 						</tr>
@@ -442,3 +453,12 @@
 		</span>
 	</div>
 </section>
+
+<!-- Nie odnawiamy: zakończenie polisy na koniec okresu (polisa znika z Odnowień i z automatu wniosków) -->
+<ZakonczPolise
+	policy={zakonczTarget}
+	trybDomyslny="koniec_okresu"
+	powodDomyslny="brak_odnowienia"
+	onclose={() => (zakonczTarget = null)}
+	onzakonczono={(w) => ctxToast(`Polisa ${w.polisa.nr_polisy} zakończona — nie odnawiamy`)}
+/>

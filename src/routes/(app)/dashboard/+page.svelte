@@ -12,6 +12,7 @@
 	import { etykietaDecyzji } from '$lib/renewals/staffApi';
 	import { ustawStatusZadania, zadanieOtwarte, zadanieZWniosku, zadaniaPoZmianie } from '$lib/zadania';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
+	import { klientNieaktywny, nieOdnawiana, polisaAktywna } from '$lib/statusPolisy';
 	import { OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { isBroker } from '$lib/stores/app.svelte';
@@ -50,12 +51,15 @@
 	const lastMonth = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`;
 
 	// --- Obliczenia KPI ---
+	// Polisy zakończone decyzją (nie odnawiamy) nie są „do odnowienia”.
 	const renewals = $derived(
 		appState.policies.filter((p) => {
+			if (nieOdnawiana(p)) return false;
 			const d = dateDiffDays(today, p.data_do);
 			return d >= 0 && d <= 30;
 		})
 	);
+	const klienciAktywni = $derived(appState.clients.filter((c) => !klientNieaktywny(c)).length);
 
 	// Sortowanie tabeli wznowień (całej listy, przed obcięciem do 8 wierszy)
 	const sortWznowienia = new Sortowanie<Policy>({
@@ -306,6 +310,7 @@
 
 	const renewals60 = $derived(
 		appState.policies.filter((p) => {
+			if (nieOdnawiana(p)) return false;
 			const d = dateDiffDays(today, p.data_do);
 			return d >= 0 && d <= 60;
 		}).length
@@ -521,7 +526,7 @@
 				};
 			});
 		const odnowienia = appState.policies
-			.filter((p) => p.typ_umowy !== 'generalna' && dateDiffDays(today, p.data_do) >= 0 && dateDiffDays(today, p.data_do) <= 14)
+			.filter((p) => p.typ_umowy !== 'generalna' && !nieOdnawiana(p) && dateDiffDays(today, p.data_do) >= 0 && dateDiffDays(today, p.data_do) <= 14)
 			.map((p): PozycjaKolejki => ({
 				klucz: 'o' + p.id,
 				typ: 'Odnowienie',
@@ -596,7 +601,7 @@
 	const portfel = $derived.by(() => {
 		const rok = String(thisYear);
 		const umowy = appState.policies.filter((p) => p.typ_umowy !== 'generalna');
-		const aktywne = umowy.filter((p) => p.data_od <= today && p.data_do >= today).length;
+		const aktywne = umowy.filter((p) => p.data_od <= today && polisaAktywna(p, today)).length;
 		const wRoku = umowy.filter((p) => p.data_od?.startsWith(rok));
 		const przypis = wRoku.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0);
 		const prowizja = wRoku.reduce((s, p) => s + Number(p.prowizja_przypisana ?? 0), 0);
@@ -972,7 +977,7 @@
 			<h2 id="portfel-h" class="text-[15px] font-semibold text-ink">Portfel w {thisYear}</h2>
 			<dl class="grid grid-cols-2 gap-3.5">
 				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Aktywne polisy</dt><dd class="text-xl font-semibold tabular-nums">{portfel.aktywne}</dd></div>
-				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Klienci</dt><dd class="text-xl font-semibold tabular-nums">{appState.clients.length.toLocaleString('pl-PL')}</dd></div>
+				<div class="flex flex-col gap-0.5" title="Klienci aktywni (bez oznaczonych jako nieaktywni)"><dt class="text-xs text-ink-3">Klienci</dt><dd class="text-xl font-semibold tabular-nums">{klienciAktywni.toLocaleString('pl-PL')}</dd></div>
 				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Przypis składki</dt><dd class="text-xl font-semibold tabular-nums">{fmtZl(portfel.przypis)}</dd></div>
 				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Prowizja przypisana</dt><dd class="text-xl font-semibold tabular-nums">{fmtZl(portfel.prowizja)}</dd></div>
 				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Stawka prowizji</dt><dd class="text-xl font-semibold tabular-nums">{portfel.stawka != null ? fmtProc(portfel.stawka) : '—'}</dd></div>

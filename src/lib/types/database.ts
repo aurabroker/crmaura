@@ -54,6 +54,13 @@ export interface Client {
 	gus_sprawdzono_at?: string | null;
 	gus_wynik?: 'uzupelniono' | 'bez_zmian' | 'nie_znaleziono' | 'zakonczona' | 'zly_nip' | null;
 	gus_dane?: { nazwa?: string | null; regon?: string | null; typ?: string | null; adres?: string | null; wojewodztwo?: string | null; data_zakonczenia?: string | null } | null;
+	/** false = klient nieaktywny (zakończył działalność, zrezygnował): lista chowa go domyślnie, odnowienia go pomijają. */
+	aktywny?: boolean;
+	nieaktywny_od?: string | null;
+	nieaktywny_powod?: string | null;
+	nieaktywny_notatka?: string | null;
+	nieaktywny_at?: string | null;
+	nieaktywny_przez?: string | null;
 	created_at?: string;
 }
 
@@ -172,6 +179,13 @@ export interface Policy {
 	dane_importu: PolicyImportData | null;
 	/** Suma gwarancyjna (zł). Kolumna z migracji odnowień — przed nią klucza nie ma w wierszu. */
 	suma_gwarancyjna: number | null;
+	/** Zakończenie decyzją: pierwszy dzień bez ochrony (od dnia — podana data; koniec okresu — dzień po data_do). Sama data oznacza „nie odnawiamy”. */
+	zakonczona_od?: string | null;
+	zakonczenie_tryb?: 'od_dnia' | 'koniec_okresu' | null;
+	zakonczenie_powod?: string | null;
+	zakonczenie_notatka?: string | null;
+	zakonczono_at?: string | null;
+	zakonczono_przez?: string | null;
 	created_at?: string;
 	crm_clients?: { nazwa: string } | null;
 	ubezpieczony?: { nazwa: string } | null;
