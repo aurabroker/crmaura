@@ -13,11 +13,13 @@
 	import EmailKlienta from '$lib/components/EmailKlienta.svelte';
 	import WyslijPolise from '$lib/components/WyslijPolise.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
-	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet, Send } from 'lucide-svelte';
+	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet, Send, Ban, Undo2, AlertTriangle } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyAnnex, PolicyBroker, PolicyPayment } from '$lib/types/database';
-	import { nazwaRodzaju, nazwaTu, odnowionePolisy, statusPolisy } from '$lib/statusPolisy';
+	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy, opisZakonczenia, polisaWygasla, statusPolisy } from '$lib/statusPolisy';
+	import { cofnijZakonczenie } from '$lib/zakonczenie';
+	import ZakonczPolise from '$lib/components/ZakonczPolise.svelte';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import type { Szablon } from '$lib/szablonyEmail';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
@@ -135,7 +137,17 @@
 		policy ? appState.policies.find(q => q.renewal_of === policy!.id && !q.deleted_at) : undefined
 	);
 	const daysLeft = $derived(policy?.data_do ? dateDiffDays(today, policy.data_do) : 999);
-	const canRenew = $derived(!!policy && !renewalPolicy && daysLeft >= 0 && daysLeft <= 45);
+	const canRenew = $derived(!!policy && !renewalPolicy && !nieOdnawiana(policy) && daysLeft >= 0 && daysLeft <= 45);
+	// Zakończenie polisy decyzją (okno) i cofnięcie decyzji.
+	let zakonczOpen = $state(false);
+	let cofam = $state(false);
+	async function cofnijZak() {
+		if (!policy) return;
+		cofam = true;
+		const blad = await cofnijZakonczenie(policy);
+		cofam = false;
+		ctxToast(blad ? `Nie udało się cofnąć zakończenia: ${blad}` : 'Zakończenie cofnięte — polisa znów podlega odnowieniu');
+	}
 	const isPendingRenewal = $derived(!!policy?.renewal_of && policy.data_od > today);
 	// Odnowienie polisy z programu idzie pod umowę programu obowiązującą w dniu startu odnowienia
 	// (program przedłużany z tym samym numerem ma w CRM kolejną Umowę Generalną). Gdy żadna umowa
@@ -414,10 +426,15 @@
 	/** Przedmiot zapisany jako JSON z sumami (umowy UD) albo zwykły tekst. */
 	const przedmiotUd = $derived(sumyUtratyDochodu(policy?.przedmiot));
 	const koniecOchrony = $derived.by(() => {
+		if (policy?.zakonczona_od) {
+			const n = dateDiffDays(today, policy.zakonczona_od);
+			if (n <= 0) return { tekst: `zakończona od ${fmtDzien(policy.zakonczona_od, true)}`, cls: 'text-ink-2' };
+			return { tekst: `kończy się ${fmtDzien(policy.zakonczona_od, true)} · nie odnawiamy`, cls: 'text-warn font-semibold' };
+		}
 		if (!policy?.data_do) return { tekst: 'bezterminowo', cls: 'text-ink-2' };
 		if (renewalPolicy) return { tekst: 'odnowiona', cls: 'text-ink-2' };
 		const n = dateDiffDays(today, policy.data_do);
-		if (n < 0) return { tekst: `zakończona ${odmiana(-n, 'dzień', 'dni', 'dni')} temu`, cls: 'text-ink-2' };
+		if (n < 0) return { tekst: `wygasła ${odmiana(-n, 'dzień', 'dni', 'dni')} temu — bez decyzji`, cls: 'text-warn font-semibold' };
 		return { tekst: fmtTermin(policy.data_do, today), cls: n <= 30 ? 'text-warn font-semibold' : 'text-ink-2' };
 	});
 
@@ -616,7 +633,7 @@
 			{#if adresyEmail}
 				<button onclick={() => napiszEmail()} aria-label="Napisz e-mail do klienta" title="Napisz e-mail do klienta (M)" data-skrot="m" data-skrot-opis="Napisz e-mail do klienta" class="w-9 h-9 flex items-center justify-center border border-line rounded-lg bg-white text-ink-2 hover:bg-surface-2"><Mail size={16} /></button>
 			{/if}
-			{#if !renewalPolicy && !ug}
+			{#if !renewalPolicy && !ug && !nieOdnawiana(policy)}
 				<!-- Odnowienie: ręcznie, z pliku polisy albo (program OC beauty) wnioskiem klienta. Wyróżnione, gdy termin blisko. -->
 				<div class="relative" bind:this={renewMenuEl}>
 					<button
@@ -702,6 +719,14 @@
 						{#if adresyEmail}
 							<button role="menuitem" onclick={() => napiszEmail()} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Mail size={15} class="text-ink-3" /> Napisz e-mail do klienta</button>
 						{/if}
+						{#if !ug}
+							<div class="my-1 border-t border-line-soft"></div>
+							{#if policy.zakonczona_od}
+								<button role="menuitem" onclick={cofnijZak} disabled={cofam} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2 disabled:opacity-60"><Undo2 size={15} class="text-ink-3" /> Cofnij zakończenie polisy</button>
+							{:else}
+								<button role="menuitem" onclick={() => (zakonczOpen = true)} data-testid="menu-zakoncz-polise" class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Wypowiedzenie od dnia albo brak odnowienia na koniec okresu"><Ban size={15} class="text-ink-3" /> Zakończ polisę…</button>
+							{/if}
+						{/if}
 						<div class="my-1 border-t border-line-soft"></div>
 						<button role="menuitem" onclick={() => { showDelete = true; deletionReason = ''; deleteError = ''; }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-danger hover:bg-danger-soft"><Trash2 size={15} /> Usuń polisę</button>
 					</div>
@@ -709,6 +734,26 @@
 			</div>
 		</div>
 	</div>
+
+	{#if policy.zakonczona_od}
+		<!-- Decyzja o zakończeniu: od dnia (wypowiedzenie) albo na koniec okresu (nie odnawiamy). -->
+		<div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 rounded-xl bg-surface-2 border border-line text-sm" data-testid="baner-zakonczenia">
+			<Ban size={16} class="text-ink-2 shrink-0" />
+			<span class="font-semibold text-ink">{opisZakonczenia(policy, today)}</span>
+			{#if policy.zakonczenie_notatka}<span class="text-ink-2">{policy.zakonczenie_notatka}</span>{/if}
+			<span class="text-ink-3">Polisa nie trafia do odnowień.</span>
+			<button onclick={cofnijZak} disabled={cofam} class="ml-auto h-7 px-2.5 rounded-lg bg-white border border-line text-[13px] font-semibold text-ink hover:bg-surface-2 disabled:opacity-60">{cofam ? 'Cofanie…' : 'Cofnij zakończenie'}</button>
+		</div>
+	{:else if !ug && !renewalPolicy && polisaWygasla(policy, today)}
+		<!-- Po końcu okresu bez decyzji: odnowić albo zakończyć — żeby polisa nie wisiała bez statusu. -->
+		<div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2.5 rounded-xl bg-warn-soft border border-amber-200 text-sm" data-testid="baner-wygasla">
+			<AlertTriangle size={16} class="text-warn shrink-0" />
+			<span class="font-semibold text-warn">Polisa wygasła {fmtDzien(policy.data_do, true)} bez decyzji.</span>
+			<span class="text-ink-2">Odnów ją albo zakończ (na koniec okresu), żeby zniknęła z „Wygasłych bez decyzji”.</span>
+			<button onclick={() => (zakonczOpen = true)} class="ml-auto h-7 px-2.5 rounded-lg bg-white border border-amber-200 text-[13px] font-semibold text-warn hover:bg-amber-50">Zakończ polisę</button>
+		</div>
+	{/if}
+	<ZakonczPolise policy={zakonczOpen ? policy : null} onclose={() => (zakonczOpen = false)} onzakonczono={(w) => ctxToast(`Polisa zakończona${w.usunieteRaty ? ` · usunięto ${odmiana(w.usunieteRaty, 'ratę', 'raty', 'rat')}` : ''}${w.anulowaneWnioski ? ' · anulowano wniosek o odnowienie' : ''}`)} />
 
 	<!-- Podsumowanie -->
 	<section aria-label="Podsumowanie polisy" class="grid grid-cols-2 lg:grid-cols-4 bg-white border border-line rounded-xl overflow-hidden mb-4">

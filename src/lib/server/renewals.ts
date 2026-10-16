@@ -164,12 +164,14 @@ export async function polisaProgramu(admin: SupabaseClient, tenantId: string, po
 	if (!UUID.test(polisaId ?? '')) throw error(400, { message: 'Nieprawidłowa polisa.' });
 	const { data: p, error: e1 } = await admin
 		.from('crm_policies')
-		.select('id, tenant_id, klient_id, nr_polisy, data_od, data_do, skladka_przypisana, suma_gwarancyjna, parent_id, deleted_at, crm_insurers(nazwa)')
+		.select('id, tenant_id, klient_id, nr_polisy, data_od, data_do, skladka_przypisana, suma_gwarancyjna, parent_id, deleted_at, zakonczona_od, crm_insurers(nazwa)')
 		.eq('id', polisaId)
 		.eq('tenant_id', tenantId)
 		.maybeSingle();
 	if (e1) throw error(500, { message: 'Nie udało się wczytać polisy.' });
 	if (!p || p.deleted_at) throw error(404, { message: 'Nie znaleziono polisy.' });
+	// Decyzja „zakończ polisę” (wypowiedzenie albo brak odnowienia) zamyka drogę do wniosku — także automatowi.
+	if (p.zakonczona_od) throw error(400, { message: 'Polisa została zakończona — nie podlega odnowieniu. Cofnij zakończenie na karcie polisy, jeśli to pomyłka.' });
 	if (!p.parent_id) throw error(400, { message: 'Wniosek o odnowienie dotyczy certyfikatów z programu OC beauty.' });
 
 	const { data: ug } = await admin
@@ -192,10 +194,11 @@ export async function polisaProgramu(admin: SupabaseClient, tenantId: string, po
 
 	const { data: klient } = await admin
 		.from('crm_clients')
-		.select('id, nazwa, email, opiekun_id, tenant_id')
+		.select('id, nazwa, email, opiekun_id, tenant_id, aktywny')
 		.eq('id', p.klient_id)
 		.maybeSingle();
 	if (!klient || klient.tenant_id !== tenantId) throw error(400, { message: 'Polisa nie ma klienta.' });
+	if (klient.aktywny === false) throw error(400, { message: 'Klient jest nieaktywny (zakończył działalność) — wniosek o odnowienie nie zostanie utworzony.' });
 
 	const insurer = Array.isArray(p.crm_insurers) ? p.crm_insurers[0] : p.crm_insurers;
 	// Numer programu bez dopisku roku („WA50/003353/24/A_2026” → „WA50/003353/24/A”).
@@ -289,12 +292,13 @@ export async function klientDoWniosku(admin: SupabaseClient, tenantId: string, k
 	if (!UUID.test(klientId ?? '')) throw error(400, { message: 'Nieprawidłowy klient.' });
 	const { data: k, error: e } = await admin
 		.from('crm_clients')
-		.select('id, tenant_id, nazwa, nip, regon, ulica, email, telefon, opiekun_id')
+		.select('id, tenant_id, nazwa, nip, regon, ulica, email, telefon, opiekun_id, aktywny')
 		.eq('id', klientId)
 		.eq('tenant_id', tenantId)
 		.maybeSingle();
 	if (e) throw error(500, { message: 'Nie udało się wczytać klienta.' });
 	if (!k) throw error(404, { message: 'Nie znaleziono klienta.' });
+	if ((k as { aktywny?: boolean }).aktywny === false) throw error(400, { message: 'Klient jest nieaktywny (zakończył działalność) — przywróć aktywność na karcie klienta, zanim wyślesz wniosek.' });
 	// „ul. Bolkowska 2A/28, 01-466 Warszawa” → ulica, kod, miejscowość (gdy adres jest w jednym polu).
 	const adres = String(k.ulica ?? '').trim();
 	const m = /^(.*?),?\s*(\d{2}-\d{3})\s+(.+)$/.exec(adres);

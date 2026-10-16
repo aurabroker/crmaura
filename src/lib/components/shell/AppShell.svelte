@@ -7,7 +7,7 @@
 	import { appState, isAdmin, isFinance, isBroker } from '$lib/stores/app.svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { odnowionePolisy } from '$lib/statusPolisy';
+	import { nieOdnawiana, odnowionePolisy } from '$lib/statusPolisy';
 	import GlobalSearch from './GlobalSearch.svelte';
 	import Skroty from './Skroty.svelte';
 	import { BUILD_COMMIT, BUILD_DATA, OPIS_WERSJI, WERSJA } from '$lib/wersja';
@@ -43,7 +43,7 @@
 	const odnowione = $derived(odnowionePolisy(appState.policies));
 	const odnowienia30 = $derived(
 		appState.policies.filter((p) => {
-			if (!p.data_do || odnowione.has(p.id)) return false;
+			if (!p.data_do || odnowione.has(p.id) || nieOdnawiana(p)) return false;
 			const d = dateDiffDays(today, p.data_do);
 			return d >= 0 && d <= 30;
 		}).length

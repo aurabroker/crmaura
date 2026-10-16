@@ -6,6 +6,7 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, policyStatus, todayStr } from '$lib/utils';
+	import { polisaAktywna } from '$lib/statusPolisy';
 	import { logAudit } from '$lib/utils/audit';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
@@ -37,7 +38,7 @@
 	}
 
 	function aktywnaPolisa(vehicleId: string) {
-		return polisyPojazdu(vehicleId).find((p) => p.data_od <= today && p.data_do >= today) ?? null;
+		return polisyPojazdu(vehicleId).find((p) => p.data_od <= today && polisaAktywna(p, today)) ?? null;
 	}
 
 	const pojazdy = $derived(
@@ -62,7 +63,7 @@
 
 	// Sortowanie historii polis rozwiniętego pojazdu (rozwinięty jest zawsze jeden).
 	// Domyślnie jak dotąd: najnowsze (data_od) pierwsze.
-	const czynnaPolisa = (p: Policy) => p.data_od <= today && p.data_do >= today;
+	const czynnaPolisa = (p: Policy) => p.data_od <= today && polisaAktywna(p, today);
 	const sortHistorii = new Sortowanie<Policy>({
 		nr: (p) => p.nr_polisy,
 		od: (p) => p.data_od,

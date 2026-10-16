@@ -61,7 +61,7 @@
 		return p.status === 'Opłacona' || !!p.data_oplacenia;
 	}
 
-	const aktywne = $derived(policies.filter((p) => policyStatus(p.data_do).label === 'Aktywna').length);
+	const aktywne = $derived(policies.filter((p) => policyStatus(p.data_do, (p as { zakonczona_od?: string | null }).zakonczona_od).label === 'Aktywna').length);
 	const zalegle = $derived(payments.filter((p) => !isPaid(p) && p.data_platnosci < today));
 	const zalegleSuma = $derived(zalegle.reduce((s, p) => s + Number(p.kwota ?? 0), 0));
 
@@ -127,7 +127,7 @@
 	{:else}
 		<div class="space-y-3">
 			{#each policies as p}
-				{@const st = policyStatus(p.data_do)}
+				{@const st = policyStatus(p.data_do, (p as { zakonczona_od?: string | null }).zakonczona_od)}
 				<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-2">
 					<div class="min-w-[160px]">
 						<div class="text-xs text-slate-400 uppercase tracking-wide">{p.rodzaj ?? '—'}</div>
