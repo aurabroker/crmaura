@@ -7,7 +7,7 @@
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { fmtPln, todayStr, fmtDzien, fmtTermin, dateDiffDays, odmiana } from '$lib/utils';
-	import { poTerminie, ugBezRozliczania, ROZLICZONE } from '$lib/platnosci';
+	import { poTerminie, ugBezRozliczania, ROZLICZONE, walidujDateWplaty, ratyWgDatyWplaty } from '$lib/platnosci';
 	import { Plus, Check, Search, FileSpreadsheet, AlertTriangle, CheckCircle2,
 		RotateCcw, FileText, User, Copy, ChevronDown } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
@@ -709,17 +709,59 @@
 		appState.payments = (data ?? []) as typeof appState.payments;
 	}
 
-	async function markPaid(pay: PolicyPayment) {
-		const poprzednio = { status: pay.status, data_oplacenia: pay.data_oplacenia };
-		const { error } = await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today } as never).eq('id', pay.id);
-		if (error) { bladZapisu(error); return; }
+	// Ręczne „Oznacz wpłatę” (pojedyncza rata albo zaznaczone): data wpłaty jest wymagana i domyślnie równa
+	// terminowi raty — data dzisiejsza byłaby błędem w rozliczeniach. Okno „Potwierdź datę płatności” pozwala ją
+	// zmienić (osobno dla każdej raty albo jedną dla wszystkich) przed zapisem; zapis z możliwością cofnięcia.
+	let doPotwierdzenia = $state<PolicyPayment[]>([]);
+	let datyWplat = $state<Record<string, string>>({});
+	let dataWspolna = $state('');
+	let bladWplaty = $state('');
+	let zapisWplat = $state(false);
+
+	function otworzPotwierdzenie(raty: PolicyPayment[]) {
+		if (!raty.length) return;
+		datyWplat = Object.fromEntries(raty.map((r) => [r.id, r.data_platnosci]));
+		dataWspolna = '';
+		bladWplaty = '';
+		zapisWplat = false;
+		doPotwierdzenia = raty;
+	}
+	const zamknijPotwierdzenie = () => { if (!zapisWplat) doPotwierdzenia = []; };
+	function markPaid(pay: PolicyPayment) { otworzPotwierdzenie([pay]); }
+	function ustawWszystkim() {
+		if (!dataWspolna) return;
+		datyWplat = Object.fromEntries(doPotwierdzenia.map((r) => [r.id, dataWspolna]));
+	}
+
+	async function zapiszWplaty() {
+		if (!doPotwierdzenia.length || zapisWplat) return;
+		const raty = doPotwierdzenia;
+		const daty = { ...datyWplat };
+		for (const r of raty) {
+			const b = walidujDateWplaty(daty[r.id], today);
+			if (b) { bladWplaty = raty.length > 1 ? `Rata ${r.nr_raty} polisy ${r.crm_policies?.nr_polisy ?? ''}: ${b}` : b; return; }
+		}
+		bladWplaty = '';
+		zapisWplat = true;
+		const poprzednio = raty.map((r) => ({ id: r.id, status: r.status, data_oplacenia: r.data_oplacenia }));
+		for (const [data, ids] of ratyWgDatyWplaty(raty.map((r) => r.id), daty)) {
+			const { error } = await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: data } as never).in('id', ids);
+			if (error) { zapisWplat = false; bladWplaty = `Nie udało się zapisać: ${error.message}`; return; }
+		}
+		zapisWplat = false;
+		doPotwierdzenia = [];
 		await reloadPayments();
+		selected = new Set();
 		toast = {
-			tekst: `Rata ${pay.nr_raty} polisy ${pay.crm_policies?.nr_polisy ?? ''} oznaczona jako opłacona`,
+			tekst: raty.length === 1
+				? `Rata ${raty[0].nr_raty} polisy ${raty[0].crm_policies?.nr_polisy ?? ''} — wpłata ${fmtDzien(daty[raty[0].id])}`
+				: `${odmiana(raty.length, 'rata oznaczona', 'raty oznaczone', 'rat oznaczonych')} jako opłacone`,
 			cofnij: async () => {
 				toast = null;
-				const { error: e2 } = await sb.from('crm_policy_payments').update(poprzednio as never).eq('id', pay.id);
-				if (e2) { bladZapisu(e2); return; }
+				for (const p of poprzednio) {
+					const { error: e2 } = await sb.from('crm_policy_payments').update({ status: p.status, data_oplacenia: p.data_oplacenia } as never).eq('id', p.id);
+					if (e2) { bladZapisu(e2); return; }
+				}
 				await reloadPayments();
 			}
 		};
@@ -838,25 +880,9 @@
 	const canMarkOverdue = $derived(selectedPays.some(p => p.status === 'Oczekująca'));
 	const canRevert = $derived(selectedPays.some(p => p.status === 'Opłacona' || p.status === 'Częściowo opłacona'));
 
-	async function bulkMarkPaid() {
-		const doZmiany = selectedPays.filter(p => p.status === 'Oczekująca' || p.status === 'Zaległa');
-		const ids = doZmiany.map(p => p.id);
-		const { error } = await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today } as never).in('id', ids);
-		if (error) { bladZapisu(error); return; }
-		await reloadPayments(); selected = new Set();
-		toast = {
-			tekst: `${odmiana(ids.length, 'rata oznaczona', 'raty oznaczone', 'rat oznaczonych')} jako opłacone`,
-			cofnij: async () => {
-				toast = null;
-				for (const status of ['Oczekująca', 'Zaległa']) {
-					const grupa = doZmiany.filter(p => p.status === status).map(p => p.id);
-					if (!grupa.length) continue;
-					const { error: e2 } = await sb.from('crm_policy_payments').update({ status, data_oplacenia: null } as never).in('id', grupa);
-					if (e2) { bladZapisu(e2); return; }
-				}
-				await reloadPayments();
-			}
-		};
+	// Zaznaczone raty: to samo okno „Potwierdź datę płatności”, data osobno dla każdej raty (domyślnie jej termin).
+	function bulkMarkPaid() {
+		otworzPotwierdzenie(selectedPays.filter((p) => p.status === 'Oczekująca' || p.status === 'Zaległa'));
 	}
 	async function bulkMarkOverdue() {
 		const ids = selectedPays.filter(p => p.status === 'Oczekująca').map(p => p.id);
@@ -1110,6 +1136,41 @@
 {#if toast}
 	<Toast tekst={toast.tekst} blad={toast.blad} oncofnij={toast.cofnij} onzamknij={() => (toast = null)} />
 {/if}
+
+<!-- Modal: Potwierdź datę płatności — ręczne „Oznacz wpłatę” (pojedyncza rata albo zaznaczone) -->
+<Modal title="Potwierdź datę płatności" open={doPotwierdzenia.length > 0} onclose={zamknijPotwierdzenie}>
+	{#snippet footer()}
+		<button onclick={zamknijPotwierdzenie} disabled={zapisWplat} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50 disabled:opacity-60">Anuluj</button>
+		<button onclick={zapiszWplaty} disabled={zapisWplat} data-testid="potwierdz-zapisz" class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
+			{zapisWplat ? 'Zapisywanie…' : doPotwierdzenia.length > 1 ? `Zapisz wpłaty (${doPotwierdzenia.length})` : 'Zapisz wpłatę'}
+		</button>
+	{/snippet}
+	<div class="space-y-3" data-testid="potwierdz-date">
+		<p class="text-sm text-ink-2">Podaj dzień, w którym klient zapłacił. Podpowiadamy termin płatności raty — zmień go, jeśli wpłata była innego dnia. Data wpłaty jest wymagana; data dzisiejsza nie jest podpowiadana, bo zwykle jest błędem.</p>
+		{#if bladWplaty}<div class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-testid="blad-wplaty">{bladWplaty}</div>{/if}
+		{#if doPotwierdzenia.length > 1}
+			<div class="flex flex-wrap items-center gap-2 text-[13px] text-ink-2">
+				<span>Ta sama data dla wszystkich:</span>
+				<input type="date" bind:value={dataWspolna} max={today} aria-label="Data wpłaty dla wszystkich rat" class="h-8 border border-line rounded-lg px-2 text-[13px] text-ink" />
+				<button type="button" onclick={ustawWszystkim} disabled={!dataWspolna} class="h-8 px-2.5 text-[13px] font-medium border border-line rounded-lg bg-white hover:bg-surface-2 disabled:opacity-50">Zastosuj</button>
+			</div>
+		{/if}
+		<ul class="divide-y divide-line-soft border border-line rounded-lg overflow-hidden">
+			{#each doPotwierdzenia as r (r.id)}
+				<li class="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-[13px]">
+					<div class="flex-1 min-w-[200px]">
+						<span class="font-medium text-ink">{r.crm_policies?.crm_clients?.nazwa ?? '—'}</span>
+						<span class="block text-xs text-ink-3"><span class="font-mono">{r.crm_policies?.nr_polisy ?? '—'}</span> · {rataZ(r)} · {fmtPln(r.kwota)} zł · termin {fmtDzien(r.data_platnosci)}</span>
+					</div>
+					<label class="flex items-center gap-2 text-xs text-ink-3">
+						Data wpłaty
+						<input type="date" bind:value={datyWplat[r.id]} max={today} required data-testid="data-wplaty" class="h-8 border border-line rounded-lg px-2 text-[13px] text-ink" />
+					</label>
+				</li>
+			{/each}
+		</ul>
+	</div>
+</Modal>
 
 <!-- Modal: Dodaj Ratę -->
 <Modal title="Dodaj Ratę Płatności" open={showModal} onclose={() => { showModal = false; formError = ''; }}>

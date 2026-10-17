@@ -34,7 +34,7 @@
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
 	import CrmRenewalPanel from '$lib/components/renewal/CrmRenewalPanel.svelte';
-	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, adresWniosku, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, rozmiarPliku, wProgramieOcBeauty, wniosekNowy } from '$lib/components/renewal/crmRenewals';
+	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, adresWniosku, folderWniosku, klientBeauty as czyKlientBeauty, opisPrzegladarki, opisZdarzenia, otworzPdfApk, programOcBeauty, rozmiarPliku, wProgramieOcBeauty, wniosekNowy } from '$lib/components/renewal/crmRenewals';
 	import { opisZalacznika } from '$lib/renewals/program';
 
 	let pdfSaving = $state<string | null>(null);
@@ -437,8 +437,9 @@
 		zgloszeniaKlienta = (z.data ?? []) as Zgloszenie[];
 		maileKampanii = (m.data ?? []) as MailKampanii[];
 	}
+	// Przegląd pokazuje sprzedaż; zakładka APK potrzebuje leada (źródło BEAUTY decyduje o „pierwszej polisie OC beauty”).
 	$effect(() => {
-		if (activeTab === 'przeglad' && clientId && sprzedazDla !== clientId) {
+		if ((activeTab === 'przeglad' || activeTab === 'apk') && clientId && sprzedazDla !== clientId) {
 			sprzedazDla = clientId;
 			lead = null; zgloszeniaKlienta = []; maileKampanii = [];
 			untrack(() => wczytajSprzedaz());
@@ -1047,7 +1048,9 @@
 		else ctxToast('Klient znów aktywny');
 	}
 	// Pierwsza polisa OC beauty (klient bez certyfikatu): panel wniosku jest w zakładce APK; z menu „Więcej”
-	// przełączamy zakładkę i wysyłamy link (panel musi być zamontowany).
+	// przełączamy zakładkę i wysyłamy link (panel musi być zamontowany). To rozwiązanie branży beauty — tylko gdy
+	// firma prowadzi program OC beauty, a klient jest z BEAUTY (import, certyfikat z programu albo lead z formularza).
+	const pierwszaPolisaBeauty = $derived(programOcBeauty(appState.policies) && (klientBeauty || czyKlientBeauty({ zrodloLeada: lead?.zrodlo }, appState.policies)));
 	let panelNowej = $state<ReturnType<typeof CrmRenewalPanel> | null>(null);
 	async function wyslijPierwszaPolise(tryb: 'email' | 'link') {
 		activeTab = 'apk';
@@ -1178,9 +1181,11 @@
 						{#if showPojazdy}
 							<button role="menuitem" onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
 						{/if}
-						<div class="my-1 border-t border-line-soft"></div>
-						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('email'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Klient bez certyfikatu OC beauty: APK, dane gabinetu, suma, podpisy — przez link z e-maila"><Send size={15} class="text-ink-3" /> Pierwsza polisa: wyślij APK i wniosek</button>
-						<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('link'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Link size={15} class="text-ink-3" /> Pierwsza polisa: utwórz link</button>
+						{#if pierwszaPolisaBeauty}
+							<div class="my-1 border-t border-line-soft"></div>
+							<button role="menuitem" data-testid="menu-pierwsza-polisa" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('email'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2" title="Klient beauty bez certyfikatu: APK, dane gabinetu, suma, podpisy — przez link z e-maila"><Send size={15} class="text-ink-3" /> Pierwsza polisa OC beauty: wyślij APK i wniosek</button>
+							<button role="menuitem" onclick={() => { wiecejMenu = false; wyslijPierwszaPolise('link'); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Link size={15} class="text-ink-3" /> Pierwsza polisa OC beauty: utwórz link</button>
+						{/if}
 						<div class="my-1 border-t border-line-soft"></div>
 						{#if klientNieaktywny(client)}
 							<button role="menuitem" onclick={przywrocAktywnosc} disabled={przywracam} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2 disabled:opacity-60"><UserCheck size={15} class="text-ink-3" /> Przywróć aktywność klienta</button>
@@ -1863,8 +1868,10 @@
 		</section>
 
 	{:else if activeTab === 'apk'}
-		<!-- Pierwsza polisa OC beauty: link do APK i wniosku dla klienta bez certyfikatu (ten sam formularz co odnowienia). -->
-		<CrmRenewalPanel bind:this={panelNowej} klientId={clientId} rodzaj="nowa" email={client?.email ?? null} przyciski />
+		<!-- Pierwsza polisa OC beauty: link do APK i wniosku dla klienta beauty bez certyfikatu (ten sam formularz co odnowienia). -->
+		{#if pierwszaPolisaBeauty}
+			<CrmRenewalPanel bind:this={panelNowej} klientId={clientId} rodzaj="nowa" email={client?.email ?? null} przyciski />
+		{/if}
 		<div class="flex items-center justify-between mb-4">
 			<p class="text-sm text-slate-500">Formularze APK dla tego klienta</p>
 			<button onclick={() => { apkAdvisor = appState.profile?.imie_nazwisko ?? ''; showNewApk = true; }}

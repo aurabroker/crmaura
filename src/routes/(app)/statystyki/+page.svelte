@@ -189,6 +189,22 @@
 			(roznica.r !== liczny.r ? ` ${nazwaRodzaju(roznica.r)} — ${proc(roznica.a)} polis i ${proc(roznica.b)} przypisu.` : '');
 	});
 
+	// ── Najwięksi klienci (przeniesione z pulpitu 2026-10-17): wg przypisu w okresie albo wg liczby polis ──
+	let klienciWg = $state<'przypis' | 'polisy'>('przypis');
+	const nazwaKlientaWg = $derived(new Map(appState.clients.map((c) => [c.id, c.nazwa_skrocona || c.nazwa])));
+	const najwieksiKlienci = $derived.by(() => {
+		const lista = [...grupuj(polisy, (p) => p.klient_id)].map(([id, s]) => ({
+			id,
+			nazwa: nazwaKlientaWg.get(id) ?? polisy.find((p) => p.klient_id === id)?.crm_clients?.nazwa ?? '—',
+			przypis: s.przypis,
+			prowizja: s.prowizja,
+			polisy: s.polisy
+		}));
+		lista.sort((a, b) => (klienciWg === 'przypis' ? b.przypis - a.przypis || b.polisy - a.polisy : b.polisy - a.polisy || b.przypis - a.przypis));
+		return { top: lista.slice(0, 5), klientow: lista.length };
+	});
+	const klientMaks = $derived(Math.max(1, ...najwieksiKlienci.top.map((k) => (klienciWg === 'przypis' ? k.przypis : k.polisy))));
+
 	// ── Lejek leadów (liczby z bazy, bez wczytywania całej listy) ──
 	const ETAPY: [string, string][] = [['nowy', 'Nowy'], ['w_kontakcie', 'W kontakcie'], ['oferta_wyslana', 'Oferta wysłana'], ['wygrany', 'Wygrany'], ['przegrany', 'Przegrany']];
 	let lejek = $state<Record<string, number> | null>(null);
@@ -476,7 +492,39 @@
 	</section>
 </div>
 
-<div class="grid gap-4 lg:grid-cols-2 mb-4">
+<div class="grid gap-4 lg:grid-cols-3 mb-4">
+	<!-- Najwięksi klienci (z pulpitu) -->
+	<section aria-labelledby="st-klienci" data-testid="st-klienci" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
+		<div class="flex flex-wrap items-start gap-2">
+			<div class="flex-1 min-w-[150px]">
+				<h2 id="st-klienci" class="text-[15px] font-semibold text-ink">5 największych klientów</h2>
+				<span class="text-xs text-ink-3">{klienciWg === 'przypis' ? 'wg przypisu składki' : 'wg liczby polis'} w okresie{najwieksiKlienci.klientow ? ` · ${odmiana(najwieksiKlienci.klientow, 'klient z polisą', 'klientów z polisą', 'klientów z polisą')}` : ''}</span>
+			</div>
+			<div role="group" aria-label="Kolejność klientów" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
+				{#each [['przypis', 'Przypis'], ['polisy', 'Polisy']] as [k, l]}
+					<button aria-pressed={klienciWg === k} onclick={() => (klienciWg = k as typeof klienciWg)} class="h-7 px-2.5 rounded-md text-[13px] {klienciWg === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
+				{/each}
+			</div>
+		</div>
+		{#if najwieksiKlienci.top.length === 0}
+			<p class="py-6 text-center text-sm text-ink-3">Brak polis w okresie.</p>
+		{:else}
+			<ol class="flex flex-col gap-2.5">
+				{#each najwieksiKlienci.top as k, i (k.id)}
+					<li class="grid grid-cols-[18px_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[13px]" title="{k.nazwa}: {zl(k.przypis)}, prowizja {zl(k.prowizja)}">
+						<span class="text-xs text-ink-3 tabular-nums pt-0.5">{i + 1}.</span>
+						<a href="/clients/{k.id}" class="truncate font-medium text-ink hover:text-accent-text">{k.nazwa}</a>
+						<span class="col-start-2 flex items-center gap-2 min-w-0">
+							<span class="h-2.5 shrink-0 rounded-r" style="width: max(2px, calc((100% - 170px) * {(klienciWg === 'przypis' ? k.przypis : k.polisy) / klientMaks})); background: {KOLOR.seria}"></span>
+							<span class="text-xs text-ink-2 tabular-nums whitespace-nowrap truncate">{zl(k.przypis)} · {odmiana(k.polisy, 'polisa', 'polisy', 'polis')} · {proc(sumy.przypis ? (k.przypis / sumy.przypis) * 100 : 0, 0)}</span>
+						</span>
+					</li>
+				{/each}
+			</ol>
+			<p class="text-xs text-ink-3 border-t border-line-soft pt-3">Udział w przypisie okresu. Wybrane filtry i „Bez 2 największych polis” działają też tutaj.</p>
+		{/if}
+	</section>
+
 	<!-- Raty -->
 	<section aria-labelledby="st-raty" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
 		<div>
