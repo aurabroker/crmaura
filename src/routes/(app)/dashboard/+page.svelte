@@ -4,6 +4,9 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { fmtPln, dateDiffDays, todayStr, fmtDzien, fmtTermin, odmiana } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania, ROZLICZONE } from '$lib/platnosci';
+	import { miesiaceWstecz, skladkaMiesiecznie, wierszeRozliczen } from '$lib/rozliczenia';
+	import { KOLOR } from '$lib/analityka';
+	import SkladkaRat from '$lib/components/wykresy/SkladkaRat.svelte';
 	import SectionHeader from '$lib/components/SectionHeader.svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { dndzone } from 'svelte-dnd-action';
@@ -101,37 +104,7 @@
 	const overduePayments = $derived(appState.payments.filter((p) => poTerminie(p, today, ugIds)));
 	const overdueSum = $derived(overduePayments.reduce((s, p) => s + Number(p.kwota), 0));
 
-	// top_clients
-	const topClients = $derived(() => {
-		const map = new Map<string, { nazwa: string; count: number; skladka: number }>();
-		for (const p of appState.policies) {
-			const id = p.klient_id;
-			const nazwa = p.crm_clients?.nazwa ?? id;
-			const existing = map.get(id);
-			if (existing) {
-				existing.count++;
-				existing.skladka += p.skladka_przypisana ?? 0;
-			} else {
-				map.set(id, { nazwa, count: 1, skladka: p.skladka_przypisana ?? 0 });
-			}
-		}
-		return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5);
-	});
-
-	// policies_by_insurer
-	const policiesByInsurer = $derived(() => {
-		const map = new Map<string, { nazwa: string; count: number }>();
-		for (const p of appState.policies) {
-			const id = p.tu_id;
-			const nazwa = p.crm_insurers?.nazwa ?? id;
-			const existing = map.get(id);
-			if (existing) { existing.count++; }
-			else { map.set(id, { nazwa, count: 1 }); }
-		}
-		const sorted = [...map.values()].sort((a, b) => b.count - a.count).slice(0, 5);
-		const max = sorted[0]?.count ?? 1;
-		return sorted.map((i) => ({ ...i, pct: Math.round((i.count / max) * 100) }));
-	});
+	// „Top 5 klientów” jest w Statystykach; „Polisy wg TU” zdjęte z pulpitu (2026-10-17).
 
 	// monthly_premium
 	const premiumThisMonth = $derived(
@@ -146,21 +119,14 @@
 	);
 	const premiumTrend = $derived(premiumThisMonth >= premiumLastMonth ? 'up' : 'down');
 
-	// --- Przypis składki — 12 miesięcy ---
-	const premiumChart = $derived(() => {
-		const now = new Date();
-		const months: { label: string; ym: string; value: number }[] = [];
-		for (let i = 11; i >= 0; i--) {
-			const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-			const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-			const label = `${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
-			const value = appState.policies
-				.filter((p) => p.data_od?.startsWith(ym))
-				.reduce((s, p) => s + (p.skladka_przypisana ?? 0), 0);
-			months.push({ label, ym, value });
-		}
-		const max = Math.max(...months.map((m) => m.value), 1);
-		return months.map((m) => ({ ...m, pct: Math.round((m.value / max) * 100) }));
+	// --- Składka z rat — 12 miesięcy: każda rata w miesiącu swojego terminu (nie cała składka polisy w miesiącu
+	// jej początku), zainkasowana = raty opłacone / rozliczone z noty; prowizja kwotowo i jako średnia stawka. ---
+	const wierszeRat = $derived(wierszeRozliczen(appState.payments, appState.policies, today));
+	const skladkaRat = $derived(skladkaMiesiecznie(wierszeRat, miesiaceWstecz(today, 12)));
+	const skladkaRatRazem = $derived.by(() => {
+		const s = { skladka: 0, zainkasowana: 0, prowizja: 0, rat: 0, ratRozliczonych: 0 };
+		for (const m of skladkaRat) { s.skladka += m.skladka; s.zainkasowana += m.zainkasowana; s.prowizja += m.prowizja; s.rat += m.rat; s.ratRozliczonych += m.ratRozliczonych; }
+		return { ...s, stawka: s.skladka > 0 ? (s.prowizja * 100) / s.skladka : null };
 	});
 
 	// --- Dynamika ---
@@ -246,19 +212,18 @@
 		{ id: 'renewal_rate', label: 'Skuteczność odnowień' },
 		{ id: 'payments', label: 'Zaległe płatności' },
 		{ id: 'policy_count', label: 'Liczba polis' },
-		{ id: 'top_clients', label: 'Top klienci' },
 		{ id: 'expiring_payments', label: 'Nadchodzące raty' },
-		{ id: 'policies_by_insurer', label: 'Polisy wg TU' },
 		{ id: 'monthly_premium', label: 'Składka miesięczna' },
 		{ id: 'claims_stats', label: 'Statystyki szkód' },
-		{ id: 'premium_chart', label: 'Przypis składki (12 mies.)' },
+		{ id: 'premium_chart', label: 'Składka z rat (12 mies.)' },
 		{ id: 'dynamika', label: 'Dynamika' },
 	];
 
 	let configMode = $state(false);
 
-	// Analityka pod pulpitem — przeciągane widżety (kafelki KPI zastąpiły karty „Wymaga działania” i „Portfel”)
-	const WIDGETY_ANALITYKI = new Set(['top_clients', 'policies_by_insurer', 'monthly_premium', 'claims_stats', 'premium_chart', 'dynamika', 'policy_count']);
+	// Analityka pod pulpitem — przeciągane widżety (kafelki KPI zastąpiły karty „Wymaga działania” i „Portfel”).
+	// „top_clients” (w Statystykach) i „policies_by_insurer” (usunięte) mogą zostać w zapisanych preferencjach — są pomijane.
+	const WIDGETY_ANALITYKI = new Set(['monthly_premium', 'claims_stats', 'premium_chart', 'dynamika', 'policy_count']);
 	const widgetyDoWyboru = ALL_WIDGETS.filter((w) => WIDGETY_ANALITYKI.has(w.id));
 
 	let bottomDraggableItems = $state<{ id: string; label: string }[]>([]);
@@ -467,7 +432,9 @@
 		return () => { clearInterval(co); document.removeEventListener('visibilitychange', naPowrot); };
 	});
 
-	type TypKolejki = 'Wniosek' | 'Rata' | 'Zadanie' | 'Odnowienie';
+	// Kolejka brokera: wnioski klientów, zadania (w tym leady) i odnowienia. Raty tu nie wchodzą — płatności to temat
+	// Rozliczeń i Płatności (kafelek „Po terminie” wyżej prowadzi do /payments).
+	type TypKolejki = 'Wniosek' | 'Zadanie' | 'Odnowienie';
 	type PozycjaKolejki = {
 		klucz: string;
 		typ: TypKolejki;
@@ -477,37 +444,15 @@
 		dni: number;
 		termin: string;
 		opiekun: string | null;
-		rata?: (typeof appState.payments)[0];
 		zadanie?: CrmTask;
 		/** Zadanie z wniosku online — link „Wniosek” obok „Otwórz”. */
 		wniosekHref?: string;
 		polisaId?: string;
 	};
-	const KOLEJNOSC: Record<TypKolejki, number> = { Wniosek: 0, Rata: 1, Zadanie: 2, Odnowienie: 3 };
+	const KOLEJNOSC: Record<TypKolejki, number> = { Wniosek: 0, Zadanie: 1, Odnowienie: 2 };
 
-	// Raty po terminie i na najbliższe 7 dni, zadania z terminem do 7 dni, odnowienia do 14 dni
+	// Zadania po terminie i z terminem do 7 dni, odnowienia do 14 dni
 	const kolejka = $derived.by((): PozycjaKolejki[] => {
-		const raty = appState.payments
-			.filter((p) => {
-				if (poTerminie(p, today, ugIds)) return true;
-				const d = dateDiffDays(today, p.data_platnosci);
-				return p.status === 'Oczekująca' && !ugIds.has(p.polisa_id) && d >= 0 && d <= 7;
-			})
-			.map((p): PozycjaKolejki => {
-				const pol = polisaWg.get(p.polisa_id);
-				const ile = parseInt(pol?.ilosc_rat ?? '1') || 1;
-				return {
-					klucz: 'r' + p.id,
-					typ: 'Rata',
-					tytul: `Rata ${p.nr_raty}${ile > 1 ? `/${ile}` : ''} · ${p.crm_policies?.nr_polisy ?? '—'} · ${fmtPln(p.kwota)} zł`,
-					klient: p.crm_policies?.crm_clients?.nazwa ?? null,
-					klientHref: pol?.klient_id ? `/clients/${pol.klient_id}` : null,
-					dni: dateDiffDays(today, p.data_platnosci),
-					termin: p.data_platnosci,
-					opiekun: null,
-					rata: p
-				};
-			});
 		const zadania = dashOpenTasks
 			.filter((t) => t.termin && dateDiffDays(today, t.termin) <= 7)
 			.map((t): PozycjaKolejki => {
@@ -538,7 +483,7 @@
 				opiekun: null,
 				polisaId: p.id
 			}));
-		return [...raty, ...zadania, ...odnowienia].sort((a, b) => a.dni - b.dni || KOLEJNOSC[a.typ] - KOLEJNOSC[b.typ]);
+		return [...zadania, ...odnowienia].sort((a, b) => a.dni - b.dni || KOLEJNOSC[a.typ] - KOLEJNOSC[b.typ]);
 	});
 
 	let filtrKolejki = $state<'wszystko' | TypKolejki>('wszystko');
@@ -553,7 +498,6 @@
 	const tonTerminu = (dni: number) => (dni < 0 ? 'text-danger font-semibold' : dni <= 3 ? 'text-warn font-semibold' : 'text-ink-2');
 	const tonTypu: Record<TypKolejki, string> = {
 		Wniosek: 'bg-accent-soft text-accent-text',
-		Rata: 'bg-danger-soft text-danger',
 		Zadanie: 'bg-surface-2 text-ink-2',
 		Odnowienie: 'bg-warn-soft text-warn'
 	};
@@ -622,31 +566,8 @@
 	const fmtProc = (n: number) => `${n.toLocaleString('pl-PL', { maximumFractionDigits: 1 })}%`;
 	const fmtZl = (n: number) => `${Math.round(n).toLocaleString('pl-PL')} zł`;
 
-	// Oznaczenie wpłaty z kolejki — z możliwością cofnięcia
+	// Komunikat po akcji (zadania, wnioski) — z możliwością cofnięcia
 	let toast = $state<{ tekst: string; blad?: boolean; cofnij?: () => void } | null>(null);
-
-	async function oznaczOplacona(pay: (typeof appState.payments)[0]) {
-		const poprzednio = { status: pay.status, data_oplacenia: pay.data_oplacenia };
-		const { error } = await sb.from('crm_policy_payments').update({ status: 'Opłacona', data_oplacenia: today } as never).eq('id', pay.id);
-		if (error) { toast = { tekst: `Nie udało się zapisać: ${error.message}`, blad: true }; return; }
-		appState.payments = appState.payments.map((p) => (p.id === pay.id ? { ...p, status: 'Opłacona', data_oplacenia: today } : p));
-		toast = {
-			tekst: `Rata ${pay.nr_raty} polisy ${pay.crm_policies?.nr_polisy ?? ''} oznaczona jako opłacona`,
-			cofnij: async () => {
-				toast = null;
-				const { error: e2 } = await sb.from('crm_policy_payments').update(poprzednio as never).eq('id', pay.id);
-				if (e2) { toast = { tekst: `Nie udało się cofnąć: ${e2.message}`, blad: true }; return; }
-				appState.payments = appState.payments.map((p) => (p.id === pay.id ? { ...p, ...poprzednio } : p));
-			}
-		};
-	}
-
-	// Helpers for chart
-	function fmtK(v: number): string {
-		if (v >= 1000) return `${(v / 1000).toFixed(0)}k`;
-		return String(Math.round(v));
-	}
-
 </script>
 
 <svelte:head><title>Pulpit — AuraCRM</title></svelte:head>
@@ -851,7 +772,7 @@
 				<Plus size={14} /> Zadanie
 			</button>
 			<div role="group" aria-label="Filtr kolejki" class="flex flex-wrap gap-1.5 ml-auto">
-				{#each [['wszystko', 'Wszystko', kolejka.length], ['Wniosek', 'Wnioski', licznikKolejki('Wniosek')], ['Rata', 'Raty', licznikKolejki('Rata')], ['Zadanie', 'Zadania', licznikKolejki('Zadanie')], ['Odnowienie', 'Odnowienia', licznikKolejki('Odnowienie')]] as [id, label, n]}
+				{#each [['wszystko', 'Wszystko', kolejka.length], ['Wniosek', 'Wnioski', licznikKolejki('Wniosek')], ['Zadanie', 'Zadania', licznikKolejki('Zadanie')], ['Odnowienie', 'Odnowienia', licznikKolejki('Odnowienie')]] as [id, label, n]}
 					<button
 						aria-pressed={filtrKolejki === id}
 						onclick={() => { filtrKolejki = id as typeof filtrKolejki; kolejkaCala = false; }}
@@ -884,9 +805,7 @@
 						{:else}
 							<span class="hidden sm:block shrink-0 w-7" aria-hidden="true"></span>
 						{/if}
-						{#if q.rata}
-							<button onclick={() => oznaczOplacona(q.rata!)} class="shrink-0 h-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">Opłacona</button>
-						{:else if q.zadanie}
+						{#if q.zadanie}
 							{#if q.wniosekHref}
 								<a href={q.wniosekHref} class="shrink-0 h-8 leading-8 px-3 text-[13px] font-medium border border-line rounded-lg bg-white text-accent-text hover:bg-surface-2">Wniosek</a>
 							{/if}
@@ -1060,37 +979,7 @@
 	{#each bottomDraggableItems as widget (widget.id)}
 	<div class="{widget.id === 'premium_chart' ? 'lg:col-span-2' : ''} {configMode ? 'cursor-grab active:cursor-grabbing' : ''}">
 
-		{#if widget.id === 'top_clients'}
-		<div class="bg-white border border-line rounded-xl shadow-sm overflow-hidden h-full">
-			<div class="px-5 py-4 border-b border-line">
-				<h2 class="font-semibold text-slate-900 text-sm">Top 5 klientów wg liczby polis</h2>
-			</div>
-			<table class="w-full text-left text-sm">
-				<thead>
-					<tr class="bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-						<th class="px-5 py-3">Klient</th>
-						<th class="px-5 py-3 text-right">Polis</th>
-						<th class="px-5 py-3 text-right">Składka</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each topClients() as c, i}
-						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3 font-medium">
-								<span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 text-xs text-slate-500 mr-2">{i + 1}</span>
-								{c.nazwa}
-							</td>
-							<td class="px-5 py-3 text-right font-semibold text-slate-700">{c.count}</td>
-							<td class="px-5 py-3 text-right text-slate-600 text-xs">{fmtPln(c.skladka)}</td>
-						</tr>
-					{:else}
-						<tr><td colspan="3" class="px-5 py-6 text-center text-slate-400">Brak danych</td></tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-
-		{:else if widget.id === 'policy_count'}
+		{#if widget.id === 'policy_count'}
 		{@const pd = policiesByRodzaj()}
 		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Liczba polis wg rodzaju</h2>
@@ -1122,26 +1011,6 @@
 					{/each}
 				</div>
 			</div>
-			{/if}
-		</div>
-
-		{:else if widget.id === 'policies_by_insurer'}
-		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
-			<h2 class="font-semibold text-slate-900 mb-4 text-sm">Polisy wg TU (top 5)</h2>
-			{#if policiesByInsurer().length === 0}
-				<p class="text-center text-slate-400 text-sm py-4">Brak danych</p>
-			{:else}
-				<div class="space-y-3">
-					{#each policiesByInsurer() as item}
-						<div class="flex items-center gap-3">
-							<span class="text-sm text-slate-600 w-28 truncate shrink-0">{item.nazwa}</span>
-							<div class="flex-1 bg-slate-100 rounded-full h-4 overflow-hidden">
-								<div class="h-4 bg-blue-500 rounded-full transition-all" style="width: {item.pct}%"></div>
-							</div>
-							<span class="text-sm font-semibold text-slate-700 w-8 text-right shrink-0">{item.count}</span>
-						</div>
-					{/each}
-				</div>
 			{/if}
 		</div>
 
@@ -1183,28 +1052,28 @@
 		</div>
 
 		{:else if widget.id === 'premium_chart'}
-		{@const chart = premiumChart()}
-		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
-			<h2 class="font-semibold text-slate-900 mb-1 text-base">Przypis składki — ostatnie 12 miesięcy</h2>
-			<p class="text-sm text-slate-400 mb-4">Składka przypisana wg daty początku polisy</p>
-			<div class="flex items-end gap-2 h-48">
-				{#each chart as m}
-				<div class="flex-1 flex flex-col justify-end items-center group relative">
-					<div class="text-xs font-bold text-slate-700 mb-1 text-center leading-tight">
-						{m.value > 0 ? fmtPln(m.value) : ''}
-					</div>
-					<div
-						class="w-full rounded-t bg-blue-500 transition-all group-hover:bg-blue-600"
-						style="height: {Math.max(m.pct, 2) * 1.92}px"
-					></div>
+		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full flex flex-col gap-4" data-testid="skladka-rat">
+			<div class="flex flex-wrap items-start gap-x-6 gap-y-2">
+				<div class="flex-1 min-w-[220px]">
+					<h2 class="font-semibold text-slate-900 text-base">Składka z rat — ostatnie 12 miesięcy</h2>
+					<p class="text-sm text-slate-400">Każda rata w miesiącu swojego terminu (nie cała składka polisy) · zainkasowana = raty opłacone lub rozliczone z noty TU · prowizja z tych rat kwotowo i jako średnia stawka</p>
 				</div>
-				{/each}
+				<dl class="flex flex-wrap gap-x-5 gap-y-1 text-[13px]">
+					<div class="flex flex-col"><dt class="text-xs text-ink-3">Zainkasowano</dt><dd class="font-semibold tabular-nums text-ink">{fmtZl(skladkaRatRazem.zainkasowana)} <span class="font-normal text-ink-3">z {fmtZl(skladkaRatRazem.skladka)}</span></dd></div>
+					<div class="flex flex-col"><dt class="text-xs text-ink-3">Raty</dt><dd class="font-semibold tabular-nums text-ink">{skladkaRatRazem.ratRozliczonych} <span class="font-normal text-ink-3">z {skladkaRatRazem.rat} rozliczonych</span></dd></div>
+					<div class="flex flex-col"><dt class="text-xs" style="color: {KOLOR.seria2}">Prowizja</dt><dd class="font-semibold tabular-nums" style="color: {KOLOR.seria2}">{fmtZl(skladkaRatRazem.prowizja)} <span class="font-normal">· średnio {skladkaRatRazem.stawka != null ? fmtProc(skladkaRatRazem.stawka) : '—'}</span></dd></div>
+				</dl>
 			</div>
-			<div class="flex gap-2 mt-2">
-				{#each chart as m}
-				<div class="flex-1 text-center text-xs text-slate-500 font-semibold truncate">{m.label}</div>
-				{/each}
-			</div>
+			{#if skladkaRatRazem.rat === 0}
+				<p class="text-center text-slate-400 text-sm py-8">Brak rat z terminem w ostatnich 12 miesiącach.</p>
+			{:else}
+				<SkladkaRat dane={skladkaRat} opis="Składka z rat miesięcznie: zainkasowana, do zapłaty i prowizja" />
+				<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
+					<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seria}"></span>zainkasowana</span>
+					<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seriaJasna}"></span>do zapłaty (termin w miesiącu)</span>
+					<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seria2}"></span>prowizja — pod miesiącem kwota i średnia stawka</span>
+				</div>
+			{/if}
 		</div>
 
 		{:else if widget.id === 'dynamika'}

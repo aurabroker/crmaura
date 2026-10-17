@@ -14,6 +14,24 @@ export function wProgramieOcBeauty(p: Pick<Policy, 'parent_id'> | null | undefin
 	return !!ug && ug.typ_umowy === 'generalna' && ug.ug_podtyp === 'oc_beauty';
 }
 
+/** Firma prowadzi program OC beauty (ma umowę generalną podtypu oc_beauty) — bez niego nie ma wniosków o pierwszą polisę. */
+export function programOcBeauty(policies: Pick<Policy, 'typ_umowy' | 'ug_podtyp' | 'deleted_at'>[]): boolean {
+	return policies.some((p) => p.typ_umowy === 'generalna' && p.ug_podtyp === 'oc_beauty' && !p.deleted_at);
+}
+
+/**
+ * Klient albo lead z branży beauty — tylko dla niego ma sens „APK i wniosek o pierwszą polisę OC beauty”:
+ * import z BEAUTY (beauty_id), certyfikat z programu OC beauty albo lead z formularza BEAUTY (zrodlo 'beauty').
+ */
+export function klientBeauty(
+	k: { beautyId?: number | string | null; klientId?: string | null; zrodloLeada?: string | null },
+	policies: Policy[]
+): boolean {
+	if (k.beautyId != null) return true;
+	if (k.zrodloLeada === 'beauty') return true;
+	return !!k.klientId && policies.some((p) => p.klient_id === k.klientId && !p.deleted_at && wProgramieOcBeauty(p, policies));
+}
+
 // Link działa tylko w tych stanach; „zlozony” blokuje nowy wniosek, ale linku już nie ma.
 export const STATUSY_Z_LINKIEM = ['utworzony', 'wyslany', 'otwarty', 'apk'];
 export const czyLinkDziala = (status: string) => STATUSY_Z_LINKIEM.includes(status);

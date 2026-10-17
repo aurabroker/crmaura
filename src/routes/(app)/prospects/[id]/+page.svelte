@@ -12,7 +12,7 @@
 	import type { CrmTask } from '$lib/types/database';
 	import { fmtDzien } from '$lib/utils';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
-	import { wywolajApi } from '$lib/components/renewal/crmRenewals';
+	import { klientBeauty, programOcBeauty, wywolajApi } from '$lib/components/renewal/crmRenewals';
 	import type { OdnowienieUtworzone } from '$lib/renewals/staffApi';
 	import {
 		ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania,
@@ -40,7 +40,7 @@
 		zrodlo: string | null;
 		data_zgloszenia: string | null;
 		liczba_zgloszen: number | null;
-		crm_clients?: { nazwa: string; nazwa_skrocona: string | null; nip: string | null; email: string | null; telefon: string | null; ulica: string | null } | null;
+		crm_clients?: { nazwa: string; nazwa_skrocona: string | null; nip: string | null; email: string | null; telefon: string | null; ulica: string | null; beauty_id: number | string | null } | null;
 	};
 
 	type Activity = {
@@ -57,7 +57,6 @@
 	let prospect = $state<Prospect | null>(null);
 	let activities = $state<Activity[]>([]);
 	let loading = $state(true);
-	let activeTab = $state<'notatka' | 'komentarz' | 'wiadomosc'>('komentarz');
 	let newText = $state('');
 	let sending = $state(false);
 	let editingProspect = $state(false);
@@ -81,6 +80,12 @@
 	let maileKampanii = $state<MailKampanii[]>([]);
 	const klient = $derived(prospect?.crm_clients ?? null);
 	const nazwaLeada = $derived(klient?.nazwa_skrocona ?? klient?.nazwa ?? prospect?.nazwa ?? '');
+	// „APK i wniosek o pierwszą polisę OC beauty” to rozwiązanie branży beauty: firma prowadzi program OC beauty,
+	// a lead jest z formularza BEAUTY albo jego firma jest klientem beauty (import BEAUTY / certyfikat z programu).
+	const leadBeauty = $derived(
+		!!prospect && programOcBeauty(appState.policies) &&
+			klientBeauty({ beautyId: prospect.crm_clients?.beauty_id, klientId: prospect.klient_id, zrodloLeada: prospect.zrodlo }, appState.policies)
+	);
 
 	const statusLabels: Record<string, string> = {
 		'nowy': 'Nowy', 'w_kontakcie': 'W kontakcie',
@@ -108,10 +113,11 @@
 	async function load() {
 		loading = true;
 		const { data: p } = await sb.from('crm_prospects')
-			.select('*, crm_profiles(imie_nazwisko), crm_clients(nazwa, nazwa_skrocona, nip, email, telefon, ulica)')
+			.select('*, crm_profiles(imie_nazwisko), crm_clients(nazwa, nazwa_skrocona, nip, email, telefon, ulica, beauty_id)')
 			.eq('id', prospectId)
 			.single();
 		prospect = p as Prospect | null;
+		fPrzychodInline = prospect?.przychod ?? '';
 		void wczytajZgloszeniaIMaile();
 
 		const { data: acts } = await sb.from('crm_prospect_activities')
@@ -181,6 +187,30 @@
 		fZainteresowania = fZainteresowania.includes(k) ? fZainteresowania.filter((x) => x !== k) : [...fZainteresowania, k];
 	}
 
+	// Okno „Poszukiwane ubezpieczenia” (obok Zadań i Aktywności): chipy zapisują się od razu, przychód po wyjściu z pola.
+	let zapisPoszukiwanych = $state(false);
+	let fPrzychodInline = $state('');
+	async function zapiszPoszukiwane(zmiana: { zainteresowania?: string[]; przychod?: string | null }) {
+		if (!prospect || zapisPoszukiwanych) return;
+		zapisPoszukiwanych = true;
+		const dane = { ...zmiana, ...(zmiana.zainteresowania ? { zainteresowania: posortujZainteresowania(zmiana.zainteresowania) } : {}) };
+		const { error } = await sb.from('crm_prospects').update(dane as never).eq('id', prospect.id);
+		zapisPoszukiwanych = false;
+		if (error) { ctxToast(`Nie udało się zapisać: ${error.message}`); return; }
+		prospect = { ...prospect, ...dane };
+	}
+	function przelaczPoszukiwane(k: string) {
+		const obecne = prospect?.zainteresowania ?? [];
+		void zapiszPoszukiwane({ zainteresowania: obecne.includes(k) ? obecne.filter((x) => x !== k) : [...obecne, k] });
+	}
+	function zapiszPrzychod() {
+		const v = fPrzychodInline.trim() || null;
+		if (v === (prospect?.przychod ?? null)) return;
+		void zapiszPoszukiwane({ przychod: v });
+	}
+
+	// Aktywność to jeden rodzaj wpisu (dawny podział komentarz / notatka / wiadomość nie wnosił różnicy);
+	// wpisy ręczne zapisujemy jako „komentarz”, wpisy systemowe (np. wysłany wniosek) zostają „notatką”.
 	async function addActivity() {
 		if (!newText.trim() || !prospect) return;
 		sending = true;
@@ -188,7 +218,7 @@
 			tenant_id: prospect.tenant_id,
 			prospect_id: prospect.id,
 			author_id: appState.profile?.id ?? null,
-			typ: activeTab,
+			typ: 'komentarz',
 			tresc: newText.trim()
 		}]);
 		newText = '';
@@ -318,13 +348,6 @@
 		}
 	}
 
-	const typLabels = { notatka: 'Notatka', komentarz: 'Komentarz', wiadomosc: 'Wiadomość' };
-	const typColors: Record<string, string> = {
-		notatka: 'bg-amber-50 border-amber-200 text-amber-800',
-		komentarz: 'bg-blue-50 border-blue-200 text-blue-800',
-		wiadomosc: 'bg-emerald-50 border-emerald-200 text-emerald-800'
-	};
-
 	function formatDate(dt: string) {
 		return new Date(dt).toLocaleString('pl-PL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 	}
@@ -440,8 +463,8 @@
 	{@const zatrud = extractZatrudnienie(prospect)}
 	{@const www = extractWWW(prospect.notatki)}
 
-	<!-- Górny rząd: Klient + APK i wniosek o pierwszą polisę (na równi). Ramka „Ubezpieczenia posiadane” usunięta 2026-10-15 (kolumny ubez_* zostają w bazie). -->
-	<div class="grid grid-cols-2 gap-5 mb-5 items-start">
+	<!-- Górny rząd: Klient + (tylko beauty) APK i wniosek o pierwszą polisę OC beauty. Ramka „Ubezpieczenia posiadane” usunięta 2026-10-15 (kolumny ubez_* zostają w bazie). -->
+	<div class="grid grid-cols-1 {leadBeauty ? 'lg:grid-cols-2' : ''} gap-5 mb-5 items-start">
 
 	<!-- Klient -->
 	<div class="bg-white border border-line rounded-xl shadow-sm p-6">
@@ -504,14 +527,13 @@
 						<h1 class="text-xl font-bold text-slate-900 leading-tight">{nazwaLeada}</h1>
 						<Badge variant={statusVariant(prospect.status)}>{statusLabels[prospect.status] ?? prospect.status}</Badge>
 					</div>
-					{#if (prospect.zainteresowania ?? []).length || prospect.przychod || prospect.klient_id}
+					<!-- Czego klient szuka i przychód: okno „Poszukiwane ubezpieczenia” niżej (obok Zadań i Aktywności). -->
+					{#if (prospect.liczba_zgloszen ?? 0) >= 2}
 						<div class="flex flex-wrap items-center gap-1.5 text-[13px]">
-							{#each posortujZainteresowania(prospect.zainteresowania) as k}
-								<span title={OPIS_ZAINTERESOWANIA[k]} class="h-[22px] leading-[22px] px-2 rounded-full bg-accent-soft text-accent-text text-xs font-semibold">{ETYKIETA_ZAINTERESOWANIA[k] ?? k}</span>
-							{/each}
-							{#if prospect.przychod}<span class="text-ink-2">przychód {prospect.przychod}</span>{/if}
-							{#if (prospect.liczba_zgloszen ?? 0) >= 2}<span class="h-[22px] leading-[22px] px-2 rounded-full bg-warn-soft text-warn text-xs font-semibold">{prospect.liczba_zgloszen}× zgłoszenie</span>{/if}
+							<span class="h-[22px] leading-[22px] px-2 rounded-full bg-warn-soft text-warn text-xs font-semibold">{prospect.liczba_zgloszen}× zgłoszenie</span>
 						</div>
+					{/if}
+					{#if prospect.klient_id || prospect.zrodlo || prospect.data_zgloszenia}
 						<p class="mt-1.5 text-xs text-ink-3">
 							{#if prospect.klient_id}Firma z kartoteki — <a href="/clients/{prospect.klient_id}" class="font-semibold text-accent-text hover:underline">Panel 360° klienta</a>{/if}
 							{#if prospect.zrodlo}{prospect.klient_id ? ' · ' : ''}źródło: {ZRODLO_LEADA[prospect.zrodlo] ?? prospect.zrodlo}{/if}
@@ -581,14 +603,14 @@
 		{/if}
 	</div>
 
-	<!-- Pierwsza polisa OC beauty: link do APK i wniosku (ten sam formularz co odnowienia, bez certyfikatu) -->
-	{#if prospect}
+	<!-- Pierwsza polisa OC beauty: link do APK i wniosku (ten sam formularz co odnowienia, bez certyfikatu). Tylko dla leadów beauty. -->
+	{#if leadBeauty}
 		<div class="bg-white border border-line rounded-xl shadow-sm px-6 py-4" data-testid="lead-pierwsza-polisa">
 			<div class="flex flex-wrap items-center gap-3">
 				<div class="min-w-0 flex-1">
-					<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2"><Send size={15} class="text-rose-500" /> APK i wniosek o pierwszą polisę OC</h2>
+					<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2"><Send size={15} class="text-rose-500" /> APK i wniosek o pierwszą polisę OC beauty</h2>
 					<p class="text-[13px] text-ink-3 mt-0.5">
-						Klient wypełnia analizę potrzeb i wniosek online (dane gabinetu, początek ochrony, suma, ochrona prawna), podpisuje palcem albo myszą. PDF-y i zadanie trafią do CRM{prospect.klient_id ? '' : ' — lead zostanie najpierw dodany do Klientów'}.
+						Rozwiązanie dla branży beauty: klient wypełnia analizę potrzeb i wniosek online (dane gabinetu, początek ochrony, suma, ochrona prawna), podpisuje palcem albo myszą. PDF-y i zadanie trafią do CRM{prospect.klient_id ? '' : ' — lead zostanie najpierw dodany do Klientów'}.
 					</p>
 				</div>
 				<div class="flex flex-wrap gap-2">
@@ -659,8 +681,36 @@
 		</section>
 	{/if}
 
-	<!-- Tasks + Aktywność (side by side) -->
-	<div class="grid grid-cols-2 gap-5">
+	<!-- Poszukiwane ubezpieczenia + Zadania + Aktywność (obok siebie) -->
+	<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(260px,0.75fr)_minmax(0,1fr)_minmax(0,1fr)] gap-5 items-start">
+	<!-- Poszukiwane ubezpieczenia: czego klient szuka (z formularza BEAUTY albo wpisane ręcznie) i przychód -->
+	<div class="bg-white border border-line rounded-xl shadow-sm md:col-span-2 xl:col-span-1" data-testid="lead-poszukiwane">
+		<div class="px-5 py-4 border-b border-line-soft">
+			<h2 class="text-sm font-semibold text-slate-700 flex items-center gap-2"><Tag size={15} class="text-amber-500" /> Poszukiwane ubezpieczenia</h2>
+			<p class="text-xs text-ink-3 mt-0.5">Kliknij, żeby zaznaczyć albo odznaczyć — zapisuje się od razu.</p>
+		</div>
+		<div class="px-5 py-4 flex flex-col gap-3">
+			<div class="flex flex-wrap gap-1.5">
+				{#each ZAINTERESOWANIA as k}
+					{@const on = (prospect.zainteresowania ?? []).includes(k)}
+					<button type="button" aria-pressed={on} disabled={zapisPoszukiwanych} onclick={() => przelaczPoszukiwane(k)} title={OPIS_ZAINTERESOWANIA[k]}
+						class="h-7 px-2.5 rounded-full text-xs font-medium border transition-colors disabled:opacity-60 {on ? 'bg-accent-soft border-accent text-accent-text' : 'bg-white border-line text-ink-2 hover:bg-surface-2'}">{ETYKIETA_ZAINTERESOWANIA[k]}</button>
+				{/each}
+			</div>
+			{#if !(prospect.zainteresowania ?? []).length}
+				<p class="text-[13px] text-ink-3">Nie wiadomo jeszcze, czego szuka ten klient.</p>
+			{/if}
+			<label class="flex flex-col gap-1 text-xs text-ink-3">
+				Przychód roczny
+				<input bind:value={fPrzychodInline} onblur={zapiszPrzychod} onkeydown={(e) => { if (e.key === 'Enter') (e.currentTarget as HTMLInputElement).blur(); }} placeholder="np. do 250 000 zł" data-testid="lead-przychod" class="h-8 border border-line rounded-lg px-2.5 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-accent/40" />
+			</label>
+			{#if zgloszenia.length}
+				{@const z = zgloszenia[0]}
+				<p class="text-xs text-ink-3">Ostatnie zgłoszenie {fmtDzien(z.zgloszono_at.slice(0, 10), true)}{z.produkt ? ` · ${z.produkt}` : ''}</p>
+			{/if}
+		</div>
+	</div>
+
 	<!-- Tasks -->
 	<div class="bg-white border border-line rounded-xl shadow-sm">
 		<div class="px-6 py-4 border-b border-line-soft flex items-center justify-between">
@@ -756,17 +806,9 @@
 
 	<!-- Activity feed -->
 	<div class="bg-white border border-line rounded-xl shadow-sm">
-		<div class="px-6 pt-5 pb-4 border-b border-line-soft">
-			<h2 class="text-sm font-semibold text-slate-700 mb-3">Aktywność</h2>
-			<!-- Tab selector -->
-			<div class="flex gap-1 bg-slate-100 rounded-lg p-1 w-fit">
-				{#each ['komentarz', 'notatka', 'wiadomosc'] as typ}
-					<button
-						onclick={() => activeTab = typ as typeof activeTab}
-						class="px-3 py-1.5 rounded-md text-xs font-semibold transition-colors {activeTab === typ ? 'bg-white shadow text-slate-900' : 'text-slate-500 hover:text-slate-700'}"
-					>{typLabels[typ as keyof typeof typLabels]}</button>
-				{/each}
-			</div>
+		<div class="px-6 py-4 border-b border-line-soft">
+			<h2 class="text-sm font-semibold text-slate-700">Aktywność</h2>
+			<p class="text-xs text-ink-3 mt-0.5">Notatki z rozmów, ustalenia, komentarze — jeden rodzaj wpisu, najnowsze na dole.</p>
 		</div>
 
 		<!-- Feed -->
@@ -781,8 +823,7 @@
 					</div>
 					<div class="flex-1 min-w-0">
 						<div class="flex items-center gap-2 mb-1 flex-wrap">
-							<span class="text-xs font-semibold text-slate-700">{act.crm_profiles?.imie_nazwisko ?? 'Użytkownik'}</span>
-							<span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold border {typColors[act.typ]}">{typLabels[act.typ]}</span>
+							<span class="text-xs font-semibold text-slate-700">{act.crm_profiles?.imie_nazwisko ?? (act.author_id ? 'Użytkownik' : 'System')}</span>
 							<span class="text-xs text-slate-400">{formatDate(act.created_at)}</span>
 						</div>
 						<p class="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{act.tresc}</p>
@@ -798,7 +839,7 @@
 		<div class="px-6 py-4 border-t border-line-soft bg-slate-50 rounded-b-xl">
 			<textarea
 				bind:value={newText}
-				placeholder="Dodaj {typLabels[activeTab].toLowerCase()}..."
+				placeholder="Dodaj wpis — notatka z rozmowy, ustalenia, komentarz…"
 				rows="3"
 				class="w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none bg-white"
 				onkeydown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) addActivity(); }}
@@ -810,7 +851,7 @@
 					disabled={sending || !newText.trim()}
 					class="inline-flex items-center gap-2 px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-40 transition-colors"
 				>
-					<Send size={13} /> Dodaj {typLabels[activeTab]}
+					<Send size={13} /> Dodaj wpis
 				</button>
 			</div>
 		</div>

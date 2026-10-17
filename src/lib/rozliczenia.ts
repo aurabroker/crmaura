@@ -81,6 +81,68 @@ export function wierszeRozliczen(payments: PolicyPayment[], policies: PolisaRaty
 	return out;
 }
 
+// ── Składka z rat miesięcznie (pulpit: „Składka z rat — ostatnie 12 miesięcy”) ──
+// Każda rata liczy się w miesiącu swojego terminu, nie cała składka polisy w miesiącu jej początku:
+// klient z 12 ratami płaci co miesiąc i to zainkasowana składka (raty rozliczone) jest tu najważniejsza.
+
+export type MiesiacRat = {
+	ym: string;
+	/** Składka rat z terminem w tym miesiącu. */
+	skladka: number;
+	/** Z tego zainkasowano — raty opłacone albo rozliczone z noty TU. */
+	zainkasowana: number;
+	/** Prowizja z rat miesiąca: zaliczona za rozliczone, wg stawki polisy za pozostałe. */
+	prowizja: number;
+	/** Prowizja już zaliczona (tylko raty rozliczone). */
+	prowizjaZainkasowana: number;
+	/** Średnia stawka prowizji w miesiącu (ważona kwotami rat): prowizja / składka; null bez składki. */
+	stawka: number | null;
+	rat: number;
+	ratRozliczonych: number;
+};
+
+/** Ostatnie `ile` miesięcy łącznie z bieżącym, rosnąco, jako RRRR-MM. */
+export function miesiaceWstecz(dzis: string, ile: number): string[] {
+	const rok = Number(dzis.slice(0, 4));
+	const m = Number(dzis.slice(5, 7));
+	const out: string[] = [];
+	for (let i = ile - 1; i >= 0; i--) {
+		const d = new Date(Date.UTC(rok, m - 1 - i, 1));
+		out.push(d.toISOString().slice(0, 7));
+	}
+	return out;
+}
+
+/** Składka, inkaso i prowizja z rat w podanych miesiącach (wiersze z wierszeRozliczen — bez UG informacyjnych i kosza). */
+export function skladkaMiesiecznie(wiersze: WierszRaty[], miesiace: string[]): MiesiacRat[] {
+	const wg = new Map<string, MiesiacRat>(
+		miesiace.map((ym) => [ym, { ym, skladka: 0, zainkasowana: 0, prowizja: 0, prowizjaZainkasowana: 0, stawka: null, rat: 0, ratRozliczonych: 0 }])
+	);
+	for (const w of wiersze) {
+		const m = wg.get((w.rata.data_platnosci ?? '').slice(0, 7));
+		if (!m) continue;
+		const kwota = Number(w.rata.kwota) || 0;
+		m.rat++;
+		m.skladka += kwota;
+		if (w.rozliczona) {
+			m.ratRozliczonych++;
+			m.zainkasowana += kwota;
+			m.prowizja += w.zaliczona;
+			m.prowizjaZainkasowana += w.zaliczona;
+		} else {
+			m.prowizja += w.oczekiwana;
+		}
+	}
+	return [...wg.values()].map((m) => ({
+		...m,
+		skladka: zaokr(m.skladka),
+		zainkasowana: zaokr(m.zainkasowana),
+		prowizja: zaokr(m.prowizja),
+		prowizjaZainkasowana: zaokr(m.prowizjaZainkasowana),
+		stawka: m.skladka > 0 ? (m.prowizja * 100) / m.skladka : null
+	}));
+}
+
 export type Okres = 'miesiac' | 'poprzedni' | 'kwartal' | 'rok' | 'wszystko' | `${number}-${string}`;
 
 export const OKRESY: { val: Okres; label: string }[] = [
