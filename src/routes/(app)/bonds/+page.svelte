@@ -11,7 +11,9 @@
 	import UlForm from '$lib/components/UlForm.svelte';
 	import { Search, Pencil, Plus, Shield, FileText, History, Building2, Copy } from 'lucide-svelte';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
-	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
+	import { rozliczGwarancjeWCrm } from '$lib/gwarancje';
+	import { goto } from '$app/navigation';
 
 	const isAdmin = $derived(isFinance(appState.profile));
 
@@ -66,6 +68,24 @@
 		const stawka = effectiveStawka(b.bond_stawka_override, b.bond_stawka, ul?.bond_stawka_bazowa);
 		return calcBondSkladka(b.bond_suma, stawka, b.bond_data_od, b.bond_data_do, ul?.bond_skladka_min);
 	}
+	/** Klient CRM podmiotu gwarancji — bez niego gwarancja nie może stać się polisą w CRM. */
+	function klientCrmDla(b: Bond): string | null {
+		return tenants.find((t) => t.bond_id === b.bond_tenant_id)?.crm_client_id ?? null;
+	}
+	/** Składki gwarancji w Umowie Limitowej (zapisane albo wyliczone). */
+	function skladkaUl(ulId: string): number {
+		return bonds.filter((b) => b.bond_insurer_id === ulId).reduce((s, b) => s + (skladkaOf(b) ?? 0), 0);
+	}
+	// Gwarancja jako polisa CRM: składka, rata 14 dni od początku, prowizja z umowy gwarancyjnej o numerze UL.
+	// Nowa gwarancja dostaje polisę od razu po zapisie; starsze — przyciskiem „Rozlicz w CRM”.
+	let rozliczam = $state('');
+	async function rozliczWCrm(b: Bond, poZapisie = false) {
+		rozliczam = b.bond_id;
+		const w = await rozliczGwarancjeWCrm(b, ulById(b.bond_insurer_id), klientCrmDla(b));
+		rozliczam = '';
+		if (w.blad) ctxToast(poZapisie ? `Gwarancja zapisana, ale bez polisy w CRM: ${w.blad}` : `Nie udało się rozliczyć w CRM: ${w.blad}`);
+		else ctxToast(poZapisie ? `Gwarancja ${b.bond_nr} zapisana i rozliczona w CRM jako polisa` : `Gwarancja ${b.bond_nr} rozliczona w CRM jako polisa`);
+	}
 	function pctElapsed(od: string, doo: string): number {
 		const total = Math.max(1, dateDiffDays(od, doo));
 		const elapsed = Math.max(0, dateDiffDays(od, new Date().toISOString().slice(0, 10)));
@@ -85,6 +105,12 @@
 		})
 	);
 
+	// Wygasłe gwarancje: cały wiersz na czerwono, na końcu listy w Archiwum.
+	const dzis = new Date().toISOString().slice(0, 10);
+	const bondWygasl = (b: Bond) => !!b.bond_data_do && b.bond_data_do < dzis;
+	const aktywneBonds = $derived(filteredBonds.filter((b) => !bondWygasl(b)));
+	const wygasleBonds = $derived(filteredBonds.filter(bondWygasl));
+
 	const kpiCount = $derived(filteredBonds.length);
 	const kpiActive = $derived(filteredBonds.filter((b) => policyStatus(b.bond_data_do).label === 'Aktywna').length);
 	const kpiSuma = $derived(filteredBonds.reduce((s, b) => s + Number(b.bond_suma ?? 0), 0));
@@ -102,6 +128,9 @@
 	function bondMenu(b: Bond): CtxItem[] {
 		return [
 			{ label: 'Edytuj gwarancję', icon: Pencil, onSelect: () => openBond(b) },
+			b.crm_policy_id
+				? { label: 'Otwórz polisę w CRM', icon: FileText, onSelect: () => goto(`/policies/${b.crm_policy_id}`) }
+				: { label: 'Rozlicz w CRM (załóż polisę)', icon: FileText, disabled: !klientCrmDla(b), onSelect: () => rozliczWCrm(b) },
 			{ separator: true },
 			{ label: 'Kopiuj nr gwarancji', icon: Copy, onSelect: () => ctxCopy(b.bond_nr, 'nr gwarancji') },
 			{
@@ -129,12 +158,16 @@
 		if (err) { bondError = err; return; }
 		savingBond = true; bondError = '';
 		const vals = bondForm.getValues();
-		const res = editingBond
-			? await sb.from('bond_bonds').update(vals).eq('bond_id', editingBond.bond_id)
-			: await sb.from('bond_bonds').insert([vals]);
+		const edytowana = editingBond;
+		const res = edytowana
+			? await sb.from('bond_bonds').update(vals).eq('bond_id', edytowana.bond_id).select('*').single()
+			: await sb.from('bond_bonds').insert([vals]).select('*').single();
 		savingBond = false;
 		if (res.error) { bondError = res.error.message; return; }
 		showBond = false; editingBond = null;
+		// Gwarancja od razu jako polisa CRM (składkę policzył trigger w bazie) — błąd tego kroku nie cofa zapisu gwarancji.
+		const zapisana = res.data as Bond | null;
+		if (zapisana) await rozliczWCrm({ ...zapisana, crm_policy_id: zapisana.crm_policy_id ?? edytowana?.crm_policy_id ?? null }, true);
 		await loadAll();
 	}
 
@@ -297,15 +330,32 @@
 					<th class="px-4 py-2.5 text-right">Składka</th>
 					<th class="px-4 py-2.5">Okres</th>
 					<th class="px-4 py-2.5">Status</th>
+					<th class="px-4 py-2.5" title="Gwarancja jako polisa CRM: składka, rata, prowizja z umowy gwarancyjnej, karta klienta">Polisa CRM</th>
 					<th class="px-4 py-2.5"></th>
 				</tr>
 			</thead>
 			<tbody>
-				{#each filteredBonds as b}
+				{#each aktywneBonds as b (b.bond_id)}
+					{@render wierszBond(b, false)}
+				{/each}
+				{#if wygasleBonds.length}
+					<tr data-testid="bonds-archiwum" class="bg-red-50 border-t border-red-200">
+						<td colspan="9" class="px-4 py-2 text-xs font-semibold text-red-700 uppercase tracking-wide">Archiwum — wygasłe gwarancje ({wygasleBonds.length})</td>
+					</tr>
+					{#each wygasleBonds as b (b.bond_id)}
+						{@render wierszBond(b, true)}
+					{/each}
+				{/if}
+			</tbody>
+		</table>
+	</div>
+	{/if}
+	{#snippet wierszBond(b: Bond, wygasla: boolean)}
 					{@const st = policyStatus(b.bond_data_do)}
 					{@const tp = pctElapsed(b.bond_data_od, b.bond_data_do)}
 					<tr use:ctxMenu={{ items: () => bondMenu(b), title: b.bond_nr }}
-						class="border-t border-line-soft hover:bg-slate-50">
+						data-testid={wygasla ? 'bond-wygasly' : 'bond'}
+						class="border-t border-line-soft {wygasla ? 'bg-red-50 text-red-700 hover:bg-red-100' : 'hover:bg-slate-50'}">
 						<td class="px-4 py-2.5">
 							<div class="font-medium text-slate-800">{b.bond_nr}</div>
 							<span class="text-xs px-2 py-0.5 rounded-full font-semibold {bondRodzajCls(b.bond_rodzaj)}">{bondRodzajLabel[b.bond_rodzaj] ?? b.bond_rodzaj}</span>
@@ -330,17 +380,22 @@
 						<td class="px-4 py-2.5">
 							<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
 						</td>
+						<td class="px-4 py-2.5 whitespace-nowrap">
+							{#if b.crm_policy_id}
+								<a href="/policies/{b.crm_policy_id}" data-testid="polisa-crm" class="text-xs font-semibold text-accent-text hover:underline">polisa w CRM →</a>
+							{:else if klientCrmDla(b)}
+								<button onclick={() => rozliczWCrm(b)} disabled={rozliczam === b.bond_id} data-testid="rozlicz-crm" class="h-7 px-2.5 text-xs font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 disabled:opacity-60">{rozliczam === b.bond_id ? 'Zapisuję…' : 'Rozlicz w CRM'}</button>
+							{:else}
+								<span class="text-xs text-slate-400" title="Powiąż podmiot z klientem CRM: zakładka Umowy limitowe → Dodaj podmiot">podmiot bez klienta CRM</span>
+							{/if}
+						</td>
 						<td class="px-4 py-2.5 text-right">
 							<button onclick={() => openBond(b)} title="Edytuj" class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
 								<Pencil size={14} />
 							</button>
 						</td>
 					</tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-	{/if}
+	{/snippet}
 
 {:else if activeTab === 'ul'}
 	<!-- KPI limitów -->
@@ -408,6 +463,7 @@
 									<span>{pct}% · {fmtPln(zaang)} / {fmtPln(limit)} PLN</span>
 									<span>stawka {u.bond_stawka_bazowa ?? '—'}%{u.bond_stawka_negocjowana ? ' (neg.)' : ''} · min {u.bond_skladka_min != null ? fmtPln(u.bond_skladka_min) : '—'}</span>
 								</div>
+								<div class="text-xs text-slate-500 mt-1" data-testid="ul-skladki">Składki gwarancji w tej umowie: <span class="font-semibold text-slate-700">{fmtPln(skladkaUl(u.bond_id))} PLN</span></div>
 							</div>
 						</div>
 					{/each}

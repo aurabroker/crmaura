@@ -28,6 +28,7 @@
 	import CrmRenewalPanel from '$lib/components/renewal/CrmRenewalPanel.svelte';
 	import DokumentyPolisy from '$lib/components/DokumentyPolisy.svelte';
 	import { wProgramieOcBeauty } from '$lib/components/renewal/crmRenewals';
+	import { adresOdnowieniaRecznego } from '$lib/formularzPolisy';
 	import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
 
 	const policyId = $derived($page.params.id);
@@ -170,9 +171,9 @@
 	);
 	let renewalPanel = $state<ReturnType<typeof CrmRenewalPanel> | null>(null);
 
-	const renewalUrl = $derived(policy
-		? `/policies/new?klient=${policy.klient_id}&rodzaj=${encodeURIComponent(policy.rodzaj)}&przedmiot=${encodeURIComponent(policy.przedmiot ?? '')}&renewal_of=${policy.id}${policy.pojazd_id ? `&pojazd_id=${policy.pojazd_id}` : ''}${ugOdnowienia ? `&parent_id=${ugOdnowienia.id}` : ''}`
-		: '');
+	// Odnowienie ręczne: formularz z klientem, rodzajem, przedmiotem, pojazdem, UG programu oraz okresem na kolejny
+	// rok, TU, stawką prowizji, ratami i sumą gwarancyjną z tej polisy.
+	const renewalUrl = $derived(policy ? adresOdnowieniaRecznego(policy, { parentId: ugOdnowienia?.id ?? null }) : '');
 
 	// UG default commission inline edit
 	let ugEditOpen = $state(false);
@@ -618,13 +619,21 @@
 			</div>
 		</div>
 		<div class="flex flex-wrap gap-2">
-			{#if wProgramie && maPdfPolisy}
+			{#if !ug}
+				<!-- Każda polisa: program ma szablon programu, pozostałe — ogólny szablon firmy albo wbudowaną treść CRM; w załącznikach PDF polisy i OWU. -->
 				<button
 					onclick={() => (wysylaniePolisy = true)}
-					disabled={!adresyEmail}
+					disabled={!adresyEmail || !maPdfPolisy}
 					data-skrot="w"
 					data-skrot-opis="Wyślij polisę klientowi"
-					title={adresyEmail ? 'E-mail z szablonu programu i PDF polisy w załączniku' : 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta'}
+					data-testid="wyslij-polise"
+					title={!adresyEmail
+						? 'Klient nie ma adresu e-mail — uzupełnij go w karcie klienta'
+						: !maPdfPolisy
+							? 'Najpierw dodaj PDF polisy w sekcji „Dokumenty”'
+							: wProgramie
+								? 'E-mail z szablonu programu i PDF polisy w załączniku'
+								: 'E-mail z danymi polisy, PDF polisy i OWU w załącznikach'}
 					class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover disabled:opacity-50"
 				>
 					<Send size={15} /> Wyślij polisę klientowi
@@ -1364,7 +1373,8 @@
 		onwyslano={() => {}}
 	/>
 {/if}
-{#if wProgramie}
+<!-- Okno wysyłki dla każdej polisy (nie dla umowy generalnej): program ma swój szablon, reszta — ogólny albo wbudowany. -->
+{#if policy.typ_umowy !== 'generalna'}
 	<WyslijPolise open={wysylaniePolisy} polisaId={policy.id} onclose={() => (wysylaniePolisy = false)} onwyslano={() => void wczytajHistorie(policy!.id)} />
 {/if}
 {/if}

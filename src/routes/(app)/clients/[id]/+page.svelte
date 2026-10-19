@@ -13,6 +13,7 @@
 	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu, klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
+	import { adresOdnowieniaRecznego } from '$lib/formularzPolisy';
 	import { przywrocKlienta } from '$lib/zakonczenie';
 	import KlientNieaktywny from '$lib/components/KlientNieaktywny.svelte';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
@@ -153,9 +154,10 @@
 
 	const isAuraTenant = $derived(appState.tenantNazwa.toLowerCase().includes('aura'));
 
-	// Gwarancje klienta: UG gwarancyjne + polisy gwarancyjne (limit + lista).
+	// Gwarancje klienta: UG gwarancyjne (Umowy Limitowe w CRM) + gwarancje jako polisy „finansowa” — te z modułu
+	// Gwarancje mają wypełnione gwarancja_typ, sumę i składkę.
 	const clientGwarancje = $derived(clientPolicies.filter(p =>
-		p.ug_podtyp === 'gwarancje' || p.gwarancja_typ != null || (p.rodzaj ?? '').includes('gwarancj')
+		!p.deleted_at && (p.ug_podtyp === 'gwarancje' || p.gwarancja_typ != null || p.rodzaj === 'finansowa' || (p.rodzaj ?? '').includes('gwarancj'))
 	));
 	const showGwarancje = $derived(!!client?.gwarancje || clientGwarancje.length > 0);
 
@@ -190,7 +192,8 @@
 		beneficjent: (g) => g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt,
 		od: (g) => g.data_od,
 		do: (g) => g.data_do,
-		limit: (g) => (g.ug_limit != null ? Number(g.ug_limit) : null)
+		limit: (g) => (g.suma_gwarancyjna != null ? Number(g.suma_gwarancyjna) : g.ug_limit != null ? Number(g.ug_limit) : null),
+		skladka: (g) => Number(g.skladka_przypisana ?? 0)
 	}, { klucz: 'nr' }, 'klient-gwarancje');
 	const gwarancjeWiersze = $derived(sortGwarancje.sortuj(clientGwarancje));
 
@@ -1536,7 +1539,7 @@
 										     pozostałe polisy — formularz z przeniesionymi danymi. -->
 										<a href={wProgramieOcBeauty(p, appState.policies)
 												? `/policies/${p.id}?odnow=1`
-												: `/policies/new?klient=${p.klient_id}&rodzaj=${encodeURIComponent(p.rodzaj)}&przedmiot=${encodeURIComponent(p.przedmiot ?? '')}&renewal_of=${p.id}${p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}`}
+												: adresOdnowieniaRecznego(p)}
 										   class="inline-flex items-center gap-1 text-xs font-semibold text-accent-text hover:underline">
 											<RefreshCw size={12} /> Odnów polisę
 										</a>
@@ -1673,21 +1676,48 @@
 		</div>
 
 	{:else if activeTab === 'gwarancje'}
-		{@const limitTotal = clientGwarancje.reduce((s, p) => s + Number(p.ug_limit ?? 0), 0)}
-		{#if limitTotal > 0}
-		<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+		{@const wygasla = (g: Policy) => !!g.data_do && g.data_do < dzisPolisy}
+		{@const biezace = gwarancjeWiersze.filter((g) => !wygasla(g))}
+		{@const archiwumGw = gwarancjeWiersze.filter(wygasla)}
+		{@const umowyGw = biezace.filter((p) => p.typ_umowy === 'generalna')}
+		{@const gwarancje = biezace.filter((p) => p.typ_umowy !== 'generalna')}
+		{@const limitTotal = umowyGw.reduce((s, p) => s + Number(p.ug_limit ?? 0), 0)}
+		{@const sumaGw = gwarancje.reduce((s, p) => s + Number(p.suma_gwarancyjna ?? 0), 0)}
+		{@const skladkaGw = gwarancje.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0)}
+		<!-- Kafelki liczą tylko aktywne gwarancje i umowy — wygasłe są w Archiwum niżej. -->
+		<div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4" data-testid="gwarancje-kafelki">
 			<div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
-				<p class="text-xs font-medium text-blue-600 mb-1">Łączny limit gwarancyjny</p>
-				<p class="text-xl font-semibold text-blue-700">{fmtPln(limitTotal)} PLN</p>
+				<p class="text-xs font-medium text-blue-600 mb-1">Limit gwarancyjny (umowy)</p>
+				<p class="text-xl font-semibold text-blue-700">{limitTotal > 0 ? `${fmtPln(limitTotal)} PLN` : '—'}</p>
 			</div>
 			<div class="bg-white border border-line rounded-xl p-4">
-				<p class="text-xs font-medium text-slate-500 mb-1">Liczba gwarancji / umów</p>
-				<p class="text-xl font-semibold text-slate-900">{clientGwarancje.length}</p>
+				<p class="text-xs font-medium text-slate-500 mb-1">Aktywne gwarancje</p>
+				<p class="text-xl font-semibold text-slate-900">{gwarancje.length}<span class="text-sm font-normal text-slate-400">&nbsp;· {odmiana(umowyGw.length, 'umowa', 'umowy', 'umów')}{archiwumGw.length ? ` · ${archiwumGw.length} w archiwum` : ''}</span></p>
+			</div>
+			<div class="bg-white border border-line rounded-xl p-4">
+				<p class="text-xs font-medium text-slate-500 mb-1">Suma gwarancyjna (aktywne)</p>
+				<p class="text-xl font-semibold text-slate-900">{sumaGw > 0 ? `${fmtPln(sumaGw)} PLN` : '—'}</p>
+			</div>
+			<div class="bg-white border border-line rounded-xl p-4">
+				<p class="text-xs font-medium text-slate-500 mb-1">Składka gwarancji (aktywne)</p>
+				<p class="text-xl font-semibold text-slate-900">{skladkaGw > 0 ? `${fmtPln(skladkaGw)} PLN` : '—'}</p>
 			</div>
 		</div>
-		{/if}
+		{#snippet wierszGwarancji(g: Policy, wygasla: boolean)}
+			{@const umowa = g.typ_umowy === 'generalna'}
+			<!-- Wygasła gwarancja albo umowa: cały wiersz na czerwono. -->
+			<tr data-testid={wygasla ? 'gwarancja-wygasla' : 'gwarancja'} class="border-t border-line-soft {wygasla ? 'bg-red-50 text-red-700 hover:bg-red-100' : umowa ? 'bg-side hover:bg-slate-50' : 'hover:bg-slate-50'}">
+				<td class="px-5 py-3 font-medium whitespace-nowrap {wygasla ? 'text-red-700' : 'text-blue-700'}"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a> <Kopiuj tekst={g.nr_polisy} opis={umowa ? 'nr umowy' : 'nr gwarancji'} /></td>
+				<td class="px-5 py-3 {wygasla ? '' : 'text-slate-600'}">{g.gwarancja_typ ?? (umowa ? 'Umowa generalna (gwarancje)' : nazwaRodzaju(g.rodzaj))}</td>
+				<td class="px-5 py-3 text-xs {wygasla ? '' : 'text-slate-500'}">{g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt ?? g.przedmiot ?? '—'}</td>
+				<td class="px-5 py-3 whitespace-nowrap">{g.data_od}</td>
+				<td class="px-5 py-3 whitespace-nowrap font-medium">{g.data_do}{wygasla ? ' · wygasła' : ''}</td>
+				<td class="px-5 py-3 text-right font-semibold whitespace-nowrap {wygasla ? '' : 'text-slate-800'}">{g.suma_gwarancyjna != null ? `${fmtPln(g.suma_gwarancyjna)} PLN` : g.ug_limit != null ? `limit ${fmtPln(g.ug_limit)} PLN` : '—'}</td>
+				<td class="px-5 py-3 text-right tabular-nums whitespace-nowrap">{!umowa && Number(g.skladka_przypisana) > 0 ? `${fmtPln(g.skladka_przypisana)} PLN` : '—'}</td>
+			</tr>
+		{/snippet}
 		<div class="bg-white border border-line rounded-xl overflow-x-auto">
-			<table class="w-full min-w-[720px] text-left text-sm">
+			<table class="w-full min-w-[820px] text-left text-sm" data-testid="gwarancje-tabela">
 				<thead>
 					<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
 						<SortTh wersaliki={false} s={sortGwarancje} k="nr">Nr / Umowa</SortTh>
@@ -1695,22 +1725,25 @@
 						<SortTh wersaliki={false} s={sortGwarancje} k="beneficjent">Beneficjent / Kontrakt</SortTh>
 						<SortTh wersaliki={false} s={sortGwarancje} k="od">OD</SortTh>
 						<SortTh wersaliki={false} s={sortGwarancje} k="do">DO</SortTh>
-						<SortTh wersaliki={false} s={sortGwarancje} k="limit" class="px-5 py-3 text-right" align="right">Limit / Suma</SortTh>
+						<SortTh wersaliki={false} s={sortGwarancje} k="limit" class="px-5 py-3 text-right" align="right">Suma / Limit</SortTh>
+						<SortTh wersaliki={false} s={sortGwarancje} k="skladka" class="px-5 py-3 text-right" align="right">Składka</SortTh>
 					</tr>
 				</thead>
 				<tbody>
-					{#each gwarancjeWiersze as g}
-						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3 font-medium text-blue-700 whitespace-nowrap"><a href="/policies/{g.id}" class="hover:underline">{g.nr_polisy}</a> <Kopiuj tekst={g.nr_polisy} opis="nr umowy" /></td>
-							<td class="px-5 py-3 text-slate-600">{g.gwarancja_typ ?? (g.ug_podtyp === 'gwarancje' ? 'Umowa generalna (gwarancje)' : '—')}</td>
-							<td class="px-5 py-3 text-xs text-slate-500">{g.gwarancja_beneficjent_nazwa ?? g.gwarancja_kontrakt ?? '—'}</td>
-							<td class="px-5 py-3">{g.data_od}</td>
-							<td class="px-5 py-3">{g.data_do}</td>
-							<td class="px-5 py-3 text-right font-semibold text-slate-800">{g.ug_limit != null ? `${fmtPln(g.ug_limit)} PLN` : '—'}</td>
-						</tr>
+					{#each biezace as g (g.id)}
+						{@render wierszGwarancji(g, false)}
 					{:else}
-						<tr><td colspan="6" class="px-5 py-8 text-center text-slate-400">Brak gwarancji. Dodaj umowę generalną gwarancyjną i powiązane gwarancje w module Ubezpieczenia → Umowy Generalne.</td></tr>
+						<tr><td colspan="7" class="px-5 py-8 text-center text-slate-400">{archiwumGw.length ? 'Brak aktywnych gwarancji — wygasłe są niżej, w Archiwum.' : 'Brak gwarancji. Gwarancje wystawiasz w module Gwarancje (menu) — po zapisie trafiają tu jako polisy ze składką, ratą i prowizją z umowy gwarancyjnej.'}</td></tr>
 					{/each}
+					{#if archiwumGw.length}
+						<!-- Archiwum: wygasłe gwarancje i umowy, każdy wiersz na czerwono. -->
+						<tr data-testid="gwarancje-archiwum" class="bg-red-50 border-t border-red-200">
+							<td colspan="7" class="px-5 py-2 text-xs font-semibold text-red-700 uppercase tracking-wide">Archiwum — wygasłe ({archiwumGw.length})</td>
+						</tr>
+						{#each archiwumGw as g (g.id)}
+							{@render wierszGwarancji(g, true)}
+						{/each}
+					{/if}
 				</tbody>
 			</table>
 		</div>

@@ -598,6 +598,8 @@ export interface Bond {
 	bond_skladka: number | null;
 	bond_bez_limitu: boolean | null;
 	bond_stawka_override: boolean | null;
+	/** Polisa CRM założona dla tej gwarancji (składka, rata, prowizja) — $lib/gwarancje. */
+	crm_policy_id?: string | null;
 	bond_created_at?: string | null;
 	// joiny
 	bond_insurers?: { bond_nazwa: string; bond_ul_nr: string | null } | null;

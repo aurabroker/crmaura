@@ -9,6 +9,7 @@
 	import UgForm from '$lib/components/UgForm.svelte';
 	import { ArrowLeft, FileText, Network } from 'lucide-svelte';
 	import { logAudit } from '$lib/utils/audit';
+	import { potwierdzDuplikat } from '$lib/duplikatPolisy';
 
 	const typParam = $page.url.searchParams.get('typ') as 'jednostkowa' | 'generalna' | null;
 	const podtypParam = $page.url.searchParams.get('podtyp') ?? '';
@@ -18,6 +19,12 @@
 	const pojazdIdParam = $page.url.searchParams.get('pojazd_id') ?? '';
 	const renewalOfParam = $page.url.searchParams.get('renewal_of') ?? '';
 	const parentIdParam = $page.url.searchParams.get('parent_id') ?? '';
+	// Odnowienie ręczne: okres na kolejny rok, TU, stawka prowizji, liczba rat i suma gwarancyjna z poprzedniej polisy.
+	const dataOdParam = $page.url.searchParams.get('data_od') ?? '';
+	const tuParam = $page.url.searchParams.get('tu') ?? '';
+	const prowizjaParam = $page.url.searchParams.get('prowizja_pct') ?? '';
+	const ratyParam = $page.url.searchParams.get('raty') ?? '';
+	const sumaParam = $page.url.searchParams.get('suma') ?? '';
 
 	const isRenewal = !!renewalOfParam;
 	// Jeśli tworzymy polisę podrzędną UG, zawsze jednostkowa i bez możliwości zmiany
@@ -36,8 +43,10 @@
 		if (!activeForm) return;
 		const err = activeForm.isValid();
 		if (err) { formError = err; return; }
-		saving = true; formError = '';
 		const vals = activeForm.getValues();
+		// Monit, gdy polisa o tym numerze już jest w CRM — dodana drugi raz podwoiłaby przypis, raty i odnowienia.
+		if (!(await potwierdzDuplikat(vals.nr_polisy as string, appState.policies))) return;
+		saving = true; formError = '';
 		const payload: Record<string, unknown> = {
 			tenant_id: appState.profile!.tenant_id,
 			...vals
@@ -106,7 +115,7 @@
 		</button>
 		<div>
 			<h1 class="text-2xl font-semibold text-slate-900">{isRenewal ? 'Odnowienie Polisy' : isChildOfUg ? 'Nowa Polisa do UG' : typ === 'generalna' ? 'Nowa Umowa Generalna' : 'Nowa Polisa'}</h1>
-			<p class="text-sm text-slate-500 mt-0.5">{isRenewal ? 'Wypełnij dane nowego okresu ubezpieczenia' : 'Wypełnij dane i zapisz'}</p>
+			<p class="text-sm text-slate-500 mt-0.5">{isRenewal ? 'Okres na kolejny rok, towarzystwo, stawka prowizji i raty są przeniesione z poprzedniej polisy — sprawdź je, wpisz numer i składkę nowej polisy' : 'Wypełnij dane i zapisz'}</p>
 		</div>
 	</div>
 
@@ -145,6 +154,11 @@
 				presetPrzedmiot={przedmiotParam}
 				presetPojazdId={pojazdIdParam}
 				presetParentId={parentIdParam}
+				presetOd={dataOdParam}
+				presetTu={tuParam}
+				presetProwPct={prowizjaParam}
+				presetRaty={ratyParam}
+				presetSumaGw={sumaParam}
 			/>
 		{/if}
 	</div>

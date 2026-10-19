@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { wczytajAneksy, wczytajPolisy, wczytajSzkody } from '$lib/kolekcje';
 	import { opiekunZUmowy } from '$lib/policyImport/umowaGeneralna';
+	import { potwierdzDuplikat } from '$lib/duplikatPolisy';
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, opisPrzedmiotu, todayStr, ugPodtypCls } from '$lib/utils';
@@ -218,8 +219,10 @@
 		if (!newPolicyForm) return;
 		const err = newPolicyForm.isValid();
 		if (err) { formError = err; return; }
-		saving = true; formError = '';
 		const vals: Record<string, unknown> = newPolicyForm.getValues();
+		// Monit, gdy polisa o tym numerze już jest w CRM.
+		if (!(await potwierdzDuplikat(vals.nr_polisy as string, appState.policies))) return;
+		saving = true; formError = '';
 		// Polisa w Umowie Generalnej: opiekun TU domyślnie ten sam co na umowie.
 		const opiekun = opiekunZUmowy(appState.policies, vals.parent_id as string | null, vals.tu_id as string | null);
 		if (opiekun && !vals.tu_contact_id) vals.tu_contact_id = opiekun;
@@ -234,8 +237,9 @@
 		if (!editPolicyForm || !editingPolicy) return;
 		const err = editPolicyForm.isValid();
 		if (err) { formError = err; return; }
-		saving = true; formError = '';
 		const vals: Record<string, unknown> = editPolicyForm.getValues();
+		if (!(await potwierdzDuplikat(vals.nr_polisy as string, appState.policies, editingPolicy.id))) return;
+		saving = true; formError = '';
 		// Polisa bez opiekuna TU podpinana właśnie pod Umowę Generalną: opiekun domyślnie z umowy.
 		if (!editingPolicy.tu_contact_id && editingPolicy.typ_umowy !== 'generalna' && vals.parent_id && vals.parent_id !== editingPolicy.parent_id) {
 			const opiekun = opiekunZUmowy(appState.policies, vals.parent_id as string | null, vals.tu_id as string | null);
