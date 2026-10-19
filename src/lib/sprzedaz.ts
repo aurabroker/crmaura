@@ -54,10 +54,16 @@ export const KLASA_ETAPU: Record<string, string> = {
 export const ZRODLO_LEADA: Record<string, string> = {
 	beauty: 'formularz (BEAUTY)',
 	formularz: 'formularz',
+	utrata_dochodu: 'aplikacja Utrata Dochodu',
 	import: 'import z bazy klientów',
 	kartoteka: 'kartoteka CRM',
 	recznie: 'dodany ręcznie'
 };
+
+/** Skąd przyszło zgłoszenie: arkusz / formularz BEAUTY („z formularza”) albo wniosek w aplikacji Utrata Dochodu. */
+export function opisZrodlaZgloszenia(z: { zrodlo?: string | null }): string {
+	return z.zrodlo === 'utrata_dochodu' ? 'z aplikacji Utrata Dochodu' : 'z formularza';
+}
 
 /** Kampanie z BEAUTY mają nazwy techniczne (np. „NewsletterUD_11-10-2026”) — czytelniejsza wersja. */
 export function nazwaKampanii(nazwa: string | null | undefined): string {
@@ -104,6 +110,8 @@ export type Zgloszenie = {
 	id: string;
 	klient_id: string | null;
 	prospect_id: string | null;
+	/** 'arkusz' (formularz / BEAUTY) albo 'utrata_dochodu' (wniosek w aplikacji Utrata Dochodu). */
+	zrodlo?: string | null;
 	zgloszono_at: string;
 	firma: string | null;
 	kontakt: string | null;

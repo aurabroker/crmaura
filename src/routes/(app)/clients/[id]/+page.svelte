@@ -10,7 +10,7 @@
 	import ScalKlienta from '$lib/components/ScalKlienta.svelte';
 	import { Merge } from 'lucide-svelte';
 	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
-	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
+	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, opisZrodlaZgloszenia, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu, klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
 	import { adresOdnowieniaRecznego } from '$lib/formularzPolisy';
@@ -432,7 +432,7 @@
 		const dla = clientId ?? '';
 		const [l, z, m] = await Promise.all([
 			sb.from('crm_prospects').select('id, status, zainteresowania, przychod, zrodlo, data_zgloszenia, ostatnie_zgloszenie_at, liczba_zgloszen').eq('klient_id', dla).maybeSingle(),
-			sb.from('crm_zgloszenia').select('id, klient_id, prospect_id, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at').eq('klient_id', dla).order('zgloszono_at', { ascending: false }).limit(30),
+			sb.from('crm_zgloszenia').select('id, klient_id, prospect_id, zrodlo, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at').eq('klient_id', dla).order('zgloszono_at', { ascending: false }).limit(30),
 			sb.from('crm_kampanie_maile').select('id, kampania, kod, temat, adres, status, wyslano_at, dostarczono_at, otwarto_at, kliknieto_at, odbito_at').eq('klient_id', dla).order('wyslano_at', { ascending: false }).limit(100)
 		]);
 		if (dla !== clientId) return;
@@ -1017,7 +1017,7 @@
 		for (const z of zgloszeniaKlienta) {
 			const co = posortujZainteresowania(z.zainteresowania).map((k) => ETYKIETA_ZAINTERESOWANIA[k] ?? k).join(', ') || z.produkt || 'oferta';
 			const ponowne = z.ponowne && !z.historyczne;
-			dodaj({ klucz: `zg-${z.id}`, at: z.zgloszono_at, tekst: `${ponowne ? 'Ponowne zgłoszenie' : 'Zgłoszenie'} z formularza: ${co}${z.przychod ? ` (przychód ${z.przychod})` : ''}`, kto: z.kontakt ?? 'Formularz', ton: ponowne ? 'danger' : 'accent', href: lead ? `/prospects/${lead.id}` : undefined });
+			dodaj({ klucz: `zg-${z.id}`, at: z.zgloszono_at, tekst: `${ponowne ? 'Ponowne zgłoszenie' : 'Zgłoszenie'} ${opisZrodlaZgloszenia(z)}: ${co}${z.przychod ? ` (przychód ${z.przychod})` : ''}`, kto: z.kontakt ?? (z.zrodlo === 'utrata_dochodu' ? 'Aplikacja Utrata Dochodu' : 'Formularz'), ton: ponowne ? 'danger' : 'accent', href: lead ? `/prospects/${lead.id}` : undefined });
 		}
 		for (const m of maileKampanii) {
 			if (!m.wyslano_at) continue;
