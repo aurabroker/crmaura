@@ -1,17 +1,25 @@
-// Polisa wysłana klientowi z karty polisy. Treść to szablon w Resend (firma poprawia go sama w Resend),
-// CRM podstawia dane polisy i dołącza PDF polisy z magazynu R2; pozostałe dokumenty programu są w treści
-// szablonu jako linki do pliki.auraexpert.pl. Szablon zależy od programu (ug_podtyp umowy generalnej).
-// Adresaci tylko spośród adresów klienta i jego osób kontaktowych (jak e-mail z Panelu 360°). Każda wysyłka
-// trafia do historii (crm_client_emails, rodzaj „polisa” — status dostarczenia z webhooka Resend) i audytu.
+// Polisa wysłana klientowi z karty polisy. Polisa z programu (ug_podtyp umowy generalnej) ma własny szablon
+// w Resend (firma poprawia go sama w Resend; pozostałe dokumenty programu są w treści jako linki do
+// pliki.auraexpert.pl). Każda inna polisa idzie z ogólnego szablonu „polisa-wystawiona” z Resend firmy, a gdy
+// go nie ma — z wbudowanej treści CRM (dane polisy, okres, składka, termin płatności). CRM podstawia dane
+// polisy i dołącza z magazynu R2 PDF polisy oraz OWU (z polisy albo jej Umowy Generalnej). Adresaci tylko
+// spośród adresów klienta i jego osób kontaktowych (jak e-mail z Panelu 360°). Każda wysyłka trafia do
+// historii (crm_client_emails, rodzaj „polisa” — status dostarczenia z webhooka Resend) i audytu.
 import { error } from '@sveltejs/kit';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { EMAIL_RE, base64, bezAdresow, esc, wyslijEmail, type Wiadomosc, type WynikWysylki, type Zalacznik } from './mail';
 import { LIMIT_NA_GODZINE, adresNadawcy, ustawieniaWysylki } from './emailKlienta';
 import type { ProfilFirmy } from './pliki';
+import { nazwaRodzaju } from '$lib/statusPolisy';
 
 /** Program (ug_podtyp umowy generalnej) → alias szablonu w Resend. */
 export const SZABLON_PROGRAMU: Record<string, string> = { oc_beauty: 'beauty-polisa-wystawiona' };
+/** Alias ogólnego szablonu w Resend dla polis spoza programów; bez niego — wbudowana treść CRM. */
+export const SZABLON_OGOLNY = 'polisa-wystawiona';
+export const SZABLON_WBUDOWANY = 'wbudowany';
 export const MAKS_ZALACZNIKOW_MB = 20;
+/** Najwyżej tyle załączników w mailu z polisą (PDF polisy + OWU). */
+export const MAKS_ZALACZNIKOW = 3;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const ROZLICZONE = ['Opłacona', 'Częściowo opłacona'];
@@ -49,14 +57,15 @@ export type SzablonResend = {
 	variables?: { key: string; fallback_value?: string | number | null }[] | null;
 };
 
-/** Opublikowany szablon z Resend (kluczem firmy). Szkic nie nadaje się do wysyłki. */
-export async function pobierzSzablon(klucz: string, alias: string, f: typeof fetch = fetch): Promise<SzablonResend> {
+/** Opublikowany szablon z Resend (kluczem firmy). Szkic nie nadaje się do wysyłki; `brakOk` — brak szablonu to null, nie błąd. */
+export async function pobierzSzablon(klucz: string, alias: string, f: typeof fetch = fetch, brakOk = false): Promise<SzablonResend | null> {
 	let res: Response;
 	try {
 		res = await f(`https://api.resend.com/templates/${encodeURIComponent(alias)}`, { headers: { Authorization: `Bearer ${klucz}` } });
 	} catch {
 		throw error(502, 'Nie udało się połączyć z Resend — spróbuj za chwilę.');
 	}
+	if (res.status === 404 && brakOk) return null;
 	if (res.status === 404) throw error(400, `W Resend nie ma szablonu „${alias}” — utwórz go na koncie Resend, którego klucz ma firma.`);
 	if (!res.ok) throw error(502, `Resend nie oddał szablonu „${alias}” (błąd ${res.status}).`);
 	const t = (await res.json().catch(() => null)) as SzablonResend | null;
@@ -73,6 +82,35 @@ export function wypelnijSzablon(tekst: string, zmienne: Record<string, string>, 
 		return html ? esc(v) : v;
 	});
 }
+
+/**
+ * Wbudowana treść maila z polisą spoza programu — te same zmienne co w szablonach Resend, więc firma może
+ * ją zastąpić własnym szablonem „polisa-wystawiona” (POWITANIE, NR_POLISY, RODZAJ, TU, PRZEDMIOT, OKRES_OD,
+ * OKRES_DO, SKLADKA, TERMIN_PLATNOSCI, KLIENT, DORADCA, FIRMA, OWU).
+ */
+export function szablonWbudowany(): SzablonResend {
+	const p = (t: string) => `<p style="margin:0 0 14px">${t}</p>`;
+	const w = (etykieta: string, wartosc: string) =>
+		`<tr><td style="padding:4px 12px 4px 0;color:#5E6A7E;white-space:nowrap">${etykieta}</td><td style="padding:4px 0;font-weight:600">${wartosc}</td></tr>`;
+	const html =
+		`<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#121826;max-width:640px">` +
+		p('{{{POWITANIE}}},') +
+		p('w załączeniu przesyłamy polisę <strong>{{{RODZAJ}}}</strong> nr <strong>{{{NR_POLISY}}}</strong> zawartą w {{{TU}}}{{{PRZEDMIOT_ZDANIE}}}.') +
+		`<table style="border-collapse:collapse;margin:0 0 14px;font-size:15px">` +
+		w('Okres ubezpieczenia', '{{{OKRES_OD}}} – {{{OKRES_DO}}}') +
+		w('Składka', '{{{SKLADKA}}} zł') +
+		w('Termin płatności', '{{{TERMIN_PLATNOSCI}}}') +
+		`</table>` +
+		p('Prosimy o sprawdzenie danych na polisie i opłacenie składki w terminie.{{{OWU_ZDANIE}}}') +
+		p('W razie pytań jesteśmy do dyspozycji.') +
+		p('Z poważaniem,<br>{{{DORADCA}}}<br>{{{FIRMA}}}') +
+		`<p style="margin:24px 0 0;font-size:12px;color:#5E6A7E">Wiadomość wysłana z systemu obsługi klientów {{{FIRMA}}}.</p></div>`;
+	return { subject: 'Polisa nr {{{NR_POLISY}}} — {{{RODZAJ}}}, {{{TU}}}', html, text: null, from: null, reply_to: null, status: 'published', variables: [] };
+}
+
+/** Składka w mailu: 17 480,36 */
+export const kwotaSlownie = (n: number | string | null | undefined) =>
+	(Number(n) || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Zapasowa wersja tekstowa, gdy szablon jej nie ma. */
 export function htmlNaTekst(html: string): string {
@@ -93,34 +131,43 @@ export function htmlNaTekst(html: string): string {
 		.trim();
 }
 
-type Polisa = { id: string; nr_polisy: string; data_od: string | null; data_do: string | null; klient_id: string; parent_id: string | null };
-type Plik = { id: string; nazwa: string; klucz: string; rozmiar: number; rodzaj: string; created_at: string };
+type Polisa = {
+	id: string; nr_polisy: string; data_od: string | null; data_do: string | null; klient_id: string; parent_id: string | null;
+	rodzaj?: string | null; przedmiot?: string | null; skladka_przypisana?: number | string | null; typ_umowy?: string | null;
+	crm_insurers?: { nazwa: string; skrot: string | null } | null;
+};
+type Plik = { id: string; polisa_id?: string; nazwa: string; klucz: string; rozmiar: number; rodzaj: string; created_at: string };
 
-/** Polisa firmy w programie z szablonem + klient, adresy, pliki, raty i wcześniejsze wysyłki. */
+/** Polisa firmy + szablon (programu albo ogólny), klient, adresy, pliki (z OWU umowy generalnej), raty i wcześniejsze wysyłki. */
 async function wczytaj(admin: SupabaseClient, profil: ProfilFirmy, polisaId: string) {
 	if (!UUID.test(polisaId)) throw error(404, 'Nie ma takiej polisy.');
 	const { data: p } = await admin
 		.from('crm_policies')
-		.select('id, nr_polisy, data_od, data_do, klient_id, parent_id')
+		.select('id, nr_polisy, data_od, data_do, klient_id, parent_id, rodzaj, przedmiot, skladka_przypisana, typ_umowy, crm_insurers(nazwa, skrot)')
 		.eq('id', polisaId)
 		.eq('tenant_id', profil.tenant_id)
 		.is('deleted_at', null)
 		.maybeSingle();
 	const polisa = p as Polisa | null;
 	if (!polisa) throw error(404, 'Nie ma takiej polisy w Twojej firmie.');
+	if (polisa.typ_umowy === 'generalna') throw error(400, 'Umowy generalnej nie wysyła się klientowi jak polisy — wyślij polisę zawartą w ramach umowy.');
 
+	// Polisa z programu ma własny szablon w Resend; każda inna — ogólny (albo wbudowaną treść CRM).
 	let szablon: string | null = null;
 	if (polisa.parent_id) {
 		const { data: ug } = await admin.from('crm_policies').select('typ_umowy, ug_podtyp').eq('id', polisa.parent_id).eq('tenant_id', profil.tenant_id).maybeSingle();
 		const u = ug as { typ_umowy: string | null; ug_podtyp: string | null } | null;
 		if (u?.typ_umowy === 'generalna' && u.ug_podtyp) szablon = SZABLON_PROGRAMU[u.ug_podtyp] ?? null;
 	}
-	if (!szablon) throw error(400, 'Ta polisa nie należy do programu z szablonem maila do klienta.');
+	const ogolny = !szablon;
+	if (!szablon) szablon = SZABLON_OGOLNY;
 
+	// Pliki polisy i OWU z jej Umowy Generalnej (OWU wgrane raz na umowie dziedziczy każda polisa z umowy).
+	const plikiZ = [polisa.id, ...(polisa.parent_id ? [polisa.parent_id] : [])];
 	const [{ data: k }, { data: kontakty }, { data: pl }, { data: raty }, { data: wys }] = await Promise.all([
 		admin.from('crm_clients').select('id, nazwa, email').eq('id', polisa.klient_id).eq('tenant_id', profil.tenant_id).maybeSingle(),
 		admin.from('crm_client_contacts').select('imie_nazwisko, email').eq('klient_id', polisa.klient_id).eq('tenant_id', profil.tenant_id).order('created_at'),
-		admin.from('crm_policy_files').select('id, nazwa, klucz, rozmiar, rodzaj, created_at').eq('polisa_id', polisa.id).eq('tenant_id', profil.tenant_id).order('created_at', { ascending: false }),
+		admin.from('crm_policy_files').select('id, polisa_id, nazwa, klucz, rozmiar, rodzaj, created_at').in('polisa_id', plikiZ).eq('tenant_id', profil.tenant_id).order('created_at', { ascending: false }),
 		admin.from('crm_policy_payments').select('data_platnosci, status').eq('polisa_id', polisa.id).order('data_platnosci'),
 		admin
 			.from('crm_client_emails')
@@ -146,30 +193,48 @@ async function wczytaj(admin: SupabaseClient, profil: ProfilFirmy, polisaId: str
 	const rat = (raty ?? []) as { data_platnosci: string | null; status: string | null }[];
 	const terminy = rat.filter((r) => r.data_platnosci && !ROZLICZONE.includes(r.status ?? ''));
 	const termin = (terminy[0] ?? rat.find((r) => r.data_platnosci))?.data_platnosci ?? null;
+	// Z Umowy Generalnej bierzemy tylko OWU — polisa umowy czy aneksy umowy nie są dokumentami tej polisy.
+	const pliki = ((pl ?? []) as Plik[]).filter((f) => !f.polisa_id || f.polisa_id === polisa.id || f.rodzaj === 'owu');
 
 	return {
 		polisa,
 		szablon,
+		ogolny,
 		klient,
 		adresy,
-		pliki: (pl ?? []) as Plik[],
+		pliki,
 		powitanie: powitanieDomyslne(osoby.find((o) => o.imie_nazwisko)?.imie_nazwisko),
 		termin: termin ? termin.slice(0, 10) : null,
 		wyslane: (wys ?? []) as { wyslano_at: string; adres: string; dostawa: string | null }[]
 	};
 }
 
+/** Domyślne załączniki: PDF polisy i OWU (najwyżej MAKS_ZALACZNIKOW, razem do MAKS_ZALACZNIKOW_MB). */
+export function domyslneZalaczniki(pliki: Plik[], polisaId: string): string[] {
+	const pdf = pliki.find((p) => p.rodzaj === 'polisa' && (!p.polisa_id || p.polisa_id === polisaId));
+	const owu = pliki.filter((p) => p.rodzaj === 'owu');
+	const out: Plik[] = [];
+	let suma = 0;
+	for (const p of [pdf, ...owu]) {
+		if (!p || out.length >= MAKS_ZALACZNIKOW || suma + Number(p.rozmiar) > MAKS_ZALACZNIKOW_MB * 1024 * 1024) continue;
+		out.push(p);
+		suma += Number(p.rozmiar);
+	}
+	return out.map((p) => p.id);
+}
+
 /** Dane do okna „Wyślij polisę klientowi”. */
 export async function kontekstMailaPolisy(admin: SupabaseClient, profil: ProfilFirmy, polisaId: string) {
 	const w = await wczytaj(admin, profil, polisaId);
-	const pdfPolisy = w.pliki.find((p) => p.rodzaj === 'polisa') ?? null;
 	return {
 		szablon: w.szablon,
+		/** Polisa spoza programu: ogólny szablon „polisa-wystawiona” z Resend albo wbudowana treść CRM. */
+		ogolny: w.ogolny,
 		polisa: { nr_polisy: w.polisa.nr_polisy, data_od: w.polisa.data_od, data_do: w.polisa.data_do },
 		klient: w.klient.nazwa,
 		adresy: w.adresy,
-		pliki: w.pliki.map((p) => ({ id: p.id, nazwa: p.nazwa, rozmiar: Number(p.rozmiar), rodzaj: p.rodzaj })),
-		domyslne: { do: w.adresy.slice(0, 1).map((a) => a.adres), powitanie: w.powitanie, termin_platnosci: w.termin, pliki: pdfPolisy ? [pdfPolisy.id] : [] },
+		pliki: w.pliki.map((p) => ({ id: p.id, nazwa: p.nazwa, rozmiar: Number(p.rozmiar), rodzaj: p.rodzaj, zUmowy: !!p.polisa_id && p.polisa_id !== w.polisa.id })),
+		domyslne: { do: w.adresy.slice(0, 1).map((a) => a.adres), powitanie: w.powitanie, termin_platnosci: w.termin, pliki: domyslneZalaczniki(w.pliki, w.polisa.id) },
 		wyslane: w.wyslane
 	};
 }
@@ -189,7 +254,7 @@ export function sprawdzZadanie(body: ZadanieMailaPolisy) {
 	if (powitanie.length > 120) throw error(400, 'Powitanie jest za długie (najwyżej 120 znaków).');
 	if (!ISO.test(termin) || Number.isNaN(Date.parse(termin))) throw error(400, 'Podaj termin płatności składki.');
 	if (!pliki.length) throw error(400, 'Zaznacz PDF polisy do załączenia.');
-	if (pliki.length > 3 || pliki.some((id) => !UUID.test(id))) throw error(400, 'Najwyżej 3 załączniki.');
+	if (pliki.length > MAKS_ZALACZNIKOW || pliki.some((id) => !UUID.test(id))) throw error(400, `Najwyżej ${MAKS_ZALACZNIKOW} załączniki.`);
 	return { adresy, powitanie, termin, pliki, podglad: body.podglad === true };
 }
 
@@ -214,15 +279,29 @@ export async function mailPolisy(
 
 	const ust = await ustawieniaWysylki(admin, profil.tenant_id);
 	if (!ust.klucz) throw error(400, 'Firma nie ma skonfigurowanej wysyłki e-maili (klucz Resend w SAAS Admin).');
-	const t = await pobierzSzablon(ust.klucz, w.szablon, o.f);
+	// Program: szablon programu musi być w Resend. Poza programem: ogólny szablon firmy, a bez niego wbudowana treść.
+	const zResend = await pobierzSzablon(ust.klucz, w.szablon, o.f, w.ogolny);
+	const t = zResend ?? szablonWbudowany();
+	const nazwaSzablonu = zResend ? w.szablon : SZABLON_WBUDOWANY;
 
+	const owu = wybrane.filter((p) => p.rodzaj === 'owu').map((p) => p.nazwa);
+	const przedmiot = String(w.polisa.przedmiot ?? '').trim();
 	const zmienne: Record<string, string> = {
 		POWITANIE: z.powitanie,
 		NR_POLISY: w.polisa.nr_polisy,
 		OKRES_OD: dataKropki(w.polisa.data_od),
 		OKRES_DO: dataKropki(w.polisa.data_do),
 		TERMIN_PLATNOSCI: dataSlownie(z.termin),
-		KLIENT: w.klient.nazwa
+		KLIENT: w.klient.nazwa,
+		RODZAJ: nazwaRodzaju(w.polisa.rodzaj ?? ''),
+		TU: w.polisa.crm_insurers?.nazwa ?? w.polisa.crm_insurers?.skrot ?? 'towarzystwie ubezpieczeń',
+		PRZEDMIOT: przedmiot,
+		PRZEDMIOT_ZDANIE: przedmiot && !przedmiot.startsWith('{') ? ` (${przedmiot})` : '',
+		SKLADKA: kwotaSlownie(w.polisa.skladka_przypisana),
+		OWU: owu.join(', '),
+		OWU_ZDANIE: owu.length ? ' Załączamy też Ogólne Warunki Ubezpieczenia (OWU).' : '',
+		DORADCA: profil.imie_nazwisko ?? '',
+		FIRMA: ust.firma
 	};
 	const zastepcze = Object.fromEntries((t.variables ?? []).map((v) => [v.key, v.fallback_value == null ? '' : String(v.fallback_value)]));
 	const html = wypelnijSzablon(t.html ?? '', zmienne, true, zastepcze);
@@ -274,7 +353,7 @@ export async function mailPolisy(
 		entity_type: 'policy',
 		entity_id: w.polisa.id,
 		entity_label: w.polisa.nr_polisy,
-		details: { szablon: w.szablon, adresatow: z.adresy.length, zalaczniki: nazwy, termin_platnosci: z.termin }
+		details: { szablon: nazwaSzablonu, adresatow: z.adresy.length, zalaczniki: nazwy, termin_platnosci: z.termin }
 	});
 	return { podglad: false as const, id: wynik.id, adresy: z.adresy };
 }

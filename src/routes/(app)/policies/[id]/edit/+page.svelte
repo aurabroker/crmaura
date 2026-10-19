@@ -8,6 +8,7 @@
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
 	import UgForm from '$lib/components/UgForm.svelte';
 	import { ArrowLeft } from 'lucide-svelte';
+	import { potwierdzDuplikat } from '$lib/duplikatPolisy';
 
 	const policyId = $derived($page.params.id);
 	const policy = $derived(appState.policies.find(p => p.id === policyId));
@@ -27,8 +28,10 @@
 		if (!form || !policy) return;
 		const err = form.isValid();
 		if (err) { formError = err; return; }
-		saving = true; formError = '';
 		const vals: Record<string, unknown> = form.getValues();
+		// Numer zmieniony na numer innej polisy w CRM — monit przed zapisem.
+		if (!(await potwierdzDuplikat(vals.nr_polisy as string, appState.policies, policy.id))) return;
+		saving = true; formError = '';
 		// Polisa bez opiekuna TU podpinana właśnie pod Umowę Generalną: opiekun domyślnie z umowy
 		// (przy zwykłej edycji nie przywracamy opiekuna usuniętego celowo).
 		if (!isUg && !policy.tu_contact_id && vals.parent_id && vals.parent_id !== policy.parent_id) {

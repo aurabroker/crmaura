@@ -129,10 +129,13 @@ export async function otworzPlikNoty(notaId: string, nazwa: string | null, typ: 
 
 export type KontekstMailaPolisy = {
 	szablon: string;
+	/** Polisa spoza programu: ogólny szablon „polisa-wystawiona” z Resend firmy albo wbudowana treść CRM. */
+	ogolny: boolean;
 	polisa: { nr_polisy: string; data_od: string | null; data_do: string | null };
 	klient: string;
 	adresy: { adres: string; opis: string }[];
-	pliki: { id: string; nazwa: string; rozmiar: number; rodzaj: PlikPolisy['rodzaj'] }[];
+	/** zUmowy — OWU z Umowy Generalnej polisy. */
+	pliki: { id: string; nazwa: string; rozmiar: number; rodzaj: PlikPolisy['rodzaj']; zUmowy?: boolean }[];
 	domyslne: { do: string[]; powitanie: string; termin_platnosci: string | null; pliki: string[] };
 	wyslane: { wyslano_at: string; adres: string; dostawa: string | null }[];
 };

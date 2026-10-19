@@ -6,6 +6,7 @@ import type { Client, Leasing, Policy, PolicyImportData, PolicyRisk, Vehicle } f
 import type { ExtractedPolicy, ProductTemplate, RiskItem } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
 import { poczatekUmowy, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
+import { znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
 
 export type IssueLevel = 'error' | 'warn' | 'info';
 
@@ -78,13 +79,12 @@ export function buildDraft(input: BuildInput): Draft {
 	if (extracted.skladka == null)
 		issues.push({ level: 'error', text: 'Nie odczytano składki.' });
 
-	const duplikat = policies.find(
-		(p) => p.nr_polisy?.trim() === extracted.nr_polisy?.trim() && !p.deleted_at
-	);
+	// Ten sam numer bez spacji, myślników i wielkości liter — polisa dodana drugi raz podwoiłaby przypis i raty.
+	const duplikat = znajdzDuplikatPolisy(extracted.nr_polisy, policies);
 	if (duplikat)
 		issues.push({
 			level: 'error',
-			text: `Polisa o numerze ${extracted.nr_polisy} już istnieje w CRM.`
+			text: `Polisa o numerze ${extracted.nr_polisy} już jest w CRM (${duplikat.nr_polisy}, ${duplikat.data_od} — ${duplikat.data_do}).`
 		});
 
 	// Umowa Generalna po numerze programu wskazanym na polisie. Program przedłużany z tym samym

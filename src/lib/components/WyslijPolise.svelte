@@ -1,6 +1,7 @@
 <script lang="ts">
-	// „Wyślij polisę klientowi” z karty polisy: treść z szablonu Resend programu (Beauty Polisa), dane polisy
-	// podstawia serwer, w załączniku PDF polisy z magazynu. Przed wysyłką podgląd dokładnie tego, co dostanie klient.
+	// „Wyślij polisę klientowi” z karty polisy: polisa z programu — treść z szablonu Resend programu (Beauty Polisa);
+	// każda inna — ogólny szablon „polisa-wystawiona” z Resend firmy albo wbudowana treść CRM. Dane polisy
+	// podstawia serwer, w załącznikach PDF polisy i OWU z magazynu. Przed wysyłką podgląd dokładnie tego, co dostanie klient.
 	import { untrack } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
@@ -169,12 +170,16 @@
 							<label class="flex items-center gap-2 cursor-pointer min-w-0">
 								<input type="checkbox" checked={pliki.has(f.id)} onchange={() => (pliki = przelacz(pliki, f.id))} class="w-4 h-4 accent-accent shrink-0" />
 								<span class="text-ink truncate">{f.nazwa}</span>
-								<span class="text-xs text-ink-3 whitespace-nowrap">{RODZAJ_PLIKU[f.rodzaj]} · {rozmiar(f.rozmiar)}</span>
+								<span class="text-xs text-ink-3 whitespace-nowrap">{RODZAJ_PLIKU[f.rodzaj]}{f.zUmowy ? ' z umowy generalnej' : ''} · {rozmiar(f.rozmiar)}</span>
 							</label>
 						{/each}
 					</div>
 				{/if}
-				<p class="text-xs text-ink-3 mt-1.5">Pozostałe dokumenty programu (OWU, RODO, pełnomocnictwo…) są w treści maila jako linki.</p>
+				{#if ktx.ogolny}
+					<p class="text-xs text-ink-3 mt-1.5">OWU dołączasz jako załącznik — z tej polisy albo z jej Umowy Generalnej (najwyżej 3 pliki, razem do 20 MB). Jeśli OWU nie ma na liście, dodaj je w sekcji „Dokumenty” jako plik typu OWU.</p>
+				{:else}
+					<p class="text-xs text-ink-3 mt-1.5">Pozostałe dokumenty programu (OWU, RODO, pełnomocnictwo…) są w treści maila jako linki.</p>
+				{/if}
 			</fieldset>
 
 			{#if podglad}
@@ -184,8 +189,13 @@
 					<iframe title="Podgląd maila" sandbox="" srcdoc={podglad.html} class="w-full h-[440px] border border-line rounded-lg bg-white"></iframe>
 				</div>
 			{:else}
-				<p class="text-xs text-ink-3 border-t border-line-soft pt-3">
-					Treść maila pochodzi z szablonu „{ktx.szablon}” w Resend — zmieniasz ją w Resend (po zmianie opublikuj szablon). Kliknij „Podgląd”, żeby zobaczyć mail z danymi tej polisy.
+				<p class="text-xs text-ink-3 border-t border-line-soft pt-3" data-testid="opis-szablonu">
+					{#if ktx.ogolny}
+						Treść maila: wbudowany szablon CRM (polisa, towarzystwo, okres, składka, termin płatności, załączniki). Jeśli na koncie Resend firmy jest opublikowany szablon „{ktx.szablon}”, CRM użyje jego treści — zmienne: POWITANIE, NR_POLISY, RODZAJ, TU, PRZEDMIOT, OKRES_OD, OKRES_DO, SKLADKA, TERMIN_PLATNOSCI, KLIENT, DORADCA, FIRMA, OWU.
+					{:else}
+						Treść maila pochodzi z szablonu „{ktx.szablon}” w Resend — zmieniasz ją w Resend (po zmianie opublikuj szablon).
+					{/if}
+					Kliknij „Podgląd”, żeby zobaczyć mail z danymi tej polisy.
 				</p>
 			{/if}
 		{/if}

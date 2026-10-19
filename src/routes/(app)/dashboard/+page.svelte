@@ -16,6 +16,7 @@
 	import { ustawStatusZadania, zadanieOtwarte, zadanieZWniosku, zadaniaPoZmianie } from '$lib/zadania';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
 	import { klientNieaktywny, nieOdnawiana, polisaAktywna } from '$lib/statusPolisy';
+	import { adresOdnowieniaRecznego } from '$lib/formularzPolisy';
 	import { OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { isBroker } from '$lib/stores/app.svelte';
@@ -321,7 +322,7 @@
 		const start = p.data_do ? dateDiffDays(today, p.data_do) >= 0 ? new Date(`${p.data_do}T12:00:00Z`) : null : null;
 		if (start) start.setUTCDate(start.getUTCDate() + 1);
 		const ugOdnowienia = ug ? umowaObowiazujaca(umowyProgramu(appState.policies, ug.nr_polisy), start ? start.toISOString().slice(0, 10) : today) : null;
-		return `/policies/new?klient=${p.klient_id}&rodzaj=${encodeURIComponent(p.rodzaj)}&przedmiot=${encodeURIComponent(p.przedmiot ?? '')}&renewal_of=${p.id}${p.pojazd_id ? `&pojazd_id=${p.pojazd_id}` : ''}${ugOdnowienia ? `&parent_id=${ugOdnowienia.id}` : ''}`;
+		return adresOdnowieniaRecznego(p, { parentId: ugOdnowienia?.id ?? null });
 	}
 
 	// Zadanie do wniosku: istniejące otwieramy, brak (wniosek sprzed powiązań) — nowe z gotowym tytułem.

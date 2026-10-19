@@ -3,6 +3,8 @@
 	import { untrack } from 'svelte';
 	import type { Policy } from '$lib/types/database';
 	import { assignedPolicyFor } from '$lib/utils';
+	import { opisDuplikatu, znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
+	import { opisZawezeniaTU, towarzystwaDlaRodzaju } from '$lib/formularzPolisy';
 
 	interface Props {
 		policy?: Policy | null;
@@ -11,14 +13,20 @@
 		presetPrzedmiot?: string;
 		presetPojazdId?: string;
 		presetParentId?: string;
+		/** Odnowienie ręczne: okres od dnia po końcu poprzedniej polisy (data do dolicza się sama), TU, stawka prowizji, liczba rat, suma gwarancyjna. */
+		presetOd?: string;
+		presetTu?: string;
+		presetProwPct?: string;
+		presetRaty?: string;
+		presetSumaGw?: string;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', presetOd = '', presetTu = '', presetProwPct = '', presetRaty = '', presetSumaGw = '', onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpUbezpieczony = $state(policy?.ubezpieczony_id ?? '');
 	let showUbezpieczony = $state(!!policy?.ubezpieczony_id);
-	let fpTu = $state(policy?.tu_id ?? '');
+	let fpTu = $state(policy?.tu_id ?? presetTu);
 	let fpNr = $state(policy?.nr_polisy ?? '');
 	let fpRodzaj = $state((policy?.rodzaj ?? presetRodzaj) || 'majątkowa');
 	const fpTypUmowy = 'jednostkowa';
@@ -55,10 +63,11 @@
 		if (v) fpPrzedmiot = `${v.nr_rejestracyjny}${v.vin ? ' / ' + v.vin : ''} — ${v.marka_model}`;
 	});
 
-	let fpOd = $state(policy?.data_od ?? '');
+	let fpOd = $state(policy?.data_od ?? presetOd);
 	let fpDo = $state(policy?.data_do ?? '');
 	let fpZawarcia = $state((policy as any)?.data_zawarcia ?? '');
-	let fpRaty = $state(policy?.ilosc_rat ?? '1');
+	const nRatStart = parseInt(policy?.ilosc_rat ?? (presetRaty || '1')) || 1;
+	let fpRaty = $state(policy?.ilosc_rat ?? String(nRatStart));
 
 	function parseDatyRat(raw: string | null | undefined, count: number): string[] {
 		const parts = (raw ?? '').split(',').map(s => s.trim()).filter(Boolean);
@@ -71,18 +80,18 @@
 	}
 
 	let fpSklPrzyp = $state(policy?.skladka_przypisana?.toString() ?? '');
-	let fpSumaGw = $state(policy?.suma_gwarancyjna?.toString() ?? '');
+	let fpSumaGw = $state(policy?.suma_gwarancyjna?.toString() ?? presetSumaGw);
 	// Kolumna suma_gwarancyjna dochodzi migracją odnowień. Wiersz wczytany po migracji ma ten klucz —
 	// wtedy wolno wysłać null (wyczyszczenie pola); wcześniej klucz idzie tylko z wpisaną kwotą,
 	// żeby zapis polisy nie padał na nieistniejącej kolumnie.
 	const maKolumneSumy = !!policy && 'suma_gwarancyjna' in policy;
 	let fpSklZaliczkowa = $state(policy?.skladka_zaliczkowa?.toString() ?? '0');
-	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? '');
+	let fpProwPct = $state(policy?.prowizja_pct?.toString() ?? presetProwPct);
 	let fpProwPrzyp = $state(policy?.prowizja_przypisana?.toString() ?? '');
-	let fpDatyRatArr = $state<string[]>(parseDatyRat(policy?.daty_rat, parseInt(policy?.ilosc_rat ?? '1')));
+	let fpDatyRatArr = $state<string[]>(parseDatyRat(policy?.daty_rat, nRatStart));
 	let fpKwotypRatArr = $state<string[]>(parseKwotyRat(
 		(policy as any)?.kwoty_rat,
-		parseInt(policy?.ilosc_rat ?? '1'),
+		nRatStart,
 		parseFloat(policy?.skladka_przypisana?.toString() ?? '0') || 0
 	));
 
@@ -102,7 +111,7 @@
 	}
 
 	// Śledź poprzednią liczbę rat (zwykła zmienna, nie $state)
-	let _prevN = parseInt(policy?.ilosc_rat ?? '1');
+	let _prevN = nRatStart;
 
 	// Daty rat: przy zmianie liczby rat → przelicz wszystkie; przy zmianie data_od → wypełnij puste
 	$effect(() => {
@@ -267,12 +276,14 @@
 
 	let tuSearch = $state('');
 	let tuOpen = $state(false);
-	const udTU = ['ceu', 'leadenhall'];
-	const availableTU = $derived(
-		isUD
-			? appState.insurers.filter(t => udTU.some(k => t.nazwa.toLowerCase().includes(k) || (t.skrot ?? '').toLowerCase().includes(k)))
-			: appState.insurers
-	);
+	// Lista TU zawężona do działu pasującego do rodzaju polisy (techniczna → majątkowe, życie → życiowe,
+	// utrata dochodu → CEU / Leadenhall); „pokaż wszystkie” zdejmuje filtr na czas wyboru.
+	let pokazWszystkieTU = $state(false);
+	const maZawezenieTU = $derived(!!opisZawezeniaTU(fpRodzaj));
+	const availableTU = $derived(pokazWszystkieTU ? appState.insurers : towarzystwaDlaRodzaju(appState.insurers, fpRodzaj));
+	const ukryteTU = $derived(appState.insurers.length - availableTU.length);
+	// Polisa o tym numerze już jest w CRM (poza edytowaną): ostrzeżenie pod numerem, a przed zapisem monit.
+	const duplikat = $derived(znajdzDuplikatPolisy(fpNr, appState.policies, policy?.id));
 	const filteredTU = $derived(
 		tuSearch.trim()
 			? availableTU.filter(t => t.nazwa.toLowerCase().includes(tuSearch.toLowerCase()) || (t.skrot ?? '').toLowerCase().includes(tuSearch.toLowerCase()))
@@ -380,7 +391,7 @@
 					{#if tuOpen}
 						<div class="absolute z-[200] left-0 right-0 top-full mt-0.5 bg-white border border-line rounded-lg shadow-2xl max-h-60 overflow-y-auto">
 							{#if filteredTU.length === 0}
-								<div class="px-3 py-2 text-sm text-slate-400">Brak wyników</div>
+								<div class="px-3 py-2 text-sm text-slate-400">Brak wyników{maZawezenieTU && !pokazWszystkieTU ? ' wśród TU tego rodzaju' : ''}</div>
 							{:else}
 								{#each filteredTU as t}
 									<button tabindex="0" type="button"
@@ -389,6 +400,13 @@
 										{#if t.skrot}<span class="font-mono font-bold text-blue-700 mr-2">{t.skrot}</span>{/if}{t.nazwa}
 									</button>
 								{/each}
+							{/if}
+							{#if maZawezenieTU}
+								<!-- Lista zawężona do działu pasującego do rodzaju polisy; „pokaż wszystkie” zdejmuje filtr. -->
+								<div data-testid="tu-zawezenie" class="flex items-center justify-between gap-2 px-3 py-1.5 border-t border-line-soft text-xs text-slate-500 bg-slate-50">
+									<span>{pokazWszystkieTU ? 'wszystkie towarzystwa' : `${opisZawezeniaTU(fpRodzaj)}${ukryteTU > 0 ? ` · ukryte: ${ukryteTU}` : ''}`}</span>
+									<button type="button" tabindex="0" onmousedown={(e) => e.preventDefault()} onclick={() => (pokazWszystkieTU = !pokazWszystkieTU)} class="font-semibold text-blue-700 hover:underline whitespace-nowrap">{pokazWszystkieTU ? 'zawęź do rodzaju polisy' : 'pokaż wszystkie'}</button>
+								</div>
 							{/if}
 						</div>
 					{/if}
@@ -459,7 +477,14 @@
 	<div class="grid grid-cols-2 gap-4">
 		<div>
 			<label class={lbl}>Nr Polisy *</label>
-			<input bind:value={fpNr} class={inp} placeholder="np. 436000436385" />
+			<input bind:value={fpNr} class={inp} placeholder="np. 436000436385" aria-describedby={duplikat ? 'fp-duplikat' : undefined} />
+			{#if duplikat}
+				<!-- Polisa o tym numerze już jest w CRM — ostrzeżenie od razu przy pisaniu, monit jeszcze przed zapisem. -->
+				<p id="fp-duplikat" data-testid="duplikat-polisy" class="mt-1.5 flex items-start gap-1.5 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+					<span aria-hidden="true">⚠️</span>
+					<span>Ta polisa już jest w systemie: <a href="/policies/{duplikat.id}" target="_blank" rel="noopener" class="font-semibold underline">{duplikat.nr_polisy}</a>{opisDuplikatu(duplikat) ? ` — ${opisDuplikatu(duplikat)}` : ''}. Jeśli to kolejny okres, użyj „Odnów” na jej karcie.</span>
+				</p>
+			{/if}
 		</div>
 		<div>
 			<label class={lbl}>Przedmiot ubezpieczenia</label>
