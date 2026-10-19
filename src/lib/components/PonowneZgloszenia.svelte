@@ -51,7 +51,7 @@
 		if (!appState.profile) return;
 		const { data, error } = await sb
 			.from('crm_zgloszenia')
-			.select('id, klient_id, prospect_id, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at, crm_clients(nazwa, nazwa_skrocona, opiekun_id), crm_prospects(broker_id)')
+			.select('id, klient_id, prospect_id, zrodlo, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at, crm_clients(nazwa, nazwa_skrocona, opiekun_id), crm_prospects(broker_id)')
 			.eq('ponowne', true)
 			.is('odczytane_at', null)
 			.order('zgloszono_at', { ascending: false })
@@ -140,6 +140,7 @@
 					<p class="mt-1 text-xs text-ink-2">
 						{#if w.poprzednie_at}{w.poprzednie_typ === 'kartoteka' ? 'W kartotece od' : 'Poprzednie zgłoszenie'}: {fmtDzien(w.poprzednie_at.slice(0, 10), true)}{/if}
 						{#if w.kontakt}{w.poprzednie_at ? ' · ' : ''}{w.kontakt}{/if}
+						{#if w.zrodlo === 'utrata_dochodu'}{w.poprzednie_at || w.kontakt ? ' · ' : ''}wniosek w aplikacji Utrata Dochodu{/if}
 					</p>
 					<div class="flex flex-wrap items-center gap-2 mt-2">
 						<button onclick={() => otworz(w)} disabled={zapis} class="h-8 px-3 rounded-lg bg-accent text-white text-[13px] font-semibold hover:bg-accent-hover disabled:opacity-60">Otwórz klienta</button>

@@ -18,6 +18,7 @@
 		ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania,
 		stanMaila, type MailKampanii, type Zgloszenie
 	} from '$lib/sprzedaz';
+	import { wierszeWnioskuUD, type WniosekUD } from '$lib/utrataDochodu';
 
 	type Prospect = {
 		id: string;
@@ -75,9 +76,11 @@
 	let fPrzychod = $state('');
 	let saving = $state(false);
 
-	// Zgłoszenia z formularza i maile kampanii (BEAUTY) firmy tego leada.
+	// Zgłoszenia z formularza i maile kampanii (BEAUTY) firmy tego leada; wnioski z aplikacji Utrata Dochodu (crm_ud_leady).
 	let zgloszenia = $state<Zgloszenie[]>([]);
 	let maileKampanii = $state<MailKampanii[]>([]);
+	let wnioskiUD = $state<WniosekUD[]>([]);
+	const maZgloszenieUD = $derived(zgloszenia.some((z) => z.zrodlo === 'utrata_dochodu'));
 	const klient = $derived(prospect?.crm_clients ?? null);
 	const nazwaLeada = $derived(klient?.nazwa_skrocona ?? klient?.nazwa ?? prospect?.nazwa ?? '');
 	// „APK i wniosek o pierwszą polisę OC beauty” to rozwiązanie branży beauty: firma prowadzi program OC beauty,
@@ -164,9 +167,9 @@
 	async function wczytajZgloszeniaIMaile() {
 		const lead = prospect;
 		if (!lead) return;
-		const [z, m] = await Promise.all([
+		const [z, m, ud] = await Promise.all([
 			sb.from('crm_zgloszenia')
-				.select('id, klient_id, prospect_id, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at')
+				.select('id, klient_id, prospect_id, zrodlo, zgloszono_at, firma, kontakt, email, telefon, produkt, zainteresowania, przychod, ponowne, poprzednie_at, poprzednie_typ, historyczne, odczytane_at')
 				.or(lead.klient_id ? `prospect_id.eq.${lead.id},klient_id.eq.${lead.klient_id}` : `prospect_id.eq.${lead.id}`)
 				.order('zgloszono_at', { ascending: false })
 				.limit(20),
@@ -176,11 +179,17 @@
 					.eq('klient_id', lead.klient_id)
 					.order('wyslano_at', { ascending: false })
 					.limit(20)
-				: Promise.resolve({ data: [] })
+				: Promise.resolve({ data: [] }),
+			sb.from('crm_ud_leady')
+				.select('ud_klient_id, etap, status_crm, sprzedano_at, zarchiwizowano_at, synced_at, dane')
+				.eq('prospect_id', lead.id)
+				.order('created_at', { ascending: false })
+				.limit(5)
 		]);
 		if (prospect?.id !== lead.id) return;
 		zgloszenia = (z.data ?? []) as Zgloszenie[];
 		maileKampanii = (m.data ?? []) as MailKampanii[];
+		wnioskiUD = (ud.data ?? []) as WniosekUD[];
 	}
 
 	function przelaczZainteresowanie(k: string) {
@@ -638,10 +647,28 @@
 	</div>
 	<!-- /górny rząd -->
 
+	{#if wnioskiUD.length}
+		<!-- Wniosek złożony w aplikacji Utrata Dochodu (synchronizacja w bazie: crm_ud_leady). Dane medyczne zostają w aplikacji. -->
+		<section aria-label="Wniosek w aplikacji Utrata Dochodu" data-testid="lead-ud" class="bg-white border border-line rounded-xl px-5 py-4 mb-5">
+			<h2 class="text-sm font-semibold text-ink mb-2">Wniosek w aplikacji Utrata Dochodu{#if wnioskiUD.length > 1} <span class="font-normal text-ink-3">{wnioskiUD.length}</span>{/if}</h2>
+			<div class="grid grid-cols-1 {wnioskiUD.length > 1 ? 'lg:grid-cols-2' : ''} gap-x-8 gap-y-3">
+				{#each wnioskiUD as w (w.ud_klient_id)}
+					<dl class="grid grid-cols-[140px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+						{#each wierszeWnioskuUD(w, (d) => fmtDzien(d.slice(0, 10), true)) as [etykieta, wartosc] (etykieta)}
+							<dt class="text-ink-3">{etykieta}</dt>
+							<dd class="text-ink">{wartosc}</dd>
+						{/each}
+					</dl>
+				{/each}
+			</div>
+			<p class="mt-2.5 text-xs text-ink-3">Etap leada w CRM podąża za etapem w aplikacji (tylko do przodu); sprzedaż w aplikacji zapisuje się w aktywności.</p>
+		</section>
+	{/if}
+
 	{#if zgloszenia.length || maileKampanii.length}
 		<section aria-label="Zgłoszenia i maile kampanii" class="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-5">
 			<div class="bg-white border border-line rounded-xl px-5 py-4">
-				<h2 class="text-sm font-semibold text-ink mb-2">Zgłoszenia z formularza <span class="font-normal text-ink-3">{zgloszenia.length}</span></h2>
+				<h2 class="text-sm font-semibold text-ink mb-2">{maZgloszenieUD ? 'Zgłoszenia z formularza i aplikacji' : 'Zgłoszenia z formularza'} <span class="font-normal text-ink-3">{zgloszenia.length}</span></h2>
 				{#if zgloszenia.length === 0}
 					<p class="text-[13px] text-ink-3">{prospect.data_zgloszenia ? `Zgłoszenie z ${fmtDzien(prospect.data_zgloszenia.slice(0, 10), true)} (z BEAUTY) — kolejne pojawią się tutaj.` : 'Brak zgłoszeń z formularza.'}</p>
 				{:else}
@@ -650,6 +677,7 @@
 							<li class="py-2 border-t border-line-soft first:border-t-0 text-[13px]">
 								<div class="flex flex-wrap items-center gap-1.5">
 									<span class="font-medium text-ink">{fmtDzien(z.zgloszono_at.slice(0, 10), true)}</span>
+									{#if z.zrodlo === 'utrata_dochodu'}<span title="Wniosek złożony w aplikacji Utrata Dochodu" class="h-5 leading-5 px-1.5 rounded-full bg-surface-2 text-ink-2 text-[11px] font-semibold">aplikacja UD</span>{/if}
 									{#if z.ponowne && !z.historyczne}<span class="h-5 leading-5 px-1.5 rounded-full bg-warn-soft text-warn text-[11px] font-semibold">ponowne</span>{/if}
 									{#each posortujZainteresowania(z.zainteresowania) as k}
 										<span title={OPIS_ZAINTERESOWANIA[k]} class="h-5 leading-5 px-1.5 rounded-full bg-accent-soft text-accent-text text-[11px] font-semibold">{ETYKIETA_ZAINTERESOWANIA[k] ?? k}</span>
