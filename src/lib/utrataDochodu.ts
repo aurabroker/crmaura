@@ -32,7 +32,52 @@ export type DaneWnioskuUD = {
 		swiadczenie_trwala?: number;
 		swiadczenie_zgon?: number;
 	};
+	/** Oferty z aplikacji (bez szkiców), najnowsza pierwsza. */
+	oferty?: OfertaUD[];
 };
+
+export type OfertaUD = {
+	id: string;
+	nr?: string;
+	/** sent · viewed · chosen · bought · rejected */
+	status?: string;
+	wyslano_at?: string;
+	obejrzano_at?: string;
+	decyzja_at?: string;
+	zarchiwizowano_at?: string;
+	warianty?: number;
+	skladka_od?: number;
+	skladka_do?: number;
+	/** Nazwy TU wariantów, np. „Leadenhall”. */
+	tu?: string;
+	wybor?: { tu?: string; nr?: string; at?: string };
+};
+
+export const STATUS_OFERTY_UD: Record<string, string> = {
+	sent: 'wysłana do klienta',
+	viewed: 'obejrzana przez klienta',
+	chosen: 'klient wybrał wariant',
+	bought: 'zakupiona',
+	rejected: 'odrzucona przez klienta'
+};
+
+const odmianaWariantow = (n: number) => (n === 1 ? 'wariant' : n >= 2 && n <= 4 ? 'warianty' : 'wariantów');
+
+/** Jedna oferta w jednym wierszu: numer, stan z datą, wysyłka, wybór klienta, warianty, widełki składki, TU. */
+export function opisOfertyUD(o: OfertaUD, fmt: (iso: string) => string = dataPL): string {
+	const st = o.status ?? '';
+	const dataStanu = st === 'viewed' ? o.obejrzano_at : st === 'sent' ? o.wyslano_at : (o.decyzja_at ?? o.wybor?.at ?? null);
+	return zlacz([
+		o.nr,
+		`${STATUS_OFERTY_UD[st] ?? st}${dataStanu ? ` ${fmt(dataStanu)}` : ''}`,
+		st !== 'sent' && o.wyslano_at ? `wysłana ${fmt(o.wyslano_at)}` : null,
+		o.wybor && (o.wybor.tu || o.wybor.nr) ? [o.wybor.tu, o.wybor.nr].filter(Boolean).join(' ') : null,
+		o.warianty ? `${o.warianty} ${odmianaWariantow(o.warianty)}` : null,
+		o.skladka_od ? `składka ${kwotaUD(o.skladka_od)}${o.skladka_do && o.skladka_do > o.skladka_od ? ` – ${kwotaUD(o.skladka_do)}` : ''}/rok` : null,
+		o.tu,
+		o.zarchiwizowano_at ? 'zarchiwizowana' : null
+	]);
+}
 
 export type WniosekUD = {
 	ud_klient_id: string;
@@ -72,11 +117,14 @@ export function wierszeWnioskuUD(w: Pick<WniosekUD, 'dane'>, fmt: (iso: string) 
 	const z = d.zakres ?? {};
 	const s = d.sprzedaz;
 	const nd = d.nastepne_dzialanie;
+	const oferty = d.oferty ?? [];
 	const wiersze: [string, string | undefined][] = [
 		['Wniosek', d.wniosek_at ? zlacz([fmt(d.wniosek_at), d.zrodlo_ud ? ZRODLO_WNIOSKU_UD[d.zrodlo_ud] ?? d.zrodlo_ud : null, d.polecenie ? `kod polecenia ${d.polecenie}` : null]) : undefined],
 		['Zawód', zlacz([d.zawod, d.zatrudnienie ? ZATRUDNIENIE_UD[d.zatrudnienie] ?? d.zatrudnienie : null, d.forma_podatku ? FORMA_PODATKU_UD[d.forma_podatku] ?? d.forma_podatku : null, d.branza, d.zatrudnia ? 'zatrudnia pracowników' : null])],
 		['Zakres', zlacz([z.okresowa ? `niezdolność czasowa ${kwotaUD(z.okresowa)}/mies.` : null, z.trwala ? `trwała ${kwotaUD(z.trwala)}` : null, z.zgon ? `śmierć NW ${kwotaUD(z.zgon)}` : null])],
 		['Etap w aplikacji', zlacz([d.etap_nazwa, d.etap_od ? `od ${fmt(d.etap_od)}` : null, d.zarchiwizowano_at ? `zarchiwizowany ${fmt(d.zarchiwizowano_at)}` : null])],
+		// Oferty wysłane z aplikacji — każda w swoim wierszu (etykiety muszą być różne: klucz wiersza na karcie leada).
+		...oferty.map((o, i): [string, string | undefined] => [oferty.length > 1 ? `Oferta ${i + 1}` : 'Oferta', opisOfertyUD(o, fmt)]),
 		['Powód', d.powod_utraty],
 		['Następne działanie', nd ? zlacz([nd.typ, nd.at ? fmt(nd.at) : null, nd.opis]) : undefined],
 		['Opiekun w aplikacji', d.opiekun],

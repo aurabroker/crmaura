@@ -11,7 +11,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import { dndzone } from 'svelte-dnd-action';
 	import { Settings2, TrendingUp, TrendingDown, AlertTriangle, CreditCard, Clock, RefreshCw, Check, ClipboardList, Inbox, Plus, Circle } from 'lucide-svelte';
-	import { adresWniosku, podsumujWnioski, polisyKlientow, wniosekNowy, wniosekTestowy, wnioskiDoObslugi, wnioskiZalatwioneZadaniem } from '$lib/components/renewal/crmRenewals';
+	import { adresWniosku, podsumujWnioski, polisyKlientow, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wnioskiDoObslugi, wnioskiZalatwioneZadaniem } from '$lib/components/renewal/crmRenewals';
 	import { etykietaDecyzji } from '$lib/renewals/staffApi';
 	import { ustawStatusZadania, zadanieOtwarte, zadanieZWniosku, zadaniaPoZmianie } from '$lib/zadania';
 	import { umowaObowiazujaca, umowyProgramu } from '$lib/policyImport/umowaGeneralna';
@@ -452,10 +452,17 @@
 	};
 	const KOLEJNOSC: Record<TypKolejki, number> = { Wniosek: 0, Zadanie: 1, Odnowienie: 2 };
 
-	// Zadania po terminie i z terminem do 7 dni, odnowienia do 14 dni
+	// Zadania po terminie i z terminem do 7 dni, odnowienia do 14 dni.
+	// Zadanie z wniosku, który polisa w CRM już załatwiła (odnowienie wystawione / pierwsza polisa zawarta), nie czeka
+	// w kolejce — baza zamyka je sama (trigger po dodaniu polisy), tu zabezpieczenie dla zadań sprzed tej zmiany.
+	// Polisa, która ma już następczynię, nie jest „do odnowienia”.
 	const kolejka = $derived.by((): PozycjaKolejki[] => {
 		const zadania = dashOpenTasks
 			.filter((t) => t.termin && dateDiffDays(today, t.termin) <= 7)
+			.filter((t) => {
+				const w = t.renewal_id ? wnioskiWg.get(t.renewal_id) : undefined;
+				return !w || !wniosekZalatwiony(w, odnowionePolisy, polisyKl);
+			})
 			.map((t): PozycjaKolejki => {
 				const w = t.renewal_id ? wnioskiWg.get(t.renewal_id) : undefined;
 				return {
@@ -472,7 +479,7 @@
 				};
 			});
 		const odnowienia = appState.policies
-			.filter((p) => p.typ_umowy !== 'generalna' && !nieOdnawiana(p) && dateDiffDays(today, p.data_do) >= 0 && dateDiffDays(today, p.data_do) <= 14)
+			.filter((p) => p.typ_umowy !== 'generalna' && !nieOdnawiana(p) && !odnowionePolisy.has(p.id) && dateDiffDays(today, p.data_do) >= 0 && dateDiffDays(today, p.data_do) <= 14)
 			.map((p): PozycjaKolejki => ({
 				klucz: 'o' + p.id,
 				typ: 'Odnowienie',

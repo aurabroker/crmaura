@@ -7,6 +7,7 @@
 	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon, Target, User, ExternalLink, FileText } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/stores';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
@@ -21,7 +22,9 @@
 	type FilterPriority = 'all' | 'pilny' | 'wysoki' | 'normalny' | 'niski';
 	type Tab = 'calendar' | 'list' | 'rejestr';
 
-	let tab = $state<Tab>('calendar');
+	// Zakładka startowa z adresu: menu „Zadania” otwiera listę (/calendar?widok=lista), kalendarz domyślnie.
+	const widokZAdresu = $page.url.searchParams.get('widok');
+	let tab = $state<Tab>(widokZAdresu === 'lista' ? 'list' : widokZAdresu === 'rejestr' ? 'rejestr' : 'calendar');
 	let filterStatus = $state<FilterStatus>('all');
 	let filterPriority = $state<FilterPriority>('all');
 	let search = $state('');
@@ -320,12 +323,12 @@
 	const statusIcon = (t: CrmTask) => t.status === 'zakonczone' ? CheckCircle2 : t.status === 'w_toku' ? Clock : Circle;
 </script>
 
-<svelte:head><title>Kalendarz — CRM</title></svelte:head>
+<svelte:head><title>Zadania — CRM</title></svelte:head>
 
 <div class="flex items-center justify-between mb-6">
 	<div>
 		<h1 class="text-2xl font-semibold text-slate-900 flex items-center gap-2">
-			<CalendarDays size={22} class="text-blue-500" /> Kalendarz / Zadania
+			<CalendarDays size={22} class="text-blue-500" /> Zadania i kalendarz
 		</h1>
 		<p class="text-sm text-slate-500 mt-1">Zadania i przypomnienia zespołu</p>
 	</div>

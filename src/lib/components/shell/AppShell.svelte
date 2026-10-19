@@ -8,6 +8,7 @@
 	import { dateDiffDays, todayStr } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { nieOdnawiana, odnowionePolisy } from '$lib/statusPolisy';
+	import { zadaniePoTerminie } from '$lib/zadania';
 	import GlobalSearch from './GlobalSearch.svelte';
 	import Skroty from './Skroty.svelte';
 	import { BUILD_COMMIT, BUILD_DATA, OPIS_WERSJI, WERSJA } from '$lib/wersja';
@@ -51,6 +52,8 @@
 	const aktywneSzkody = $derived(
 		appState.claims.filter((c) => c.status === 'W toku' || c.status === 'Zgłoszona').length
 	);
+	// Zadania (moduł Zadania / Kalendarz): otwarte zadania po terminie.
+	const zadanPoTerminie = $derived(appState.tasks.filter((t) => zadaniePoTerminie(t, today)).length);
 	// Wnioski o dodanie pojazdu czekające na decyzję — tylko admin je rozpatruje
 	const wnioskiPojazdy = $derived(isAdmin(appState.profile) ? appState.vehicleRequests.length : 0);
 
@@ -72,7 +75,11 @@
 			nazwa: 'Praca',
 			pozycje: [
 				{ href: '/dashboard', label: 'Pulpit', icon: LayoutDashboard },
-				{ href: '/calendar', label: 'Kalendarz', icon: CalendarCheck, show: !!appState.tenantFeatures['kalendarz'] }
+				{
+					href: '/calendar?widok=lista', label: 'Zadania', icon: CalendarCheck,
+					licznik: zadanPoTerminie, ton: 'danger', tytulLicznika: 'zadań po terminie',
+					aktywna: (s) => s.startsWith('/calendar')
+				}
 			]
 		},
 		{
