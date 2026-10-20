@@ -1,6 +1,6 @@
 import { error, json } from '@sveltejs/kit';
 import { getAdminClient } from '$lib/server/auth';
-import { przyjmijZgloszenia, wierszeZTresci, ZlyKlucz } from '$lib/server/zgloszenia';
+import { czyKluczZgloszen, przyjmijZgloszenia, wierszeZTresci, ZlyKlucz } from '$lib/server/zgloszenia';
 import type { RequestHandler } from './$types';
 
 // Zgłoszenia z formularza wysyłane przez Apps Script arkusza (nagłówek x-api-key = klucz z Ustawień → System).
@@ -11,6 +11,8 @@ const MAKS_BAJTOW = 512 * 1024;
 export const POST: RequestHandler = async ({ request }) => {
 	const klucz = request.headers.get('x-api-key')?.trim();
 	if (!klucz) throw error(401, 'Brak klucza integracji (nagłówek x-api-key)');
+	// Klucz asystenta AI (crmai_) nie przyjmuje zgłoszeń — tylko klucz arkusza.
+	if (!czyKluczZgloszen(klucz)) throw error(401, 'Nieprawidłowy klucz integracji');
 	const surowe = await request.text();
 	if (surowe.length > MAKS_BAJTOW) throw error(413, 'Za duża paczka — wysyłaj do 200 wierszy naraz');
 	let tresc: unknown;

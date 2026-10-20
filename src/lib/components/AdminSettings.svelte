@@ -377,6 +377,7 @@
 {#if activeTab === 'system'}
 <!-- ===================== USTAWIENIA SYSTEMU ===================== -->
 <IntegracjaZgloszen />
+<IntegracjaZgloszen zakres="asystent_ai" />
 <div class="space-y-4">
 	<p class="text-sm text-slate-500">Towarzystwa ubezpieczeniowe, oddziały i osoby kontaktowe TU</p>
 	<div class="grid grid-cols-2 gap-6">
