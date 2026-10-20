@@ -223,7 +223,8 @@ export async function polisaProgramu(admin: SupabaseClient, tenantId: string, po
 export async function utworzOdnowienie(
 	admin: SupabaseClient,
 	p: PolisaProgramu,
-	o: { zastap?: boolean; utworzyl?: string | null }
+	// przez: kto utworzył wniosek, gdy nie pracownik (np. 'asystent_ai'); domyślnie 'automat'.
+	o: { zastap?: boolean; utworzyl?: string | null; przez?: string }
 ): Promise<RenewalRow> {
 	const { data: aktywne } = await admin
 		.from('crm_renewals')
@@ -270,7 +271,7 @@ export async function utworzOdnowienie(
 		if (e?.code === '23505') throw error(409, { message: 'Ta polisa ma już aktywny wniosek o odnowienie.', aktywny: true } as App.Error);
 		throw error(500, { message: 'Nie udało się utworzyć wniosku.' });
 	}
-	await zapiszZdarzenie(admin, data, 'utworzenie', null, { przez: o.utworzyl ?? 'automat' });
+	await zapiszZdarzenie(admin, data, 'utworzenie', null, { przez: o.przez ?? o.utworzyl ?? 'automat' });
 	if (test) await zapiszZdarzenie(admin, data, 'tryb_testowy', null, { adres: adresTestowy() });
 	return data as RenewalRow;
 }
@@ -325,7 +326,11 @@ export async function klientDoWniosku(admin: SupabaseClient, tenantId: string, k
 
 // Tworzy wniosek o pierwszą polisę (status „utworzony”, link ważny 30 dni). Gdy klient ma aktywny taki
 // wniosek: przy `zastap` unieważnia go, inaczej rzuca 409 { aktywny: true }.
-export async function utworzNowyWniosek(admin: SupabaseClient, k: KlientDoWniosku, o: { zastap?: boolean; utworzyl?: string | null }): Promise<RenewalRow> {
+export async function utworzNowyWniosek(
+	admin: SupabaseClient,
+	k: KlientDoWniosku,
+	o: { zastap?: boolean; utworzyl?: string | null; przez?: string }
+): Promise<RenewalRow> {
 	const { data: aktywne } = await admin
 		.from('crm_renewals')
 		.select('id, status')
@@ -366,7 +371,7 @@ export async function utworzNowyWniosek(admin: SupabaseClient, k: KlientDoWniosk
 		if (e?.code === '23505') throw error(409, { message: 'Ten klient ma już aktywny wniosek o pierwszą polisę.', aktywny: true } as App.Error);
 		throw error(500, { message: 'Nie udało się utworzyć wniosku.' });
 	}
-	await zapiszZdarzenie(admin, data, 'utworzenie', null, { przez: o.utworzyl ?? 'pracownik', rodzaj: 'nowa' });
+	await zapiszZdarzenie(admin, data, 'utworzenie', null, { przez: o.przez ?? o.utworzyl ?? 'pracownik', rodzaj: 'nowa' });
 	if (test) await zapiszZdarzenie(admin, data, 'tryb_testowy', null, { adres: adresTestowy() });
 	return data as RenewalRow;
 }
