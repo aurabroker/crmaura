@@ -94,7 +94,8 @@ async function certyfikatyKlienta(admin: SupabaseClient, tenantId: string, klien
 			data_do: String(p.data_do).slice(0, 10),
 			zakonczona: !!p.zakonczona_od,
 			odnowiona: odnowione.has(p.id),
-			byl_wniosek: !aktywny && zostawiony
+			byl_wniosek: !aktywny && zostawiony,
+			aktywny_wniosek: aktywny
 		};
 	});
 }
@@ -121,7 +122,14 @@ export async function wyslijWniosekAsystenta(
 	if (!klient) return { wynik: 'brak_klienta' };
 	if ((klient as { aktywny?: boolean }).aktywny === false) return { wynik: 'klient_nieaktywny' };
 
-	const sciezka = sciezkaWniosku(await certyfikatyKlienta(admin, tenantId, klientId), { dzis: dzisWarszawa(), dniPrzedKoncem: DNI_PRZED_KONCEM });
+	const firma = await ustawieniaFirmy(admin, tenantId);
+	// Jak zadanie odnowień (api/cron/renewals): automat działa tylko z modułem „odnowienia_auto” i kluczem Resend.
+	const automat = firma?.features?.odnowienia_auto === true && !!firma?.resend_api_key;
+	const sciezka = sciezkaWniosku(await certyfikatyKlienta(admin, tenantId, klientId), {
+		dzis: dzisWarszawa(),
+		dniPrzedKoncem: DNI_PRZED_KONCEM,
+		automat
+	});
 	if (sciezka.rodzaj === 'za_wczesnie' || sciezka.rodzaj === 'do_agenta') {
 		return { wynik: sciezka.rodzaj, rodzaj: 'odnowienie', ochrona_do: sciezka.ochrona_do };
 	}
@@ -154,7 +162,6 @@ export async function wyslijWniosekAsystenta(
 		utworz = (zastap) => utworzNowyWniosek(admin, k, { utworzyl: null, przez: KTO, zastap });
 	}
 
-	const firma = await ustawieniaFirmy(admin, tenantId);
 	const istniejacy = await ostatniAktywny(admin, odnowienie ? { polisa_id: sciezka.polisa_id } : { klient_id: klientId });
 	const decyzja = decyzjaWniosku(
 		istniejacy
@@ -163,11 +170,14 @@ export async function wyslijWniosekAsystenta(
 					wyslano_at: istniejacy.wyslano_at ?? null,
 					przypomniano_at: istniejacy.przypomniano_at ?? null,
 					wazny_do: istniejacy.wazny_do,
-					testowy: wniosekTestowy(istniejacy.email)
+					testowy: wniosekTestowy(istniejacy.email),
+					rezygnacja: istniejacy.decyzja === 'nie'
 				}
 			: null,
 		{ teraz: Date.now(), trybTestowy: trybTestowy(firma) }
 	);
+	// Klient zrezygnował z odnowienia we wniosku, a teraz prosi o link — decyduje agent (mail do biura).
+	if (decyzja === 'rezygnacja') return { wynik: 'do_agenta', ...dopisek, ...(istniejacy ? { wniosek_id: istniejacy.id } : {}) };
 	if (decyzja === 'zlozony' || decyzja === 'juz_wyslany') {
 		return { wynik: decyzja, ...dopisek, ...(istniejacy ? { wniosek_id: istniejacy.id, wazny_do: istniejacy.wazny_do } : {}) };
 	}
