@@ -70,8 +70,8 @@ export type ZmianyForm = {
 	ulica: string;
 	kod: string;
 	miasto: string;
-	zabiegi: boolean;
-	nowe_zabiegi: string[];
+	// Odnowienie: zabiegi z innej listy programu = zmiana rodzaju działalności (rodzaje na nowy okres w `rodzaje`).
+	dzialalnosc: boolean;
 	ankieta: boolean;
 	zabiegi_ankieta: string[];
 	inne_zaznaczone: boolean;
@@ -111,8 +111,7 @@ const pusteZmiany = (): ZmianyForm => ({
 	ulica: '',
 	kod: '',
 	miasto: '',
-	zabiegi: false,
-	nowe_zabiegi: [],
+	dzialalnosc: false,
 	ankieta: false,
 	zabiegi_ankieta: [],
 	inne_zaznaczone: false,
@@ -209,7 +208,9 @@ export class Odnowienie {
 		// Zabiegi z ankietą: całą składkę wycenia ubezpieczyciel (jak w wycenaWniosku) — bez kwot przy sumach.
 		if (this.zm.ankieta && this.zm.zabiegi_ankieta.length) return {};
 		const apk = this.apkDoWyceny;
-		const kategoria = kategoriaZRodzajow(apk?.rodzaje.length ? apk.rodzaje : this.zm.rodzaje);
+		// Zmiana działalności: składki przy sumach liczone dla działalności od nowego okresu.
+		const rodzaje = this.zmianaDzialalnosci && this.zm.rodzaje.length ? this.zm.rodzaje : apk?.rodzaje.length ? apk.rodzaje : this.zm.rodzaje;
+		const kategoria = kategoriaZRodzajow(rodzaje);
 		const osoby = apk?.osoby || this.zm.osoby;
 		if (!kategoria || !osoby) return {};
 		const ochronaPrawna = this.zm.ochrona_prawna || this.widok.ochrona_prawna_obecnie;
@@ -222,21 +223,25 @@ export class Odnowienie {
 	});
 	// Decyzja „z zakresem”: odnowienie ze zmianami albo wniosek o pierwszą polisę (suma, ochrona prawna, zabiegi).
 	zZakresem = $derived(this.decyzja === 'zmiany' || this.decyzja === 'nowa');
-	// Rodzaj i liczba osób we wniosku są potrzebne tylko do wyceny (nowej) sumy bez APK.
-	pytajODaneWyceny = $derived(this.zZakresem && this.zm.suma && this.apkOdmowa);
+	// Odnowienie ze zmianą działalności (zabiegi z innej listy programu).
+	zmianaDzialalnosci = $derived(!this.nowa && this.decyzja === 'zmiany' && this.zm.dzialalnosc);
+	// Rodzaj i liczba osób we wniosku są potrzebne tylko do wyceny (nowej) sumy bez APK — przy zmianie
+	// działalności klient podaje je w tamtej pozycji.
+	pytajODaneWyceny = $derived(this.zZakresem && this.zm.suma && this.apkOdmowa && !this.zmianaDzialalnosci);
+	// Liczba osób przy zmianie działalności — tylko gdy nie ma APK (inaczej z APK).
+	pytajOOsobyDzialalnosci = $derived(this.zmianaDzialalnosci && this.apkOdmowa);
 	potrzebnaAnkieta = $derived(this.zZakresem && this.zm.ankieta && this.zm.zabiegi_ankieta.length > 0);
 	// Zabiegi wymagające ankiety zaznaczone we wniosku (krok „Ankieta Ergo Hestii”).
 	zabiegiAnkiety = $derived<string[]>(this.zZakresem && this.zm.ankieta ? this.zm.zabiegi_ankieta : []);
-	// Zabiegi zgłaszane we wniosku: z list programu i wymagające ankiety (bez powtórzeń).
-	zabiegiZgloszone = $derived.by((): string[] =>
-		!this.zZakresem
-			? []
-			: Array.from(new Set([...(this.zm.zabiegi && !this.nowa ? this.zm.nowe_zabiegi : []), ...(this.zm.ankieta ? this.zm.zabiegi_ankieta : [])]))
-	);
+	// Zabiegi, do których potrzebne są osoby i dokumenty: tylko z listy ankietowej (zabiegi z list programu
+	// nie wymagają dyplomów ani certyfikatów).
+	zabiegiZgloszone = $derived.by((): string[] => (this.zZakresem && this.zm.ankieta ? Array.from(new Set(this.zm.zabiegi_ankieta)) : []));
 	potrzebneDokumenty = $derived(this.zabiegiZgloszone.length > 0);
 	wniosek = $derived.by((): Wniosek => this.zbudujWniosek());
 	wycena = $derived.by(() =>
-		this.nowa ? wycenaNowej(this.wniosek, this.apkDoWyceny) : wycenaWniosku(this.wniosek, this.apkDoWyceny, this.widok.skladka, this.widok.ochrona_prawna_obecnie)
+		this.nowa
+			? wycenaNowej(this.wniosek, this.apkDoWyceny)
+			: wycenaWniosku(this.wniosek, this.apkDoWyceny, this.widok.skladka, this.widok.ochrona_prawna_obecnie, this.widok.suma)
 	);
 	kroki = $derived<Krok[]>([
 		'apk',
@@ -285,7 +290,8 @@ export class Odnowienie {
 					osoby: this.apkOdmowa ? z.osoby || null : null,
 					wykonawcy: this.potrzebneDokumenty
 						? this.wykonawcy.map((w) => ({ id: w.id, imie_nazwisko: w.imie_nazwisko.trim(), zabiegi: w.zabiegi.filter((t) => this.zabiegiZgloszone.includes(t)) }))
-						: []
+						: [],
+					zmiana_dzialalnosci: false
 				},
 				nie_powod: '',
 				potwierdzenie_nie: false,
@@ -314,11 +320,12 @@ export class Odnowienie {
 				// Klauzula, którą certyfikat już ma, nie jest zmianą (stary szkic mógł ją mieć zaznaczoną).
 				ochrona_prawna: z.ochrona_prawna && !this.widok.ochrona_prawna_obecnie,
 				adres: z.adres ? { ulica: z.ulica, kod: z.kod, miasto: z.miasto } : null,
-				nowe_zabiegi: z.zabiegi ? [...z.nowe_zabiegi] : [],
+				nowe_zabiegi: [],
 				zabiegi_ankieta: z.ankieta ? [...z.zabiegi_ankieta] : [],
 				inne: z.inne_zaznaczone ? z.inne : '',
-				rodzaje: this.pytajODaneWyceny ? [...z.rodzaje] : [],
-				osoby: this.pytajODaneWyceny ? z.osoby || null : null,
+				rodzaje: this.pytajODaneWyceny || this.zmianaDzialalnosci ? [...z.rodzaje] : [],
+				osoby: this.pytajODaneWyceny || this.pytajOOsobyDzialalnosci ? z.osoby || null : null,
+				zmiana_dzialalnosci: this.zmianaDzialalnosci,
 				// Tylko zabiegi nadal zgłaszane (klient mógł odznaczyć zabieg po przypisaniu go osobie).
 				wykonawcy: this.potrzebneDokumenty
 					? this.wykonawcy.map((w) => ({ id: w.id, imie_nazwisko: w.imie_nazwisko.trim(), zabiegi: w.zabiegi.filter((t) => this.zabiegiZgloszone.includes(t)) }))
@@ -345,7 +352,6 @@ export class Odnowienie {
 		const z = this.zm;
 		const braki: string[] = [];
 		if (!this.nowa && z.suma && !z.wyzsza_suma) braki.push('Wybierz nową sumę gwarancyjną (albo odznacz „Inna suma gwarancyjna”).');
-		if (!this.nowa && z.zabiegi && !z.nowe_zabiegi.length) braki.push('Zaznacz nowe zabiegi z listy programu (albo odznacz tę pozycję).');
 		if (z.ankieta && !z.zabiegi_ankieta.length) braki.push('Zaznacz zabiegi wymagające ankiety (albo odznacz tę pozycję).');
 		if (!this.nowa && z.inne_zaznaczone && !z.inne.trim()) braki.push('Opisz inne zmiany (albo odznacz tę pozycję).');
 		if (!braki.length) return w;
@@ -468,6 +474,15 @@ export class Odnowienie {
 		if (typeof s.decyzja === 'string' && (dozwolone as string[]).includes(s.decyzja)) this.decyzja = s.decyzja as Decyzja;
 		const zm = scal(pusteZmiany(), s.zm);
 		if (zm.wyzsza_suma != null && !this.inneSumy.includes(zm.wyzsza_suma)) zm.wyzsza_suma = null;
+		// Szkic sprzed zmiany formularza: pojedyncze zabiegi z list programu trafiają do „Inne zmiany”,
+		// żeby doradca je zobaczył (dziś inna lista to zmiana działalności, a nie lista zabiegów).
+		const stary = (s.zm ?? {}) as { zabiegi?: unknown; nowe_zabiegi?: unknown };
+		const stareZabiegi = stary.zabiegi === true && Array.isArray(stary.nowe_zabiegi) ? stary.nowe_zabiegi.filter((x): x is string => typeof x === 'string') : [];
+		if (!this.nowa && stareZabiegi.length) {
+			const linia = `Nowe zabiegi z list programu: ${stareZabiegi.join(', ')}`;
+			if (!zm.inne.includes(linia)) zm.inne = [zm.inne.trim(), linia].filter(Boolean).join('\n');
+			zm.inne_zaznaczone = true;
+		}
 		if (this.nowa) zm.suma = true;
 		this.zm = zm;
 		if (this.nowa && s.nw && typeof s.nw === 'object') {

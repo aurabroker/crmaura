@@ -14,6 +14,9 @@
 		<p class="text-slate-900">
 			Składka orientacyjna wg programu: <strong class="text-lg text-[#2a3b69]">{formatZl(wycena.kwota)}</strong>
 			<span class="text-sm text-slate-600">({wycena.opis})</span>
+			{#if skladkaObecna != null && Math.round(skladkaObecna * 100) !== Math.round(wycena.kwota * 100)}
+				<span class="block text-sm text-slate-600" data-testid="wycena-obecna">Obecnie: {formatZl(skladkaObecna)} rocznie.</span>
+			{/if}
 		</p>
 		<p class="mt-1 text-sm text-slate-600">Ostateczną składkę potwierdzi doradca.</p>
 	{:else if wycena?.rodzaj === 'indywidualna'}

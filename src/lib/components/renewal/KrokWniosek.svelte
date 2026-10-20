@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AlertTriangle, Search, X } from 'lucide-svelte';
+	import { AlertTriangle } from 'lucide-svelte';
 	import {
 		KLAUZULA_OCHRONY_PRAWNEJ,
 		LICZBA_OSOB,
@@ -8,14 +8,13 @@
 		SUMA_NAJCZESCIEJ_WYBIERANA,
 		SUMY,
 		ZABIEGI_ANKIETA,
-		ZABIEGI_LISTY,
 		formatSuma,
 		formatZl,
 		type Decyzja
 	} from '$lib/renewals/program';
 	import Bledy from './Bledy.svelte';
 	import WycenaInfo from './WycenaInfo.svelte';
-	import { BTN_DRUGI, BTN_GLOWNY, BTN_LINK, ETYKIETA, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK, bezOgonkow, fmtData } from './klient';
+	import { BTN_DRUGI, BTN_GLOWNY, BTN_LINK, ETYKIETA, INP, KARTA, LEGENDA, NAGLOWEK, OPCJA, ZNACZNIK, fmtData } from './klient';
 	import type { Odnowienie } from './stan.svelte';
 
 	// Krok 2: decyzja o odnowieniu (bez zmian / ze zmianami / rezygnacja) z orientacyjną składką.
@@ -35,25 +34,21 @@
 			tytul: 'TAK — odnawiam bez zmian',
 			opis: `Ten sam zakres i suma gwarancyjna${w.skladka != null ? `, składka ${formatZl(w.skladka)} rocznie` : ''}.`
 		},
-		{ key: 'zmiany', tytul: 'TAK — odnawiam ze zmianami', opis: 'Np. inna suma gwarancyjna, ochrona prawna, nowe zabiegi albo nowy adres.' },
+		{ key: 'zmiany', tytul: 'TAK — odnawiam ze zmianami', opis: 'Np. inna suma gwarancyjna, ochrona prawna, zabiegi z innej listy albo nowy adres.' },
 		{ key: 'nie', tytul: 'NIE — nie odnawiam', opis: `Ochrona wygaśnie ${w.okres_obecny.do ? fmtData(w.okres_obecny.do) : 'z końcem obecnego okresu'}.` }
 	]);
 
 	let message = $state('');
 	let bledy = $state<string[]>([]);
 	let pokazKlauzule = $state(false);
-	let szukaj = $state('');
-
-	const zabiegiWidoczne = $derived.by(() => {
-		const q = bezOgonkow(szukaj.trim());
-		return q ? ZABIEGI_LISTY.filter((z) => bezOgonkow(z).includes(q)) : ZABIEGI_LISTY;
-	});
 
 	// Podpowiedź z zapisanej APK — klient nie musi pamiętać, co tam zaznaczył.
 	const apk = $derived(s.apkZapisana);
 
-	function usunZabieg(z: string) {
-		s.zm.nowe_zabiegi = s.zm.nowe_zabiegi.filter((x) => x !== z);
+	// Zabiegi z innej listy: działalność na nowy okres zaczyna się od tej z APK (klient dopisuje nową).
+	function przelaczDzialalnosc(e: Event & { currentTarget: HTMLInputElement }) {
+		s.zm.dzialalnosc = e.currentTarget.checked;
+		if (s.zm.dzialalnosc && !s.zm.rodzaje.length && apk?.rodzaje.length) s.zm.rodzaje = [...apk.rodzaje];
 	}
 
 	// Kod pocztowy wpisywany cyframi — kreskę dostawiamy sami.
@@ -257,69 +252,45 @@
 						{/if}
 					</div>
 
-					<!-- Nowe zabiegi z list programu -->
-					<div class="rounded-xl border border-slate-300 has-[>label>input:checked]:border-rose-400">
+					<!-- Zabiegi z innej listy programu = zmiana rodzaju działalności i składki (bez dokumentów) -->
+					<div class="rounded-xl border border-slate-300 has-[>label>input:checked]:border-rose-400" data-testid="zmiana-dzialalnosci">
 						<label class="flex items-start gap-3 p-4 min-h-12 cursor-pointer">
-							<input type="checkbox" bind:checked={s.zm.zabiegi} class={ZNACZNIK} />
+							<input type="checkbox" checked={s.zm.dzialalnosc} onchange={przelaczDzialalnosc} class={ZNACZNIK} />
 							<span>
-								<span class="block font-semibold text-slate-900">Nowe zabiegi z list programu</span>
-								<span class="block text-sm text-slate-600">Zabiegi z załączników do programu — bez dodatkowej ankiety.</span>
+								<span class="block font-semibold text-slate-900">Zabiegi z innej listy programu</span>
+								<span class="block text-sm text-slate-600">Np. gabinet kosmetyczny, który zaczyna zabiegi kosmetologiczne — zmienia się rodzaj działalności i składka.</span>
 							</span>
 						</label>
-						{#if s.zm.zabiegi}
-							<div class="border-t border-slate-200 px-4 pb-4 pt-3">
-								<label for="zabiegi-szukaj" class={ETYKIETA}>Szukaj zabiegu</label>
-								<div class="relative">
-									<Search size={18} class="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
-									<input id="zabiegi-szukaj" type="search" bind:value={szukaj} class="{INP} pl-11" placeholder="np. mezoterapia" autocomplete="off" />
-								</div>
-								<p class="mt-2 text-sm text-slate-600" aria-live="polite" data-testid="zabiegi-licznik">
-									Wybrano: <strong>{s.zm.nowe_zabiegi.length}</strong>
-									{#if szukaj.trim()}· pasujących do wyszukiwania: {zabiegiWidoczne.length}{/if}
-								</p>
-								{#if s.zm.nowe_zabiegi.length}
-									<ul class="mt-2 flex flex-wrap gap-2" aria-label="Wybrane zabiegi">
-										{#each s.zm.nowe_zabiegi as z (z)}
-											<li class="inline-flex max-w-full items-center gap-1 rounded-full bg-rose-50 py-1 pl-3 pr-1 text-sm text-rose-900 ring-1 ring-rose-200">
-												<span class="truncate">{z}</span>
-												<button
-													type="button"
-													class="flex size-7 shrink-0 items-center justify-center rounded-full hover:bg-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-													aria-label="Usuń: {z}"
-													onclick={() => usunZabieg(z)}
-												>
-													<X size={14} aria-hidden="true" />
-												</button>
-											</li>
-										{/each}
-									</ul>
-								{/if}
-								<fieldset class="mt-3">
-									<legend class="sr-only">Zabiegi z list programu</legend>
-									<div class="max-h-80 overflow-y-auto rounded-xl border border-slate-200 divide-y divide-slate-100" data-testid="zabiegi-lista">
-										{#each zabiegiWidoczne as z (z)}
-											<label class="flex items-start gap-3 px-3 py-2.5 min-h-11 cursor-pointer hover:bg-slate-50 has-checked:bg-rose-50">
-												<!-- Bez bind:group: lista jest filtrowana, a bind:group liczy wybór tylko z widocznych pól
-													 — wyszukanie kolejnego zabiegu gubiło wcześniej zaznaczone. -->
-												<input
-													type="checkbox"
-													value={z}
-													checked={s.zm.nowe_zabiegi.includes(z)}
-													onchange={(e) => {
-														const bez = s.zm.nowe_zabiegi.filter((x) => x !== z);
-														s.zm.nowe_zabiegi = e.currentTarget.checked ? [...bez, z] : bez;
-													}}
-													class={ZNACZNIK}
-												/>
-												<span class="text-sm text-slate-800">{z}</span>
+						{#if s.zm.dzialalnosc}
+							<div class="border-t border-slate-200 px-4 pb-4 pt-3 space-y-5">
+								<fieldset>
+									<legend class={ETYKIETA}>Jaką działalność prowadzisz od nowego okresu? (możesz zaznaczyć kilka)</legend>
+									<div class="grid gap-2 sm:grid-cols-2">
+										{#each RODZAJE_GABINETU as r (r.key)}
+											<label class={OPCJA}>
+												<input type="checkbox" name="dz-rodzaje" value={r.key} bind:group={s.zm.rodzaje} class={ZNACZNIK} />
+												<span>{r.nazwa}</span>
 											</label>
-										{:else}
-											<p class="px-3 py-4 text-sm text-slate-500">
-												Brak zabiegu o tej nazwie na listach programu. Opisz go w polu „Inne zmiany” — doradca sprawdzi, czy da się go objąć ochroną.
-											</p>
 										{/each}
 									</div>
 								</fieldset>
+								{#if s.pytajOOsobyDzialalnosci}
+									<fieldset>
+										<legend class={ETYKIETA}>Ile osób wykonuje zabiegi w gabinecie (łącznie z Tobą)?</legend>
+										<div class="grid gap-2 sm:grid-cols-3">
+											{#each LICZBA_OSOB as o (o.key)}
+												<label class={OPCJA}>
+													<input type="radio" name="dz-osoby" value={o.key} bind:group={s.zm.osoby} class={ZNACZNIK} />
+													<span>{o.nazwa}</span>
+												</label>
+											{/each}
+										</div>
+									</fieldset>
+								{/if}
+								<p class="rounded-lg bg-[#2a3b69]/5 px-3 py-2 text-sm text-[#2a3b69]" role="status">
+									Dopisanie zabiegów z innej listy zmienia rodzaj działalności i składkę według taryfy programu — nową składkę widzisz niżej.
+									Dyplomów i certyfikatów nie dołączasz. Pojedyncze zabiegi dopisujesz tylko z listy ankietowej (pozycja poniżej).
+								</p>
 							</div>
 						{/if}
 					</div>

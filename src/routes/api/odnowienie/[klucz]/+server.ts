@@ -288,7 +288,9 @@ export const POST: RequestHandler = async (event) => {
 				ankieta = a.value;
 			}
 
-			const wycena = nowa ? wycenaNowej(wniosek, apk) : wycenaWniosku(wniosek, apk, r.skladka != null ? Number(r.skladka) : null, opObecnie(r));
+			const wycena = nowa
+				? wycenaNowej(wniosek, apk)
+				: wycenaWniosku(wniosek, apk, r.skladka != null ? Number(r.skladka) : null, opObecnie(r), sumaObecna(r));
 			const skladka_nowa =
 				wniosek.decyzja === 'nie' ? null
 				: wycena?.rodzaj === 'kwota' ? wycena.kwota

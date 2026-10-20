@@ -41,7 +41,10 @@
 		if (z.nowe_zabiegi.length) l.push(`Nowe zabiegi z list programu: ${z.nowe_zabiegi.join(', ')}`);
 		if (z.zabiegi_ankieta.length) l.push(`Zabiegi wymagające ankiety: ${z.zabiegi_ankieta.join(', ')}`);
 		if (z.inne.trim()) l.push(`${nowa ? 'Uwagi' : 'Inne'}: ${z.inne.trim()}`);
-		if (z.rodzaje.length) l.push(`Działalność: ${z.rodzaje.map((r) => RODZAJE_GABINETU.find((x) => x.key === r)?.nazwa ?? r).join(', ')}`);
+		if (z.rodzaje.length) {
+			const nazwy = z.rodzaje.map((r) => RODZAJE_GABINETU.find((x) => x.key === r)?.nazwa ?? r).join(', ');
+			l.push(z.zmiana_dzialalnosci ? `Działalność od nowego okresu (zabiegi z innej listy programu): ${nazwy}` : `Działalność: ${nazwy}`);
+		}
 		if (z.osoby) l.push(`Osoby wykonujące zabiegi: ${LICZBA_OSOB.find((o) => o.key === z.osoby)?.nazwa ?? z.osoby}`);
 		return l;
 	});
