@@ -21,13 +21,15 @@ export function programOcBeauty(policies: Pick<Policy, 'typ_umowy' | 'ug_podtyp'
 
 /**
  * Klient albo lead z branży beauty — tylko dla niego ma sens „APK i wniosek o pierwszą polisę OC beauty”:
- * import z BEAUTY (beauty_id), certyfikat z programu OC beauty albo lead z formularza BEAUTY (zrodlo 'beauty').
+ * import z BEAUTY (beauty_id), oznaczenie ręczne w CRM (segment_beauty), certyfikat z programu OC beauty
+ * albo lead z formularza BEAUTY (zrodlo 'beauty').
  */
 export function klientBeauty(
-	k: { beautyId?: number | string | null; klientId?: string | null; zrodloLeada?: string | null },
+	k: { beautyId?: number | string | null; segmentBeauty?: boolean | null; klientId?: string | null; zrodloLeada?: string | null },
 	policies: Policy[]
 ): boolean {
 	if (k.beautyId != null) return true;
+	if (k.segmentBeauty) return true;
 	if (k.zrodloLeada === 'beauty') return true;
 	return !!k.klientId && policies.some((p) => p.klient_id === k.klientId && !p.deleted_at && wProgramieOcBeauty(p, policies));
 }

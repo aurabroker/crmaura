@@ -19,6 +19,7 @@
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, inicjaly, miastoZAdresu, odmiana, todayStr } from '$lib/utils';
 	import { klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
+	import { programOcBeauty } from '$lib/components/renewal/crmRenewals';
 	import KlientNieaktywny from '$lib/components/KlientNieaktywny.svelte';
 	import { przywrocKlienta } from '$lib/zakonczenie';
 
@@ -95,6 +96,8 @@
 	let fEmail = $state('');
 	let fTelefon = $state('');
 	let fGwarancje = $state(false);
+	// Branża beauty (program OC Beauty Razem): klient dostaje linki do APK i wniosku o pierwszą polisę OC.
+	let fSegmentBeauty = $state(false);
 	let saving = $state(false);
 	let formError = $state('');
 
@@ -259,7 +262,7 @@
 			if (fOpiekun && (fOpiekun === '-' ? !!c.opiekun_id : c.opiekun_id !== fOpiekun)) return false;
 			if (fTu && !w.p?.tu.has(fTu)) return false;
 			if (fRodzaj && !w.p?.rodzaje.has(fRodzaj)) return false;
-			if (fZrodlo && (fZrodlo === 'beauty') !== (c.beauty_id != null)) return false;
+			if (fZrodlo && (fZrodlo === 'beauty') !== (c.beauty_id != null || !!c.segment_beauty)) return false;
 			if (!q) return true;
 			return c.nazwa.toLowerCase().includes(q) ||
 				(c.nazwa_skrocona ?? '').toLowerCase().includes(q) ||
@@ -305,7 +308,7 @@
 
 	// Wiersz: miasto z adresu (po kodzie pocztowym), typ, źródło
 	function podpis(c: Client): string {
-		return [miastoZAdresu(c.ulica), c.typ === 'osoba' ? 'osoba' : 'firma', c.beauty_id != null ? 'import BEAUTY' : null].filter(Boolean).join(' · ');
+		return [miastoZAdresu(c.ulica), c.typ === 'osoba' ? 'osoba' : 'firma', c.beauty_id != null ? 'import BEAUTY' : c.segment_beauty ? 'beauty' : null].filter(Boolean).join(' · ');
 	}
 	// PESEL na liście tylko częściowo — pełny jest w profilu klienta.
 	const maskaPesel = (p: string) => (p.length > 4 ? `${p.slice(0, 2)}${'•'.repeat(p.length - 4)}${p.slice(-2)}` : p);
@@ -386,7 +389,7 @@
 	function openNew(typ: 'firma' | 'osoba') {
 		modalTyp = typ;
 		fNazwa = ''; fNazwaSkrocona = ''; fUlica = ''; fNip = ''; fRegon = ''; fKrs = ''; fPesel = '';
-		fEmail = ''; fTelefon = ''; fGwarancje = false; formError = '';
+		fEmail = ''; fTelefon = ''; fGwarancje = false; fSegmentBeauty = false; formError = '';
 		showModal = true;
 	}
 
@@ -406,7 +409,8 @@
 			krs: modalTyp === 'firma' ? (fKrs.trim() || null) : null,
 			email: fEmail.trim() || null,
 			telefon: fTelefon.trim() || null,
-			gwarancje: fGwarancje
+			gwarancje: fGwarancje,
+			segment_beauty: fSegmentBeauty
 		};
 
 		const { error } = await sb.from('crm_clients').insert([{
@@ -548,13 +552,13 @@
 	{/snippet}
 	{#snippet opcjeZrodlo()}
 		<option value="">Dowolne źródło</option>
-		<option value="beauty">import BEAUTY</option>
-		<option value="crm">dodani w CRM</option>
+		<option value="beauty">Beauty (import BEAUTY i oznaczeni ręcznie)</option>
+		<option value="crm">pozostali dodani w CRM</option>
 	{/snippet}
 	{@render filtr('Opiekun', fOpiekun ? (fOpiekun === '-' ? 'Bez opiekuna' : `Opiekun: ${opiekunWg.get(fOpiekun) ?? '—'}`) : null, () => (fOpiekun = ''), opcjeOpiekun, fOpiekun, (v) => (fOpiekun = v))}
 	{@render filtr('Towarzystwo', fTu ? `TU: ${towarzystwa.find(t => t.id === fTu)?.skrot || towarzystwa.find(t => t.id === fTu)?.nazwa || '—'}` : null, () => (fTu = ''), opcjeTu, fTu, (v) => (fTu = v))}
 	{@render filtr('Rodzaj polisy', fRodzaj ? `Rodzaj: ${fRodzaj.replace(/_/g, ' ')}` : null, () => (fRodzaj = ''), opcjeRodzaj, fRodzaj, (v) => (fRodzaj = v))}
-	{@render filtr('Źródło', fZrodlo ? (fZrodlo === 'beauty' ? 'Źródło: import BEAUTY' : 'Źródło: dodani w CRM') : null, () => (fZrodlo = ''), opcjeZrodlo, fZrodlo, (v) => (fZrodlo = v as typeof fZrodlo))}
+	{@render filtr('Źródło', fZrodlo ? (fZrodlo === 'beauty' ? 'Beauty' : 'Pozostali dodani w CRM') : null, () => (fZrodlo = ''), opcjeZrodlo, fZrodlo, (v) => (fZrodlo = v as typeof fZrodlo))}
 	{#if ileFiltrow > 0}
 		<button onclick={wyczyscFiltry} class="h-9 px-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść</button>
 	{/if}
@@ -766,6 +770,15 @@
 				<span class="text-xs text-slate-400">— klient korzysta z gwarancji ubezpieczeniowych (pokaże zakładkę Gwarancje)</span>
 			</label>
 		</div>
+		{#if programOcBeauty(appState.policies)}
+			<div class="col-span-2">
+				<label class="flex items-start gap-2 cursor-pointer text-sm text-slate-700 bg-slate-50 border border-line rounded-lg px-3 py-2.5">
+					<input type="checkbox" bind:checked={fSegmentBeauty} data-testid="klient-beauty" class="w-4 h-4 mt-0.5 accent-blue-600" />
+					<span><span class="font-medium">Beauty</span>
+					<span class="text-xs text-slate-400">— klient z branży beauty (program OC Beauty Razem): dostanie linki do APK i wniosku o pierwszą polisę OC, na liście trafi do grupy Beauty</span></span>
+				</label>
+			</div>
+		{/if}
 	</div>
 </Modal>
 
@@ -805,7 +818,7 @@
 								<div class="text-xs text-slate-500">
 									{c.nip ? `NIP ${c.nip}` : 'bez NIP'}{#if c.nip && !nipPoprawny(c.nip)}<span class="text-warn font-semibold"> (niepełny)</span>{/if}{c.email ? ` · ${c.email}` : ''}{c.telefon ? ` · ${c.telefon}` : ''}{c.created_at ? ` · od ${fmtDzien(c.created_at, true)}` : ''}
 								</div>
-								<div class="text-xs {p.polisy ? 'text-emerald-700' : 'text-slate-400'}">{opisPowiazan(p)}{c.auth_user_id ? ' · logowanie do panelu' : ''}{c.beauty_id != null ? ` · BEAUTY ${c.beauty_id}` : ''}</div>
+								<div class="text-xs {p.polisy ? 'text-emerald-700' : 'text-slate-400'}">{opisPowiazan(p)}{c.auth_user_id ? ' · logowanie do panelu' : ''}{c.beauty_id != null ? ` · BEAUTY ${c.beauty_id}` : c.segment_beauty ? ' · beauty' : ''}</div>
 							</div>
 						</label>
 						<a href="/clients/{c.id}" onclick={() => showDuplicates = false} class="shrink-0 text-xs text-blue-600 hover:underline">Otwórz →</a>
