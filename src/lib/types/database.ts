@@ -50,6 +50,8 @@ export interface Client {
 	beauty_id?: number | string | null;
 	/** Identyfikatory BEAUTY duplikatów scalonych z tym klientem (synchronizacja traktuje je jak ten rekord). */
 	beauty_ids_scalone?: number[] | null;
+	/** Klient z branży beauty oznaczony ręcznie (program OC Beauty Razem): linki do APK i wniosku o pierwszą polisę, grupa Beauty na liście. */
+	segment_beauty?: boolean;
 	/** Zbiorowe uzupełnianie z GUS: kiedy sprawdzono, wynik i dane z rejestru REGON. */
 	gus_sprawdzono_at?: string | null;
 	gus_wynik?: 'uzupelniono' | 'bez_zmian' | 'nie_znaleziono' | 'zakonczona' | 'zly_nip' | null;

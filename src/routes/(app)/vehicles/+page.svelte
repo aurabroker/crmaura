@@ -5,8 +5,9 @@
 	// część pól i nie dawała wglądu w to, czym pojazd był ubezpieczony.
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
-	import { fmtPln, policyStatus, todayStr } from '$lib/utils';
+	import { fmtPln, todayStr } from '$lib/utils';
 	import { polisaAktywna } from '$lib/statusPolisy';
+	import { ochronaPojazdu, opisTechniczny } from '$lib/flota';
 	import { logAudit } from '$lib/utils/audit';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
@@ -253,6 +254,8 @@
 					{#each pojazdy as v (v.id)}
 						{@const historia = polisyPojazdu(v.id)}
 						{@const czynna = aktywnaPolisa(v.id)}
+						{@const ochrona = ochronaPojazdu(v.id, appState.policies, today)}
+						{@const tech = opisTechniczny(v)}
 						<tr class="border-t border-line-soft hover:bg-slate-50">
 							<td class="px-4 py-3">
 								<button
@@ -264,19 +267,16 @@
 								</button>
 							</td>
 							<td class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{v.nr_rejestracyjny} <Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" /></td>
-							<td class="px-4 py-3 text-slate-700">{v.marka_model ?? '—'}</td>
+							<td class="px-4 py-3 text-slate-700">
+								{v.marka_model ?? '—'}
+								{#if tech}<div class="text-xs text-slate-400">{tech}</div>{/if}
+							</td>
 							<td class="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{v.vin ?? '—'} <Kopiuj tekst={v.vin} opis="VIN" /></td>
 							<td class="px-4 py-3 text-slate-500">{v.rok_produkcji ?? '—'}</td>
-							<td class="px-4 py-3 text-slate-700">{klientNazwa(v.klient_id)}</td>
+							<td class="px-4 py-3 text-slate-700"><a href="/clients/{v.klient_id}" class="hover:text-accent-text hover:underline">{klientNazwa(v.klient_id)}</a></td>
 							<td class="px-4 py-3">
-								{#if czynna}
-									{@const s = policyStatus(czynna.data_do)}
-									<Badge variant={s.badge === 'badge-error' ? 'error' : s.badge === 'badge-warning' ? 'warning' : 'success'}>
-										do {czynna.data_do}
-									</Badge>
-								{:else}
-									<span class="text-xs text-amber-700">brak czynnej</span>
-								{/if}
+								<span class="inline-block h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {ochrona.cls}">{ochrona.tekst}</span>
+								{#if czynna}<div class="text-xs text-slate-400 mt-0.5">{czynna.crm_insurers?.skrot ?? czynna.crm_insurers?.nazwa ?? ''} {czynna.nr_polisy}</div>{/if}
 							</td>
 							<td class="px-4 py-3 text-right text-slate-500">{historia.length}</td>
 							<td class="px-4 py-3">

@@ -8,6 +8,7 @@
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 	import { ArrowLeft } from 'lucide-svelte';
 	import { logAudit } from '$lib/utils/audit';
+	import { programOcBeauty } from '$lib/components/renewal/crmRenewals';
 
 	const clientId = $derived($page.params.id);
 	const client = $derived(appState.clients.find((c) => c.id === clientId) ?? null);
@@ -22,6 +23,8 @@
 	let fPesel = $state('');
 	let fEmail = $state('');
 	let fTelefon = $state('');
+	// Branża beauty (program OC Beauty Razem): linki do APK i wniosku o pierwszą polisę OC, grupa Beauty na liście.
+	let fSegmentBeauty = $state(false);
 	let saving = $state(false);
 	let formError = $state('');
 	let loaded = $state(false);
@@ -38,6 +41,7 @@
 			fPesel = client.pesel ?? '';
 			fEmail = client.email ?? '';
 			fTelefon = client.telefon ?? '';
+			fSegmentBeauty = !!client.segment_beauty;
 			loaded = true;
 		}
 	});
@@ -55,7 +59,8 @@
 			regon: typ === 'firma' ? (fRegon.trim() || null) : null,
 			krs: typ === 'firma' ? (fKrs.trim() || null) : null,
 			email: fEmail.trim() || null,
-			telefon: fTelefon.trim() || null
+			telefon: fTelefon.trim() || null,
+			segment_beauty: fSegmentBeauty
 		};
 
 		const { error } = await sb.from('crm_clients').update(payload).eq('id', client.id);
@@ -136,6 +141,15 @@
 				<label class={labelCls}>E-mail</label>
 				<input bind:value={fEmail} type="email" class={inputCls} placeholder="kontakt@firma.pl" />
 			</div>
+			{#if programOcBeauty(appState.policies) || client.segment_beauty}
+				<div class="col-span-2">
+					<label class="flex items-start gap-2 cursor-pointer text-sm text-slate-700 bg-slate-50 border border-line rounded-lg px-3 py-2.5">
+						<input type="checkbox" bind:checked={fSegmentBeauty} data-testid="klient-beauty" class="w-4 h-4 mt-0.5 accent-blue-600" />
+						<span><span class="font-medium">Beauty</span>
+						<span class="text-xs text-slate-400">— klient z branży beauty (program OC Beauty Razem): linki do APK i wniosku o pierwszą polisę OC, grupa Beauty na liście{client.beauty_id != null ? '; ten klient jest też z importu BEAUTY' : ''}</span></span>
+					</label>
+				</div>
+			{/if}
 		</div>
 	</div>
 
