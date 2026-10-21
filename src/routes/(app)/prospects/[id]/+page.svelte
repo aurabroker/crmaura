@@ -41,7 +41,7 @@
 		zrodlo: string | null;
 		data_zgloszenia: string | null;
 		liczba_zgloszen: number | null;
-		crm_clients?: { nazwa: string; nazwa_skrocona: string | null; nip: string | null; email: string | null; telefon: string | null; ulica: string | null; beauty_id: number | string | null } | null;
+		crm_clients?: { nazwa: string; nazwa_skrocona: string | null; nip: string | null; email: string | null; telefon: string | null; ulica: string | null; beauty_id: number | string | null; segment_beauty?: boolean | null } | null;
 	};
 
 	type Activity = {
@@ -87,7 +87,7 @@
 	// a lead jest z formularza BEAUTY albo jego firma jest klientem beauty (import BEAUTY / certyfikat z programu).
 	const leadBeauty = $derived(
 		!!prospect && programOcBeauty(appState.policies) &&
-			klientBeauty({ beautyId: prospect.crm_clients?.beauty_id, klientId: prospect.klient_id, zrodloLeada: prospect.zrodlo }, appState.policies)
+			klientBeauty({ beautyId: prospect.crm_clients?.beauty_id, segmentBeauty: prospect.crm_clients?.segment_beauty, klientId: prospect.klient_id, zrodloLeada: prospect.zrodlo }, appState.policies)
 	);
 
 	const statusLabels: Record<string, string> = {
@@ -116,7 +116,7 @@
 	async function load() {
 		loading = true;
 		const { data: p } = await sb.from('crm_prospects')
-			.select('*, crm_profiles(imie_nazwisko), crm_clients(nazwa, nazwa_skrocona, nip, email, telefon, ulica, beauty_id)')
+			.select('*, crm_profiles(imie_nazwisko), crm_clients(nazwa, nazwa_skrocona, nip, email, telefon, ulica, beauty_id, segment_beauty)')
 			.eq('id', prospectId)
 			.single();
 		prospect = p as Prospect | null;

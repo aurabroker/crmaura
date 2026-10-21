@@ -9,7 +9,9 @@
 	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import ScalKlienta from '$lib/components/ScalKlienta.svelte';
 	import { Merge } from 'lucide-svelte';
-	import { fmtPln, policyStatus, dateDiffDays, validateVin, assignedPolicyFor, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
+	import { fmtPln, policyStatus, dateDiffDays, validateVin, fmtDzien, fmtTermin, odmiana, inicjaly, miastoZAdresu } from '$lib/utils';
+	import FlotaKlienta from '$lib/components/FlotaKlienta.svelte';
+	import { RODZAJE_POJAZDU } from '$lib/flota';
 	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, opisZrodlaZgloszenia, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu, klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
@@ -163,7 +165,7 @@
 
 	// Zakładka Flota: niepotrzebna u klienta indywidualnego (osoba) i u klienta beauty (import BEAUTY albo
 	// certyfikat z programu OC beauty). Zostaje, gdy klient ma już pojazdy albo polisy komunikacyjne / flotowe.
-	const klientBeauty = $derived(client?.beauty_id != null || clientPolicies.some((p) => wProgramieOcBeauty(p, appState.policies)));
+	const klientBeauty = $derived(client?.beauty_id != null || !!client?.segment_beauty || clientPolicies.some((p) => wProgramieOcBeauty(p, appState.policies)));
 	const polisyPojazdow = $derived(clientPolicies.some((p) => !!p.pojazd_id || ['komunikacja', 'flota'].includes(p.rodzaj ?? '')));
 	const showPojazdy = $derived(clientVehicles.length > 0 || polisyPojazdow || (client?.typ !== 'osoba' && !klientBeauty));
 
@@ -758,22 +760,50 @@
 		appState.claims = (data ?? []) as typeof appState.claims;
 	}
 
-	// Vehicle modal
+	// Pojazd (dodanie / edycja) — pełne dane jak w kartotece Pojazdy; zakładka Flota pokazuje je razem z ochroną.
+	// Powiązania polis z pojazdem robi komponent FlotaKlienta.
 	let showVehicle = $state(false);
 	let editingVehicle = $state<Vehicle | null>(null);
-	let vRej = $state(''); let vMarka = $state('');
-	let vVin = $state(''); let vRok = $state('');
+	let vRej = $state(''); let vMarka = $state(''); let vVin = $state(''); let vRok = $state('');
+	let vRodzaj = $state(''); let vPojemnosc = $state(''); let vMoc = $state(''); let vLadownosc = $state('');
 	let savingV = $state(false); let vError = $state('');
 
-	function openNewVehicle() { editingVehicle = null; vRej = ''; vMarka = ''; vVin = ''; vRok = ''; vError = ''; showVehicle = true; }
-	function openEditVehicle(v: Vehicle) { editingVehicle = v; vRej = v.nr_rejestracyjny; vMarka = v.marka_model; vVin = v.vin ?? ''; vRok = v.rok_produkcji?.toString() ?? ''; vError = ''; showVehicle = true; }
+	function openNewVehicle() {
+		editingVehicle = null;
+		vRej = ''; vMarka = ''; vVin = ''; vRok = ''; vRodzaj = ''; vPojemnosc = ''; vMoc = ''; vLadownosc = ''; vError = '';
+		showVehicle = true;
+	}
+	function openEditVehicle(v: Vehicle) {
+		editingVehicle = v;
+		vRej = v.nr_rejestracyjny; vMarka = v.marka_model ?? ''; vVin = v.vin ?? ''; vRok = v.rok_produkcji?.toString() ?? '';
+		vRodzaj = v.rodzaj_pojazdu ?? ''; vPojemnosc = v.pojemnosc_silnika?.toString() ?? ''; vMoc = v.moc?.toString() ?? ''; vLadownosc = v.ladownosc?.toString() ?? '';
+		vError = '';
+		showVehicle = true;
+	}
 
 	async function saveVehicle() {
-		if (!vRej.trim() || !vMarka.trim()) { vError = 'Nr rejestracyjny i marka są wymagane.'; return; }
-		const vinErr = validateVin(vVin, true);
+		if (!vRej.trim() || !vMarka.trim()) { vError = 'Nr rejestracyjny oraz marka i model są wymagane.'; return; }
+		const vinErr = validateVin(vVin);
 		if (vinErr) { vError = vinErr; return; }
+		const vin = vVin.trim().toUpperCase() || null;
+		// VIN jest stały i unikalny — dublet to ten sam pojazd wpisany dwa razy (może u innego klienta).
+		const dublet = vin ? appState.vehicles.find((x) => x.vin?.toUpperCase() === vin && x.id !== editingVehicle?.id) : null;
+		if (dublet) {
+			vError = `Pojazd o tym VIN już jest w kartotece (${dublet.nr_rejestracyjny}${dublet.klient_id !== clientId ? ', u innego klienta' : ''}).`;
+			return;
+		}
 		savingV = true; vError = '';
-		const payload = { nr_rejestracyjny: vRej.trim(), marka_model: vMarka.trim(), vin: vVin.trim().toUpperCase(), rok_produkcji: vRok ? parseInt(vRok) : null };
+		const liczba = (s: string) => (s.trim() ? parseInt(s, 10) : null);
+		const payload = {
+			nr_rejestracyjny: vRej.trim().toUpperCase(),
+			marka_model: vMarka.trim(),
+			vin,
+			rok_produkcji: liczba(vRok),
+			rodzaj_pojazdu: vRodzaj.trim() || null,
+			pojemnosc_silnika: liczba(vPojemnosc),
+			moc: liczba(vMoc),
+			ladownosc: liczba(vLadownosc)
+		};
 		let error;
 		if (editingVehicle) {
 			({ error } = await sb.from('crm_vehicles').update(payload).eq('id', editingVehicle.id));
@@ -782,31 +812,11 @@
 		}
 		savingV = false;
 		if (error) { vError = error.message; return; }
+		await logAudit(editingVehicle ? 'vehicle_updated' : 'vehicle_created', 'vehicle', editingVehicle?.id ?? null, payload.nr_rejestracyjny, { klient_id: clientId });
 		showVehicle = false;
+		editingVehicle = null;
 		const { data } = await wczytajPojazdy();
 		appState.vehicles = (data ?? []) as typeof appState.vehicles;
-	}
-
-	// Link vehicle to existing policy
-	let linkingVehicleId = $state<string | null>(null);
-	let linkPolicyId = $state('');
-	let linkingSaving = $state(false);
-
-	async function linkVehicleToPolicy(vehicleId: string) {
-		if (!linkPolicyId) return;
-		if (linkPolicyId === '__new__') {
-			const veh = clientVehicles.find(v => v.id === vehicleId);
-			const przedmiot = veh ? veh.nr_rejestracyjny + (veh.vin ? ' / ' + veh.vin : '') : '';
-			goto(`/policies/new?klient=${clientId}&rodzaj=komunikacja&przedmiot=${encodeURIComponent(przedmiot)}&pojazd_id=${vehicleId}`);
-			return;
-		}
-		linkingSaving = true;
-		await sb.from('crm_policies').update({ pojazd_id: vehicleId }).eq('id', linkPolicyId);
-		const { data, error: bladPolis } = await wczytajPolisy();
-		if (!bladPolis && data) appState.policies = data as typeof appState.policies;
-		linkingSaving = false;
-		linkingVehicleId = null;
-		linkPolicyId = '';
 	}
 
 	// Tasks
@@ -1115,7 +1125,7 @@
 				{#if client.nip}<span class="inline-flex items-center gap-0.5 font-mono text-xs">NIP {client.nip} <Kopiuj tekst={client.nip.replace(/\D/g, '')} opis="NIP" skrot="c" /></span>{/if}
 				{#if client.krs}<span class="inline-flex items-center gap-0.5 font-mono text-xs">KRS {client.krs} <Kopiuj tekst={client.krs} opis="KRS" /></span>{/if}
 				{#if client.pesel}<span class="inline-flex items-center gap-0.5 font-mono text-xs">PESEL {client.pesel} <Kopiuj tekst={client.pesel} opis="PESEL" /></span>{/if}
-				<span>{client.typ === 'osoba' ? 'Osoba' : 'Firma'}{miasto ? ` · ${miasto}` : ''}{client.beauty_id != null ? ' · import BEAUTY' : ''}</span>
+				<span>{client.typ === 'osoba' ? 'Osoba' : 'Firma'}{miasto ? ` · ${miasto}` : ''}{client.beauty_id != null ? ' · import BEAUTY' : client.segment_beauty ? ' · beauty' : ''}</span>
 				{#if client.rodo_zgoda}
 					<span class="flex items-center gap-1.5 text-ok font-semibold">
 						<ShieldCheck size={14} aria-hidden="true" />
@@ -1182,7 +1192,7 @@
 						<button role="menuitem" onclick={openNewTask} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><CheckCircle2 size={15} class="text-ink-3" /> Nowe zadanie</button>
 						<button role="menuitem" onclick={openNewContact} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><UserPlus size={15} class="text-ink-3" /> Dodaj osobę kontaktową</button>
 						{#if showPojazdy}
-							<button role="menuitem" onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
+							<button role="menuitem" onclick={() => { wiecejMenu = false; openNewVehicle(); }} class="w-full flex items-center gap-2.5 text-left px-4 py-2 text-sm text-ink hover:bg-surface-2"><Car size={15} class="text-ink-3" /> Dodaj pojazd</button>
 						{/if}
 						{#if pierwszaPolisaBeauty}
 							<div class="my-1 border-t border-line-soft"></div>
@@ -1266,7 +1276,7 @@
 				class="h-10 -mb-px shrink-0 border-b-2 whitespace-nowrap text-sm transition-colors
 					{activeTab === tab ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-2 font-medium hover:text-ink'}"
 			>
-				{tab === 'przeglad' ? 'Przegląd' : tab === 'polisy' ? 'Polisy' : tab === 'pojazdy' ? 'Flota' : tab === 'gwarancje' ? 'Gwarancje' : tab === 'szkody' ? 'Szkody' : tab === 'kontakty' ? 'Kontakty' : tab === 'apk' ? 'APK' : tab === 'zalaczniki' ? 'Załączniki' : tab === 'dziennik' ? 'Dziennik wniosków' : tab === 'zadania' ? 'Zadania' : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
+				{tab === 'przeglad' ? 'Przegląd' : tab === 'polisy' ? 'Polisy' : tab === 'pojazdy' ? (client.typ === 'osoba' ? 'Pojazdy' : 'Flota') : tab === 'gwarancje' ? 'Gwarancje' : tab === 'szkody' ? 'Szkody' : tab === 'kontakty' ? 'Kontakty' : tab === 'apk' ? 'APK' : tab === 'zalaczniki' ? 'Załączniki' : tab === 'dziennik' ? 'Dziennik wniosków' : tab === 'zadania' ? 'Zadania' : tab === 'emaile' ? 'E-maile' : tab === 'mailing' ? 'Mailing' : 'Rozliczenia'}
 				{#if tab === 'saldo' && ratyPoTerminie.length > 0}
 					<span class="ml-0.5 px-1.5 rounded-full bg-danger-soft text-danger text-xs font-semibold leading-5 tabular-nums">{ratyPoTerminie.length}</span>
 				{:else if n != null && n > 0}
@@ -1478,7 +1488,7 @@
 						{#if client.typ !== 'osoba'}
 							<dt class="text-ink-3">REGON</dt><dd class="font-mono text-xs leading-[18px] {client.regon ? '' : 'text-ink-3'}">{client.regon ?? '—'} <Kopiuj tekst={client.regon} opis="REGON" /></dd>
 						{/if}
-						<dt class="text-ink-3">Źródło</dt><dd>{client.beauty_id != null ? 'import BEAUTY' : 'dodany w CRM'}{client.created_at ? ` · ${fmtDzien(client.created_at.slice(0, 10), true)}` : ''}</dd>
+						<dt class="text-ink-3">Źródło</dt><dd>{client.beauty_id != null ? 'import BEAUTY' : 'dodany w CRM'}{client.segment_beauty ? ' · branża beauty' : ''}{client.created_at ? ` · ${fmtDzien(client.created_at.slice(0, 10), true)}` : ''}</dd>
 						{#if showGwarancje}
 							<dt class="text-ink-3">Gwarancje</dt><dd>tak — {odmiana(clientGwarancje.length, 'umowa', 'umowy', 'umów')}</dd>
 						{/if}
@@ -1605,75 +1615,8 @@
 		{/if}
 
 	{:else if activeTab === 'pojazdy'}
-		<div class="flex justify-end mb-3">
-			<button onclick={() => goto(`/vehicles/new?klient=${clientId}`)} class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
-				<Plus size={14} /> Dodaj pojazd
-			</button>
-		</div>
-		<div class="bg-white border border-line rounded-xl overflow-x-auto">
-			<table class="w-full min-w-[720px] text-left text-sm">
-				<thead>
-					<tr class="bg-surface-2 text-[13px] font-semibold text-ink-2">
-						<th class="px-5 py-3">Nr Rejestracyjny</th>
-						<th class="px-5 py-3">Marka / Model</th>
-						<th class="px-5 py-3">VIN</th>
-						<th class="px-5 py-3">Rok</th>
-						<th class="px-5 py-3">Status</th>
-						<th class="px-5 py-3"></th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each clientVehicles as v}
-						{@const assigned = assignedPolicyFor(v.id, appState.policies)}
-						{@const unlinkedPolicies = clientPolicies.filter(p => (p.rodzaj === 'komunikacja' || p.rodzaj === 'flota') && !p.pojazd_id && !p.deleted_at)}
-						<tr class="border-t border-line-soft hover:bg-slate-50">
-							<td class="px-5 py-3 font-medium whitespace-nowrap">{v.nr_rejestracyjny} <Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" /></td>
-							<td class="px-5 py-3">{v.marka_model}</td>
-							<td class="px-5 py-3 text-slate-500 whitespace-nowrap">{v.vin ?? '—'} <Kopiuj tekst={v.vin} opis="VIN" /></td>
-							<td class="px-5 py-3">{v.rok_produkcji ?? '—'}</td>
-							<td class="px-5 py-3">
-								{#if assigned}
-									<a href="/policies/{assigned.id}" class="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-2 py-0.5 hover:bg-emerald-100">
-										Przypisany: {assigned.nr_polisy}
-									</a>
-								{:else}
-									<span class="text-xs text-slate-400">Wolny</span>
-								{/if}
-							</td>
-							<td class="px-5 py-3">
-								<div class="flex items-center gap-2 flex-wrap">
-									<button onclick={() => openEditVehicle(v)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"><Pencil size={14} /></button>
-									{#if !assigned}
-										{#if linkingVehicleId === v.id}
-											<div class="flex items-center gap-1.5">
-												<select bind:value={linkPolicyId} class="border border-line rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
-													<option value="">— wybierz polisę —</option>
-													{#each unlinkedPolicies as p}
-														<option value={p.id}>{p.nr_polisy} ({p.rodzaj})</option>
-													{/each}
-													<option value="__new__">➕ Utwórz nową polisę</option>
-												</select>
-												<button onclick={() => linkVehicleToPolicy(v.id)} disabled={!linkPolicyId || linkingSaving} class="px-2 py-1 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50">
-													{linkingSaving ? '...' : 'OK'}
-												</button>
-												<button onclick={() => { linkingVehicleId = null; linkPolicyId = ''; }} class="px-2 py-1 text-xs border border-line rounded-lg text-slate-500 hover:bg-slate-50">✕</button>
-											</div>
-										{:else}
-											<button onclick={() => { linkingVehicleId = v.id; linkPolicyId = ''; }}
-												class="text-xs text-blue-600 hover:underline flex items-center gap-1">
-												<Link size={11} /> Powiąż z polisą
-											</button>
-										{/if}
-									{/if}
-								</div>
-							</td>
-						</tr>
-					{:else}
-						<tr><td colspan="6" class="px-5 py-6 text-center text-slate-400">Brak pojazdów</td></tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
+		<!-- Flota / Pojazdy: ochrona każdego pojazdu z jego polis, historia, odnowienie, powiązania — wspólny komponent. -->
+		<FlotaKlienta {klientId} pojazdy={clientVehicles} polisy={clientPolicies} dzis={dzisPolisy} onnew={openNewVehicle} onedit={openEditVehicle} />
 
 	{:else if activeTab === 'gwarancje'}
 		{@const wygasla = (g: Policy) => !!g.data_do && g.data_do < dzisPolisy}
@@ -2411,21 +2354,32 @@
 	</div>
 </Modal>
 
-<!-- Modal: Pojazd -->
-<Modal title={editingVehicle ? 'Edytuj Pojazd' : 'Dodaj Pojazd'} open={showVehicle} onclose={() => { showVehicle = false; editingVehicle = null; }}>
+<!-- Modal: Pojazd — pełne dane jak w kartotece Pojazdy (rodzaj, pojemność, moc, ładowność). -->
+<Modal title={editingVehicle ? `Edytuj pojazd ${editingVehicle.nr_rejestracyjny}` : 'Dodaj pojazd'} open={showVehicle} onclose={() => { showVehicle = false; editingVehicle = null; }}>
 	{#snippet footer()}
 		<button onclick={() => { showVehicle = false; editingVehicle = null; }} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Anuluj</button>
-		<button onclick={saveVehicle} disabled={savingV} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
+		<button onclick={saveVehicle} disabled={savingV} data-testid="pojazd-zapisz" class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60">
 			{savingV ? 'Zapisywanie...' : editingVehicle ? 'Zapisz zmiany' : 'Dodaj pojazd'}
 		</button>
 	{/snippet}
 	{#if vError}<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{vError}</div>{/if}
 	<div class="grid grid-cols-2 gap-3">
-		<div><label class={labelCls}>Nr Rejestracyjny *</label><input bind:value={vRej} class={inputCls} /></div>
-		<div><label class={labelCls}>Marka i Model *</label><input bind:value={vMarka} class={inputCls} /></div>
-		<div><label class={labelCls}>VIN</label><input bind:value={vVin} class={inputCls} /></div>
-		<div><label class={labelCls}>Rok Produkcji</label><input type="number" bind:value={vRok} class={inputCls} /></div>
+		<div><label class={labelCls} for="pojazd-rej">Nr rejestracyjny *</label><input id="pojazd-rej" bind:value={vRej} class="{inputCls} font-mono uppercase" placeholder="np. PO 12345" /></div>
+		<div><label class={labelCls} for="pojazd-vin">VIN</label><input id="pojazd-vin" bind:value={vVin} maxlength="17" class="{inputCls} font-mono uppercase" placeholder="17 znaków" /></div>
+		<div class="col-span-2"><label class={labelCls} for="pojazd-marka">Marka i model *</label><input id="pojazd-marka" bind:value={vMarka} class={inputCls} placeholder="np. Peugeot Boxer" /></div>
+		<div>
+			<label class={labelCls} for="pojazd-rodzaj">Rodzaj pojazdu</label>
+			<input id="pojazd-rodzaj" list="pojazd-rodzaje" bind:value={vRodzaj} class={inputCls} placeholder="np. Samochód osobowy" />
+			<datalist id="pojazd-rodzaje">{#each RODZAJE_POJAZDU as r}<option value={r}></option>{/each}</datalist>
+		</div>
+		<div><label class={labelCls} for="pojazd-rok">Rok produkcji</label><input id="pojazd-rok" type="number" min="1950" max="2100" bind:value={vRok} class={inputCls} placeholder="np. 2021" /></div>
+		<div><label class={labelCls} for="pojazd-poj">Pojemność silnika [cm³]</label><input id="pojazd-poj" type="number" min="0" bind:value={vPojemnosc} class={inputCls} placeholder="np. 1997" /></div>
+		<div><label class={labelCls} for="pojazd-moc">Moc [kW]</label><input id="pojazd-moc" type="number" min="0" bind:value={vMoc} class={inputCls} placeholder="np. 110" /></div>
+		<div><label class={labelCls} for="pojazd-lad">Ładowność [kg]</label><input id="pojazd-lad" type="number" min="0" bind:value={vLadownosc} class={inputCls} placeholder="tylko dostawcze i ciężarowe" /></div>
 	</div>
+	{#if editingVehicle && vRej.trim().toUpperCase() !== (editingVehicle.nr_rejestracyjny ?? '').toUpperCase()}
+		<p class="mt-3 text-xs text-warn bg-warn-soft rounded-lg px-3 py-2">Zmieniasz numer rejestracyjny z {editingVehicle.nr_rejestracyjny} na {vRej.trim().toUpperCase()} — historia polis zostaje przy tym pojeździe.</p>
+	{/if}
 </Modal>
 
 <!-- Dashboard Modals -->

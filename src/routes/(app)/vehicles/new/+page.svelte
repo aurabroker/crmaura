@@ -131,7 +131,7 @@
 				<input type="number" bind:value={vRok} class={inputCls} placeholder="2022" min="1900" max="2099" />
 			</div>
 			<div>
-				<label class={labelCls}>Moc (KM)</label>
+				<label class={labelCls}>Moc (kW)</label>
 				<input type="number" bind:value={vMoc} class={inputCls} placeholder="150" />
 			</div>
 			<div>
