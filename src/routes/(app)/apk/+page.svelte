@@ -10,7 +10,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, adresWniosku, etapWniosku, otworzPdfApk, podsumujWnioski, polisyKlientow, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
+	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, adresWniosku, etapWniosku, otworzPdfApk, podsumujWnioski, polisyKlientow, sortujWnioski, wniosekDoWystawienia, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wniosekZamkniety, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
 	import { dateDiffDays, fmtDzien, fmtTermin, odmiana, todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User, Eye, FileText, X } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
@@ -53,9 +53,16 @@
 		return !q || nazwaKlienta(w).toLowerCase().includes(q) || (w.klient_nazwa ?? '').toLowerCase().includes(q) || (w.nr_polisy ?? '').toLowerCase().includes(q) || (wniosekNowy(w) && 'pierwsza polisa'.includes(q));
 	};
 	const wEtapie = (w: WniosekOdnowienia, f: FiltrWn) => (f === 'wszystkie' ? !wniosekTestowy(w) : etap(w) === f);
-	const wnioskiPoSzukaniu = $derived(appState.wnioskiOdnowien.filter(pasujeSzukaj));
+	// Kolejność: „do wystawienia” na górze (wiersz miga na zielono), potem wnioski w toku i nieaktywne; zamknięte
+	// (polisa wystawiona, rezygnacja) na dole — domyślnie schowane, przełącznik „pokaż załatwione” je odsłania.
+	const doWystawienia = (w: WniosekOdnowienia) => wniosekDoWystawienia(w, odnowione, polisyKl, zalatwioneZadaniem);
+	const zamkniety = (w: WniosekOdnowienia) => wniosekZamkniety(w, odnowione, polisyKl, zalatwioneZadaniem);
+	let pokazZalatwione = $state(false);
+	const wnioskiPoSzukaniu = $derived(appState.wnioskiOdnowien.filter(pasujeSzukaj).filter((w) => pokazZalatwione || !zamkniety(w)));
+	const liczZalatwione = $derived(appState.wnioskiOdnowien.filter((w) => pasujeSzukaj(w) && zamkniety(w) && wEtapie(w, filtrWn)).length);
+	const liczDoWystawienia = $derived(appState.wnioskiOdnowien.filter(doWystawienia).length);
 	const liczFiltr = $derived(Object.fromEntries(FILTRY_WN.map(([f]) => [f, wnioskiPoSzukaniu.filter((w) => wEtapie(w, f)).length])) as Record<FiltrWn, number>);
-	const wnioskiWidoczne = $derived(wnioskiPoSzukaniu.filter((w) => wEtapie(w, filtrWn)));
+	const wnioskiWidoczne = $derived(sortujWnioski(wnioskiPoSzukaniu.filter((w) => wEtapie(w, filtrWn)), odnowione, polisyKl, zalatwioneZadaniem));
 
 	let bladWn = $state('');
 	async function pdfApkWniosku(w: WniosekOdnowienia) {
@@ -376,7 +383,17 @@
 				>{label} <span class="tabular-nums">{liczFiltr[id]}</span></button>
 			{/each}
 		</div>
+		<label class="h-9 flex items-center gap-2 px-3 rounded-xl border border-line bg-white text-[13px] font-medium text-slate-600 cursor-pointer sm:ml-auto" title="Wnioski z wystawioną już polisą albo z rezygnacją klienta — domyślnie schowane">
+			<input type="checkbox" bind:checked={pokazZalatwione} data-testid="pokaz-zalatwione" class="w-4 h-4 accent-blue-600" />
+			Pokaż załatwione <span class="tabular-nums text-slate-400">{liczZalatwione}</span>
+		</label>
 	</div>
+	{#if liczDoWystawienia}
+		<p class="mb-3 text-[13px] text-emerald-700" data-testid="do-wystawienia-info">
+			<span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5 align-middle animate-pulse"></span>
+			{odmiana(liczDoWystawienia, 'wniosek czeka', 'wnioski czekają', 'wniosków czeka')} na wystawienie polisy — {liczDoWystawienia === 1 ? 'jest' : 'są'} na górze listy. Po dodaniu polisy w CRM wiersz schodzi do załatwionych.
+		</p>
+	{/if}
 
 	{#if bladWn}
 		<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{bladWn}</div>
@@ -385,7 +402,12 @@
 	{#if wnioskiWidoczne.length === 0}
 		<div class="bg-white border border-line rounded-xl p-10 text-center text-slate-400">
 			<ClipboardList size={32} class="mx-auto mb-2 opacity-30" />
-			{appState.wnioskiOdnowien.length ? 'Brak wniosków dla wybranego filtra' : 'Jeszcze nie wysłano żadnego wniosku o odnowienie'}
+			{#if liczZalatwione}
+				Wszystkie wnioski w tym widoku są załatwione (polisa wystawiona albo rezygnacja).
+				<button onclick={() => (pokazZalatwione = true)} class="ml-1 font-semibold text-accent-text hover:underline">Pokaż załatwione ({liczZalatwione})</button>
+			{:else}
+				{appState.wnioskiOdnowien.length ? 'Brak wniosków dla wybranego filtra' : 'Jeszcze nie wysłano żadnego wniosku o odnowienie'}
+			{/if}
 		</div>
 	{:else}
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-x-auto">
@@ -405,7 +427,10 @@
 					{#each wnioskiWidoczne as w (w.id)}
 						{@const wz = waznosc(w)}
 						{@const test = wniosekTestowy(w)}
-						<tr use:ctxMenu={{ items: () => wniosekMenu(w), title: w.nr_polisy ?? 'Wniosek' }} class="border-t border-line-soft hover:bg-slate-50 {test ? 'opacity-60' : ''}">
+						{@const pilny = doWystawienia(w)}
+						{@const zamkn = zamkniety(w)}
+						<tr use:ctxMenu={{ items: () => wniosekMenu(w), title: w.nr_polisy ?? 'Wniosek' }} data-testid="wniosek" data-ranga={pilny ? 'do_wystawienia' : zamkn ? 'zalatwiony' : 'w_toku'}
+							class="border-t border-line-soft {pilny ? 'wniosek-do-wystawienia' : zamkn ? 'bg-slate-50/60 text-slate-500 hover:bg-slate-100/60' : 'hover:bg-slate-50'} {test ? 'opacity-60' : ''}">
 							<td class="px-5 py-3 whitespace-nowrap">
 								<span class="block tabular-nums text-slate-700">{fmtDzien(w.wyslano_at ?? w.created_at, true)}</span>
 								<span class="block text-xs text-slate-400">
@@ -428,7 +453,12 @@
 								{/if}
 								{#if w.okres_do}<span class="block text-xs text-slate-400">ochrona do {fmtDzien(w.okres_do, true)}</span>{/if}
 							</td>
-							<td class="px-5 py-3 whitespace-nowrap"><CrmRenewalBadge status={w.status} decyzja={w.decyzja} rodzaj={w.rodzaj} /></td>
+							<td class="px-5 py-3 whitespace-nowrap">
+								<CrmRenewalBadge status={w.status} decyzja={w.decyzja} rodzaj={w.rodzaj} />
+								{#if pilny}
+									<span class="block mt-1 w-fit h-5 leading-5 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold tracking-wide" data-testid="odznaka-do-wystawienia">DO WYSTAWIENIA</span>
+								{/if}
+							</td>
 							<td class="px-5 py-3 whitespace-nowrap">
 								{#if w.apk_odmowa}
 									<Badge variant="warning">Odmowa</Badge>
@@ -449,7 +479,7 @@
 								{w.zlozono_at ? fmtDzien(w.zlozono_at, true) : '—'}
 								{#if w.status === 'zlozony' && w.decyzja !== 'nie'}
 									{@const zalatwiony = wniosekZalatwiony(w, odnowione, polisyKl) || zalatwioneZadaniem.has(w.id)}
-									<span class="block {zalatwiony ? 'text-emerald-600' : 'text-warn font-semibold'}">{zalatwiony ? (wniosekNowy(w) ? 'polisa wystawiona' : 'nowa polisa wystawiona') : 'do wystawienia'}</span>
+									<span class="block {zalatwiony ? 'text-emerald-600' : 'text-emerald-800 font-bold'}">{zalatwiony ? (wniosekNowy(w) ? 'polisa wystawiona' : 'nowa polisa wystawiona') : 'do wystawienia'}</span>
 								{/if}
 							</td>
 							<td class="px-5 py-3">
@@ -584,6 +614,18 @@
 		</div>
 	{/if}
 {/if}
+
+<style>
+	/* Wniosek do wystawienia miga na zielono — przy ograniczonej animacji zostaje stałe zielone tło. */
+	@keyframes miga-zielono {
+		0%, 100% { background-color: #ecfdf5; }
+		50% { background-color: #a7f3d0; }
+	}
+	tr.wniosek-do-wystawienia { animation: miga-zielono 1.4s ease-in-out infinite; }
+	@media (prefers-reduced-motion: reduce) {
+		tr.wniosek-do-wystawienia { animation: none; background-color: #d1fae5; }
+	}
+</style>
 
 <!-- Modal: Nowy APK -->
 <Modal title="Nowy formularz APK" open={showNew} onclose={closeNew}>
