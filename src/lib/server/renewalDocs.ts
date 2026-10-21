@@ -4,6 +4,7 @@ import { rysujLogo } from '$lib/server/pdfLogo';
 import type { PodpisPdf } from '$lib/server/podpis';
 import { okresNowyWniosku, opObecnie, type RenewalRow } from '$lib/server/renewals';
 import { ZGODA_TYTUL, ZGODY, opisZgody, type KanalZgody } from '$lib/renewals/zgody';
+import { stopkaHtml, stopkaTekst } from '$lib/renewals/dystrybutor';
 import {
 	APK_ODPOWIEDZI,
 	APK_ODMOWA_TRESC,
@@ -39,9 +40,9 @@ import {
 // Treści e-maili i PDF wniosku o odnowienie. Wszystko, co pochodzi od klienta, przechodzi przez esc()
 // (HTML) albo trafia do PDF jako zwykły tekst.
 
-const STOPKA = 'Beauty❤️Polisa · Aura Expert sp. z o.o., ul. Bolkowska 2A/28, 01-466 Warszawa · auraexpert.pl';
-const STOPKA_HTML =
-	'Beauty❤️Polisa · <a href="https://auraexpert.pl/" target="_blank" rel="noopener noreferrer" style="color:#64748b;">Aura Expert sp. z o.o.</a>, ul. Bolkowska 2A/28, 01-466 Warszawa';
+// Stopka każdego maila programu: dystrybutor (Aura Expert) i link do informacji o dystrybutorze (PDF).
+const STOPKA = stopkaTekst();
+const STOPKA_HTML = stopkaHtml();
 const KONTAKT = 'odnowienia@auraexpert.pl';
 // Logo w prawym górnym rogu PDF (mm; prawy margines 14 mm).
 const LOGO_PDF_SZER = 46;
