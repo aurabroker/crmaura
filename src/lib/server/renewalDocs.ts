@@ -271,7 +271,8 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null, ankieta: Pick<Anki
 	if (ankieta?.inne_zabiegi?.trim()) linie.push(`Inne zabiegi do oceny ryzyka (ankieta, „Inny”): ${ankieta.inne_zabiegi.trim()}`);
 	for (const w of z.wykonawcy ?? []) linie.push(`Wykonuje: ${w.imie_nazwisko} — ${w.zabiegi.join('; ')}`);
 	if (z.inne) linie.push(`${nowa ? 'Uwagi klienta' : 'Inne'}: ${z.inne}`);
-	if (!apk && z.rodzaje.length) linie.push(`Rodzaj działalności (do wyceny): ${z.rodzaje.map(rodzajNazwa).join(', ')}`);
+	if (z.zmiana_dzialalnosci && z.rodzaje.length) linie.push(`Działalność od nowego okresu (zabiegi z innej listy programu): ${z.rodzaje.map(rodzajNazwa).join(', ')}`);
+	else if (!apk && z.rodzaje.length) linie.push(`Rodzaj działalności (do wyceny): ${z.rodzaje.map(rodzajNazwa).join(', ')}`);
 	if (!apk && z.osoby) linie.push(`Liczba osób (do wyceny): ${osobyNazwa(z.osoby)}`);
 	return linie;
 }

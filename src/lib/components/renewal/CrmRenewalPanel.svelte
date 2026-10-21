@@ -8,7 +8,7 @@
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import {
 		APK_ODMOWA_TRESC, APK_ODPOWIEDZI, APK_PYTANIA, LICZBA_OSOB, OCHRONA_PRAWNA_SKLADKA, OSWIADCZENIE_ANKIETY,
-		RODZAJE_GABINETU, formatSuma, formatZl, okresOdDaty, opisZalacznika, wycenaNowej, wycenaWniosku,
+		RODZAJE_GABINETU, formatSuma, formatZl, okresOdDaty, opisZalacznika, sumaZeSkladki, wycenaNowej, wycenaWniosku,
 		type Ankieta, type Apk, type RodzajWniosku
 	} from '$lib/renewals/program';
 	import { ADRES_TESTOWY, etykietaDecyzji, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
@@ -319,7 +319,7 @@
 		if (z.nowe_zabiegi?.length) out.push({ k: 'Nowe zabiegi', v: z.nowe_zabiegi });
 		if (z.zabiegi_ankieta?.length) out.push({ k: 'Zabiegi wymagające ankiety', v: z.zabiegi_ankieta });
 		if (r.ankieta?.inne_zabiegi?.trim()) out.push({ k: 'Inne zabiegi do oceny ryzyka (ankieta)', v: r.ankieta.inne_zabiegi.trim() });
-		if (z.rodzaje?.length) out.push({ k: 'Rodzaj działalności', v: rodzajeNazwy(z.rodzaje) });
+		if (z.rodzaje?.length) out.push({ k: z.zmiana_dzialalnosci ? 'Działalność od nowego okresu (zabiegi z innej listy)' : 'Rodzaj działalności', v: rodzajeNazwy(z.rodzaje) });
 		if (z.osoby) out.push({ k: 'Osoby wykonujące zabiegi', v: osobyNazwa(z.osoby) });
 		if (z.inne) out.push({ k: n ? 'Uwagi klienta' : 'Inne zmiany', v: z.inne });
 		return out;
@@ -331,7 +331,7 @@
 		if (r.status !== 'zlozony' || !w || w.decyzja === 'nie') return null;
 		let wycena: ReturnType<typeof wycenaWniosku> = null;
 		try {
-			wycena = w.decyzja === 'nowa' ? wycenaNowej(w, r.apk) : wycenaWniosku(w, r.apk, r.skladka);
+			wycena = w.decyzja === 'nowa' ? wycenaNowej(w, r.apk) : wycenaWniosku(w, r.apk, r.skladka, false, r.suma != null ? Number(r.suma) : sumaZeSkladki(r.skladka != null ? Number(r.skladka) : null));
 		} catch {
 			wycena = null;
 		}

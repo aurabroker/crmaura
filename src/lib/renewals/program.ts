@@ -219,9 +219,14 @@ export type Zmiany = {
 	// Potrzebne do wyceny, gdy klient odmówił APK (inaczej bierzemy z APK).
 	rodzaje: RodzajGabinetu[];
 	osoby: LiczbaOsob | null;
-	// Osoby wykonujące nowe zabiegi i to, które zabiegi wykonują — do nich klient dołącza dyplom
+	// Osoby wykonujące zabiegi z ankiety i to, które zabiegi wykonują — do nich klient dołącza dyplom
 	// i certyfikaty (osobno dla każdej osoby i każdego jej zabiegu).
 	wykonawcy: Wykonawca[];
+	// Odnowienie: klient dopisuje zabiegi z innej listy programu = zmienia rodzaj działalności na nowy okres
+	// (wtedy `rodzaje` to działalność od nowego okresu) i dostaje nową składkę z taryfy. Bez dokumentów:
+	// pojedyncze zabiegi dopisuje się tylko z listy ankietowej. Starsze wnioski mają zamiast tego `nowe_zabiegi`
+	// (zabiegi z list wybierane pojedynczo) i nie mają tego pola.
+	zmiana_dzialalnosci?: boolean;
 };
 
 export type Wykonawca = { id: string; imie_nazwisko: string; zabiegi: string[] };
@@ -300,9 +305,10 @@ const ZABIEGI_WSZYSTKIE = new Set<string>([...ZABIEGI_LISTA_1, ...ZABIEGI_LISTA_
 export const czyZabieg = (z: unknown): z is string => typeof z === 'string' && ZABIEGI_WSZYSTKIE.has(z);
 export const ID_WYKONAWCY = /^[A-Za-z0-9-]{1,40}$/;
 
-// Zabiegi zgłaszane we wniosku (z list programu i wymagające ankiety) — do nich potrzebne są osoby i dokumenty.
-export const zabiegiWniosku = (z: Pick<Zmiany, 'nowe_zabiegi' | 'zabiegi_ankieta'> | null | undefined): string[] =>
-	z ? Array.from(new Set([...z.nowe_zabiegi, ...z.zabiegi_ankieta])) : [];
+// Zabiegi zgłaszane we wniosku, do których potrzebne są osoby i dokumenty: tylko zabiegi z listy ankietowej.
+// Zabiegi z list programu nie wymagają dyplomów ani certyfikatów (inna lista = zmiana działalności i składki).
+export const zabiegiWniosku = (z: Pick<Zmiany, 'zabiegi_ankieta'> | null | undefined): string[] =>
+	z ? Array.from(new Set(z.zabiegi_ankieta)) : [];
 
 // Opis załącznika dla ludzi: rodzaj + osoba (+ zabieg przy certyfikacie).
 export function opisZalacznika(
@@ -426,23 +432,29 @@ export function waliduj_wniosek(raw: unknown, apk: Apk | null, o: { pomijajWykon
 		wyzsza_suma: SUMY.includes(sumaRaw as Suma) ? (sumaRaw as Suma) : null,
 		ochrona_prawna: z.ochrona_prawna === true,
 		adres: adresRaw ? { ulica: str(adresRaw.ulica, 200), kod: str(adresRaw.kod, 10), miasto: str(adresRaw.miasto, 100) } : null,
-		nowe_zabiegi: listOf(z.nowe_zabiegi, ZABIEGI_LISTY),
+		// Pojedyncze zabiegi z list programu nie są już częścią wniosku (patrz zmiana_dzialalnosci).
+		nowe_zabiegi: [],
 		zabiegi_ankieta: listOf(z.zabiegi_ankieta, ZABIEGI_ANKIETA),
 		inne: str(z.inne, 3000),
 		rodzaje: listOf(z.rodzaje, RODZAJE_KEYS),
 		osoby: oneOf(z.osoby, OSOBY_KEYS),
-		wykonawcy: []
+		wykonawcy: [],
+		zmiana_dzialalnosci: z.zmiana_dzialalnosci === true
 	};
 	const zgloszone = zabiegiWniosku(zmiany);
 	if (zgloszone.length && !o.pomijajWykonawcow) zmiany.wykonawcy = parsujWykonawcow(z.wykonawcy, zgloszone, bledy);
 	if (zmiany.adres && (!zmiany.adres.ulica || !/^\d{2}-\d{3}$/.test(zmiany.adres.kod) || !zmiany.adres.miasto)) {
 		bledy.push('Podaj pełny nowy adres działalności (ulica, kod pocztowy w formacie 00-000, miejscowość).');
 	}
-	const cokolwiek = zmiany.wyzsza_suma || zmiany.ochrona_prawna || zmiany.adres || zmiany.nowe_zabiegi.length ||
+	const cokolwiek = zmiany.wyzsza_suma || zmiany.ochrona_prawna || zmiany.adres || zmiany.zmiana_dzialalnosci ||
 		zmiany.zabiegi_ankieta.length || zmiany.inne;
 	if (!cokolwiek) bledy.push('Zaznacz co najmniej jedną zmianę albo wybierz „tak, bez zmian”.');
+	if (zmiany.zmiana_dzialalnosci) {
+		if (!zmiany.rodzaje.length) bledy.push('Zaznacz rodzaj działalności na nowy okres.');
+		else if (!apk && !zmiany.osoby) bledy.push('Do wyceny nowej składki podaj liczbę osób wykonujących zabiegi.');
+	}
 	// Wycena nowej sumy wymaga rodzaju gabinetu i liczby osób — z APK albo podanych we wniosku.
-	if (zmiany.wyzsza_suma && !apk) {
+	if (zmiany.wyzsza_suma && !apk && !zmiany.zmiana_dzialalnosci) {
 		if (!zmiany.rodzaje.length) bledy.push('Do wyceny nowej sumy zaznacz rodzaj działalności.');
 		if (!zmiany.osoby) bledy.push('Do wyceny nowej sumy podaj liczbę osób wykonujących zabiegi.');
 	}
@@ -496,7 +508,8 @@ export function waliduj_wniosek_nowy(raw: unknown, apk: Apk | null, o: { pomijaj
 		inne: str(z.inne, 3000),
 		rodzaje: listOf(z.rodzaje, RODZAJE_KEYS),
 		osoby: oneOf(z.osoby, OSOBY_KEYS),
-		wykonawcy: []
+		wykonawcy: [],
+		zmiana_dzialalnosci: false
 	};
 	if (!zmiany.wyzsza_suma) bledy.push('Wybierz sumę gwarancyjną.');
 	// Rodzaj gabinetu i liczba osób: z APK, a przy odmowie APK — z wniosku (bez nich nie ma wyceny).
@@ -607,10 +620,25 @@ export function sumaZeSkladki(skladka: number | null): Suma | null {
 
 // Wycena dla wniosku ze zmianami. null = składka bez zmian (np. tylko zmiana adresu).
 // opObecnie: obecny certyfikat ma już ochronę prawną (patrz ochronaPrawnaWSkladce) — nie doliczamy jej drugi raz.
-export function wycenaWniosku(w: Wniosek, apk: Apk | null, skladkaObecna: number | null, opObecnie = false): Wycena | null {
+// sumaObecna: suma gwarancyjna obecnego certyfikatu — przy zmianie działalności bez zmiany sumy.
+export function wycenaWniosku(
+	w: Wniosek,
+	apk: Apk | null,
+	skladkaObecna: number | null,
+	opObecnie = false,
+	sumaObecna: number | null = null
+): Wycena | null {
 	if (w.decyzja !== 'zmiany' || !w.zmiany) return null;
 	const z = w.zmiany;
 	if (z.zabiegi_ankieta.length) return { rodzaj: 'indywidualna', powod: 'zabiegi wymagające ankiety podlegają ocenie ubezpieczyciela' };
+	// Zabiegi z innej listy = nowa działalność: składka z taryfy dla nowej kategorii (i nowej albo obecnej sumy).
+	if (z.zmiana_dzialalnosci) {
+		const kategoria = kategoriaZRodzajow(z.rodzaje);
+		const suma = z.wyzsza_suma ?? (SUMY.includes(sumaObecna as Suma) ? (sumaObecna as Suma) : null);
+		const osoby = apk?.osoby || z.osoby;
+		if (!kategoria || !suma || !osoby) return { rodzaj: 'indywidualna', powod: 'brak danych do wyceny' };
+		return skladkaProgramu({ kategoria, suma, osoby, ochronaPrawna: z.ochrona_prawna || opObecnie });
+	}
 	if (z.wyzsza_suma) {
 		const rodzaje = apk?.rodzaje.length ? apk.rodzaje : z.rodzaje;
 		const osoby = apk?.osoby || z.osoby;

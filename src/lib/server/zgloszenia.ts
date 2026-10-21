@@ -6,6 +6,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const MAKS_WIERSZY = 200;
 export const PREFIKS_KLUCZA = 'crmzg_';
+// Klucz asystenta AI (konsultacja-agent) ma osobny zakres: nie wyłącza klucza arkusza i nie przyjmuje zgłoszeń.
+export const PREFIKS_KLUCZA_AI = 'crmai_';
+export type ZakresKlucza = 'zgloszenia' | 'asystent_ai';
+export const zakresZ = (v: unknown): ZakresKlucza => (v === 'asystent_ai' ? 'asystent_ai' : 'zgloszenia');
+export const czyKluczZgloszen = (klucz: string): boolean => klucz.trim().startsWith(PREFIKS_KLUCZA);
 
 export type WierszZgloszenia = {
 	company?: string;
@@ -34,11 +39,11 @@ export async function skrotKlucza(klucz: string): Promise<string> {
 	return [...new Uint8Array(bajty)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export function nowyKlucz(): string {
+export function nowyKlucz(zakres: ZakresKlucza = 'zgloszenia'): string {
 	const losowe = new Uint8Array(32);
 	crypto.getRandomValues(losowe);
 	const b64 = btoa(String.fromCharCode(...losowe)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-	return PREFIKS_KLUCZA + b64;
+	return (zakres === 'asystent_ai' ? PREFIKS_KLUCZA_AI : PREFIKS_KLUCZA) + b64;
 }
 
 /** Wiersze z treści żądania: pojedynczy obiekt albo tablica (do MAKS_WIERSZY). Null — zła treść. */
