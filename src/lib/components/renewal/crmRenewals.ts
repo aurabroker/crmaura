@@ -119,6 +119,39 @@ export const wniosekCzekaNaPolise = (
 	zalatwione: ReadonlySet<string> = new Set()
 ) => w.status === 'zlozony' && w.decyzja !== 'nie' && !zalatwione.has(w.id) && !wniosekZalatwiony(w, odnowione, polisyKl);
 
+type WniosekDoRangi = Pick<WniosekOdnowienia, 'id' | 'status' | 'decyzja' | 'rodzaj' | 'polisa_id' | 'klient_id' | 'zlozono_at' | 'apk_at' | 'email' | 'wyslano_at' | 'created_at'>;
+
+/** Wniosek zamknięty: złożony i załatwiony (nowa polisa w CRM albo zadanie „Załatwione”) lub rezygnacja klienta. */
+export const wniosekZamkniety = (w: WniosekDoRangi, odnowione: ReadonlySet<string>, polisyKl: ReadonlyMap<string, string[]> = new Map(), zalatwione: ReadonlySet<string> = new Set()) =>
+	w.status === 'zlozony' && (w.decyzja === 'nie' || zalatwione.has(w.id) || wniosekZalatwiony(w, odnowione, polisyKl));
+
+/** „Do wystawienia”: prawdziwy (nie testowy) wniosek złożony przez klienta, na który nie ma jeszcze polisy w CRM. */
+export const wniosekDoWystawienia = (w: WniosekDoRangi, odnowione: ReadonlySet<string>, polisyKl: ReadonlyMap<string, string[]> = new Map(), zalatwione: ReadonlySet<string> = new Set()) =>
+	!wniosekTestowy(w) && wniosekCzekaNaPolise(w, odnowione, polisyKl, zalatwione);
+
+/**
+ * Kolejność listy wniosków (APK → Wnioski klientów): 0 do wystawienia (na górze, wyróżnione), 1 w toku (link u klienta,
+ * APK wypełniona), 2 nieaktywne (link wygasł, anulowany, testowy), 3 zamknięte (polisa wystawiona, rezygnacja) — na dole.
+ */
+export function rangaWniosku(w: WniosekDoRangi, odnowione: ReadonlySet<string>, polisyKl: ReadonlyMap<string, string[]> = new Map(), zalatwione: ReadonlySet<string> = new Set()): 0 | 1 | 2 | 3 {
+	if (wniosekDoWystawienia(w, odnowione, polisyKl, zalatwione)) return 0;
+	if (wniosekZamkniety(w, odnowione, polisyKl, zalatwione)) return 3;
+	if (wniosekTestowy(w) || etapWniosku(w) === 'nieaktywny') return 2;
+	return 1;
+}
+
+/** Sortowanie listy: wg rangi; do wystawienia — najdłużej czekające pierwsze; reszta — najnowsze pierwsze. */
+export function sortujWnioski<T extends WniosekDoRangi>(lista: T[], odnowione: ReadonlySet<string>, polisyKl: ReadonlyMap<string, string[]> = new Map(), zalatwione: ReadonlySet<string> = new Set()): T[] {
+	const data = (w: T) => w.wyslano_at ?? w.created_at ?? '';
+	return [...lista].sort((a, b) => {
+		const ra = rangaWniosku(a, odnowione, polisyKl, zalatwione);
+		const rb = rangaWniosku(b, odnowione, polisyKl, zalatwione);
+		if (ra !== rb) return ra - rb;
+		if (ra === 0) return (a.zlozono_at ?? '').localeCompare(b.zlozono_at ?? '');
+		return data(b).localeCompare(data(a));
+	});
+}
+
 // Liczby do kafelka na pulpicie i zakładki APK: tylko bieżący cykl, bez wniosków testowych.
 // odnowione: polisy, które mają już następczynię (renewal_of) — ich wnioski są załatwione.
 // polisyKl: polisy klientów (pierwsza polisa jest załatwiona, gdy klient dostał polisę po złożeniu wniosku).
