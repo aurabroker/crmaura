@@ -14,12 +14,17 @@ import {
 	utworzNowyWniosek,
 	utworzOdnowienie,
 	wniosekTestowy,
+	linkDla,
+	dodajDni,
+	zapiszZdarzenie,
 	type RenewalRow
 } from '$lib/server/renewals';
 import { wyslijZaproszenie } from '$lib/server/renewalFlow';
 import {
+	decyzjaLinku,
 	decyzjaWniosku,
 	sciezkaWniosku,
+	type Decyzja,
 	type CertyfikatKlienta,
 	type WynikWnioskuAsystenta
 } from '$lib/renewals/wniosekAsystenta';
@@ -107,20 +112,28 @@ async function ostatniAktywny(admin: SupabaseClient, filtr: { polisa_id: string 
 	return ((data ?? [])[0] as RenewalRow | undefined) ?? null;
 }
 
-export async function wyslijWniosekAsystenta(
-	admin: SupabaseClient,
-	tenantId: string,
-	klientId: string,
-	origin: string
-): Promise<OdpowiedzWnioskuAsystenta> {
+// Wspólne przygotowanie dla obu dróg (Monika wysyła maila, mail z HUB daje link): klient, ścieżka
+// (pierwsza polisa / odnowienie), dane do nowego wniosku i decyzja o istniejącym wniosku.
+type Przygotowanie =
+	| { koniec: OdpowiedzWnioskuAsystenta }
+	| {
+			odnowienie: boolean;
+			dopisek: { rodzaj: 'nowa' } | { rodzaj: 'odnowienie'; ochrona_do: string };
+			utworz: (zastap: boolean) => Promise<RenewalRow>;
+			istniejacy: RenewalRow | null;
+			decyzja: Decyzja;
+			polisaId: string | null;
+	  };
+
+async function przygotuj(admin: SupabaseClient, tenantId: string, klientId: string, przez: string): Promise<Przygotowanie> {
 	const { data: klient } = await admin
 		.from('crm_clients')
 		.select('id, aktywny')
 		.eq('id', klientId)
 		.eq('tenant_id', tenantId)
 		.maybeSingle();
-	if (!klient) return { wynik: 'brak_klienta' };
-	if ((klient as { aktywny?: boolean }).aktywny === false) return { wynik: 'klient_nieaktywny' };
+	if (!klient) return { koniec: { wynik: 'brak_klienta' } };
+	if ((klient as { aktywny?: boolean }).aktywny === false) return { koniec: { wynik: 'klient_nieaktywny' } };
 
 	const firma = await ustawieniaFirmy(admin, tenantId);
 	// Jak zadanie odnowień (api/cron/renewals): automat działa tylko z modułem „odnowienia_auto” i kluczem Resend.
@@ -131,11 +144,10 @@ export async function wyslijWniosekAsystenta(
 		automat
 	});
 	if (sciezka.rodzaj === 'za_wczesnie' || sciezka.rodzaj === 'do_agenta') {
-		return { wynik: sciezka.rodzaj, rodzaj: 'odnowienie', ochrona_do: sciezka.ochrona_do };
+		return { koniec: { wynik: sciezka.rodzaj, rodzaj: 'odnowienie', ochrona_do: sciezka.ochrona_do } };
 	}
 	const odnowienie = sciezka.rodzaj === 'odnowienie';
-	const rodzaj = odnowienie ? 'odnowienie' : 'nowa';
-	const dopisek = odnowienie ? { rodzaj, ochrona_do: sciezka.ochrona_do } as const : { rodzaj } as const;
+	const dopisek = odnowienie ? ({ rodzaj: 'odnowienie', ochrona_do: sciezka.ochrona_do } as const) : ({ rodzaj: 'nowa' } as const);
 
 	// Dane do wniosku: certyfikat albo klient. Odmowy z kartoteki (polisa zakończona, odnowiona…) → doradca.
 	let utworz: (zastap: boolean) => Promise<RenewalRow>;
@@ -144,38 +156,51 @@ export async function wyslijWniosekAsystenta(
 		try {
 			p = await polisaProgramu(admin, tenantId, sciezka.polisa_id);
 		} catch (e) {
-			if (status(e) === 400 || status(e) === 404) return { wynik: 'do_agenta', ...dopisek };
+			if (status(e) === 400 || status(e) === 404) return { koniec: { wynik: 'do_agenta', ...dopisek } };
 			throw e;
 		}
-		if (!p.klient.email) return { wynik: 'brak_adresu', ...dopisek };
-		utworz = (zastap) => utworzOdnowienie(admin, p, { utworzyl: null, przez: KTO, zastap });
+		if (!p.klient.email) return { koniec: { wynik: 'brak_adresu', ...dopisek } };
+		utworz = (zastap) => utworzOdnowienie(admin, p, { utworzyl: null, przez, zastap });
 	} else {
 		let k;
 		try {
 			k = await klientDoWniosku(admin, tenantId, klientId);
 		} catch (e) {
-			if (status(e) === 404) return { wynik: 'brak_klienta' };
-			if (status(e) === 400) return { wynik: 'klient_nieaktywny' };
+			if (status(e) === 404) return { koniec: { wynik: 'brak_klienta' } };
+			if (status(e) === 400) return { koniec: { wynik: 'klient_nieaktywny' } };
 			throw e;
 		}
-		if (!k.email) return { wynik: 'brak_adresu', ...dopisek };
-		utworz = (zastap) => utworzNowyWniosek(admin, k, { utworzyl: null, przez: KTO, zastap });
+		if (!k.email) return { koniec: { wynik: 'brak_adresu', ...dopisek } };
+		utworz = (zastap) => utworzNowyWniosek(admin, k, { utworzyl: null, przez, zastap });
 	}
 
-	const istniejacy = await ostatniAktywny(admin, odnowienie ? { polisa_id: sciezka.polisa_id } : { klient_id: klientId });
-	const decyzja = decyzjaWniosku(
-		istniejacy
-			? {
-					status: istniejacy.status,
-					wyslano_at: istniejacy.wyslano_at ?? null,
-					przypomniano_at: istniejacy.przypomniano_at ?? null,
-					wazny_do: istniejacy.wazny_do,
-					testowy: wniosekTestowy(istniejacy.email),
-					rezygnacja: istniejacy.decyzja === 'nie'
-				}
-			: null,
-		{ teraz: Date.now(), trybTestowy: trybTestowy(firma) }
-	);
+	const polisaId = odnowienie && sciezka.rodzaj === 'odnowienie' ? sciezka.polisa_id : null;
+	const istniejacy = await ostatniAktywny(admin, polisaId ? { polisa_id: polisaId } : { klient_id: klientId });
+	const decyzja = decyzjaWniosku(opisIstniejacego(istniejacy), { teraz: Date.now(), trybTestowy: trybTestowy(firma) });
+	return { odnowienie, dopisek, utworz, istniejacy, decyzja, polisaId };
+}
+
+const opisIstniejacego = (r: RenewalRow | null) =>
+	r
+		? {
+				status: r.status,
+				wyslano_at: r.wyslano_at ?? null,
+				przypomniano_at: r.przypomniano_at ?? null,
+				wazny_do: r.wazny_do,
+				testowy: wniosekTestowy(r.email),
+				rezygnacja: r.decyzja === 'nie'
+			}
+		: null;
+
+export async function wyslijWniosekAsystenta(
+	admin: SupabaseClient,
+	tenantId: string,
+	klientId: string,
+	origin: string
+): Promise<OdpowiedzWnioskuAsystenta> {
+	const p = await przygotuj(admin, tenantId, klientId, KTO);
+	if ('koniec' in p) return p.koniec;
+	const { odnowienie, dopisek, utworz, istniejacy, decyzja } = p;
 	// Klient zrezygnował z odnowienia we wniosku, a teraz prosi o link — decyduje agent (mail do biura).
 	if (decyzja === 'rezygnacja') return { wynik: 'do_agenta', ...dopisek, ...(istniejacy ? { wniosek_id: istniejacy.id } : {}) };
 	if (decyzja === 'zlozony' || decyzja === 'juz_wyslany') {
@@ -199,4 +224,96 @@ export async function wyslijWniosekAsystenta(
 		return { wynik: r.email ? 'blad_wysylki' : 'brak_adresu', ...dopisek, wniosek_id: r.id, wazny_do: r.wazny_do };
 	}
 	return { wynik: przypomnienie ? 'wyslany_ponownie' : 'wyslany', ...dopisek, wniosek_id: r.id, wazny_do: r.wazny_do, test: w.test };
+}
+
+// ---------- Link do wniosku z maila HUB (klient klika przycisk; AuraCRM nie wysyła maila) ----------
+
+export type OdpowiedzLinkuAsystenta = {
+	wynik: 'link' | 'zlozony' | 'za_wczesnie' | 'do_agenta' | 'brak_adresu' | 'klient_nieaktywny' | 'brak_klienta';
+	rodzaj?: 'nowa' | 'odnowienie';
+	link?: string;
+	wniosek_id?: string;
+	wazny_do?: string;
+	ochrona_do?: string;
+};
+
+const KTO_LINK = 'link_z_maila';
+
+// Sprawa dla agenta po kliknięciu w mail (rezygnacja, koniec ochrony, polisa zakończona…): jedno otwarte
+// zadanie na klienta — kolejne kliknięcia go nie mnożą.
+async function zadanieDlaAgenta(admin: SupabaseClient, tenantId: string, klientId: string, polisaId: string | null, ochronaDo: string | undefined) {
+	const { data: k } = await admin.from('crm_clients').select('nazwa, opiekun_id').eq('id', klientId).eq('tenant_id', tenantId).maybeSingle();
+	const klient = k as { nazwa: string | null; opiekun_id: string | null } | null;
+	const tytul = `Klient z maila prosi o wniosek online — ${klient?.nazwa ?? 'klient'}`.slice(0, 200);
+	const { data: jest } = await admin
+		.from('crm_tasks')
+		.select('id')
+		.eq('tenant_id', tenantId)
+		.eq('klient_id', klientId)
+		.eq('tytul', tytul)
+		.eq('status', 'otwarte')
+		.limit(1);
+	if ((jest ?? []).length) return;
+	const opis = [
+		'Klient kliknął w mailu przycisk „Wypełnij wniosek online”, ale wniosku nie da się otworzyć automatycznie.',
+		ochronaDo ? `Certyfikat programu OC beauty: ochrona do ${ochronaDo}.` : null,
+		'Powód: koniec ochrony, polisa zakończona decyzją, wcześniejszy wniosek anulowany, wygasły albo z rezygnacją. Decyzja i ewentualne odnowienie ręczne po Twojej stronie.'
+	]
+		.filter(Boolean)
+		.join('\n');
+	const { error: e } = await admin.from('crm_tasks').insert({
+		tenant_id: tenantId,
+		klient_id: klientId,
+		polisa_id: polisaId,
+		typy: ['wniosek'],
+		assigned_to: klient?.opiekun_id ?? null,
+		tytul,
+		opis,
+		termin: dodajDni(dzisWarszawa(), 1),
+		priorytet: 'wysoki',
+		// Status jawnie: domyślny w bazie („Oczekujące”) aplikacja nie traktuje jako otwarte zadanie.
+		status: 'otwarte'
+	});
+	if (e) console.error('Link z maila: zadanie nie utworzone:', e.message);
+}
+
+export async function linkWnioskuAsystenta(
+	admin: SupabaseClient,
+	tenantId: string,
+	klientId: string,
+	origin: string
+): Promise<OdpowiedzLinkuAsystenta> {
+	const p = await przygotuj(admin, tenantId, klientId, KTO_LINK);
+	if ('koniec' in p) {
+		const k = p.koniec;
+		if (k.wynik === 'do_agenta') await zadanieDlaAgenta(admin, tenantId, klientId, null, k.ochrona_do);
+		return { wynik: k.wynik as OdpowiedzLinkuAsystenta['wynik'], rodzaj: k.rodzaj, ochrona_do: k.ochrona_do };
+	}
+	const { dopisek, utworz, istniejacy, polisaId } = p;
+	const d = decyzjaLinku(p.decyzja);
+	if (d === 'zlozony') return { wynik: 'zlozony', ...dopisek, ...(istniejacy ? { wniosek_id: istniejacy.id } : {}) };
+	if (d === 'do_agenta') {
+		await zadanieDlaAgenta(admin, tenantId, klientId, polisaId, 'ochrona_do' in dopisek ? dopisek.ochrona_do : undefined);
+		return { wynik: 'do_agenta', ...dopisek, ...(istniejacy ? { wniosek_id: istniejacy.id } : {}) };
+	}
+
+	let r: RenewalRow;
+	if (d === 'uzyj') r = istniejacy!;
+	else {
+		try {
+			r = await utworz(d === 'zastap');
+		} catch (e) {
+			// Równoległe kliknięcie (409): drugi wniosek nie powstał — bierzemy ten, który właśnie utworzono.
+			if (status(e) === 409) {
+				const teraz = await ostatniAktywny(admin, polisaId ? { polisa_id: polisaId } : { klient_id: klientId });
+				if (teraz && teraz.status !== 'zlozony') r = teraz;
+				else return { wynik: teraz ? 'zlozony' : 'do_agenta', ...dopisek };
+			} else if (status(e) === 400) {
+				await zadanieDlaAgenta(admin, tenantId, klientId, polisaId, 'ochrona_do' in dopisek ? dopisek.ochrona_do : undefined);
+				return { wynik: 'do_agenta', ...dopisek };
+			} else throw e;
+		}
+	}
+	await zapiszZdarzenie(admin, r, KTO_LINK, null, null);
+	return { wynik: 'link', ...dopisek, link: await linkDla(r.id, origin), wniosek_id: r.id, wazny_do: r.wazny_do };
 }

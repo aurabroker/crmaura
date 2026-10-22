@@ -86,3 +86,23 @@ export function sciezkaWniosku(certyfikaty: CertyfikatKlienta[], o: { dzis: stri
 // bo domena portalu ma ochronę przed botami — tak samo podmienia adres zadanie odnowień (api/cron/renewals).
 export const PORTAL = 'https://portal.beautypolisa.eu';
 export const originLinkow = (url: URL): string => (url.hostname.endsWith('.pages.dev') ? PORTAL : url.origin);
+
+// Link do wniosku z maila HUB (klient klika sam, bez maila od AuraCRM): co zrobić z istniejącym wnioskiem.
+// Wysłany albo w trakcie — ten sam wniosek (bez kolejnego maila i bez przypomnienia), po terminie — nowy.
+export type DecyzjaLinku = 'utworz' | 'zastap' | 'uzyj' | 'zlozony' | 'do_agenta';
+export function decyzjaLinku(d: Decyzja): DecyzjaLinku {
+	switch (d) {
+		case 'nowy':
+			return 'utworz';
+		case 'zastap':
+			return 'zastap';
+		case 'wyslij':
+		case 'przypomnij':
+		case 'juz_wyslany':
+			return 'uzyj';
+		case 'zlozony':
+			return 'zlozony';
+		case 'rezygnacja':
+			return 'do_agenta';
+	}
+}
