@@ -89,6 +89,9 @@ export const originLinkow = (url: URL): string => (url.hostname.endsWith('.pages
 
 // Link do wniosku z maila HUB (klient klika sam, bez maila od AuraCRM): co zrobić z istniejącym wnioskiem.
 // Wysłany albo w trakcie — ten sam wniosek (bez kolejnego maila i bez przypomnienia), po terminie — nowy.
+/** Jak zadanieOtwarte w $lib/zadania (kalendarz): „w toku” też jest otwarte — klient z maila nie dostaje drugiego zadania. */
+export const jestOtwarteZadanie = (t: { status: string | null }) => t.status === 'otwarte' || t.status === 'w_toku';
+
 export type DecyzjaLinku = 'utworz' | 'zastap' | 'uzyj' | 'zlozony' | 'do_agenta';
 export function decyzjaLinku(d: Decyzja): DecyzjaLinku {
 	switch (d) {

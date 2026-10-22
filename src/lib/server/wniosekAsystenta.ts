@@ -23,6 +23,7 @@ import { wyslijZaproszenie } from '$lib/server/renewalFlow';
 import {
 	decyzjaLinku,
 	decyzjaWniosku,
+	jestOtwarteZadanie,
 	sciezkaWniosku,
 	type Decyzja,
 	type CertyfikatKlienta,
@@ -247,13 +248,12 @@ async function zadanieDlaAgenta(admin: SupabaseClient, tenantId: string, klientI
 	const tytul = `Klient z maila prosi o wniosek online — ${klient?.nazwa ?? 'klient'}`.slice(0, 200);
 	const { data: jest } = await admin
 		.from('crm_tasks')
-		.select('id')
+		.select('id, status')
 		.eq('tenant_id', tenantId)
 		.eq('klient_id', klientId)
 		.eq('tytul', tytul)
-		.eq('status', 'otwarte')
-		.limit(1);
-	if ((jest ?? []).length) return;
+		.limit(50);
+	if (((jest ?? []) as { status: string | null }[]).some(jestOtwarteZadanie)) return;
 	const opis = [
 		'Klient kliknął w mailu przycisk „Wypełnij wniosek online”, ale wniosku nie da się otworzyć automatycznie.',
 		ochronaDo ? `Certyfikat programu OC beauty: ochrona do ${ochronaDo}.` : null,

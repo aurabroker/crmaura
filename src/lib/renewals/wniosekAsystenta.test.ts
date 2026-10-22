@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decyzjaLinku, decyzjaWniosku, originLinkow, sciezkaWniosku, type CertyfikatKlienta, type IstniejacyWniosek } from './wniosekAsystenta.ts';
+import { decyzjaLinku, decyzjaWniosku, jestOtwarteZadanie, originLinkow, sciezkaWniosku, type CertyfikatKlienta, type IstniejacyWniosek } from './wniosekAsystenta.ts';
 
 // ---------- Decyzja dla istniejącego wniosku ----------
 const teraz = Date.parse('2026-10-20T12:00:00Z');
@@ -82,3 +82,10 @@ test('link z maila: wniosek utworzony, wysłany albo w trakcie APK → ten sam w
 });
 test('link z maila: wniosek złożony → bez nowego linku', () => assert.equal(decyzjaLinku('zlozony'), 'zlozony'));
 test('link z maila: rezygnacja we wniosku → sprawa dla agenta', () => assert.equal(decyzjaLinku('rezygnacja'), 'do_agenta'));
+
+test('zadanie dla agenta: otwarte i w toku blokują drugie, zakończone nie', () => {
+	assert.equal(jestOtwarteZadanie({ status: 'otwarte' }), true);
+	assert.equal(jestOtwarteZadanie({ status: 'w_toku' }), true);
+	assert.equal(jestOtwarteZadanie({ status: 'zakonczone' }), false);
+	assert.equal(jestOtwarteZadanie({ status: null }), false);
+});
