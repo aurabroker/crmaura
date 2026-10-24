@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Statystyki portfela — wszystko liczone z danych firmy już wczytanych do aplikacji.
 	// Polisy według daty początku ochrony; umowy generalne pomijane (przypis jest na polisach pod nimi).
+	// Odnowienia (postęp, skuteczność, utracona składka) — według daty końca ochrony, obliczenia w $lib/odnowieniaStat.
 	import { onMount, type Snippet } from 'svelte';
 	import { sb } from '$lib/supabase';
 	import { appState, isBroker } from '$lib/stores/app.svelte';
@@ -13,7 +14,12 @@
 		KOLOR, PRESETY, dzien, grupuj, koniecMiesiaca, liczba, liczonaPolisa, mediana, miesiacKrotko, miesiacPelny, miesiacRokWczesniej,
 		miesiecznie, okresZPresetu, proc, rokWczesniej, stanRat, sumuj, wOkresie, zero, zl, zmiana, type Kolumna, type PresetOkresu
 	} from '$lib/analityka';
-	import { ArrowDownRight, ArrowUpRight, CheckCircle2, Clock, AlertCircle, Info, X, GitCompare, FileChartColumn } from 'lucide-svelte';
+	import {
+		NAZWA_STANU, STANY_KONCA, doZrobienia, lejekWnioskow, nastepczynie, oknoWstecz, oknoZamkniete, postepOdnowien, przypisWgZrodla,
+		rozbicieOdnowien, skutecznoscOdnowien, skutecznoscRokWczesniej, terminowoscOdnowien, trendSkutecznosci, utraconaSkladka, type StanKonca
+	} from '$lib/odnowieniaStat';
+	import { polisyKlientow, wniosekTestowy, wnioskiZalatwioneZadaniem } from '$lib/components/renewal/crmRenewals';
+	import { ArrowDownRight, ArrowUpRight, CheckCircle2, Clock, AlertCircle, Info, X, GitCompare, FileChartColumn, RefreshCw } from 'lucide-svelte';
 
 	const dzis = todayStr();
 
@@ -189,21 +195,43 @@
 			(roznica.r !== liczny.r ? ` ${nazwaRodzaju(roznica.r)} — ${proc(roznica.a)} polis i ${proc(roznica.b)} przypisu.` : '');
 	});
 
-	// ── Najwięksi klienci (przeniesione z pulpitu 2026-10-17): wg przypisu w okresie albo wg liczby polis ──
-	let klienciWg = $state<'przypis' | 'polisy'>('przypis');
-	const nazwaKlientaWg = $derived(new Map(appState.clients.map((c) => [c.id, c.nazwa_skrocona || c.nazwa])));
-	const najwieksiKlienci = $derived.by(() => {
-		const lista = [...grupuj(polisy, (p) => p.klient_id)].map(([id, s]) => ({
-			id,
-			nazwa: nazwaKlientaWg.get(id) ?? polisy.find((p) => p.klient_id === id)?.crm_clients?.nazwa ?? '—',
-			przypis: s.przypis,
-			prowizja: s.prowizja,
-			polisy: s.polisy
-		}));
-		lista.sort((a, b) => (klienciWg === 'przypis' ? b.przypis - a.przypis || b.polisy - a.polisy : b.polisy - a.polisy || b.przypis - a.przypis));
-		return { top: lista.slice(0, 5), klientow: lista.length };
+	// ── Odnowienia: postęp miesiąc po miesiącu, skuteczność, terminowość, rozbicia, utracona składka ──
+	// Niezależne od wybranego okresu (patrzymy po dacie końca ochrony: 3 miesiące wstecz i 3 naprzód, skuteczność
+	// w zamkniętych 12 miesiącach); filtry TU / rodzaj / opiekun działają. Następczynię szukamy wśród wszystkich polis
+	// firmy — odnowienie w innym TU albo innego rodzaju wciąż jest odnowieniem.
+	const nast = $derived(nastepczynie(appState.policies));
+	const polisyOdn = $derived(appState.policies.filter(pasuje));
+	let miaraOdn = $state<'polisy' | 'skladka'>('polisy');
+	const postep = $derived(postepOdnowien(polisyOdn, dzis, nast));
+	const postepMaks = $derived(Math.max(1, ...postep.map((m) => m.konczace[miaraOdn])));
+	const KOLOR_STANU: Record<StanKonca, string> = { odnowiona: KOLOR.ok, w_toku: KOLOR.seriaJasna, zakonczona: KOLOR.neutralny, utracona: KOLOR.zly };
+	const oknoZamk = $derived(oknoZamkniete(dzis));
+	const okno12 = $derived(oknoWstecz(dzis, 12));
+	const skutecznosc = $derived(skutecznoscOdnowien(polisyOdn, dzis, nast, oknoZamk));
+	const skutecznoscRw = $derived(skutecznoscRokWczesniej(polisyOdn, dzis, nast, oknoZamk));
+	const trend = $derived(trendSkutecznosci(polisyOdn, dzis, nast));
+	const terminowosc = $derived(terminowoscOdnowien(polisyOdn, nast, okno12));
+	const doZrob = $derived(doZrobienia(polisyOdn, dzis, nast));
+	let rozbicieWg = $state<'tu' | 'rodzaj' | 'opiekun'>('tu');
+	const rozbicie = $derived.by(() => {
+		const klucz = rozbicieWg === 'tu' ? (p: Policy) => p.tu_id : rozbicieWg === 'rodzaj' ? (p: Policy) => p.rodzaj : (p: Policy) => opiekunKlienta.get(p.klient_id) ?? '-';
+		const nazwa = (k: string) => (rozbicieWg === 'tu' ? nazwaTuWg.get(k) ?? '—' : rozbicieWg === 'rodzaj' ? nazwaRodzaju(k) : k === '-' ? 'Klient bez opiekuna' : opiekunWg.get(k) ?? '—');
+		return rozbicieOdnowien(polisyOdn, dzis, nast, oknoZamk, klucz).map((r) => ({ ...r, nazwa: nazwa(r.klucz) }));
 	});
-	const klientMaks = $derived(Math.max(1, ...najwieksiKlienci.top.map((k) => (klienciWg === 'przypis' ? k.przypis : k.polisy))));
+	const utracona = $derived(utraconaSkladka(polisyOdn, dzis, nast, okno12));
+	const utraconaMaks = $derived(Math.max(1, ...utracona.powody.map((p) => p.skladka), utracona.utracone.skladka));
+	const dniPrzed = (d: number) => (d >= 0 ? `${odmiana(Math.round(d), 'dzień', 'dni', 'dni')} przed końcem` : `${odmiana(Math.round(-d), 'dzień', 'dni', 'dni')} po końcu`);
+
+	// Lejek wniosków online (crm_renewals, bez testowych) z ostatnich 6 miesięcy — tylko gdy firma w ogóle wysyła wnioski.
+	const maWnioski = $derived(appState.wnioskiOdnowien.some((w) => !wniosekTestowy(w)));
+	const okno6 = $derived(oknoWstecz(dzis, 6));
+	const lejekWn = $derived(lejekWnioskow(appState.wnioskiOdnowien, okno6, new Set(nast.keys()), polisyKlientow(appState.policies), wnioskiZalatwioneZadaniem(appState.tasks)));
+	const ETAPY_WN: [keyof typeof lejekWn, string][] = [['wyslane', 'Wysłane'], ['otwarte', 'Otwarte'], ['apk', 'APK wypełniona'], ['zlozone', 'Złożone'], ['wystawione', 'Polisa wystawiona']];
+
+	// Przypis w wybranym okresie: nowa sprzedaż a odnowienia (polisy z renewal_of), te same filtry i „Bez 2 największych”.
+	const zrodla = $derived(przypisWgZrodla(polisy, okres));
+	const zrodlaMaks = $derived(Math.max(1, ...zrodla.miesiace.map((m) => m.nowa.skladka + m.odnowienie.skladka)));
+	const udzialOdnowien = $derived(zrodla.nowa.skladka + zrodla.odnowienie.skladka ? (zrodla.odnowienie.skladka / (zrodla.nowa.skladka + zrodla.odnowienie.skladka)) * 100 : null);
 
 	// ── Lejek leadów (liczby z bazy, bez wczytywania całej listy) ──
 	const ETAPY: [string, string][] = [['nowy', 'Nowy'], ['w_kontakcie', 'W kontakcie'], ['oferta_wyslana', 'Oferta wysłana'], ['wygrany', 'Wygrany'], ['przegrany', 'Przegrany']];
@@ -357,6 +385,145 @@
 	</a>
 </section>
 
+<!-- Postęp odnowień -->
+{#snippet opisPostepu(m: (typeof postep)[number])}
+	{miesiacPelny(m.ym)}: {odmiana(m.konczace.polisy, 'polisa kończy się', 'polisy kończą się', 'polis kończy się')} ({zl(m.konczace.skladka)}) — odnowione {m.odnowiona.polisy}, w toku {m.w_toku.polisy}, zakończone decyzją {m.zakonczona.polisy}, utracone {m.utracona.polisy}{m.zamkniety ? ' · miesiąc zamknięty' : ''}
+{/snippet}
+<section id="odnowienia" aria-labelledby="st-odnowienia" data-testid="st-odnowienia" class="bg-white border border-line rounded-xl p-4 mb-4 flex flex-col gap-4 scroll-mt-20">
+	<div class="flex flex-wrap items-start gap-3">
+		<div class="flex-1 min-w-[240px]">
+			<h2 id="st-odnowienia" class="text-[15px] font-semibold text-ink flex items-center gap-2"><RefreshCw size={16} class="text-ink-3" /> Postęp odnowień</h2>
+			<span class="text-xs text-ink-3">polisy według miesiąca końca ochrony · {miesiacKrotko(postep[0].ym, true)} – {miesiacKrotko(postep[postep.length - 1].ym, true)} · niezależnie od wybranego okresu, filtry TU / rodzaj / opiekun działają</span>
+		</div>
+		<div role="group" aria-label="Miara postępu odnowień" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
+			{#each [['polisy', 'Liczba polis'], ['skladka', 'Składka']] as [k, l]}
+				<button aria-pressed={miaraOdn === k} onclick={() => (miaraOdn = k as typeof miaraOdn)} class="h-7 px-3 rounded-md text-[13px] {miaraOdn === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
+			{/each}
+		</div>
+	</div>
+
+	<div class="grid grid-cols-[repeat(auto-fit,minmax(min(200px,100%),1fr))] gap-3">
+		<div data-testid="odn-skutecznosc" class="px-3.5 py-3 rounded-lg bg-side border border-line-soft flex flex-col gap-1" title="Polisy z końcem ochrony {dzien(oknoZamk.od)} – {dzien(oknoZamk.do)}: każda ma już stan końcowy (odnowiona, zakończona decyzją albo utracona).">
+			<span class="text-[13px] text-ink-2">Skuteczność · zamknięte 12 mies.</span>
+			<span class="text-[24px] leading-7 font-semibold text-ink">{skutecznosc.procent == null ? '—' : proc(skutecznosc.procent, 0)}</span>
+			{#if skutecznosc.procent == null}
+				<span class="text-xs text-ink-3">żadna polisa nie skończyła się między {dzien(oknoZamk.od)} a {dzien(oknoZamk.do)}</span>
+			{:else}
+				<span class="text-xs text-ink-3">{liczba(skutecznosc.odnowiona.polisy)} z {liczba(skutecznosc.konczace.polisy - skutecznosc.zakonczona.polisy)} polis · składka {proc(skutecznosc.procentSkladki ?? 0, 0)}{skutecznosc.zakonczona.polisy ? ` · ${odmiana(skutecznosc.zakonczona.polisy, 'zakończona decyzją', 'zakończone decyzją', 'zakończonych decyzją')} poza liczeniem` : ''}</span>
+			{/if}
+			{#if trend.zmianaPkt != null}
+				<span class="flex items-center gap-1 text-xs font-semibold {trend.zmianaPkt >= 0 ? 'text-ok' : 'text-danger'}">
+					{#if trend.zmianaPkt >= 0}<ArrowUpRight size={14} />{:else}<ArrowDownRight size={14} />{/if}
+					{trend.zmianaPkt >= 0 ? '+' : '−'}{Math.abs(trend.zmianaPkt).toLocaleString('pl-PL', { maximumFractionDigits: 0 })} pkt
+					<span class="font-normal text-ink-3">{miesiacKrotko(trend.ostatni.ym)} {proc(trend.ostatni.procent ?? 0, 0)} vs {miesiacKrotko(trend.poprzedni.ym)} {proc(trend.poprzedni.procent ?? 0, 0)}</span>
+				</span>
+			{:else if skutecznoscRw?.procent != null}
+				<span class="text-xs text-ink-3">rok wcześniej {proc(skutecznoscRw.procent, 0)} ({skutecznoscRw.odnowiona.polisy} z {skutecznoscRw.konczace.polisy - skutecznoscRw.zakonczona.polisy})</span>
+			{:else if trend.ostatni.konczace}
+				<span class="text-xs text-ink-3">{miesiacKrotko(trend.ostatni.ym)}: {proc(trend.ostatni.procent ?? 0, 0)} · trend m/m od następnego zamkniętego miesiąca</span>
+			{/if}
+		</div>
+		<div data-testid="odn-terminowosc" class="px-3.5 py-3 rounded-lg bg-side border border-line-soft flex flex-col gap-1" title="Dni między dodaniem nowej polisy do CRM a końcem starej, dla odnowień polis kończących się {dzien(okno12.od)} – {dzien(okno12.do)}.">
+			<span class="text-[13px] text-ink-2">Terminowość · ostatnie 12 mies.</span>
+			<span class="text-[24px] leading-7 font-semibold text-ink">{terminowosc.medianaDni == null ? '—' : `${Math.round(Math.abs(terminowosc.medianaDni))} dni`}</span>
+			{#if terminowosc.medianaDni == null}
+				<span class="text-xs text-ink-3">brak odnowień z datą dodania polisy</span>
+			{:else}
+				<span class="text-xs text-ink-3">mediana: nowa polisa powstaje {dniPrzed(terminowosc.medianaDni)} · {odmiana(terminowosc.n, 'odnowienie', 'odnowienia', 'odnowień')}</span>
+				<span class="text-xs {terminowosc.poTerminie ? 'text-warn font-semibold' : 'text-ink-3'}">{proc(terminowosc.procPoTerminie ?? 0, 0)} po końcu okresu{terminowosc.zLuka ? ` · ${odmiana(terminowosc.zLuka, 'przerwa', 'przerwy', 'przerw')} w ochronie` : ''}</span>
+			{/if}
+		</div>
+		<a href="/renewals" data-testid="odn-do-zrobienia" class="px-3.5 py-3 rounded-lg bg-side border border-line-soft flex flex-col gap-1 hover:border-accent">
+			<span class="text-[13px] text-ink-2">Do odnowienia · 30 dni</span>
+			<span class="text-[24px] leading-7 font-semibold text-ink">{liczba(doZrob.d30.polisy)}</span>
+			<span class="text-xs text-ink-3">{zl(doZrob.d30.skladka)} · w 90 dni {odmiana(doZrob.d90.polisy, 'polisa', 'polisy', 'polis')} za {zl(doZrob.d90.skladka)}</span>
+			<span class="text-xs {doZrob.poKoncu.polisy ? 'text-danger font-semibold' : 'text-ink-3'}">{doZrob.poKoncu.polisy ? `${odmiana(doZrob.poKoncu.polisy, 'polisa skończyła się', 'polisy skończyły się', 'polis skończyło się')} bez decyzji (${zl(doZrob.poKoncu.skladka)})` : 'żadna polisa po końcu okresu nie czeka na decyzję'}</span>
+		</a>
+		<a href="#st-utracona" data-testid="odn-utracona" class="px-3.5 py-3 rounded-lg bg-side border border-line-soft flex flex-col gap-1 hover:border-accent">
+			<span class="text-[13px] text-ink-2">Utracona składka · 12 mies.</span>
+			<span class="text-[24px] leading-7 font-semibold text-ink">{zl(utracona.razem.skladka)}</span>
+			<span class="text-xs text-ink-3">{odmiana(utracona.zakonczone.polisy, 'polisa zakończona decyzją', 'polisy zakończone decyzją', 'polis zakończonych decyzją')} · {odmiana(utracona.utracone.polisy, 'utracona bez decyzji', 'utracone bez decyzji', 'utraconych bez decyzji')}</span>
+			<span class="text-xs text-accent-text font-semibold">Powody ↓</span>
+		</a>
+	</div>
+
+	<div class="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+		<div class="flex flex-col gap-2.5">
+			<ul class="flex flex-col gap-2" data-testid="odn-miesiace">
+				{#each postep as m (m.ym)}
+					{@const w = m.konczace[miaraOdn]}
+					{@const biezacy = m.ym === dzis.slice(0, 7)}
+					{@const mianownik = m.konczace[miaraOdn] - m.zakonczona[miaraOdn]}
+					<li class="grid grid-cols-[minmax(0,86px)_minmax(0,1fr)] sm:grid-cols-[104px_minmax(0,1fr)_minmax(150px,auto)] items-center gap-x-3 gap-y-0.5 text-[13px]" title={m.konczace.polisy ? undefined : `${miesiacPelny(m.ym)}: żadna polisa nie kończy ochrony`} data-ym={m.ym}>
+						{#if m.konczace.polisy}<span class="sr-only">{@render opisPostepu(m)}</span>{/if}
+						<span class="truncate {biezacy ? 'font-semibold text-ink' : m.zamkniety ? 'text-ink-2' : 'text-ink'}">{miesiacKrotko(m.ym, true)}{#if biezacy}<span class="hidden sm:inline"> · teraz</span>{/if}</span>
+						<span class="flex items-center gap-2 min-w-0" aria-hidden="true">
+							<span class="flex h-3.5 rounded-r overflow-hidden gap-px bg-surface-2" style="width: {w ? `max(6px, calc(100% * ${w / postepMaks}))` : '0'}">
+								{#each STANY_KONCA as s (s)}
+									{#if m[s][miaraOdn] > 0}<span class="min-w-[3px]" style="width: {(m[s][miaraOdn] / w) * 100}%; background: {KOLOR_STANU[s]}"></span>{/if}
+								{/each}
+							</span>
+							{#if !w}<span class="text-xs text-ink-3">nic się nie kończy</span>{/if}
+						</span>
+						<span class="col-start-2 sm:col-start-auto text-xs tabular-nums sm:text-right whitespace-nowrap" aria-hidden="true">
+							{#if w}
+								<span class="font-semibold text-ink">{m.procent == null ? '—' : proc(m.procent, 0)}</span>
+								<span class="text-ink-3"> · {miaraOdn === 'polisy' ? `${m.odnowiona.polisy}/${mianownik} odnowionych` : `${zl(m.odnowiona.skladka)} z ${zl(mianownik)}`}{m.w_toku.polisy ? ` · ${m.w_toku.polisy} w toku` : ''}</span>
+							{/if}
+						</span>
+					</li>
+				{/each}
+			</ul>
+			<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-3">
+				{#each STANY_KONCA as s (s)}<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR_STANU[s]}"></span>{NAZWA_STANU[s]}</span>{/each}
+			</div>
+			<p class="text-xs text-ink-3">Procent = odnowione / (kończące się − zakończone decyzją). Odnowiona = ma następczynię (pole „odnowienie polisy”), w dowolnym TU. Utracona = ponad 30 dni po końcu bez odnowienia i bez decyzji — oznacz takie polisy w Odnowieniach („Zakończ polisę”), żeby znać powód.</p>
+		</div>
+
+		<div class="flex flex-col gap-2.5 lg:border-l lg:border-line-soft lg:pl-4" data-testid="odn-rozbicie">
+			<div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+				<span class="flex-1 min-w-[120px] text-[13px] font-semibold text-ink">Skuteczność według</span>
+				<div role="group" aria-label="Rozbicie skuteczności" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft order-last sm:order-none w-full sm:w-auto justify-center">
+					{#each [['tu', 'TU'], ['rodzaj', 'Rodzaj'], ['opiekun', 'Opiekun']] as [k, l]}
+						<button aria-pressed={rozbicieWg === k} onclick={() => (rozbicieWg = k as typeof rozbicieWg)} class="h-7 px-2.5 rounded-md text-[13px] {rozbicieWg === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
+					{/each}
+				</div>
+				<span class="w-full text-xs text-ink-3">zamknięte 12 mies. · {dzien(oknoZamk.od)} – {dzien(oknoZamk.do)} · odnowione / (kończące − zakończone decyzją)</span>
+			</div>
+			{#if rozbicie.length === 0}
+				<p class="py-6 text-center text-sm text-ink-3">Żadna polisa nie skończyła się w tym oknie.</p>
+			{:else}
+				<table class="w-full text-[13px]">
+					<thead>
+						<tr class="text-xs text-ink-3">
+							<th class="text-left font-medium pb-1">{rozbicieWg === 'tu' ? 'Towarzystwo' : rozbicieWg === 'rodzaj' ? 'Rodzaj' : 'Opiekun klienta'}</th>
+							<th class="text-right font-medium pb-1">Odnowione</th>
+							<th class="text-right font-medium pb-1 w-[88px]">Skuteczność</th>
+							<th class="text-right font-medium pb-1 hidden sm:table-cell">Składka</th>
+						</tr>
+					</thead>
+					<tbody>
+						{#each rozbicie.slice(0, 8) as r (r.klucz)}
+							<tr class="border-t border-line-soft" title="{r.nazwa}: {odmiana(r.konczace.polisy, 'polisa kończyła się', 'polisy kończyły się', 'polis kończyło się')}, odnowione {r.odnowiona.polisy}, zakończone decyzją {r.zakonczona.polisy}, utracone {r.utracona.polisy} ({zl(r.utracona.skladka)})">
+								<td class="py-1.5 pr-2 max-w-[150px] truncate text-ink">{r.nazwa}</td>
+								<td class="py-1.5 text-right tabular-nums text-ink-2">{r.odnowiona.polisy}/{r.konczace.polisy - r.zakonczona.polisy}</td>
+								<td class="py-1.5 pl-2 text-right tabular-nums">
+									<span class="inline-flex items-center justify-end gap-1.5">
+										<span class="h-2 w-10 rounded-sm bg-surface-2 overflow-hidden" aria-hidden="true"><span class="block h-full" style="width: {r.procent ?? 0}%; background: {KOLOR.ok}"></span></span>
+										<span class="font-semibold text-ink w-9">{r.procent == null ? '—' : proc(r.procent, 0)}</span>
+									</span>
+								</td>
+								<td class="py-1.5 text-right tabular-nums text-ink-2 hidden sm:table-cell">{r.procentSkladki == null ? '—' : proc(r.procentSkladki, 0)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				{#if rozbicie.length > 8}<span class="text-xs text-ink-3">8 z {rozbicie.length} — pozostałe mają mniej kończących się polis.</span>{/if}
+			{/if}
+		</div>
+	</div>
+</section>
+
 <!-- Wykres miesięczny -->
 <section aria-labelledby="st-miesiace" class="bg-white border border-line rounded-xl px-4 pt-4 pb-3.5 mb-4 flex flex-col gap-3.5">
 	<div class="flex flex-wrap items-center gap-3">
@@ -492,38 +659,122 @@
 	</section>
 </div>
 
-<div class="grid gap-4 lg:grid-cols-3 mb-4">
-	<!-- Najwięksi klienci (z pulpitu) -->
-	<section aria-labelledby="st-klienci" data-testid="st-klienci" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
-		<div class="flex flex-wrap items-start gap-2">
-			<div class="flex-1 min-w-[150px]">
-				<h2 id="st-klienci" class="text-[15px] font-semibold text-ink">5 największych klientów</h2>
-				<span class="text-xs text-ink-3">{klienciWg === 'przypis' ? 'wg przypisu składki' : 'wg liczby polis'} w okresie{najwieksiKlienci.klientow ? ` · ${odmiana(najwieksiKlienci.klientow, 'klient z polisą', 'klientów z polisą', 'klientów z polisą')}` : ''}</span>
-			</div>
-			<div role="group" aria-label="Kolejność klientów" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
-				{#each [['przypis', 'Przypis'], ['polisy', 'Polisy']] as [k, l]}
-					<button aria-pressed={klienciWg === k} onclick={() => (klienciWg = k as typeof klienciWg)} class="h-7 px-2.5 rounded-md text-[13px] {klienciWg === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
-				{/each}
-			</div>
+<div class="grid gap-4 lg:grid-cols-2 mb-4">
+	<!-- Utracona składka -->
+	<section id="st-utracona" aria-labelledby="st-utracona-h" data-testid="st-utracona" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3 scroll-mt-20">
+		<div>
+			<h2 id="st-utracona-h" class="text-[15px] font-semibold text-ink">Utracona składka — dlaczego polisy nie wróciły</h2>
+			<span class="text-xs text-ink-3">ostatnie 12 mies. · {dzien(okno12.od)} – {dzien(okno12.do)} · składka przypisana polis bez odnowienia</span>
 		</div>
-		{#if najwieksiKlienci.top.length === 0}
-			<p class="py-6 text-center text-sm text-ink-3">Brak polis w okresie.</p>
+		{#if utracona.razem.polisy === 0}
+			<p class="py-6 text-center text-sm text-ink-3">W tym oknie żadna polisa nie przepadła.</p>
 		{:else}
-			<ol class="flex flex-col gap-2.5">
-				{#each najwieksiKlienci.top as k, i (k.id)}
-					<li class="grid grid-cols-[18px_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-[13px]" title="{k.nazwa}: {zl(k.przypis)}, prowizja {zl(k.prowizja)}">
-						<span class="text-xs text-ink-3 tabular-nums pt-0.5">{i + 1}.</span>
-						<a href="/clients/{k.id}" class="truncate font-medium text-ink hover:text-accent-text">{k.nazwa}</a>
-						<span class="col-start-2 flex items-center gap-2 min-w-0">
-							<span class="h-2.5 shrink-0 rounded-r" style="width: max(2px, calc((100% - 170px) * {(klienciWg === 'przypis' ? k.przypis : k.polisy) / klientMaks})); background: {KOLOR.seria}"></span>
-							<span class="text-xs text-ink-2 tabular-nums whitespace-nowrap truncate">{zl(k.przypis)} · {odmiana(k.polisy, 'polisa', 'polisy', 'polis')} · {proc(sumy.przypis ? (k.przypis / sumy.przypis) * 100 : 0, 0)}</span>
+			<ul class="flex flex-col gap-2.5">
+				{#each utracona.powody as p (p.powod ?? '_brak')}
+					<li class="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,230px)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-[13px]" title="{p.etykieta}: {zl(p.skladka)}, {odmiana(p.polisy, 'polisa', 'polisy', 'polis')}">
+						<span class="truncate text-ink">{p.etykieta}</span>
+						<span class="flex items-center gap-2 min-w-0">
+							<span class="h-3 rounded-r" style="width: max(2px, calc((100% - 90px) * {p.skladka / utraconaMaks})); background: {KOLOR.neutralny}"></span>
+							<span class="text-ink tabular-nums whitespace-nowrap">{zl(p.skladka)}</span>
 						</span>
+						<span class="col-start-1 sm:col-start-auto text-xs text-ink-3 tabular-nums sm:text-right whitespace-nowrap">{odmiana(p.polisy, 'polisa', 'polisy', 'polis')}{p.przyszle ? ` · ${p.przyszle} jeszcze w ochronie` : ''}</span>
 					</li>
 				{/each}
-			</ol>
-			<p class="text-xs text-ink-3 border-t border-line-soft pt-3">Udział w przypisie okresu. Wybrane filtry i „Bez 2 największych polis” działają też tutaj.</p>
+				{#if utracona.utracone.polisy}
+					<li class="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,230px)_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-[13px]" title="Koniec okresu minął ponad 30 dni temu — bez odnowienia i bez decyzji o zakończeniu">
+						<span class="truncate text-ink">Utracone bez decyzji</span>
+						<span class="flex items-center gap-2 min-w-0">
+							<span class="h-3 rounded-r" style="width: max(2px, calc((100% - 90px) * {utracona.utracone.skladka / utraconaMaks})); background: {KOLOR.zly}"></span>
+							<span class="text-ink tabular-nums whitespace-nowrap">{zl(utracona.utracone.skladka)}</span>
+						</span>
+						<span class="col-start-1 sm:col-start-auto text-xs text-ink-3 tabular-nums sm:text-right whitespace-nowrap">{odmiana(utracona.utracone.polisy, 'polisa', 'polisy', 'polis')}</span>
+					</li>
+				{/if}
+			</ul>
+			<p class="text-[13px] text-ink-2 border-t border-line-soft pt-3">
+				Razem {zl(utracona.razem.skladka)} · {odmiana(utracona.razem.polisy, 'polisa', 'polisy', 'polis')}.
+				{#if utracona.utracone.polisy}
+					Polisy „bez decyzji” nie mają powodu — zakończ je w <a href="/renewals" class="text-accent-text font-semibold hover:underline">Odnowieniach</a>, żeby to zestawienie mówiło, dlaczego klienci odchodzą.
+				{:else}
+					Każda utracona polisa ma zapisany powód.
+				{/if}
+			</p>
 		{/if}
 	</section>
+
+	<!-- Nowa sprzedaż a odnowienia -->
+	<section aria-labelledby="st-zrodla" data-testid="st-zrodla" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
+		<div class="flex flex-wrap items-start gap-2">
+			<div class="flex-1 min-w-[200px]">
+				<h2 id="st-zrodla" class="text-[15px] font-semibold text-ink">Nowa sprzedaż a odnowienia</h2>
+				<span class="text-xs text-ink-3">przypis według miesiąca początku ochrony · {okres.etykieta.split(' · ')[1]}</span>
+			</div>
+			<span class="flex gap-3 text-xs text-ink-2">
+				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seria}"></span>nowa sprzedaż</span>
+				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seria2}"></span>odnowienia</span>
+			</span>
+		</div>
+		{#if !zrodla.nowa.polisy && !zrodla.odnowienie.polisy}
+			<p class="py-6 text-center text-sm text-ink-3">Brak polis w okresie.</p>
+		{:else}
+			<ul class="flex flex-col gap-2">
+				{#each zrodla.miesiace as m (m.ym)}
+					{@const razem = m.nowa.skladka + m.odnowienie.skladka}
+					<li class="grid grid-cols-[minmax(0,86px)_minmax(0,1fr)] sm:grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-[13px]" title="{miesiacPelny(m.ym)}: nowa sprzedaż {zl(m.nowa.skladka)} ({odmiana(m.nowa.polisy, 'polisa', 'polisy', 'polis')}), odnowienia {zl(m.odnowienie.skladka)} ({odmiana(m.odnowienie.polisy, 'polisa', 'polisy', 'polis')})">
+						<span class="text-ink">{miesiacKrotko(m.ym, kilkaLat)}</span>
+						<span class="flex items-center min-w-0" aria-hidden="true">
+							<span class="flex h-3.5 rounded-r overflow-hidden gap-px" style="width: {razem ? `max(4px, calc(100% * ${razem / zrodlaMaks}))` : '0'}">
+								{#if m.nowa.skladka > 0}<span class="min-w-[3px]" style="width: {(m.nowa.skladka / razem) * 100}%; background: {KOLOR.seria}"></span>{/if}
+								{#if m.odnowienie.skladka > 0}<span class="min-w-[3px]" style="width: {(m.odnowienie.skladka / razem) * 100}%; background: {KOLOR.seria2}"></span>{/if}
+							</span>
+						</span>
+						<span class="col-start-2 sm:col-start-auto text-xs text-ink-3 tabular-nums sm:text-right whitespace-nowrap">{razem ? `${zl(razem)} · odnowienia ${proc((m.odnowienie.skladka / razem) * 100, 0)}` : '—'}</span>
+					</li>
+				{/each}
+			</ul>
+			<p class="text-[13px] text-ink-2 border-t border-line-soft pt-3">
+				Odnowienia to {proc(udzialOdnowien ?? 0, 0)} przypisu okresu ({zl(zrodla.odnowienie.skladka)}, {odmiana(zrodla.odnowienie.polisy, 'polisa', 'polisy', 'polis')}), nowa sprzedaż {zl(zrodla.nowa.skladka)} ({odmiana(zrodla.nowa.polisy, 'polisa', 'polisy', 'polis')}). Odnowienie = polisa wskazująca poprzedniczkę; te same filtry co wyżej.
+			</p>
+		{/if}
+	</section>
+</div>
+
+<div class="grid gap-4 mb-4 {maWnioski ? 'lg:grid-cols-3' : 'lg:grid-cols-2'}">
+	<!-- Lejek wniosków online (APK + wniosek wysyłane klientom) -->
+	{#if maWnioski}
+		<section aria-labelledby="st-wnioski" data-testid="st-wnioski" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
+			<div>
+				<h2 id="st-wnioski" class="text-[15px] font-semibold text-ink">Lejek wniosków online</h2>
+				<span class="text-xs text-ink-3">linki do APK i wniosku wysłane klientom · ostatnie 6 mies. · bez testowych, bez filtrów</span>
+			</div>
+			{#if lejekWn.wyslane === 0}
+				<p class="py-6 text-center text-sm text-ink-3">Od {dzien(okno6.od)} nie wysłano żadnego wniosku.</p>
+			{:else}
+				<ul class="flex flex-col gap-2.5">
+					{#each ETAPY_WN as [k, l], i (k)}
+						{@const n = lejekWn[k]}
+						<li class="grid grid-cols-[124px_minmax(0,1fr)_56px] items-center gap-3 text-[13px]">
+							<span class="text-ink">{l}</span>
+							<span class="flex items-center gap-2 min-w-0">
+								<span class="h-3 rounded-r" style="width: {n > 0 ? `max(2px, calc((100% - 48px) * ${n / lejekWn.wyslane}))` : '0'}; background: {k === 'wystawione' ? KOLOR.ok : KOLOR.rampa[Math.min(i, 3)]}"></span>
+								<span class="text-ink tabular-nums">{liczba(n)}</span>
+							</span>
+							<span class="text-xs text-ink-3 text-right tabular-nums">{proc((n / lejekWn.wyslane) * 100, 0)}</span>
+						</li>
+					{/each}
+				</ul>
+				<p class="text-[13px] text-ink-2 border-t border-line-soft pt-3">
+					{#if lejekWn.zlozone - lejekWn.wystawione - lejekWn.rezygnacje > 0}
+						<a href="/apk?widok=wnioski" class="text-accent-text font-semibold hover:underline">{odmiana(lejekWn.zlozone - lejekWn.wystawione - lejekWn.rezygnacje, 'złożony wniosek czeka', 'złożone wnioski czekają', 'złożonych wniosków czeka')} na polisę →</a>
+					{:else}
+						Każdy złożony wniosek ma już polisę{lejekWn.rezygnacje ? ' albo rezygnację' : ''}.
+					{/if}
+					{#if lejekWn.rezygnacje}<span class="text-ink-3"> · {odmiana(lejekWn.rezygnacje, 'rezygnacja', 'rezygnacje', 'rezygnacji')}</span>{/if}
+					{#if lejekWn.wyslane - lejekWn.otwarte > 0}<span class="text-ink-3"> · {lejekWn.wyslane - lejekWn.otwarte} nieotwartych</span>{/if}
+				</p>
+			{/if}
+		</section>
+	{/if}
 
 	<!-- Raty -->
 	<section aria-labelledby="st-raty" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
