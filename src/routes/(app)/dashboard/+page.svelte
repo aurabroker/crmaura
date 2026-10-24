@@ -5,7 +5,8 @@
 	import { fmtPln, dateDiffDays, todayStr, fmtDzien, fmtTermin, odmiana } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania, ROZLICZONE } from '$lib/platnosci';
 	import { miesiaceWstecz, skladkaMiesiecznie, wierszeRozliczen } from '$lib/rozliczenia';
-	import { KOLOR } from '$lib/analityka';
+	import { KOLOR, proc } from '$lib/analityka';
+	import { nastepczynie, postepOdnowien } from '$lib/odnowieniaStat';
 	import SkladkaRat from '$lib/components/wykresy/SkladkaRat.svelte';
 	import SectionHeader from '$lib/components/SectionHeader.svelte';
 	import Toast from '$lib/components/Toast.svelte';
@@ -64,6 +65,9 @@
 		})
 	);
 	const klienciAktywni = $derived(appState.clients.filter((c) => !klientNieaktywny(c)).length);
+	// Postęp odnowień bieżącego miesiąca (polisy kończące ochronę w tym miesiącu): odnowione / (kończące − zakończone decyzją).
+	const postepMiesiaca = $derived(postepOdnowien(appState.policies, today, nastepczynie(appState.policies), { wstecz: 0, naprzod: 0 })[0]);
+	const nazwaMiesiaca = new Date().toLocaleDateString('pl-PL', { month: 'long' });
 
 	// Sortowanie tabeli wznowień (całej listy, przed obcięciem do 8 wierszy)
 	const sortWznowienia = new Sortowanie<Policy>({
@@ -620,7 +624,7 @@
 {/if}
 
 <!-- Wymaga działania -->
-<section aria-label="Wymaga działania" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 {maWnioskiApk ? 'lg:grid-cols-3 xl:grid-cols-5' : 'xl:grid-cols-4'}">
+<section aria-label="Wymaga działania" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 {maWnioskiApk ? 'lg:grid-cols-3' : 'lg:grid-cols-3 xl:grid-cols-5'}">
 	<a href="/payments" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {overduePayments.length ? 'text-danger' : 'text-ok'}">
 			<CreditCard size={16} />
@@ -650,6 +654,23 @@
 		<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{renewals.length}</span>
 		<span class="text-sm text-ink-2">{slowo(renewals.length, 'polisa', 'polisy', 'polis')} do odnowienia · {renewals60} w 60 dni</span>
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">Plan odnowień →</span>
+	</a>
+	<a href="/statystyki#odnowienia" data-testid="kafelek-odnowienia" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+		<span class="flex items-center gap-2 text-[13px] font-semibold {postepMiesiaca.procent == null ? 'text-ink-2' : postepMiesiaca.procent >= 100 ? 'text-ok' : 'text-accent-text'}">
+			<TrendingUp size={16} />
+			Odnowienia · {nazwaMiesiaca}
+		</span>
+		<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{postepMiesiaca.procent == null ? '—' : proc(postepMiesiaca.procent, 0)}</span>
+		<span class="text-sm text-ink-2">
+			{#if !postepMiesiaca.konczace.polisy}
+				żadna polisa nie kończy się w tym miesiącu
+			{:else if postepMiesiaca.procent == null}
+				{slowo(postepMiesiaca.zakonczona.polisy, 'polisa zakończona', 'polisy zakończone', 'polis zakończonych')} decyzją, nic do odnowienia
+			{:else}
+				{postepMiesiaca.odnowiona.polisy} z {postepMiesiaca.konczace.polisy - postepMiesiaca.zakonczona.polisy} odnowionych · {postepMiesiaca.w_toku.polisy} w toku{postepMiesiaca.utracona.polisy ? ` · ${postepMiesiaca.utracona.polisy} utracone` : ''}
+			{/if}
+		</span>
+		<span class="mt-1 text-[13px] font-semibold text-accent-text">Postęp odnowień →</span>
 	</a>
 	{#if maWnioskiApk}
 		{#if wnioskiCzekaja.length}
