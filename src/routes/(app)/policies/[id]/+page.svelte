@@ -481,6 +481,21 @@
 		pisanieEmaila = true;
 	}
 
+	// „Nie wysyłaj klientowi informacji o płatnościach” (np. Leadenhall: składka w CRM bez opłat dystrybucyjnych,
+	// klient płaci brutto): bez automatycznych przypomnień o ratach, bez kwot w e-mailach z polisą i w szablonach.
+	let zmianaBezInfo = $state(false);
+	async function przelaczBezInfo() {
+		if (!policy || zmianaBezInfo) return;
+		const nowa = !policy.bez_info_platnosci;
+		zmianaBezInfo = true;
+		const { error } = await sb.from('crm_policies').update({ bez_info_platnosci: nowa } as never).eq('id', policy.id);
+		zmianaBezInfo = false;
+		if (error) { ctxToast(`Nie udało się zapisać: ${error.message}`); return; }
+		appState.policies = appState.policies.map((p) => (p.id === policy!.id ? { ...p, bez_info_platnosci: nowa } : p));
+		logAudit('policy_updated', 'policy', policy.id, policy.nr_polisy, { bez_info_platnosci: nowa });
+		ctxToast(nowa ? 'Klient nie będzie dostawał informacji o płatnościach tej polisy' : 'Przypomnienia o ratach tej polisy włączone');
+	}
+
 	// Polisa programu z szablonem maila (Beauty) i z zapisanym PDF → przycisk „Wyślij polisę klientowi”.
 	// Stan PDF podaje sekcja Dokumenty (po wczytaniu, dodaniu i usunięciu pliku).
 	let maPdfPolisy = $state(false);
@@ -813,6 +828,9 @@
 					<h2 id="raty-polisy" class="text-[15px] font-semibold text-ink">Płatności</h2>
 					<span class="text-[13px] text-ink-2 tabular-nums">{odmiana(raty.length, 'rata', 'raty', 'rat')} · {fmtPln(sumaPlatnosci)} zł</span>
 					{#if ugNierozliczana}<span class="text-xs text-ink-3">informacyjnie — UG bez rozliczania płatności</span>{/if}
+					{#if policy.bez_info_platnosci}
+						<span data-testid="bez-info-platnosci" class="inline-flex items-center h-[22px] px-2 rounded-full bg-warn-soft text-warn text-xs font-semibold" title="Klient nie dostaje przypomnień o ratach, a e-mail z polisą idzie bez składki i terminu płatności — składka w CRM różni się od kwoty, którą płaci klient.">bez informacji do klienta</span>
+					{/if}
 					<button onclick={openAddPayment} class="ml-auto h-7 flex items-center gap-1 px-1.5 text-[13px] font-semibold text-accent-text hover:underline"><Plus size={14} /> Dodaj płatność</button>
 				</div>
 				{#if raty.length === 0}
@@ -1075,6 +1093,16 @@
 					{@render wiersz('Kontrakt', policy.gwarancja_kontrakt)}
 					{@render wiersz('Stawka', policy.gwarancja_stawka_pct != null ? `${policy.gwarancja_stawka_pct}%` : null)}
 					{@render wiersz('Dodana do CRM', policy.created_at ? fmtDzien(policy.created_at.slice(0, 10), true) : null)}
+					{#if !ug}
+						<div class="flex gap-3 py-1.5 border-t border-line-soft" data-testid="wiersz-info-platnosci">
+							<dt class="w-[118px] shrink-0 text-ink-3">Płatności klienta</dt>
+							<dd class="flex-1 min-w-0 text-ink">
+								{policy.bez_info_platnosci ? 'nie wysyłamy informacji o płatnościach' : 'przypomnienia o ratach e-mailem'}
+								<button onclick={przelaczBezInfo} disabled={zmianaBezInfo} class="ml-1 text-[13px] font-semibold text-accent-text hover:underline disabled:opacity-50">{policy.bez_info_platnosci ? 'Włącz' : 'Wyłącz'}</button>
+								{#if policy.bez_info_platnosci}<span class="block text-xs text-ink-3">bez przypomnień o ratach i bez składki w e-mailach — składka w CRM różni się od kwoty, którą płaci klient</span>{/if}
+							</dd>
+						</div>
+					{/if}
 				</dl>
 			</section>
 

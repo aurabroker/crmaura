@@ -41,7 +41,7 @@ export function opisZawezeniaTU(rodzaj: string | null | undefined): string {
 // „data do” dolicza się w formularzu), towarzystwo, stawka prowizji, liczba rat i suma gwarancyjna.
 // Składki nie przenosimy — zmienia się co rok.
 export function adresOdnowieniaRecznego(
-	p: Pick<Policy, 'id' | 'klient_id' | 'rodzaj' | 'przedmiot' | 'pojazd_id' | 'data_do' | 'tu_id' | 'prowizja_pct' | 'ilosc_rat'> & Partial<Pick<Policy, 'suma_gwarancyjna'>>,
+	p: Pick<Policy, 'id' | 'klient_id' | 'rodzaj' | 'przedmiot' | 'pojazd_id' | 'data_do' | 'tu_id' | 'prowizja_pct' | 'ilosc_rat'> & Partial<Pick<Policy, 'suma_gwarancyjna' | 'bez_info_platnosci'>>,
 	opcje: { parentId?: string | null } = {}
 ): string {
 	const q = new URLSearchParams();
@@ -56,5 +56,6 @@ export function adresOdnowieniaRecznego(
 	if (Number(p.prowizja_pct) > 0) q.set('prowizja_pct', String(p.prowizja_pct));
 	if (p.ilosc_rat) q.set('raty', String(p.ilosc_rat));
 	if (p.suma_gwarancyjna != null && Number(p.suma_gwarancyjna) > 0) q.set('suma', String(p.suma_gwarancyjna));
+	if (p.bez_info_platnosci) q.set('bez_info', '1');
 	return `/policies/new?${q.toString()}`;
 }

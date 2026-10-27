@@ -131,6 +131,8 @@ export type KontekstMailaPolisy = {
 	szablon: string;
 	/** Polisa spoza programu: ogólny szablon „polisa-wystawiona” z Resend firmy albo wbudowana treść CRM. */
 	ogolny: boolean;
+	/** „Nie wysyłaj klientowi informacji o płatnościach” (np. Leadenhall): wbudowana treść bez składki i terminu płatności. */
+	bez_info_platnosci?: boolean;
 	polisa: { nr_polisy: string; data_od: string | null; data_do: string | null };
 	klient: string;
 	adresy: { adres: string; opis: string }[];

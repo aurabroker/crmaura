@@ -87,8 +87,10 @@ export function wypelnijSzablon(tekst: string, zmienne: Record<string, string>, 
  * Wbudowana treść maila z polisą spoza programu — te same zmienne co w szablonach Resend, więc firma może
  * ją zastąpić własnym szablonem „polisa-wystawiona” (POWITANIE, NR_POLISY, RODZAJ, TU, PRZEDMIOT, OKRES_OD,
  * OKRES_DO, SKLADKA, TERMIN_PLATNOSCI, KLIENT, DORADCA, FIRMA, OWU).
+ * bezPlatnosci: polisa „Nie wysyłaj klientowi informacji o płatnościach” (np. Leadenhall — składka w CRM bez opłat
+ * dystrybucyjnych, klient płaci brutto): bez wierszy „Składka” i „Termin płatności” i bez prośby o opłacenie.
  */
-export function szablonWbudowany(): SzablonResend {
+export function szablonWbudowany(bezPlatnosci = false): SzablonResend {
 	const p = (t: string) => `<p style="margin:0 0 14px">${t}</p>`;
 	const w = (etykieta: string, wartosc: string) =>
 		`<tr><td style="padding:4px 12px 4px 0;color:#5E6A7E;white-space:nowrap">${etykieta}</td><td style="padding:4px 0;font-weight:600">${wartosc}</td></tr>`;
@@ -98,10 +100,9 @@ export function szablonWbudowany(): SzablonResend {
 		p('w załączeniu przesyłamy polisę <strong>{{{RODZAJ}}}</strong> nr <strong>{{{NR_POLISY}}}</strong> zawartą w {{{TU}}}{{{PRZEDMIOT_ZDANIE}}}.') +
 		`<table style="border-collapse:collapse;margin:0 0 14px;font-size:15px">` +
 		w('Okres ubezpieczenia', '{{{OKRES_OD}}} – {{{OKRES_DO}}}') +
-		w('Składka', '{{{SKLADKA}}} zł') +
-		w('Termin płatności', '{{{TERMIN_PLATNOSCI}}}') +
+		(bezPlatnosci ? '' : w('Składka', '{{{SKLADKA}}} zł') + w('Termin płatności', '{{{TERMIN_PLATNOSCI}}}')) +
 		`</table>` +
-		p('Prosimy o sprawdzenie danych na polisie i opłacenie składki w terminie.{{{OWU_ZDANIE}}}') +
+		p(bezPlatnosci ? 'Prosimy o sprawdzenie danych na polisie.{{{OWU_ZDANIE}}}' : 'Prosimy o sprawdzenie danych na polisie i opłacenie składki w terminie.{{{OWU_ZDANIE}}}') +
 		p('W razie pytań jesteśmy do dyspozycji.') +
 		p('Z poważaniem,<br>{{{DORADCA}}}<br>{{{FIRMA}}}') +
 		`<p style="margin:24px 0 0;font-size:12px;color:#5E6A7E">Wiadomość wysłana z systemu obsługi klientów {{{FIRMA}}}.</p></div>`;
@@ -134,6 +135,7 @@ export function htmlNaTekst(html: string): string {
 type Polisa = {
 	id: string; nr_polisy: string; data_od: string | null; data_do: string | null; klient_id: string; parent_id: string | null;
 	rodzaj?: string | null; przedmiot?: string | null; skladka_przypisana?: number | string | null; typ_umowy?: string | null;
+	bez_info_platnosci?: boolean | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;
 };
 type Plik = { id: string; polisa_id?: string; nazwa: string; klucz: string; rozmiar: number; rodzaj: string; created_at: string };
@@ -143,7 +145,7 @@ async function wczytaj(admin: SupabaseClient, profil: ProfilFirmy, polisaId: str
 	if (!UUID.test(polisaId)) throw error(404, 'Nie ma takiej polisy.');
 	const { data: p } = await admin
 		.from('crm_policies')
-		.select('id, nr_polisy, data_od, data_do, klient_id, parent_id, rodzaj, przedmiot, skladka_przypisana, typ_umowy, crm_insurers(nazwa, skrot)')
+		.select('id, nr_polisy, data_od, data_do, klient_id, parent_id, rodzaj, przedmiot, skladka_przypisana, typ_umowy, bez_info_platnosci, crm_insurers(nazwa, skrot)')
 		.eq('id', polisaId)
 		.eq('tenant_id', profil.tenant_id)
 		.is('deleted_at', null)
@@ -226,22 +228,26 @@ export function domyslneZalaczniki(pliki: Plik[], polisaId: string): string[] {
 /** Dane do okna „Wyślij polisę klientowi”. */
 export async function kontekstMailaPolisy(admin: SupabaseClient, profil: ProfilFirmy, polisaId: string) {
 	const w = await wczytaj(admin, profil, polisaId);
+	const bezPlatnosci = !!w.polisa.bez_info_platnosci;
 	return {
 		szablon: w.szablon,
 		/** Polisa spoza programu: ogólny szablon „polisa-wystawiona” z Resend albo wbudowana treść CRM. */
 		ogolny: w.ogolny,
+		/** „Nie wysyłaj klientowi informacji o płatnościach”: wbudowana treść bez składki i terminu, termin niepotrzebny. */
+		bez_info_platnosci: bezPlatnosci,
 		polisa: { nr_polisy: w.polisa.nr_polisy, data_od: w.polisa.data_od, data_do: w.polisa.data_do },
 		klient: w.klient.nazwa,
 		adresy: w.adresy,
 		pliki: w.pliki.map((p) => ({ id: p.id, nazwa: p.nazwa, rozmiar: Number(p.rozmiar), rodzaj: p.rodzaj, zUmowy: !!p.polisa_id && p.polisa_id !== w.polisa.id })),
-		domyslne: { do: w.adresy.slice(0, 1).map((a) => a.adres), powitanie: w.powitanie, termin_platnosci: w.termin, pliki: domyslneZalaczniki(w.pliki, w.polisa.id) },
+		domyslne: { do: w.adresy.slice(0, 1).map((a) => a.adres), powitanie: w.powitanie, termin_platnosci: bezPlatnosci ? null : w.termin, pliki: domyslneZalaczniki(w.pliki, w.polisa.id) },
 		wyslane: w.wyslane
 	};
 }
 
 export type ZadanieMailaPolisy = { do?: unknown; powitanie?: unknown; termin_platnosci?: unknown; pliki?: unknown; podglad?: unknown };
 
-export function sprawdzZadanie(body: ZadanieMailaPolisy) {
+/** terminWymagany: false przy polisie „bez informacji o płatnościach” — mail idzie bez terminu płatności. */
+export function sprawdzZadanie(body: ZadanieMailaPolisy, { terminWymagany = true }: { terminWymagany?: boolean } = {}) {
 	const lista = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x ?? '').trim()).filter(Boolean) : []);
 	const adresy = [...new Set(lista(body.do).map((a) => a.toLowerCase()))];
 	const powitanie = String(body.powitanie ?? '').replace(/[\r\n]+/g, ' ').trim().replace(/[,;:\s]+$/, '');
@@ -252,10 +258,10 @@ export function sprawdzZadanie(body: ZadanieMailaPolisy) {
 	if (adresy.some((a) => !EMAIL_RE.test(a))) throw error(400, 'Nieprawidłowy adres e-mail.');
 	if (!powitanie) throw error(400, 'Wpisz powitanie (np. „Szanowna Pani Anno”).');
 	if (powitanie.length > 120) throw error(400, 'Powitanie jest za długie (najwyżej 120 znaków).');
-	if (!ISO.test(termin) || Number.isNaN(Date.parse(termin))) throw error(400, 'Podaj termin płatności składki.');
+	if (terminWymagany && (!ISO.test(termin) || Number.isNaN(Date.parse(termin)))) throw error(400, 'Podaj termin płatności składki.');
 	if (!pliki.length) throw error(400, 'Zaznacz PDF polisy do załączenia.');
 	if (pliki.length > MAKS_ZALACZNIKOW || pliki.some((id) => !UUID.test(id))) throw error(400, `Najwyżej ${MAKS_ZALACZNIKOW} załączniki.`);
-	return { adresy, powitanie, termin, pliki, podglad: body.podglad === true };
+	return { adresy, powitanie, termin: terminWymagany ? termin : '', pliki, podglad: body.podglad === true };
 }
 
 /** Podgląd (podglad: true) albo wysyłka maila z polisą. */
@@ -267,8 +273,9 @@ export async function mailPolisy(
 	body: ZadanieMailaPolisy,
 	o: { wyslij?: (klucz: string, w: Wiadomosc) => Promise<WynikWysylki>; f?: typeof fetch } = {}
 ) {
-	const z = sprawdzZadanie(body);
 	const w = await wczytaj(admin, profil, polisaId);
+	const bezPlatnosci = !!w.polisa.bez_info_platnosci;
+	const z = sprawdzZadanie(body, { terminWymagany: !bezPlatnosci });
 	const dozwolone = new Set(w.adresy.map((a) => a.adres));
 	if (z.adresy.some((a) => !dozwolone.has(a))) throw error(400, 'Adresat musi być adresem klienta albo jego osoby kontaktowej — dopisz go najpierw w danych klienta.');
 	const pliki = z.pliki.map((id) => w.pliki.find((p) => p.id === id));
@@ -280,8 +287,9 @@ export async function mailPolisy(
 	const ust = await ustawieniaWysylki(admin, profil.tenant_id);
 	if (!ust.klucz) throw error(400, 'Firma nie ma skonfigurowanej wysyłki e-maili (klucz Resend w SAAS Admin).');
 	// Program: szablon programu musi być w Resend. Poza programem: ogólny szablon firmy, a bez niego wbudowana treść.
-	const zResend = await pobierzSzablon(ust.klucz, w.szablon, o.f, w.ogolny);
-	const t = zResend ?? szablonWbudowany();
+	// Polisa bez informacji o płatnościach: zawsze wbudowana treść bez składki i terminu (szablon z Resend mógłby je mieć).
+	const zResend = bezPlatnosci ? null : await pobierzSzablon(ust.klucz, w.szablon, o.f, w.ogolny);
+	const t = zResend ?? szablonWbudowany(bezPlatnosci);
 	const nazwaSzablonu = zResend ? w.szablon : SZABLON_WBUDOWANY;
 
 	const owu = wybrane.filter((p) => p.rodzaj === 'owu').map((p) => p.nazwa);
@@ -291,13 +299,13 @@ export async function mailPolisy(
 		NR_POLISY: w.polisa.nr_polisy,
 		OKRES_OD: dataKropki(w.polisa.data_od),
 		OKRES_DO: dataKropki(w.polisa.data_do),
-		TERMIN_PLATNOSCI: dataSlownie(z.termin),
+		TERMIN_PLATNOSCI: bezPlatnosci ? '' : dataSlownie(z.termin),
 		KLIENT: w.klient.nazwa,
 		RODZAJ: nazwaRodzaju(w.polisa.rodzaj ?? ''),
 		TU: w.polisa.crm_insurers?.nazwa ?? w.polisa.crm_insurers?.skrot ?? 'towarzystwie ubezpieczeń',
 		PRZEDMIOT: przedmiot,
 		PRZEDMIOT_ZDANIE: przedmiot && !przedmiot.startsWith('{') ? ` (${przedmiot})` : '',
-		SKLADKA: kwotaSlownie(w.polisa.skladka_przypisana),
+		SKLADKA: bezPlatnosci ? '' : kwotaSlownie(w.polisa.skladka_przypisana),
 		OWU: owu.join(', '),
 		OWU_ZDANIE: owu.length ? ' Załączamy też Ogólne Warunki Ubezpieczenia (OWU).' : '',
 		DORADCA: profil.imie_nazwisko ?? '',

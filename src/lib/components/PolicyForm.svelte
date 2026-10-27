@@ -5,6 +5,7 @@
 	import { assignedPolicyFor } from '$lib/utils';
 	import { opisDuplikatu, znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
 	import { opisZawezeniaTU, towarzystwaDlaRodzaju } from '$lib/formularzPolisy';
+	import { tuBezInfoPlatnosci } from '$lib/platnosci';
 
 	interface Props {
 		policy?: Policy | null;
@@ -19,9 +20,11 @@
 		presetProwPct?: string;
 		presetRaty?: string;
 		presetSumaGw?: string;
+		/** Odnowienie polisy z flagą „Nie wysyłaj klientowi informacji o płatnościach”. */
+		presetBezInfo?: boolean;
 		onchange?: (field: string, value: unknown) => void;
 	}
-	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', presetOd = '', presetTu = '', presetProwPct = '', presetRaty = '', presetSumaGw = '', onchange }: Props = $props();
+	let { policy = null, presetKlient = '', presetRodzaj = '', presetPrzedmiot = '', presetPojazdId = '', presetParentId = '', presetOd = '', presetTu = '', presetProwPct = '', presetRaty = '', presetSumaGw = '', presetBezInfo = false, onchange }: Props = $props();
 
 	let fpKlient = $state(policy?.klient_id ?? presetKlient);
 	let fpUbezpieczony = $state(policy?.ubezpieczony_id ?? '');
@@ -188,6 +191,18 @@
 		untrack(onParentUgChange);
 	});
 
+	// „Nie wysyłaj klientowi informacji o płatnościach” (bez przypomnień o ratach, bez składki i terminu w e-mailu
+	// z polisą). Edycja: zapisana wartość. Nowa polisa (formularz dostaje wtedy obiekt bez id): zaznacza się sama dla
+	// Leadenhall i przy odnowieniu polisy z flagą, dopóki pracownik sam jej nie zmieni.
+	const edycja = !!policy?.id;
+	let fpBezInfo = $state(edycja ? !!policy?.bez_info_platnosci : presetBezInfo);
+	let bezInfoRecznie = $state(edycja);
+	const bezInfoZTu = $derived(tuBezInfoPlatnosci(appState.insurers.find((t) => t.id === fpTu)));
+	$effect(() => {
+		const auto = bezInfoZTu || presetBezInfo;
+		if (!untrack(() => bezInfoRecznie)) fpBezInfo = auto;
+	});
+
 	function sumaGw(): number | null {
 		const v = String(fpSumaGw ?? '').trim();
 		return v === '' ? null : parseFloat(v.replace(',', '.'));
@@ -201,6 +216,7 @@
 		return {
 			klient_id: fpKlient, tu_id: fpTu, nr_polisy: fpNr,
 			rozliczaj_platnosci: null,
+			bez_info_platnosci: fpBezInfo,
 			rodzaj: fpRodzaj,
 			typ_umowy: 'jednostkowa',
 			ug_podtyp: null,
@@ -598,6 +614,15 @@
 				<input id="fp-suma-gw" type="number" step="1000" min="0" bind:value={fpSumaGw} placeholder="opcjonalnie, np. 200000" class={inp} />
 			</div>
 		</div>
+		<label class="flex items-start gap-3 mt-4 cursor-pointer" data-testid="fp-bez-info-platnosci">
+			<input type="checkbox" bind:checked={fpBezInfo} onchange={() => (bezInfoRecznie = true)} class="w-4 h-4 mt-0.5 rounded accent-blue-600 shrink-0" />
+			<span class="text-sm">
+				<span class="font-medium text-slate-800">Nie wysyłaj klientowi informacji o płatnościach</span>
+				<span class="block text-xs text-slate-500 mt-0.5">
+					Bez automatycznych przypomnień o ratach i bez składki i terminu płatności w e-mailu z polisą. Dla polis, w których składka w CRM różni się od kwoty, którą płaci klient — np. Leadenhall (składka bez opłat dystrybucyjnych, klient płaci brutto).{#if !edycja && bezInfoZTu && !bezInfoRecznie} Zaznaczone automatycznie dla tego towarzystwa.{/if}
+				</span>
+			</span>
+		</label>
 	</div>
 
 	<!-- Liczba rat + terminy -->

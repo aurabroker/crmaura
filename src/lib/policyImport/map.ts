@@ -7,6 +7,7 @@ import type { ExtractedPolicy, ProductTemplate, RiskItem } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
 import { poczatekUmowy, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
 import { znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
+import { tuBezInfoPlatnosci } from '$lib/platnosci';
 
 export type IssueLevel = 'error' | 'warn' | 'info';
 
@@ -235,6 +236,8 @@ export function buildDraft(input: BuildInput): Draft {
 		prowizja_przypisana: (skladka * prowizjaPct) / 100,
 		prowizja_zainkasowana: 0,
 		rozliczaj_platnosci: null,
+		// Leadenhall (składka w CRM bez opłat dystrybucyjnych) albo odnowienie polisy z tą flagą: bez przypomnień o ratach.
+		bez_info_platnosci: tuBezInfoPlatnosci({ nazwa: input.insurerNazwa }) || !!poprzednia?.bez_info_platnosci,
 		// Parametry bez własnych kolumn — pokazywane na karcie polisy.
 		dane_importu: buildDaneImportu(input, ryzyka)
 	};

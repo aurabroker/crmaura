@@ -25,6 +25,7 @@
 	const prowizjaParam = $page.url.searchParams.get('prowizja_pct') ?? '';
 	const ratyParam = $page.url.searchParams.get('raty') ?? '';
 	const sumaParam = $page.url.searchParams.get('suma') ?? '';
+	const bezInfoParam = $page.url.searchParams.get('bez_info') === '1';
 
 	const isRenewal = !!renewalOfParam;
 	// Jeśli tworzymy polisę podrzędną UG, zawsze jednostkowa i bez możliwości zmiany
@@ -159,6 +160,7 @@
 				presetProwPct={prowizjaParam}
 				presetRaty={ratyParam}
 				presetSumaGw={sumaParam}
+				presetBezInfo={bezInfoParam}
 			/>
 		{/if}
 	</div>
