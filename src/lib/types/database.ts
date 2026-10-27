@@ -166,6 +166,8 @@ export interface Policy {
 	deletion_reason: string | null;
 	tu_contact_id: string | null;
 	rozliczaj_platnosci: boolean | null;
+	/** Nie wysyłaj klientowi informacji o płatnościach: bez przypomnień o ratach, bez składki i terminu w e-mailu z polisą (np. Leadenhall — składka w CRM bez opłat dystrybucyjnych). */
+	bez_info_platnosci?: boolean;
 	renewal_of: string | null;
 	pojazd_id: string | null;
 	ubezpieczony_id: string | null;

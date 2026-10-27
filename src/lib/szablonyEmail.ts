@@ -43,8 +43,10 @@ export function zbudujSzablon(s: Szablon, k: Kontekst): { temat: string; tresc: 
 			const otwarte = k.raty.filter((r) => !ROZLICZONE.includes(r.status)).sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci));
 			const r = otwarte[0];
 			const ile = Number(p.ilosc_rat) > 1 ? `/${p.ilosc_rat}` : '';
+			// Polisa „bez informacji o płatnościach” (np. Leadenhall): kwota w CRM różni się od tej, którą płaci klient.
+			const kwota = p.bez_info_platnosci ? 'kwota zgodnie z polisą' : `kwota ${fmtPln(r?.kwota)} zł`;
 			const linia = r
-				? `przypominam o płatności raty ${r.nr_raty}${ile} składki za ${opisPolisy(p)}:\nkwota ${fmtPln(r.kwota)} zł, termin płatności ${data(r.data_platnosci)}${r.data_platnosci < k.dzis ? ' (termin już minął)' : ''}.`
+				? `przypominam o płatności raty ${r.nr_raty}${ile} składki za ${opisPolisy(p)}:\n${kwota}, termin płatności ${data(r.data_platnosci)}${r.data_platnosci < k.dzis ? ' (termin już minął)' : ''}.`
 				: `przypominam o płatności składki za ${opisPolisy(p)}.`;
 			return {
 				temat: `Przypomnienie o płatności składki — polisa ${p.nr_polisy}`,
@@ -69,9 +71,16 @@ export function zbudujSzablon(s: Szablon, k: Kontekst): { temat: string; tresc: 
 		case 'potwierdzenie': {
 			if (!p) return zbudujSzablon('wlasny', k);
 			const raty = [...k.raty].sort((a, b) => a.nr_raty - b.nr_raty);
-			const harmonogram = raty.length > 1
-				? `\n\nHarmonogram płatności:\n${raty.map((r) => `- rata ${r.nr_raty}: ${fmtPln(r.kwota)} zł do ${data(r.data_platnosci)}`).join('\n')}`
-				: raty.length === 1 ? `\nTermin płatności: ${data(raty[0].data_platnosci)}.` : '';
+			// Polisa „bez informacji o płatnościach” (np. Leadenhall): bez kwot — składka w CRM nie jest tą, którą płaci klient.
+			const bezKwot = !!p.bez_info_platnosci;
+			const harmonogram = bezKwot
+				? ''
+				: raty.length > 1
+					? `\n\nHarmonogram płatności:\n${raty.map((r) => `- rata ${r.nr_raty}: ${fmtPln(r.kwota)} zł do ${data(r.data_platnosci)}`).join('\n')}`
+					: raty.length === 1 ? `\nTermin płatności: ${data(raty[0].data_platnosci)}.` : '';
+			const skladka = bezKwot
+				? `- składka i terminy płatności: zgodnie z polisą`
+				: `- składka: ${fmtPln(p.skladka_przypisana)} zł${Number(p.ilosc_rat) > 1 ? ` (${p.ilosc_rat} raty)` : ''}`;
 			return {
 				temat: `Potwierdzenie zawarcia ubezpieczenia — polisa ${p.nr_polisy}`,
 				tresc:
@@ -79,7 +88,7 @@ export function zbudujSzablon(s: Szablon, k: Kontekst): { temat: string; tresc: 
 					`- polisa nr ${p.nr_polisy}, ${p.crm_insurers?.nazwa ?? nazwaTu(p)}\n` +
 					`- rodzaj: ${nazwaRodzaju(p.rodzaj)}${opisPrzedmiotu(p.przedmiot) ? `, ${p.rodzaj === 'utrata_dochodu' ? 'sumy' : 'przedmiot'}: ${opisPrzedmiotu(p.przedmiot)}` : ''}\n` +
 					`- okres ochrony: ${data(p.data_od)} – ${data(p.data_do)}\n` +
-					`- składka: ${fmtPln(p.skladka_przypisana)} zł${Number(p.ilosc_rat) > 1 ? ` (${p.ilosc_rat} raty)` : ''}` +
+					skladka +
 					harmonogram +
 					(k.zalacznikPolisy ? '\n\nDokument polisy przesyłam w załączniku.' : '') +
 					`\n\nDziękuję za zaufanie i pozostaję do dyspozycji.\n${koniec}`

@@ -12,6 +12,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
  * (przypomnienie_wyslane_at) PRZED wysyłką, żeby nakładające się uruchomienia nie wysłały
  * jej dwa razy; gdy Resend odmówi, oznaczenie jest zdejmowane.
  * Zaległych rat nie przypominamy — to decyzja doradcy, nie automatu.
+ * Polisy z flagą bez_info_platnosci („Nie wysyłaj klientowi informacji o płatnościach”, np. Leadenhall:
+ * w CRM składka bez opłat dystrybucyjnych, klient płaci brutto) są pomijane — kwota byłaby błędna.
  *
  * Polisy w programach Beauty (Umowa Generalna oc_beauty / beauty_tax) mają podpis
  * „Beauty❤️Polisa / <firma>”. Każda wysłana wiadomość trafia do historii e-maili klienta
@@ -180,11 +182,12 @@ Deno.serve(async (req: Request) => {
     wynik.firm++;
     const { data: raty, error } = await supabase
       .from("crm_policy_payments")
-      .select("id, data_platnosci, kwota, nr_raty, crm_policies!inner(id, klient_id, parent_id, nr_polisy, deleted_at, crm_insurers(nazwa), crm_clients!klient_id(nazwa, email))")
+      .select("id, data_platnosci, kwota, nr_raty, crm_policies!inner(id, klient_id, parent_id, nr_polisy, deleted_at, bez_info_platnosci, crm_insurers(nazwa), crm_clients!klient_id(nazwa, email))")
       .eq("tenant_id", firma.id)
       .eq("status", "Oczekująca")
       .is("przypomnienie_wyslane_at", null)
       .is("crm_policies.deleted_at", null)
+      .eq("crm_policies.bez_info_platnosci", false)
       .gte("data_platnosci", od)
       .lte("data_platnosci", doDnia)
       .order("data_platnosci")

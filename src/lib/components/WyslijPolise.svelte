@@ -49,7 +49,9 @@
 	});
 
 	const zadanie = () => ({ do: [...wybrani], powitanie, termin_platnosci: termin, pliki: [...pliki] });
-	const gotowe = $derived(!!ktx && wybrani.size > 0 && powitanie.trim().length > 0 && /^\d{4}-\d{2}-\d{2}$/.test(termin) && pliki.size > 0 && !pracuje);
+	// Polisa bez informacji o płatnościach (np. Leadenhall): mail bez składki i terminu, więc termin nie jest potrzebny.
+	const bezPlatnosci = $derived(!!ktx?.bez_info_platnosci);
+	const gotowe = $derived(!!ktx && wybrani.size > 0 && powitanie.trim().length > 0 && (bezPlatnosci || /^\d{4}-\d{2}-\d{2}$/.test(termin)) && pliki.size > 0 && !pracuje);
 
 	function przelacz(zbior: Set<string>, v: string): Set<string> {
 		const n = new Set(zbior);
@@ -150,10 +152,14 @@
 					<input bind:value={powitanie} oninput={() => (podglad = null)} maxlength="120" placeholder="np. Szanowna Pani Anno" class="w-full h-9 px-3 border border-line rounded-lg text-sm focus:outline-none focus:border-accent" />
 					<span class="block text-xs text-ink-3 mt-1">Pierwsza linia maila — przecinek dopisze szablon.</span>
 				</label>
-				<label class="block">
-					<span class="block text-[13px] font-semibold text-ink mb-1.5">Termin płatności składki</span>
-					<input type="date" bind:value={termin} oninput={() => (podglad = null)} class="w-full h-9 px-2.5 border border-line rounded-lg text-sm focus:outline-none focus:border-accent" />
-				</label>
+				{#if bezPlatnosci}
+					<p class="text-[13px] text-ink-2 self-end pb-2" data-testid="mail-bez-platnosci">Bez składki i terminu płatności: polisa ma zaznaczone „Nie wysyłaj klientowi informacji o płatnościach”.</p>
+				{:else}
+					<label class="block">
+						<span class="block text-[13px] font-semibold text-ink mb-1.5">Termin płatności składki</span>
+						<input type="date" bind:value={termin} oninput={() => (podglad = null)} class="w-full h-9 px-2.5 border border-line rounded-lg text-sm focus:outline-none focus:border-accent" />
+					</label>
+				{/if}
 			</div>
 
 			<p class="text-[13px] text-ink-2">
@@ -190,7 +196,9 @@
 				</div>
 			{:else}
 				<p class="text-xs text-ink-3 border-t border-line-soft pt-3" data-testid="opis-szablonu">
-					{#if ktx.ogolny}
+					{#if bezPlatnosci}
+						Treść maila: wbudowany szablon CRM bez składki i terminu płatności (polisa, towarzystwo, okres, załączniki) — kwota w CRM różni się od tej, którą płaci klient.
+					{:else if ktx.ogolny}
 						Treść maila: wbudowany szablon CRM (polisa, towarzystwo, okres, składka, termin płatności, załączniki). Jeśli na koncie Resend firmy jest opublikowany szablon „{ktx.szablon}”, CRM użyje jego treści — zmienne: POWITANIE, NR_POLISY, RODZAJ, TU, PRZEDMIOT, OKRES_OD, OKRES_DO, SKLADKA, TERMIN_PLATNOSCI, KLIENT, DORADCA, FIRMA, OWU.
 					{:else}
 						Treść maila pochodzi z szablonu „{ktx.szablon}” w Resend — zmieniasz ją w Resend (po zmianie opublikuj szablon).
