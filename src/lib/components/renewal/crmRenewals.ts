@@ -253,6 +253,7 @@ export const ZDARZENIA: Record<string, string> = {
 	utworzenie: 'Utworzono wniosek',
 	wyslanie: 'Wysłano e-mail do klienta',
 	otwarcie: 'Klient otworzył link',
+	link_z_maila: 'Klient poprosił o wniosek przyciskiem w mailu (HUB)',
 	apk: 'Klient wypełnił APK',
 	apk_odmowa: 'Klient odmówił wypełnienia APK',
 	zalacznik: 'Klient dodał załącznik',

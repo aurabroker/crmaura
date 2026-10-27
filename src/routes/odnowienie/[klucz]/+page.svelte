@@ -6,6 +6,7 @@
 	import { etykietaDecyzji } from '$lib/renewals/staffApi';
 	import { PROGRAM_NAZWA, SUMY, formatSuma, formatZl, nazwaUbezpieczyciela } from '$lib/renewals/program';
 	import { KLAUZULA_INFORMACYJNA, KLAUZULA_URL } from '$lib/renewals/zgody';
+	import { DYSTRYBUTOR_NAZWA, DYSTRYBUTOR_PDF, DYSTRYBUTOR_STRONA } from '$lib/renewals/dystrybutor';
 	import LogoBeautyPolisa from '$lib/components/renewal/LogoBeautyPolisa.svelte';
 	import KrokAnkieta from '$lib/components/renewal/KrokAnkieta.svelte';
 	import KrokApk from '$lib/components/renewal/KrokApk.svelte';
@@ -375,6 +376,9 @@
 
 	<footer class="py-6 text-center text-xs text-slate-500">
 		Beauty<span class="text-rose-600" aria-label="serce">❤️</span>Polisa ·
-		<a href="https://auraexpert.pl/" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-slate-700">Aura Expert sp. z o.o.</a>
+		Dystrybutor:
+		<a href={DYSTRYBUTOR_STRONA} target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-slate-700">{DYSTRYBUTOR_NAZWA}</a>,
+		agent ubezpieczeniowy ·
+		<a href={DYSTRYBUTOR_PDF} target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-slate-700">Informacja o dystrybutorze</a>
 	</footer>
 </div>

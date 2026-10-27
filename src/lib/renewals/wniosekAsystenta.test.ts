@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decyzjaWniosku, originLinkow, sciezkaWniosku, type CertyfikatKlienta, type IstniejacyWniosek } from './wniosekAsystenta.ts';
+import { decyzjaLinku, decyzjaWniosku, jestOtwarteZadanie, originLinkow, sciezkaWniosku, type CertyfikatKlienta, type IstniejacyWniosek } from './wniosekAsystenta.ts';
 
 // ---------- Decyzja dla istniejącego wniosku ----------
 const teraz = Date.parse('2026-10-20T12:00:00Z');
@@ -71,3 +71,21 @@ test('wywołanie przez *.pages.dev → linki na portal', () =>
 test('wywołanie przez portal → linki na portal', () =>
 	assert.equal(originLinkow(new URL('https://portal.beautypolisa.eu/api/x')), 'https://portal.beautypolisa.eu'));
 test('lokalnie → własny adres', () => assert.equal(originLinkow(new URL('http://localhost:5173/api/x')), 'http://localhost:5173'));
+
+// ---------- Link do wniosku z maila (bez wysyłki maila) ----------
+test('link z maila: brak wniosku → utwórz nowy', () => assert.equal(decyzjaLinku('nowy'), 'utworz'));
+test('link z maila: wniosek po terminie albo testowy → zastąp nowym', () => assert.equal(decyzjaLinku('zastap'), 'zastap'));
+test('link z maila: wniosek utworzony, wysłany albo w trakcie APK → ten sam wniosek (bez maila i bez przypomnienia)', () => {
+	assert.equal(decyzjaLinku('wyslij'), 'uzyj');
+	assert.equal(decyzjaLinku('przypomnij'), 'uzyj');
+	assert.equal(decyzjaLinku('juz_wyslany'), 'uzyj');
+});
+test('link z maila: wniosek złożony → bez nowego linku', () => assert.equal(decyzjaLinku('zlozony'), 'zlozony'));
+test('link z maila: rezygnacja we wniosku → sprawa dla agenta', () => assert.equal(decyzjaLinku('rezygnacja'), 'do_agenta'));
+
+test('zadanie dla agenta: otwarte i w toku blokują drugie, zakończone nie', () => {
+	assert.equal(jestOtwarteZadanie({ status: 'otwarte' }), true);
+	assert.equal(jestOtwarteZadanie({ status: 'w_toku' }), true);
+	assert.equal(jestOtwarteZadanie({ status: 'zakonczone' }), false);
+	assert.equal(jestOtwarteZadanie({ status: null }), false);
+});
