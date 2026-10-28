@@ -119,7 +119,8 @@ export const wniosekCzekaNaPolise = (
 	zalatwione: ReadonlySet<string> = new Set()
 ) => w.status === 'zlozony' && w.decyzja !== 'nie' && !zalatwione.has(w.id) && !wniosekZalatwiony(w, odnowione, polisyKl);
 
-type WniosekDoRangi = Pick<WniosekOdnowienia, 'id' | 'status' | 'decyzja' | 'rodzaj' | 'polisa_id' | 'klient_id' | 'zlozono_at' | 'apk_at' | 'email' | 'wyslano_at' | 'created_at'>;
+type WniosekDoRangi = Pick<WniosekOdnowienia, 'id' | 'status' | 'decyzja' | 'rodzaj' | 'polisa_id' | 'klient_id' | 'zlozono_at' | 'apk_at' | 'email' | 'wyslano_at' | 'created_at'> &
+	Partial<Pick<WniosekOdnowienia, 'okres_do'>>;
 
 /** Wniosek zamknięty: złożony i załatwiony (nowa polisa w CRM albo zadanie „Załatwione”) lub rezygnacja klienta. */
 export const wniosekZamkniety = (w: WniosekDoRangi, odnowione: ReadonlySet<string>, polisyKl: ReadonlyMap<string, string[]> = new Map(), zalatwione: ReadonlySet<string> = new Set()) =>
@@ -140,14 +141,33 @@ export function rangaWniosku(w: WniosekDoRangi, odnowione: ReadonlySet<string>, 
 	return 1;
 }
 
-/** Sortowanie listy: wg rangi; do wystawienia — najdłużej czekające pierwsze; reszta — najnowsze pierwsze. */
+/** Certyfikat kończy się w ciągu tylu dni (albo już się skończył) — wiersz wniosku w toku jest na pomarańczowo. */
+export const DNI_KONCA_WKROTCE = 7;
+
+/** Dni do końca ochrony certyfikatu (ujemne — już po końcu); null — wniosek o pierwszą polisę, bez certyfikatu. */
+export const dniDoKoncaOchrony = (w: Partial<Pick<WniosekOdnowienia, 'okres_do'>>, dzis: string): number | null =>
+	w.okres_do ? dateDiffDays(dzis, w.okres_do.slice(0, 10)) : null;
+
+/** Certyfikat kończy się w najbliższych DNI_KONCA_WKROTCE dniach (dziś włącznie) albo już się skończył. */
+export const koniecOchronyWkrotce = (w: Partial<Pick<WniosekOdnowienia, 'okres_do'>>, dzis: string, dni = DNI_KONCA_WKROTCE) => {
+	const d = dniDoKoncaOchrony(w, dzis);
+	return d != null && d <= dni;
+};
+
+/**
+ * Sortowanie listy: wg rangi; do wystawienia — najdłużej czekające pierwsze; w toku — chronologicznie wg końca ochrony
+ * certyfikatu (najbliższy koniec na górze, wnioski o pierwszą polisę bez certyfikatu za nimi, najnowsze pierwsze);
+ * nieaktywne i zamknięte — najnowsze pierwsze.
+ */
 export function sortujWnioski<T extends WniosekDoRangi>(lista: T[], odnowione: ReadonlySet<string>, polisyKl: ReadonlyMap<string, string[]> = new Map(), zalatwione: ReadonlySet<string> = new Set()): T[] {
 	const data = (w: T) => w.wyslano_at ?? w.created_at ?? '';
+	const koniec = (w: T) => w.okres_do?.slice(0, 10) ?? '9999-12-31';
 	return [...lista].sort((a, b) => {
 		const ra = rangaWniosku(a, odnowione, polisyKl, zalatwione);
 		const rb = rangaWniosku(b, odnowione, polisyKl, zalatwione);
 		if (ra !== rb) return ra - rb;
 		if (ra === 0) return (a.zlozono_at ?? '').localeCompare(b.zlozono_at ?? '');
+		if (ra === 1) return koniec(a).localeCompare(koniec(b)) || data(b).localeCompare(data(a));
 		return data(b).localeCompare(data(a));
 	});
 }

@@ -10,7 +10,7 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, adresWniosku, etapWniosku, otworzPdfApk, podsumujWnioski, polisyKlientow, sortujWnioski, wniosekDoWystawienia, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wniosekZamkniety, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
+	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, DNI_KONCA_WKROTCE, adresWniosku, dniDoKoncaOchrony, etapWniosku, koniecOchronyWkrotce, otworzPdfApk, podsumujWnioski, polisyKlientow, rangaWniosku, sortujWnioski, wniosekDoWystawienia, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wniosekZamkniety, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
 	import { dateDiffDays, fmtDzien, fmtTermin, odmiana, todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User, Eye, FileText, X } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
@@ -63,6 +63,18 @@
 	const liczDoWystawienia = $derived(appState.wnioskiOdnowien.filter(doWystawienia).length);
 	const liczFiltr = $derived(Object.fromEntries(FILTRY_WN.map(([f]) => [f, wnioskiPoSzukaniu.filter((w) => wEtapie(w, f)).length])) as Record<FiltrWn, number>);
 	const wnioskiWidoczne = $derived(sortujWnioski(wnioskiPoSzukaniu.filter((w) => wEtapie(w, filtrWn)), odnowione, polisyKl, zalatwioneZadaniem));
+	// Wnioski w toku są ułożone chronologicznie wg końca ochrony certyfikatu; te, którym ochrona kończy się w ciągu
+	// 7 dni (albo już się skończyła), są na górze, zaraz pod „do wystawienia”, i świecą na pomarańczowo.
+	const wTokuWkrotce = (w: WniosekOdnowienia) => rangaWniosku(w, odnowione, polisyKl, zalatwioneZadaniem) === 1 && koniecOchronyWkrotce(w, dzis);
+	const liczWkrotce = $derived(wnioskiWidoczne.filter(wTokuWkrotce).length);
+	function opisKonca(w: WniosekOdnowienia): string {
+		const d = dniDoKoncaOchrony(w, dzis);
+		if (d == null) return '';
+		if (d < 0) return `${odmiana(-d, 'dzień', 'dni', 'dni')} po końcu`;
+		if (d === 0) return 'kończy się dziś';
+		if (d === 1) return 'kończy się jutro';
+		return `za ${odmiana(d, 'dzień', 'dni', 'dni')}`;
+	}
 
 	let bladWn = $state('');
 	async function pdfApkWniosku(w: WniosekOdnowienia) {
@@ -389,11 +401,20 @@
 		</label>
 	</div>
 	{#if liczDoWystawienia}
-		<p class="mb-3 text-[13px] text-emerald-700" data-testid="do-wystawienia-info">
+		<p class="mb-1.5 text-[13px] text-emerald-700" data-testid="do-wystawienia-info">
 			<span class="inline-block w-2 h-2 rounded-full bg-emerald-500 mr-1.5 align-middle animate-pulse"></span>
 			{odmiana(liczDoWystawienia, 'wniosek czeka', 'wnioski czekają', 'wniosków czeka')} na wystawienie polisy — {liczDoWystawienia === 1 ? 'jest' : 'są'} na górze listy. Po dodaniu polisy w CRM wiersz schodzi do załatwionych.
 		</p>
 	{/if}
+	<p class="mb-3 text-[13px] {liczWkrotce ? 'text-orange-700' : 'text-slate-500'}" data-testid="wkrotce-info">
+		<span class="inline-block w-2 h-2 rounded-full mr-1.5 align-middle {liczWkrotce ? 'bg-orange-500' : 'bg-slate-300'}"></span>
+		{#if liczWkrotce}
+			{odmiana(liczWkrotce, 'certyfikat kończy', 'certyfikaty kończą', 'certyfikatów kończy')} się w ciągu {DNI_KONCA_WKROTCE} dni — na pomarańczowo, na górze listy.
+		{:else}
+			Żaden certyfikat z wnioskiem w toku nie kończy się w ciągu {DNI_KONCA_WKROTCE} dni.
+		{/if}
+		Wnioski w toku są ułożone chronologicznie według końca ochrony.
+	</p>
 
 	{#if bladWn}
 		<div class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{bladWn}</div>
@@ -411,16 +432,17 @@
 		</div>
 	{:else}
 		<div class="bg-white border border-line rounded-xl shadow-sm overflow-x-auto">
-			<table class="w-full min-w-[880px] text-sm text-left" data-testid="tabela-wnioskow">
+			<table class="w-full min-w-[960px] text-sm text-left" data-testid="tabela-wnioskow">
 				<thead class="bg-slate-50 border-b border-line">
 					<tr>
-						<th class="px-5 py-3 font-semibold text-slate-600">Wysłano</th>
-						<th class="px-5 py-3 font-semibold text-slate-600">Klient</th>
-						<th class="px-5 py-3 font-semibold text-slate-600">Certyfikat</th>
-						<th class="px-5 py-3 font-semibold text-slate-600">Status</th>
-						<th class="px-5 py-3 font-semibold text-slate-600">APK</th>
-						<th class="px-5 py-3 font-semibold text-slate-600">Złożono</th>
-						<th class="px-5 py-3"></th>
+						<th class="px-3 py-3 font-semibold text-slate-600">Koniec ochrony</th>
+						<th class="px-3 py-3 font-semibold text-slate-600">Wysłano</th>
+						<th class="px-3 py-3 font-semibold text-slate-600">Klient</th>
+						<th class="px-3 py-3 font-semibold text-slate-600">Certyfikat</th>
+						<th class="px-3 py-3 font-semibold text-slate-600">Status</th>
+						<th class="px-3 py-3 font-semibold text-slate-600">APK</th>
+						<th class="px-3 py-3 font-semibold text-slate-600">Złożono</th>
+						<th class="px-3 py-3"></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -429,19 +451,29 @@
 						{@const test = wniosekTestowy(w)}
 						{@const pilny = doWystawienia(w)}
 						{@const zamkn = zamkniety(w)}
-						<tr use:ctxMenu={{ items: () => wniosekMenu(w), title: w.nr_polisy ?? 'Wniosek' }} data-testid="wniosek" data-ranga={pilny ? 'do_wystawienia' : zamkn ? 'zalatwiony' : 'w_toku'}
-							class="border-t border-line-soft {pilny ? 'wniosek-do-wystawienia' : zamkn ? 'bg-slate-50/60 text-slate-500 hover:bg-slate-100/60' : 'hover:bg-slate-50'} {test ? 'opacity-60' : ''}">
-							<td class="px-5 py-3 whitespace-nowrap">
+						{@const wkrotce = wTokuWkrotce(w)}
+						{@const blisko = !zamkn && !test && koniecOchronyWkrotce(w, dzis)}
+						<tr use:ctxMenu={{ items: () => wniosekMenu(w), title: w.nr_polisy ?? 'Wniosek' }} data-testid="wniosek" data-ranga={pilny ? 'do_wystawienia' : zamkn ? 'zalatwiony' : wkrotce ? 'wkrotce' : 'w_toku'}
+							class="border-t border-line-soft {pilny ? 'wniosek-do-wystawienia' : zamkn ? 'bg-slate-50/60 text-slate-500 hover:bg-slate-100/60' : wkrotce ? 'wniosek-wkrotce' : 'hover:bg-slate-50'} {test ? 'opacity-60' : ''}">
+							<td class="px-3 py-3 whitespace-nowrap" data-testid="koniec-ochrony">
+								{#if w.okres_do}
+									<span class="block tabular-nums {blisko ? 'font-semibold text-orange-800' : 'text-slate-700'}">{fmtDzien(w.okres_do, true)}</span>
+									<span class="block text-xs {blisko ? 'font-semibold text-orange-700' : 'text-slate-400'}">{opisKonca(w)}</span>
+								{:else}
+									<span class="text-xs text-slate-400">— pierwsza polisa</span>
+								{/if}
+							</td>
+							<td class="px-3 py-3 whitespace-nowrap">
 								<span class="block tabular-nums text-slate-700">{fmtDzien(w.wyslano_at ?? w.created_at, true)}</span>
 								<span class="block text-xs text-slate-400">
 									{#if test}wniosek testowy{:else if !w.wyslano_at}link przekazany ręcznie{:else if w.przypomniano_at}przypomnienie {fmtDzien(w.przypomniano_at, true)}{:else if wz}<span class={wz.pilne ? 'text-warn font-semibold' : ''}>{wz.tekst}</span>{/if}
 								</span>
 							</td>
-							<td class="px-5 py-3 min-w-[160px] max-w-[260px]">
+							<td class="px-3 py-3 min-w-[150px] max-w-[220px]">
 								<a href="/clients/{w.klient_id}" class="block truncate font-medium text-slate-900 hover:text-accent-text">{nazwaKlienta(w)}</a>
 								{#if w.email && !test}<span class="block truncate text-xs text-slate-400" title={w.email}>{w.email}</span>{/if}
 							</td>
-							<td class="px-5 py-3 whitespace-nowrap">
+							<td class="px-3 py-3 whitespace-nowrap">
 								{#if wniosekNowy(w)}
 									<a href={adresWniosku(w)} class="text-xs font-semibold text-rose-700 hover:underline">pierwsza polisa</a>
 									<span class="block text-xs text-slate-400">klient bez certyfikatu</span>
@@ -451,15 +483,14 @@
 								{:else}
 									<a href="/policies/{w.polisa_id}" class="text-xs text-accent-text hover:underline">polisa</a>
 								{/if}
-								{#if w.okres_do}<span class="block text-xs text-slate-400">ochrona do {fmtDzien(w.okres_do, true)}</span>{/if}
 							</td>
-							<td class="px-5 py-3 whitespace-nowrap">
+							<td class="px-3 py-3 whitespace-nowrap">
 								<CrmRenewalBadge status={w.status} decyzja={w.decyzja} rodzaj={w.rodzaj} />
 								{#if pilny}
 									<span class="block mt-1 w-fit h-5 leading-5 px-1.5 rounded-full bg-emerald-600 text-white text-[11px] font-bold tracking-wide" data-testid="odznaka-do-wystawienia">DO WYSTAWIENIA</span>
 								{/if}
 							</td>
-							<td class="px-5 py-3 whitespace-nowrap">
+							<td class="px-3 py-3 whitespace-nowrap">
 								{#if w.apk_odmowa}
 									<Badge variant="warning">Odmowa</Badge>
 									<span class="block text-xs text-slate-400">{fmtDzien(w.apk_at, true)}</span>
@@ -475,14 +506,14 @@
 									<span class="inline-flex items-center gap-1 text-xs text-slate-400"><span class="w-2 h-2 rounded-full bg-slate-300 inline-block"></span> Czeka</span>
 								{/if}
 							</td>
-							<td class="px-5 py-3 text-xs whitespace-nowrap {w.zlozono_at ? 'text-slate-700' : 'text-slate-400'}">
+							<td class="px-3 py-3 text-xs whitespace-nowrap {w.zlozono_at ? 'text-slate-700' : 'text-slate-400'}">
 								{w.zlozono_at ? fmtDzien(w.zlozono_at, true) : '—'}
 								{#if w.status === 'zlozony' && w.decyzja !== 'nie'}
 									{@const zalatwiony = wniosekZalatwiony(w, odnowione, polisyKl) || zalatwioneZadaniem.has(w.id)}
 									<span class="block {zalatwiony ? 'text-emerald-600' : 'text-emerald-800 font-bold'}">{zalatwiony ? (wniosekNowy(w) ? 'polisa wystawiona' : 'nowa polisa wystawiona') : 'do wystawienia'}</span>
 								{/if}
 							</td>
-							<td class="px-5 py-3">
+							<td class="px-3 py-3">
 								<div class="flex items-center gap-2">
 									<a href={adresWniosku(w)} class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50" title={wniosekNowy(w) ? 'Karta klienta → APK — wniosek, dziennik zdarzeń, pliki' : 'Karta polisy — wniosek, dziennik zdarzeń, pliki'}>
 										<Eye size={12} /> {wniosekNowy(w) ? 'Klient' : 'Polisa'}
@@ -625,6 +656,9 @@
 	@media (prefers-reduced-motion: reduce) {
 		tr.wniosek-do-wystawienia { animation: none; background-color: #d1fae5; }
 	}
+	/* Wniosek w toku, którego certyfikat kończy się w ciągu 7 dni (albo już się skończył): pomarańczowe tło i pasek. */
+	tr.wniosek-wkrotce { background-color: #ffedd5; box-shadow: inset 4px 0 0 #f97316; }
+	tr.wniosek-wkrotce:hover { background-color: #fed7aa; }
 </style>
 
 <!-- Modal: Nowy APK -->
