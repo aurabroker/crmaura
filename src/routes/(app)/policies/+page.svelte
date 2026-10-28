@@ -107,16 +107,17 @@
 	// Okno „Zakończ polisę” (menu prawego przycisku).
 	let zakonczTarget = $state<Policy | null>(null);
 
-	// Filtry (typ umowy tylko poza widokiem „Umowy generalne” z menu)
-	let fTypUmowy = $state<'' | 'jednostkowa' | 'generalna' | 'w_ug'>('');
+	// Filtry (typ umowy tylko poza widokiem „Umowy generalne” z menu): polisy poza umowami generalnymi / w umowach.
+	let fTypUmowy = $state<'' | 'jednostkowa' | 'w_ug'>('');
 	let fTu = $state('');
 	let fRodzaj = $state('');
 	let fOpiekun = $state('');
 	const ileFiltrow = $derived([fTypUmowy, fTu, fRodzaj, fOpiekun].filter(Boolean).length);
 	function wyczyscFiltry() { fTypUmowy = ''; fTu = ''; fRodzaj = ''; fOpiekun = ''; search = ''; }
 
-	// Najpierw typ z menu (Polisy / Umowy generalne), potem segmenty liczone na tym zbiorze.
-	const bazowe = $derived(appState.policies.filter((p) => filterTyp === 'all' || p.typ_umowy === filterTyp));
+	// Najpierw typ z menu, potem segmenty liczone na tym zbiorze. „Umowy generalne” — tylko umowy generalne;
+	// „Polisy” — bez umów generalnych (mają własną zakładkę), polisy podpięte pod UG zostają.
+	const bazowe = $derived(appState.policies.filter((p) => (filterTyp === 'generalna' ? p.typ_umowy === 'generalna' : p.typ_umowy !== 'generalna')));
 	const liczSeg = $derived(Object.fromEntries(SEGMENTY.map(([id]) => [id, bazowe.filter(p => wSegmencie(p, id)).length])) as Record<Segment, number>);
 	const towarzystwa = $derived(
 		appState.insurers.filter(i => bazowe.some(p => p.tu_id === i.id)).sort((a, b) => (a.skrot || a.nazwa).localeCompare(b.skrot || b.nazwa, 'pl'))
@@ -131,7 +132,8 @@
 		const q = search.trim().toLowerCase();
 		return bazowe.filter((p) => {
 			if (!wSegmencie(p, segment)) return false;
-			if (fTypUmowy === 'w_ug' ? !p.parent_id : fTypUmowy && p.typ_umowy !== fTypUmowy) return false;
+			if (fTypUmowy === 'w_ug' && !p.parent_id) return false;
+			if (fTypUmowy === 'jednostkowa' && p.parent_id) return false;
 			if (fTu && p.tu_id !== fTu) return false;
 			if (fRodzaj && p.rodzaj !== fRodzaj) return false;
 			if (fOpiekun && (fOpiekun === '-' ? !!opiekunKlienta.get(p.klient_id) : opiekunKlienta.get(p.klient_id) !== fOpiekun)) return false;
@@ -444,7 +446,14 @@
 <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
 	<div>
 		<h1 class="text-2xl font-semibold text-ink">{trybUg ? 'Umowy generalne' : 'Polisy'} <span class="font-normal text-ink-3 tabular-nums">{bazowe.length.toLocaleString('pl-PL')}</span></h1>
-		<p class="text-sm text-ink-3 mt-0.5">{trybUg ? 'Rejestr umów generalnych i polis podpiętych pod nie' : 'Rejestr ubezpieczeń całego portfela — terminy, składki i prowizje'}</p>
+		<p class="text-sm text-ink-3 mt-0.5">
+			{#if trybUg}
+				Rejestr umów generalnych i polis podpiętych pod nie
+			{:else}
+				Rejestr polis — terminy, składki i prowizje · umowy generalne są w osobnej zakładce
+				<a href="/policies?typ=generalna" class="font-medium text-accent-text hover:underline">Umowy generalne →</a>
+			{/if}
+		</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
 		<button onclick={() => { showClaim = true; formError = ''; }} class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
@@ -527,9 +536,8 @@
 		</span>
 	{/snippet}
 	{#snippet opcjeTyp()}
-		<option value="">Dowolny typ umowy</option>
-		<option value="jednostkowa">polisy jednostkowe</option>
-		<option value="generalna">umowy generalne</option>
+		<option value="">Dowolny typ polisy</option>
+		<option value="jednostkowa">polisy poza umowami generalnymi</option>
 		<option value="w_ug">polisy w umowach generalnych</option>
 	{/snippet}
 	{#snippet opcjeTu()}
@@ -546,7 +554,7 @@
 		<option value="-">Klient bez opiekuna</option>
 	{/snippet}
 	{#if !lockedTyp}
-		{@render filtr('Typ umowy', fTypUmowy ? ({ jednostkowa: 'Polisy jednostkowe', generalna: 'Umowy generalne', w_ug: 'Polisy w UG' } as const)[fTypUmowy] : null, () => (fTypUmowy = ''), opcjeTyp, fTypUmowy, (v) => (fTypUmowy = v as typeof fTypUmowy))}
+		{@render filtr('Typ polisy', fTypUmowy ? ({ jednostkowa: 'Poza umowami generalnymi', w_ug: 'Polisy w UG' } as const)[fTypUmowy] : null, () => (fTypUmowy = ''), opcjeTyp, fTypUmowy, (v) => (fTypUmowy = v as typeof fTypUmowy))}
 	{/if}
 	{@render filtr('Towarzystwo', fTu ? `TU: ${towarzystwa.find(t => t.id === fTu)?.skrot || towarzystwa.find(t => t.id === fTu)?.nazwa || '—'}` : null, () => (fTu = ''), opcjeTu, fTu, (v) => (fTu = v))}
 	{@render filtr('Rodzaj', fRodzaj ? `Rodzaj: ${nazwaRodzaju(fRodzaj)}` : null, () => (fRodzaj = ''), opcjeRodzaj, fRodzaj, (v) => (fRodzaj = v))}

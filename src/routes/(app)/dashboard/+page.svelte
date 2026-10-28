@@ -624,44 +624,45 @@
 {/if}
 
 <!-- Wymaga działania -->
-<section aria-label="Wymaga działania" class="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5 {maWnioskiApk ? 'lg:grid-cols-3' : 'lg:grid-cols-3 xl:grid-cols-5'}">
-	<a href="/payments" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+<!-- Wszystkie kafelki w jednym szeregu, gdy obok siebie mieści się po ~150 px na kafelek; węższy ekran zawija. -->
+<section aria-label="Wymaga działania" data-testid="kafelki-dzis" class="grid grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] gap-3 mb-5">
+	<a href="/payments" class="flex flex-col gap-1 p-3.5 min-w-0 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {overduePayments.length ? 'text-danger' : 'text-ok'}">
 			<CreditCard size={16} />
 			{overduePayments.length ? 'Po terminie' : 'W porządku'}
 		</span>
-		<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{overduePayments.length}</span>
-		<span class="text-sm text-ink-2">{slowo(overduePayments.length, 'rata', 'raty', 'rat')} po terminie · {fmtZl(overdueSum)}</span>
+		<span class="text-[26px] leading-8 font-semibold tabular-nums text-ink">{overduePayments.length}</span>
+		<span class="text-[13px] leading-snug text-ink-2">{slowo(overduePayments.length, 'rata', 'raty', 'rat')} po terminie · {fmtZl(overdueSum)}</span>
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">Otwórz płatności →</span>
 	</a>
 	<button
 		onclick={() => { filtrKolejki = 'Zadanie'; kolejkaCala = false; document.getElementById('kolejka')?.scrollIntoView({ behavior: 'smooth' }); }}
-		class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors text-left"
+		class="flex flex-col gap-1 p-3.5 min-w-0 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors text-left"
 	>
 		<span class="flex items-center gap-2 text-[13px] font-semibold {dashOverdueTasks.length ? 'text-danger' : 'text-ok'}">
 			<Clock size={16} />
 			{dashOverdueTasks.length ? 'Po terminie' : 'W porządku'}
 		</span>
-		<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{dashOverdueTasks.length}</span>
-		<span class="text-sm text-ink-2">{slowo(dashOverdueTasks.length, 'zadanie', 'zadania', 'zadań')} z {dashOpenTasks.length} otwartych</span>
+		<span class="text-[26px] leading-8 font-semibold tabular-nums text-ink">{dashOverdueTasks.length}</span>
+		<span class="text-[13px] leading-snug text-ink-2">{slowo(dashOverdueTasks.length, 'zadanie', 'zadania', 'zadań')} z {dashOpenTasks.length} otwartych</span>
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">Przejrzyj zadania →</span>
 	</button>
-	<a href="/renewals" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+	<a href="/renewals" class="flex flex-col gap-1 p-3.5 min-w-0 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {renewals.length ? 'text-warn' : 'text-ok'}">
 			<RefreshCw size={16} />
 			W ciągu 30 dni
 		</span>
-		<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{renewals.length}</span>
-		<span class="text-sm text-ink-2">{slowo(renewals.length, 'polisa', 'polisy', 'polis')} do odnowienia · {renewals60} w 60 dni</span>
+		<span class="text-[26px] leading-8 font-semibold tabular-nums text-ink">{renewals.length}</span>
+		<span class="text-[13px] leading-snug text-ink-2">{slowo(renewals.length, 'polisa', 'polisy', 'polis')} do odnowienia · {renewals60} w 60 dni</span>
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">Plan odnowień →</span>
 	</a>
-	<a href="/statystyki#odnowienia" data-testid="kafelek-odnowienia" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+	<a href="/statystyki#odnowienia" data-testid="kafelek-odnowienia" class="flex flex-col gap-1 p-3.5 min-w-0 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {postepMiesiaca.procent == null ? 'text-ink-2' : postepMiesiaca.procent >= 100 ? 'text-ok' : 'text-accent-text'}">
 			<TrendingUp size={16} />
 			Odnowienia · {nazwaMiesiaca}
 		</span>
-		<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{postepMiesiaca.procent == null ? '—' : proc(postepMiesiaca.procent, 0)}</span>
-		<span class="text-sm text-ink-2">
+		<span class="text-[26px] leading-8 font-semibold tabular-nums text-ink">{postepMiesiaca.procent == null ? '—' : proc(postepMiesiaca.procent, 0)}</span>
+		<span class="text-[13px] leading-snug text-ink-2">
 			{#if !postepMiesiaca.konczace.polisy}
 				żadna polisa nie kończy się w tym miesiącu
 			{:else if postepMiesiaca.procent == null}
@@ -675,34 +676,34 @@
 	{#if maWnioskiApk}
 		{#if wnioskiCzekaja.length}
 			<!-- Złożone wnioski mają pierwszeństwo przed linkami u klientów: klient czeka na ofertę / polisę. -->
-			<a href="#wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-accent/50 hover:border-accent transition-colors">
+			<a href="#wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1 p-3.5 min-w-0 rounded-xl bg-white border border-accent/50 hover:border-accent transition-colors">
 				<span class="flex items-center gap-2 text-[13px] font-semibold text-accent-text">
 					<Inbox size={16} />
 					Wnioski · do wystawienia
 				</span>
-				<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{wnioskiCzekaja.length}</span>
-				<span class="text-sm text-ink-2">{slowo(wnioskiCzekaja.length, 'klient czeka', 'klientów czeka', 'klientów czeka')} na ofertę / polisę · {apkWnioski.czeka} {slowo(apkWnioski.czeka, 'link u klienta', 'linki u klientów', 'linków u klientów')}</span>
+				<span class="text-[26px] leading-8 font-semibold tabular-nums text-ink">{wnioskiCzekaja.length}</span>
+				<span class="text-[13px] leading-snug text-ink-2">{slowo(wnioskiCzekaja.length, 'klient czeka', 'klientów czeka', 'klientów czeka')} na ofertę / polisę · {apkWnioski.czeka} {slowo(apkWnioski.czeka, 'link u klienta', 'linki u klientów', 'linków u klientów')}</span>
 				<span class="mt-1 text-[13px] font-semibold text-accent-text">Zobacz wnioski ↓</span>
 			</a>
 		{:else}
-			<a href="/apk?widok=wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+			<a href="/apk?widok=wnioski" data-testid="kafelek-apk" class="flex flex-col gap-1 p-3.5 min-w-0 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 				<span class="flex items-center gap-2 text-[13px] font-semibold {apkWnioski.czeka ? 'text-warn' : 'text-ok'}">
 					<ClipboardList size={16} />
 					APK · {apkWnioski.czeka ? 'u klientów' : 'w porządku'}
 				</span>
-				<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{apkWnioski.czeka}</span>
-				<span class="text-sm text-ink-2">{slowo(apkWnioski.czeka, 'wniosek czeka', 'wnioski czekają', 'wniosków czeka')} · {apkWnioski.apk} APK wypełniono{apkWnioski.odmowy ? ` · ${apkWnioski.odmowy} ${slowo(apkWnioski.odmowy, 'odmowa', 'odmowy', 'odmów')}` : ''}</span>
+				<span class="text-[26px] leading-8 font-semibold tabular-nums text-ink">{apkWnioski.czeka}</span>
+				<span class="text-[13px] leading-snug text-ink-2">{slowo(apkWnioski.czeka, 'wniosek czeka', 'wnioski czekają', 'wniosków czeka')} · {apkWnioski.apk} APK wypełniono{apkWnioski.odmowy ? ` · ${apkWnioski.odmowy} ${slowo(apkWnioski.odmowy, 'odmowa', 'odmowy', 'odmów')}` : ''}</span>
 				<span class="mt-1 text-[13px] font-semibold text-accent-text">Wnioski i APK →</span>
 			</a>
 		{/if}
 	{/if}
-	<a href={unresolvedAlerts.length ? '#alerty' : '/settings?tab=dokumenty'} class="flex flex-col gap-1.5 p-4 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
+	<a href={unresolvedAlerts.length ? '#alerty' : '/settings?tab=dokumenty'} class="flex flex-col gap-1 p-3.5 min-w-0 rounded-xl bg-white border border-line hover:border-slate-300 transition-colors">
 		<span class="flex items-center gap-2 text-[13px] font-semibold {unresolvedAlerts.length ? 'text-danger' : 'text-ok'}">
 			{#if unresolvedAlerts.length}<AlertTriangle size={16} />{:else}<Check size={16} />{/if}
 			{unresolvedAlerts.length ? 'Wymaga uwagi' : 'W porządku'}
 		</span>
-		<span class="text-[28px] leading-8 font-semibold tabular-nums text-ink">{unresolvedAlerts.length}</span>
-		<span class="text-sm text-ink-2">{slowo(unresolvedAlerts.length, 'alert', 'alerty', 'alertów')} rozliczeniowych</span>
+		<span class="text-[26px] leading-8 font-semibold tabular-nums text-ink">{unresolvedAlerts.length}</span>
+		<span class="text-[13px] leading-snug text-ink-2">{slowo(unresolvedAlerts.length, 'alert', 'alerty', 'alertów')} rozliczeniowych</span>
 		<span class="mt-1 text-[13px] font-semibold text-accent-text">{unresolvedAlerts.length ? 'Zobacz alerty ↓' : 'Dokumenty rozliczeniowe →'}</span>
 	</a>
 </section>
@@ -919,94 +920,99 @@
 				{/each}
 			</div>
 		</section>
-
-		<!-- Portfel -->
-		<section aria-labelledby="portfel-h" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3.5">
-			<h2 id="portfel-h" class="text-[15px] font-semibold text-ink">Portfel w {thisYear}</h2>
-			<dl class="grid grid-cols-2 gap-3.5">
-				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Aktywne polisy</dt><dd class="text-xl font-semibold tabular-nums">{portfel.aktywne}</dd></div>
-				<div class="flex flex-col gap-0.5" title="Klienci aktywni (bez oznaczonych jako nieaktywni)"><dt class="text-xs text-ink-3">Klienci</dt><dd class="text-xl font-semibold tabular-nums">{klienciAktywni.toLocaleString('pl-PL')}</dd></div>
-				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Przypis składki</dt><dd class="text-xl font-semibold tabular-nums">{fmtZl(portfel.przypis)}</dd></div>
-				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Prowizja przypisana</dt><dd class="text-xl font-semibold tabular-nums">{fmtZl(portfel.prowizja)}</dd></div>
-				<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Stawka prowizji</dt><dd class="text-xl font-semibold tabular-nums">{portfel.stawka != null ? fmtProc(portfel.stawka) : '—'}</dd></div>
-				<div class="flex flex-col gap-0.5" title="{renewedThisYear.length} z {expiredThisYear.length} polis wygasłych w {thisYear} ma kolejną polisę tego klienta w tym samym TU i rodzaju">
-					<dt class="text-xs text-ink-3">Skuteczność odnowień</dt>
-					<dd class="text-xl font-semibold tabular-nums">{renewalRate != null ? `${renewalRate}%` : '—'}</dd>
-				</div>
-			</dl>
-			<div class="flex flex-col gap-1.5">
-				<div class="flex justify-between gap-2 text-xs text-ink-3">
-					<span>Raty oznaczone jako opłacone</span>
-					<span class="tabular-nums">{portfel.ratyOplacone} z {portfel.ratyLacznie} · {fmtProc(portfel.procentWartosci)} wartości</span>
-				</div>
-				<div class="h-2 rounded-full bg-surface-2 overflow-hidden flex" role="img" aria-label="Opłacone {fmtProc(portfel.procentWartosci)} wartości rat">
-					<span class="bg-accent" style="width: {portfel.procentWartosci}%; min-width: {portfel.ratyOplacone ? '4px' : '0'}"></span>
-				</div>
-				{#if portfel.ratyLacznie > 0 && portfel.procentWartosci < 10}
-					<span class="flex items-start gap-1.5 text-xs text-ink-3">
-						<AlertTriangle size={14} class="text-warn shrink-0 mt-px" />
-						Mało rat oznaczonych jako opłacone — wpłaty najpewniej nie są odnotowywane.
-					</span>
-				{/if}
-			</div>
-		</section>
 	</div>
 </div>
 
-<!-- Odnowienia — najbliższe 30 dni -->
-<section aria-labelledby="odnowienia-h" class="bg-white border border-line rounded-xl overflow-hidden mb-6">
-	<div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-line-soft">
-		<h2 id="odnowienia-h" class="text-[15px] font-semibold text-ink">Odnowienia — najbliższe 30 dni</h2>
-		<span class="text-[13px] text-ink-3">{odmiana(renewals.length, 'polisa', 'polisy', 'polis')}</span>
-		<a href="/renewals" class="ml-auto text-[13px] font-semibold text-accent-text hover:underline">Wszystkie odnowienia →</a>
-	</div>
-	<div class="overflow-x-auto">
-		<table class="w-full min-w-[720px] text-[13px] text-left">
-			<thead>
-				<tr class="bg-surface-2 text-ink-2">
-					<SortTh s={sortWznowienia} k="nr" wersaliki={false} class="px-4 py-2 font-semibold">Polisa</SortTh>
-					<SortTh s={sortWznowienia} k="klient" wersaliki={false} class="px-3 py-2 font-semibold">Klient</SortTh>
-					<SortTh s={sortWznowienia} k="tu" wersaliki={false} class="px-3 py-2 font-semibold">TU</SortTh>
-					<SortTh s={sortWznowienia} k="do" wersaliki={false} class="px-3 py-2 font-semibold">Koniec ochrony</SortTh>
-					<th class="px-4 py-2 font-semibold text-right">Składka</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each renewalsRows.slice(0, 8) as p}
-					{@const dni = dateDiffDays(today, p.data_do)}
-					<tr class="border-t border-line-soft hover:bg-bg">
-						<td class="px-4 py-2.5 font-mono font-medium whitespace-nowrap"><a href="/policies/{p.id}" class="text-accent-text hover:underline">{p.nr_polisy}</a> <Kopiuj tekst={p.nr_polisy} opis="nr polisy" /></td>
-						<td class="px-3 py-2.5"><a href="/clients/{p.klient_id}" class="font-medium text-ink hover:text-accent-text">{p.crm_clients?.nazwa ?? '—'}</a></td>
-						<td class="px-3 py-2.5 text-ink-2">{p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? '—'}</td>
-						<td class="px-3 py-2.5 whitespace-nowrap">{fmtDzien(p.data_do)} <span class={dni <= 14 ? 'text-warn font-semibold' : 'text-ink-2'}>· {fmtTermin(p.data_do, today)}</span></td>
-						<td class="px-4 py-2.5 text-right tabular-nums whitespace-nowrap">{fmtPln(p.skladka_przypisana)} zł</td>
-					</tr>
-				{:else}
-					<tr><td colspan="5" class="px-4 py-8 text-center text-ink-3">Żadna polisa nie kończy się w ciągu 30 dni.</td></tr>
-				{/each}
-			</tbody>
-		</table>
-	</div>
-	{#if renewals.length > 8}
-		<div class="px-4 py-2.5 border-t border-line-soft text-[13px]">
-			<a href="/renewals" class="font-semibold text-accent-text hover:underline">+{renewals.length - 8} więcej w Odnowieniach →</a>
+<!-- Odnowienia — najbliższe 30 dni (połowa strony) i Portfel obok -->
+<div class="grid grid-cols-[repeat(auto-fit,minmax(min(500px,100%),1fr))] gap-4 mb-6 items-start">
+	<!-- Odnowienia — najbliższe 30 dni -->
+	<section aria-labelledby="odnowienia-h" data-testid="odnowienia-30" class="bg-white border border-line rounded-xl overflow-hidden min-w-0">
+		<div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-line-soft">
+			<h2 id="odnowienia-h" class="text-[15px] font-semibold text-ink">Odnowienia — najbliższe 30 dni</h2>
+			<span class="text-[13px] text-ink-3">{odmiana(renewals.length, 'polisa', 'polisy', 'polis')}</span>
+			<a href="/renewals" class="ml-auto text-[13px] font-semibold text-accent-text hover:underline">Wszystkie odnowienia →</a>
 		</div>
-	{/if}
-</section>
+		<div class="overflow-x-auto">
+			<table class="w-full min-w-[460px] text-[13px] text-left">
+				<thead>
+					<tr class="bg-surface-2 text-ink-2">
+						<SortTh s={sortWznowienia} k="nr" wersaliki={false} class="px-3 py-2 font-semibold">Polisa</SortTh>
+						<SortTh s={sortWznowienia} k="klient" wersaliki={false} class="px-3 py-2 font-semibold">Klient</SortTh>
+						<SortTh s={sortWznowienia} k="tu" wersaliki={false} class="px-3 py-2 font-semibold">TU</SortTh>
+						<SortTh s={sortWznowienia} k="do" wersaliki={false} class="px-3 py-2 font-semibold">Koniec ochrony</SortTh>
+						<th class="px-3 py-2 font-semibold text-right">Składka</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each renewalsRows.slice(0, 8) as p}
+						{@const dni = dateDiffDays(today, p.data_do)}
+						<tr class="border-t border-line-soft hover:bg-bg">
+							<td class="px-3 py-2.5 font-mono text-xs font-medium whitespace-nowrap"><a href="/policies/{p.id}" class="text-accent-text hover:underline">{p.nr_polisy}</a> <Kopiuj tekst={p.nr_polisy} opis="nr polisy" /></td>
+							<td class="px-3 py-2.5 max-w-[170px]"><a href="/clients/{p.klient_id}" class="block truncate font-medium text-ink hover:text-accent-text" title={p.crm_clients?.nazwa ?? ''}>{p.crm_clients?.nazwa ?? '—'}</a></td>
+							<td class="px-3 py-2.5 text-ink-2">{p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? '—'}</td>
+							<td class="px-3 py-2.5 whitespace-nowrap">{fmtDzien(p.data_do)} <span class="block text-xs {dni <= 14 ? 'text-warn font-semibold' : 'text-ink-3'}">{fmtTermin(p.data_do, today)}</span></td>
+							<td class="px-3 py-2.5 text-right tabular-nums whitespace-nowrap">{fmtPln(p.skladka_przypisana)} zł</td>
+						</tr>
+					{:else}
+						<tr><td colspan="5" class="px-4 py-8 text-center text-ink-3">Żadna polisa nie kończy się w ciągu 30 dni.</td></tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+		{#if renewals.length > 8}
+			<div class="px-4 py-2.5 border-t border-line-soft text-[13px]">
+				<a href="/renewals" class="font-semibold text-accent-text hover:underline">+{renewals.length - 8} więcej w Odnowieniach →</a>
+			</div>
+		{/if}
+	</section>
+
+	<!-- Portfel -->
+	<section aria-labelledby="portfel-h" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3.5">
+		<h2 id="portfel-h" class="text-[15px] font-semibold text-ink">Portfel w {thisYear}</h2>
+		<dl class="grid grid-cols-2 sm:grid-cols-3 gap-3.5">
+			<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Aktywne polisy</dt><dd class="text-xl font-semibold tabular-nums">{portfel.aktywne}</dd></div>
+			<div class="flex flex-col gap-0.5" title="Klienci aktywni (bez oznaczonych jako nieaktywni)"><dt class="text-xs text-ink-3">Klienci</dt><dd class="text-xl font-semibold tabular-nums">{klienciAktywni.toLocaleString('pl-PL')}</dd></div>
+			<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Przypis składki</dt><dd class="text-xl font-semibold tabular-nums">{fmtZl(portfel.przypis)}</dd></div>
+			<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Prowizja przypisana</dt><dd class="text-xl font-semibold tabular-nums">{fmtZl(portfel.prowizja)}</dd></div>
+			<div class="flex flex-col gap-0.5"><dt class="text-xs text-ink-3">Stawka prowizji</dt><dd class="text-xl font-semibold tabular-nums">{portfel.stawka != null ? fmtProc(portfel.stawka) : '—'}</dd></div>
+			<div class="flex flex-col gap-0.5" title="{renewedThisYear.length} z {expiredThisYear.length} polis wygasłych w {thisYear} ma kolejną polisę tego klienta w tym samym TU i rodzaju">
+				<dt class="text-xs text-ink-3">Skuteczność odnowień</dt>
+				<dd class="text-xl font-semibold tabular-nums">{renewalRate != null ? `${renewalRate}%` : '—'}</dd>
+			</div>
+		</dl>
+		<div class="flex flex-col gap-1.5">
+			<div class="flex justify-between gap-2 text-xs text-ink-3">
+				<span>Raty oznaczone jako opłacone</span>
+				<span class="tabular-nums">{portfel.ratyOplacone} z {portfel.ratyLacznie} · {fmtProc(portfel.procentWartosci)} wartości</span>
+			</div>
+			<div class="h-2 rounded-full bg-surface-2 overflow-hidden flex" role="img" aria-label="Opłacone {fmtProc(portfel.procentWartosci)} wartości rat">
+				<span class="bg-accent" style="width: {portfel.procentWartosci}%; min-width: {portfel.ratyOplacone ? '4px' : '0'}"></span>
+			</div>
+			{#if portfel.ratyLacznie > 0 && portfel.procentWartosci < 10}
+				<span class="flex items-start gap-1.5 text-xs text-ink-3">
+					<AlertTriangle size={14} class="text-warn shrink-0 mt-px" />
+					Mało rat oznaczonych jako opłacone — wpłaty najpewniej nie są odnotowywane.
+				</span>
+			{/if}
+		</div>
+	</section>
+</div>
 
 <!-- Dolne widgety — drag & drop -->
 {#if bottomDraggableItems.length > 0}
 <section class="mb-6">
 <SectionHeader title="Analityka i zestawienia" />
+<!-- Trzy kolumny: kafle „Liczba polis”, „Składka przypisana”, „Wzrost składki R/R” w jednym szeregu; wykres składki z rat na całą szerokość. -->
 <div
-	class="grid grid-cols-1 lg:grid-cols-2 gap-6"
+	class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+	data-testid="analityka"
 	use:dndzone={{ items: bottomDraggableItems, flipDurationMs: 200 }}
 	onconsider={handleBottomDnd}
 	onfinalize={finalizeBottomDnd}
 >
 
 	{#each bottomDraggableItems as widget (widget.id)}
-	<div class="{widget.id === 'premium_chart' ? 'lg:col-span-2' : ''} {configMode ? 'cursor-grab active:cursor-grabbing' : ''}">
+	<div class="min-w-0 {widget.id === 'premium_chart' ? 'md:col-span-2 lg:col-span-3' : ''} {configMode ? 'cursor-grab active:cursor-grabbing' : ''}">
 
 		{#if widget.id === 'policy_count'}
 		{@const pd = policiesByRodzaj()}
@@ -1023,7 +1029,7 @@
 						return `${SEARCH_COLORS[i % SEARCH_COLORS.length]} ${from}% ${acc}%`;
 					}).join(', ');
 				})()}
-			<div class="flex items-center gap-8">
+			<div class="flex items-center gap-5">
 				<div class="relative shrink-0 w-24 h-24 rounded-full" style="background: conic-gradient({stops})">
 					<div class="absolute inset-3 bg-white rounded-full flex items-center justify-center">
 						<span class="text-xs font-bold text-slate-700">{pd.total}</span>
@@ -1047,7 +1053,7 @@
 		<div class="bg-white border border-line rounded-xl shadow-sm p-5 h-full">
 			<h2 class="font-semibold text-slate-900 mb-1 text-sm">Składka przypisana — bieżący miesiąc</h2>
 			<p class="text-xs text-slate-400 mb-4">{thisMonth.replace('-', '.')}</p>
-			<div class="flex items-end gap-4">
+			<div class="flex flex-wrap items-end gap-x-4 gap-y-2">
 				<div>
 					<div class="text-3xl font-bold text-slate-900">{fmtPln(premiumThisMonth)} <span class="text-sm font-normal text-slate-400">PLN</span></div>
 					<div class="flex items-center gap-1 mt-1 text-sm">
