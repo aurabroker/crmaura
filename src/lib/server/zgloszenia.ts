@@ -23,6 +23,8 @@ export type WierszZgloszenia = {
 	ref?: string;
 	data?: string;
 	historyczne?: boolean;
+	/** Formularz BeautyPolisa wprost (klient od razu „Beauty”); bez pola decyduje arkusz „Zgloszenia_Polisa…” w ref. */
+	beauty?: boolean;
 };
 
 export type WynikPrzyjecia = {
@@ -62,7 +64,8 @@ export function wierszeZTresci(tresc: unknown): WierszZgloszenia[] | null {
 		przychod: tekst(w.przychod),
 		ref: tekst(w.ref),
 		data: tekst(w.data),
-		historyczne: w.historyczne === true || w.historyczne === 'true'
+		historyczne: w.historyczne === true || w.historyczne === 'true',
+		...(w.beauty == null || w.beauty === '' ? {} : { beauty: w.beauty === true || ['true', '1', 'tak'].includes(String(w.beauty).trim().toLowerCase()) })
 	}));
 }
 

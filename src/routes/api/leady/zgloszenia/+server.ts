@@ -4,7 +4,8 @@ import { czyKluczZgloszen, przyjmijZgloszenia, wierszeZTresci, ZlyKlucz } from '
 import type { RequestHandler } from './$types';
 
 // Zgłoszenia z formularza wysyłane przez Apps Script arkusza (nagłówek x-api-key = klucz z Ustawień → System).
-// Treść: obiekt albo tablica (do 200) { company, contact, email, phone, nip, ubezpieczenie, przychod, ref, data, historyczne }.
+// Treść: obiekt albo tablica (do 200) { company, contact, email, phone, nip, ubezpieczenie, przychod, ref, data, historyczne, beauty? }.
+// Klient ze zgłoszenia formularza BeautyPolisa (ref z arkusza „Zgloszenia_Polisa…” albo beauty: true) jest od razu „Beauty”.
 // Odpowiedź: liczniki i wynik każdego wiersza (nowe / ponowne / historyczne / duplikat / pominiete).
 const MAKS_BAJTOW = 512 * 1024;
 
