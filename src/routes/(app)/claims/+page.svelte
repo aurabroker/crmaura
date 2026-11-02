@@ -6,6 +6,8 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import { Search, Pencil, Copy, User, FileText, CircleDot } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
 	import { goto } from '$app/navigation';
@@ -39,6 +41,19 @@
 				(c.nr_szkody ?? '').toLowerCase().includes(search.toLowerCase())
 			)
 	);
+
+	// Eksport do Excela: szkody z listy (po filtrze statusu i wyszukiwaniu).
+	const nazwaTuWg = $derived(new Map(appState.insurers.map((i) => [i.id, i.skrot || i.nazwa])));
+	function arkuszSzkod(): Arkusz {
+		return {
+			nazwa: 'Szkody',
+			kolumny: [kol.tekst('Nr szkody'), kol.data('Data szkody'), 'Klient', kol.tekst('Nr polisy'), 'Towarzystwo', 'Opis', kol.zl('Wartość roszczenia'), 'Status', kol.data('Zgłoszono w CRM')],
+			wiersze: filtered.map((c) => [
+				c.nr_szkody, c.data_szkody, c.crm_clients?.nazwa, c.crm_policies?.nr_polisy, c.tu_id ? (nazwaTuWg.get(c.tu_id) ?? '') : '', c.opis_szkody,
+				c.wartosc_roszczenia, c.status, c.created_at ?? null
+			])
+		};
+	}
 
 	function openNew() {
 		editingClaim = null;
@@ -129,9 +144,12 @@
 		<h1 class="text-2xl font-semibold text-slate-900">Rejestr Szkód</h1>
 		<p class="text-sm text-slate-500 mt-1">Wszystkie zgłoszenia w portfelu</p>
 	</div>
-	<button onclick={openNew} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
-		+ Zgłoś Szkodę
-	</button>
+	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik="szkody" zakladka="Szkody" ile={filtered.length} arkusze={() => [arkuszSzkod()]} />
+		<button onclick={openNew} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors">
+			+ Zgłoś Szkodę
+		</button>
+	</div>
 </div>
 
 <div class="flex gap-3 mb-4">

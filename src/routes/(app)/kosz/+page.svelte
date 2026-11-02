@@ -8,6 +8,8 @@
 	import { onMount } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import { RotateCcw, Trash2 } from 'lucide-svelte';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
@@ -45,6 +47,16 @@
 		uzasadnienie: (p) => p.deletion_reason
 	}, { klucz: 'usunieto', kierunek: 'desc' }, 'kosz-polisy');
 	const wiersze = $derived(sort.sortuj(deletedPolicies));
+
+	// Eksport do Excela: usunięte polisy w kolejności tabeli.
+	function arkuszKosza(): Arkusz {
+		return {
+			nazwa: 'Usunięte polisy',
+			kolumny: [kol.tekst('Nr polisy'), 'Klient', 'Towarzystwo', 'Rodzaj', kol.data('Od'), kol.data('Do'), kol.zl('Składka przypisana'), kol.data('Usunięto'), 'Uzasadnienie'],
+			wiersze: wiersze.map((p) => [p.nr_polisy, p.crm_clients?.nazwa, p.crm_insurers?.skrot || p.crm_insurers?.nazwa || '', p.rodzaj, p.data_od, p.data_do,
+				p.skladka_przypisana, p.deleted_at, p.deletion_reason])
+		};
+	}
 
 	async function loadDeleted() {
 		loading = true;
@@ -123,6 +135,7 @@
 		</h1>
 		<p class="text-sm text-slate-500 mt-1">Polisy usunięte przez brokerów. Możesz przywrócić lub trwale usunąć.</p>
 	</div>
+	<EksportExcel plik="kosz-polisy" zakladka="Kosz" ile={wiersze.length} arkusze={() => [arkuszKosza()]} />
 </div>
 
 {#if loading}

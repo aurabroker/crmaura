@@ -11,6 +11,8 @@
 	import { logAudit } from '$lib/utils/audit';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import Badge from '$lib/components/Badge.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
@@ -59,6 +61,30 @@
 			})
 			.sort((a, b) => (a.nr_rejestracyjny ?? '').localeCompare(b.nr_rejestracyjny ?? '', 'pl'))
 	);
+
+	// Eksport do Excela: pojazdy z listy (po wyszukiwaniu i filtrze) i historia polis na tych pojazdach.
+	const nazwaTuPolisy = (p: Policy) => p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? '';
+	function arkuszePojazdow(): Arkusz[] {
+		return [
+			{
+				nazwa: 'Pojazdy',
+				kolumny: ['Nr rejestracyjny', 'Marka i model', kol.tekst('VIN'), kol.liczba('Rok produkcji'), 'Rodzaj pojazdu', kol.liczba('Pojemność cm³'), kol.liczba('Moc kW'),
+					kol.liczba('Ładowność kg'), 'Klient', kol.tekst('Czynna polisa'), 'Towarzystwo', kol.data('Ochrona do'), kol.zl('Składka')],
+				wiersze: pojazdy.map((v) => {
+					const p = aktywnaPolisa(v.id);
+					return [v.nr_rejestracyjny, v.marka_model, v.vin, v.rok_produkcji, v.rodzaj_pojazdu, v.pojemnosc_silnika, v.moc, v.ladownosc,
+						klientNazwa(v.klient_id), p?.nr_polisy ?? 'brak czynnej ochrony', p ? nazwaTuPolisy(p) : '', p?.data_do ?? null, p?.skladka_przypisana ?? null];
+				})
+			},
+			{
+				nazwa: 'Historia polis',
+				kolumny: ['Nr rejestracyjny', kol.tekst('Nr polisy'), 'Towarzystwo', 'Rodzaj', kol.data('Od'), kol.data('Do'), kol.zl('Składka'), 'Odnowienie'],
+				wiersze: pojazdy.flatMap((v) => polisyPojazdu(v.id).map((p) => [
+					v.nr_rejestracyjny, p.nr_polisy, nazwaTuPolisy(p), p.rodzaj, p.data_od, p.data_do, p.skladka_przypisana, p.renewal_of ? 'tak' : ''
+				]))
+			}
+		];
+	}
 
 	const bezOchrony = $derived(appState.vehicles.filter((v) => !aktywnaPolisa(v.id)).length);
 
@@ -198,12 +224,15 @@
 				{#if bezOchrony > 0}· <span class="text-amber-700">{bezOchrony} bez czynnej ochrony</span>{/if}
 			</p>
 		</div>
-		<button
-			onclick={nowy}
-			class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover"
-		>
-			<Plus size={15} /> Dodaj pojazd
-		</button>
+		<div class="flex flex-wrap gap-2">
+			<EksportExcel plik="pojazdy" zakladka="Pojazdy" ile={pojazdy.length} arkusze={arkuszePojazdow} />
+			<button
+				onclick={nowy}
+				class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover"
+			>
+				<Plus size={15} /> Dodaj pojazd
+			</button>
+		</div>
 	</div>
 
 	<div class="flex flex-wrap gap-3 mb-4">

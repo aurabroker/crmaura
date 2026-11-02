@@ -5,6 +5,8 @@
 	import { sb } from '$lib/supabase';
 	import { appState } from '$lib/stores/app.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import {
 		Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown, LayoutGrid, List, Eye, CircleDot, Copy,
 		Mail, Phone, X, UserRound, MousePointerClick, MailOpen, MailX, Repeat
@@ -144,6 +146,23 @@
 		return list;
 	});
 	const naStronie = $derived(filtered.slice(0, limit));
+	// Eksport do Excela: wszystkie leady po filtrach i etapie (w kanbanie bez filtra etapu), nie tylko ta strona listy.
+	function arkuszLeadow(): Arkusz {
+		const lista = view === 'kanban' ? poFiltrach : filtered;
+		return {
+			nazwa: 'Leady',
+			kolumny: ['Nazwa', kol.tekst('NIP'), 'E-mail', 'Telefon', 'Adres', 'Branża', kol.liczba('Zatrudnienie'), 'Etap', 'Zainteresowania', 'Źródło',
+				kol.data('Zgłoszenie'), kol.liczba('Liczba zgłoszeń'), kol.liczba('Maile kampanii'), kol.liczba('Otwarte'), kol.liczba('Kliknięte'), 'Opiekun', kol.data('Dodano'), 'Notatki'],
+			wiersze: lista.map((p) => {
+				const m = mailKlienta(p);
+				return [nazwaLeada(p), nipLeada(p), emailLeada(p), telefonLeada(p), p.adres, p.branza, getZatrudnienie(p), ETYKIETA_ETAPU[p.status] ?? p.status,
+					posortujZainteresowania(p.zainteresowania).map((z) => ETYKIETA_ZAINTERESOWANIA[z] ?? z).join(', '), p.zrodlo ? (ZRODLO_LEADA[p.zrodlo] ?? p.zrodlo) : '',
+					dataZgloszenia(p), p.liczba_zgloszen ?? null, m?.maile ?? null, m?.otwarte ?? null, m?.klikniete ?? null, p.crm_profiles?.imie_nazwisko ?? '',
+					p.created_at ?? null, p.notatki];
+			})
+		};
+	}
+
 
 	// Kolumny pokazujemy tylko, gdy coś w nich jest (Aura Expert: zainteresowania i maile; B2B: branża i zatrudnienie).
 	const maZainteresowania = $derived(prospects.some((p) => (p.zainteresowania ?? []).length > 0));
@@ -423,6 +442,7 @@
 			<button aria-pressed={view === 'tabela'} onclick={() => (view = 'tabela')} class="h-[30px] flex items-center gap-1.5 px-3 rounded-md text-[13px] {view === 'tabela' ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}"><List size={15} /> Tabela</button>
 			<button aria-pressed={view === 'kanban'} onclick={() => (view = 'kanban')} class="h-[30px] flex items-center gap-1.5 px-3 rounded-md text-[13px] {view === 'kanban' ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}"><LayoutGrid size={15} /> Kanban</button>
 		</div>
+		<EksportExcel plik="leady" zakladka="Leady" ile={view === 'kanban' ? poFiltrach.length : filtered.length} arkusze={() => [arkuszLeadow()]} />
 		<button onclick={openNew} class="h-9 px-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover transition-colors">Nowy lead</button>
 	</div>
 </div>

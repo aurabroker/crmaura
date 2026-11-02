@@ -10,6 +10,8 @@
 	import { nazwaRodzaju } from '$lib/statusPolisy';
 	import type { Policy } from '$lib/types/database';
 	import Kolumny from '$lib/components/wykresy/Kolumny.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import {
 		KOLOR, PRESETY, dzien, grupuj, koniecMiesiaca, liczba, liczonaPolisa, mediana, miesiacKrotko, miesiacPelny, miesiacRokWczesniej,
 		miesiecznie, okresZPresetu, proc, rokWczesniej, stanRat, sumuj, wOkresie, zero, zl, zmiana, type Kolumna, type PresetOkresu
@@ -179,6 +181,43 @@
 			(naj && zeStawka.length > 1 ? ` Najwyższa stawka prowizji: ${naj.nazwa} — ${proc((naj.prowizja / naj.przypis) * 100)}.` : '');
 	});
 
+	// Eksport do Excela: polisy z okresu i filtrów (to, z czego liczone są statystyki) oraz zestawienia:
+	// miesiące, towarzystwa, rodzaje, opiekunowie i postęp odnowień wg miesiąca końca ochrony.
+	function arkuszeStatystyk(): Arkusz[] {
+		const sumyKol = [kol.zl('Składka przypisana'), kol.zl('Prowizja przypisana'), kol.liczba('Polisy')];
+		const opiekunPolisy = (p: Policy) => opiekunWg.get(opiekunKlienta.get(p.klient_id) ?? '') ?? 'bez opiekuna';
+		const zestawienie = (nazwa: string, naglowek: string, klucz: (p: Policy) => string | null | undefined, etykieta: (k: string) => string = (k) => k): Arkusz => ({
+			nazwa,
+			kolumny: [naglowek, ...sumyKol, kol.liczba('Klienci'), kol.proc('Udział w przypisie %'), kol.proc('Stawka prowizji %')],
+			wiersze: [...grupuj(polisy, klucz)].sort((a, b) => b[1].przypis - a[1].przypis).map(([k, x]) => [
+				etykieta(k), x.przypis, x.prowizja, x.polisy, x.klienci.size, sumy.przypis ? (x.przypis / sumy.przypis) * 100 : null, x.przypis ? (x.prowizja / x.przypis) * 100 : null
+			])
+		});
+		return [
+			{
+				nazwa: 'Polisy w okresie',
+				kolumny: [kol.tekst('Nr polisy'), 'Klient', 'Towarzystwo', 'Rodzaj', kol.data('Od'), kol.data('Do'), kol.zl('Składka przypisana'), kol.zl('Prowizja przypisana'), kol.proc('Prowizja %'), 'Opiekun'],
+				wiersze: polisy.map((p) => [p.nr_polisy, p.crm_clients?.nazwa, nazwaTuWg.get(p.tu_id ?? '') ?? '', nazwaRodzaju(p.rodzaj), p.data_od, p.data_do,
+					p.skladka_przypisana, p.prowizja_przypisana, p.prowizja_pct, opiekunPolisy(p)])
+			},
+			{
+				nazwa: 'Miesięcznie',
+				kolumny: ['Miesiąc', ...sumyKol],
+				wiersze: miesieczne.map(({ ym, s: x }) => [ym, x.przypis, x.prowizja, x.polisy])
+			},
+			zestawienie('Wg towarzystw', 'Towarzystwo', (p) => p.tu_id, (id) => nazwaTuWg.get(id) ?? '—'),
+			zestawienie('Wg rodzajów', 'Rodzaj', (p) => p.rodzaj, (r) => nazwaRodzaju(r)),
+			zestawienie('Wg opiekunów', 'Opiekun', opiekunPolisy),
+			{
+				nazwa: 'Postęp odnowień',
+				kolumny: ['Miesiąc końca ochrony', kol.liczba('Kończące się'), kol.liczba('Odnowione'), kol.liczba('W toku'), kol.liczba('Zakończone decyzją'), kol.liczba('Utracone'),
+					kol.proc('Odnowione %'), kol.zl('Składka kończących'), kol.zl('Składka odnowionych'), kol.zl('Składka utracona'), kol.proc('Odnowione % składki')],
+				wiersze: postep.map((m) => [m.ym, m.konczace.polisy, m.odnowiona.polisy, m.w_toku.polisy, m.zakonczona.polisy, m.utracona.polisy, m.procent,
+					m.konczace.skladka, m.odnowiona.skladka, m.utracona.skladka, m.procentSkladki])
+			}
+		];
+	}
+
 	// ── Rodzaje: udział w liczbie polis a udział w przypisie ──
 	const wgRodzaju = $derived(
 		[...grupuj(polisy, (p) => p.rodzaj)]
@@ -290,6 +329,7 @@
 		<p class="text-sm text-ink-3 mt-0.5">Polisy według daty początku ochrony · stan na {dzien(dzis)}</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik="statystyki" zakladka="Statystyki" ile={polisy.length} arkusze={arkuszeStatystyk} />
 		<a href="/porownania" class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2"><GitCompare size={16} class="text-ink-3" /> Porównaj</a>
 		<a href="/raporty" class="h-9 flex items-center gap-1.5 px-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover"><FileChartColumn size={16} /> Raporty</a>
 	</div>

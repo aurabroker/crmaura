@@ -4,6 +4,8 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import type { CrmTask } from '$lib/types/database';
 	import TaskModal from '$lib/components/TaskModal.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import { CalendarDays, List, Plus, CheckCircle2, Circle, Clock, AlertCircle, Search, Pencil, Trash2, History, Sun, Moon, Target, User, ExternalLink, FileText } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -56,6 +58,31 @@
 				(t.crm_clients?.nazwa ?? '').toLowerCase().includes(search.toLowerCase())
 			)
 	);
+
+	// Eksport do Excela: w widoku Lista zadania po filtrach, w kalendarzu wszystkie; do tego rejestr zmian statusów.
+	const STATUS_ZADANIA: Record<string, string> = { otwarte: 'Otwarte', w_toku: 'W toku', zakonczone: 'Zakończone', anulowane: 'Anulowane' };
+	const zadaniaDoEksportu = $derived(tab === 'list' ? filteredTasks : appState.tasks);
+	function arkuszeZadan(): Arkusz[] {
+		const osobaWg = new Map(appState.brokers.map((b) => [b.id, b.imie_nazwisko || b.email]));
+		const arkusze: Arkusz[] = [{
+			nazwa: 'Zadania',
+			kolumny: ['Tytuł', 'Rodzaj', 'Status', 'Priorytet', kol.data('Termin'), 'Godzina', 'Przypisane do', 'Klient', 'Lead', kol.tekst('Polisa'), kol.liczba('Postęp %'),
+				'Przeterminowane', kol.data('Utworzono'), kol.data('Zakończono'), 'Opis'],
+			wiersze: [...zadaniaDoEksportu].sort((a, b) => (a.termin ?? '9999').localeCompare(b.termin ?? '9999')).map((t) => [
+				t.tytul, (t.typy ?? []).map((x) => TYP_ZADANIA_ETYKIETA[x] ?? x).join(', '), STATUS_ZADANIA[t.status] ?? t.status, t.priorytet, t.termin, t.godzina ?? '',
+				t.assigned_profile?.imie_nazwisko || t.assigned_profile?.email || (t.assigned_to ? (osobaWg.get(t.assigned_to) ?? '') : ''),
+				t.crm_clients?.nazwa, t.crm_prospects?.nazwa, t.crm_policies?.nr_polisy, t.postep_pct ?? null, isOverdue(t), t.created_at ?? null, t.zakonczone_at ?? null, t.opis
+			])
+		}];
+		if (history.length) {
+			arkusze.push({
+				nazwa: 'Rejestr zmian',
+				kolumny: [kol.data('Kiedy'), 'Zadanie', 'Zmiana', 'Status przed', 'Status po', 'Kto'],
+				wiersze: history.map((h) => [h.created_at, h.tytul_zadania, h.zmiana, STATUS_ZADANIA[h.stary_status ?? ''] ?? h.stary_status, STATUS_ZADANIA[h.nowy_status ?? ''] ?? h.nowy_status, h.crm_profiles?.imie_nazwisko ?? ''])
+			});
+		}
+		return arkusze;
+	}
 
 	// ---- KPI ----
 	const openCount = $derived(appState.tasks.filter(t => t.status === 'otwarte' || t.status === 'w_toku').length);
@@ -344,6 +371,7 @@
 				</button>
 			{/each}
 		</div>
+		<EksportExcel plik="zadania" zakladka="Zadania" ile={zadaniaDoEksportu.length + history.length} arkusze={arkuszeZadan} />
 		<button onclick={() => openNew()} class="bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors flex items-center gap-2">
 			<Plus size={15} /> Nowe zadanie
 		</button>

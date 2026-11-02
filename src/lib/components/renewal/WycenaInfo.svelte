@@ -1,12 +1,14 @@
 <script lang="ts">
-	import { formatZl, type Wycena } from '$lib/renewals/program';
+	import { ADNOTACJA_OCENY_RYZYKA, formatZl, type Wycena } from '$lib/renewals/program';
 
 	// Orientacyjna składka po zmianach (wycenaWniosku). null = składka bez zmian.
+	// indywidualna: certyfikat zawarty indywidualnie — proponowana składka może się zmienić po ocenie ryzyka.
 	interface Props {
 		wycena: Wycena | null;
 		skladkaObecna: number | null;
+		indywidualna?: boolean;
 	}
-	let { wycena, skladkaObecna }: Props = $props();
+	let { wycena, skladkaObecna, indywidualna = false }: Props = $props();
 </script>
 
 <div class="rounded-xl border border-[#2a3b69]/20 bg-[#2a3b69]/5 px-4 py-3" aria-live="polite" data-testid="wycena">
@@ -18,6 +20,9 @@
 				<span class="block text-sm text-slate-600" data-testid="wycena-obecna">Obecnie: {formatZl(skladkaObecna)} rocznie.</span>
 			{/if}
 		</p>
+		{#if indywidualna}
+			<p class="mt-1 text-sm font-medium text-amber-800" data-testid="wycena-adnotacja">Proponowana składka {ADNOTACJA_OCENY_RYZYKA}.</p>
+		{/if}
 		<p class="mt-1 text-sm text-slate-600">Ostateczną składkę potwierdzi doradca.</p>
 	{:else if wycena?.rodzaj === 'indywidualna'}
 		<p class="text-slate-900"><strong>Składka do indywidualnej wyceny</strong> — {wycena.powod}.</p>
@@ -26,5 +31,8 @@
 		<p class="text-slate-900">
 			<strong>Składka bez zmian</strong>{#if skladkaObecna != null}: {formatZl(skladkaObecna)} rocznie{/if}.
 		</p>
+		{#if indywidualna && skladkaObecna != null}
+			<p class="mt-1 text-sm font-medium text-amber-800" data-testid="wycena-adnotacja">Proponowana składka {ADNOTACJA_OCENY_RYZYKA}.</p>
+		{/if}
 	{/if}
 </div>

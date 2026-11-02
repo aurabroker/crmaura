@@ -977,7 +977,7 @@
 				const kto = id ? appState.brokers.find(b => b.id === id) : null;
 				return id ? `Opiekun klienta: ${kto?.imie_nazwisko || kto?.email || 'zmieniony'}` : 'Usunięto opiekuna klienta';
 			}
-			case 'clients_exported': return 'Dane klienta wyeksportowane do CSV';
+			case 'clients_exported': return w.details?.format === 'xlsx' ? 'Dane klienta wyeksportowane do Excela' : 'Dane klienta wyeksportowane do CSV';
 			case 'client_gus_enriched': {
 				const d = w.details ?? {};
 				const zmiany = Array.isArray(d.zmiany) ? (d.zmiany as string[]) : [];
