@@ -618,13 +618,21 @@ export function sumaZeSkladki(skladka: number | null): Suma | null {
 	return sumy.size === 1 ? [...sumy][0] : null;
 }
 
-// Certyfikat zawarty indywidualnie (po ocenie ryzyka przez ubezpieczyciela, np. zabiegi z ankietą albo
-// więcej niż 8 osób): składka nie pasuje do żadnej stawki z tabeli programu (z ochroną prawną lub bez).
-// Przy odnowieniu jego proponowana składka może się zmienić, więc wniosek pokazuje ADNOTACJA_OCENY_RYZYKA.
-export function skladkaIndywidualna(skladka: number | null): boolean {
-	if (skladka == null) return false;
-	const k = grosze(skladka);
-	return !skladkiTabeli(null).some((x) => grosze(x.kwota) === k || grosze(x.kwota + OCHRONA_PRAWNA_SKLADKA) === k);
+// Polisa OC zawarta indywidualnie, po ocenie ryzyka (np. zabiegi spoza listy programu), a nie certyfikat
+// z Programu. ERGO Hestia wystawia ją w innej serii numerów (436…, OWU AB-OCZB) niż certyfikaty programu
+// (472…, OWU AB-OCZL), a import PDF ma dla niej osobny szablon „OC zawodowe — polisa indywidualna (po ocenie
+// ryzyka)”. Rozstrzyga znacznik importu (OWU, produkt), a bez niego (polisy dodane ręcznie albo przed
+// importem PDF) — seria numeru. Przy odnowieniu jej proponowana składka może się zmienić: ADNOTACJA_OCENY_RYZYKA.
+export const SERIA_POLIS_INDYWIDUALNYCH = '436';
+export function polisaIndywidualna(p: {
+	nr_polisy?: string | null;
+	dane_importu?: { owu?: string | null; zrodlo?: { produkt?: string } | null } | null;
+}): boolean {
+	const owu = (p.dane_importu?.owu ?? '').toUpperCase();
+	if (owu.startsWith('AB-OCZB')) return true;
+	if (owu.startsWith('AB-OCZL')) return false;
+	if (/polisa indywidualna/i.test(p.dane_importu?.zrodlo?.produkt ?? '')) return true;
+	return (p.nr_polisy ?? '').replace(/\s+/g, '').startsWith(SERIA_POLIS_INDYWIDUALNYCH);
 }
 export const ADNOTACJA_OCENY_RYZYKA = 'może ulec zmianie po ocenie ryzyka';
 
