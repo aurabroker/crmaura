@@ -44,9 +44,9 @@ export type WidokOdnowienia =
 			program: string | null;
 			suma: number | null;
 			skladka: number | null;
-			// Certyfikat zawarty indywidualnie (składka spoza taryfy programu): przy proponowanej składce
-			// adnotacja „może ulec zmianie po ocenie ryzyka” (program.ts: skladkaIndywidualna).
-			skladka_indywidualna: boolean;
+			// Polisa zawarta indywidualnie po ocenie ryzyka (seria 436…, nie certyfikat programu 472…): przy
+			// proponowanej składce adnotacja „może ulec zmianie po ocenie ryzyka” (program.ts: polisaIndywidualna).
+			polisa_indywidualna: boolean;
 			okres_obecny: { od: string | null; do: string | null };
 			okres_nowy: { od: string; do: string };
 			wazny_do: string;

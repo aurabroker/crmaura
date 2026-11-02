@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
 	ZABIEGI_ANKIETA,
-	skladkaIndywidualna,
+	polisaIndywidualna,
 	waliduj_wniosek,
 	wycenaNowej,
 	wycenaWniosku,
@@ -93,10 +93,13 @@ test('dokumenty tylko przy zabiegach z ankiety', () => {
 test('pierwsza polisa: składka z rodzajów, bez zmian', () =>
 	assert.equal(kw(wycenaNowej(wnNowy({ wyzsza_suma: 200000, rodzaje: ['kosmetologiczny'], osoby: '1-5' }), null)), 790));
 
-test('składka spoza taryfy programu = certyfikat zawarty indywidualnie', () => {
-	// Stawki z tabeli, z dopłatą 6–8 osób i z ochroną prawną — taryfa.
-	for (const k of [400, 500, 790, 1250, 987.5, 492, 882, 1342, 1654.5]) assert.equal(skladkaIndywidualna(k), false, String(k));
-	// Wycena ubezpieczyciela (ankieta, więcej osób) — spoza taryfy.
-	for (const k of [1606, 3232, 1462.5, 2999]) assert.equal(skladkaIndywidualna(k), true, String(k));
-	assert.equal(skladkaIndywidualna(null), false);
+test('polisa indywidualna: znacznik importu, a bez niego seria numeru 436 (certyfikaty programu: 472)', () => {
+	assert.equal(polisaIndywidualna({ nr_polisy: '436000416447' }), true);
+	assert.equal(polisaIndywidualna({ nr_polisy: '436000413518' }), true); // składka 950 zł wygląda jak taryfa, ale to polisa indywidualna
+	assert.equal(polisaIndywidualna({ nr_polisy: '472000154126' }), false); // certyfikat ze składką 55,89 zł spoza taryfy
+	assert.equal(polisaIndywidualna({ nr_polisy: '472000165393', dane_importu: { owu: 'AB-OCZL-01/25' } }), false);
+	assert.equal(polisaIndywidualna({ nr_polisy: 'X1', dane_importu: { owu: 'AB-OCZB-01/25' } }), true);
+	assert.equal(polisaIndywidualna({ nr_polisy: 'X1', dane_importu: { zrodlo: { produkt: 'OC zawodowe — polisa indywidualna (po ocenie ryzyka)' } } }), true);
+	assert.equal(polisaIndywidualna({ nr_polisy: '436000450758', dane_importu: { owu: 'AB-OCZL-01/25' } }), false); // OWU rozstrzyga przed numerem
+	assert.equal(polisaIndywidualna({ nr_polisy: null }), false);
 });

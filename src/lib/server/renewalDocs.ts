@@ -29,7 +29,7 @@ import {
 	kategoriaZRodzajow,
 	nazwaUbezpieczyciela,
 	opisZalacznika,
-	skladkaIndywidualna,
+	polisaIndywidualna,
 	skladkaProgramu,
 	ADNOTACJA_OCENY_RYZYKA,
 	type Ankieta,
@@ -108,7 +108,7 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 		? `Przypomnienie: odnowienie ubezpieczenia OC — certyfikat ${r.nr_polisy ?? ''} kończy się ${koniec}`
 		: `Odnowienie ubezpieczenia OC gabinetu — certyfikat ${r.nr_polisy ?? ''} kończy się ${koniec}`;
 	const skladka = r.skladka != null
-		? formatZl(Number(r.skladka)) + (skladkaIndywidualna(Number(r.skladka)) ? `, ${ADNOTACJA_OCENY_RYZYKA}` : '')
+		? formatZl(Number(r.skladka)) + (polisaIndywidualna(r) ? `, ${ADNOTACJA_OCENY_RYZYKA}` : '')
 		: null;
 	const html = ramka(przypomnienie ? 'Przypomnienie o odnowieniu' : 'Odnowienie ubezpieczenia OC', `
     <p style="margin:0 0 14px;">Dzień dobry,</p>
@@ -285,11 +285,11 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null, ankieta: Pick<Anki
 const rodzajNazwa = (k: string) => RODZAJE_GABINETU.find((r) => r.key === k)?.nazwa ?? k;
 const osobyNazwa = (k: string) => LICZBA_OSOB.find((o) => o.key === k)?.nazwa ?? k;
 
-// Certyfikat zawarty indywidualnie (składka spoza taryfy programu): proponowana składka z adnotacją.
-export function opisSkladki(r: Pick<RenewalRow, 'decyzja' | 'skladka_nowa'> & Partial<Pick<RenewalRow, 'skladka'>>): string {
+// Polisa zawarta indywidualnie (seria 436…, nie certyfikat programu): proponowana składka z adnotacją.
+export function opisSkladki(r: Pick<RenewalRow, 'decyzja' | 'skladka_nowa'> & Partial<Pick<RenewalRow, 'nr_polisy'>>): string {
 	if (r.decyzja === 'nie') return '—';
 	if (r.skladka_nowa != null) {
-		const indywidualna = r.decyzja !== 'nowa' && skladkaIndywidualna(r.skladka != null ? Number(r.skladka) : null);
+		const indywidualna = r.decyzja !== 'nowa' && polisaIndywidualna(r);
 		const uwagi = [
 			...(r.decyzja === 'zmiany' || r.decyzja === 'nowa' ? ['orientacyjnie wg programu, potwierdzi doradca'] : []),
 			...(indywidualna ? [ADNOTACJA_OCENY_RYZYKA] : [])
