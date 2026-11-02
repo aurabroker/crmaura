@@ -9,6 +9,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Badge from '$lib/components/Badge.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
+	import { STATUS_ODNOWIENIA_ETYKIETA, etykietaDecyzji } from '$lib/renewals/staffApi';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
 	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, DNI_KONCA_WKROTCE, adresWniosku, dniDoKoncaOchrony, etapWniosku, koniecOchronyWkrotce, otworzPdfApk, podsumujWnioski, polisyKlientow, rangaWniosku, sortujWnioski, wniosekDoWystawienia, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wniosekZamkniety, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
 	import { dateDiffDays, fmtDzien, fmtTermin, odmiana, todayStr } from '$lib/utils';
@@ -308,6 +311,35 @@
 			})
 	);
 
+	// Eksport do Excela: widoczna lista — wnioski klientów (po filtrze etapu i wyszukiwaniu) albo formularze APK.
+	function opisWnioskuExcel(w: WniosekOdnowienia): string {
+		if (wniosekTestowy(w)) return 'wniosek testowy';
+		if (doWystawienia(w)) return 'do wystawienia';
+		if (w.status === 'zlozony' && w.decyzja) return etykietaDecyzji(w.decyzja, w.rodzaj);
+		return STATUS_ODNOWIENIA_ETYKIETA[w.status] ?? w.status;
+	}
+	function arkuszeApk(): Arkusz[] {
+		if (widok === 'wnioski') {
+			return [{
+				nazwa: 'Wnioski klientów',
+				kolumny: ['Rodzaj', kol.tekst('Nr certyfikatu'), 'Klient', 'E-mail', kol.data('Koniec ochrony'), 'Etap', kol.data('Wysłano'), kol.data('Otwarto'),
+					kol.data('APK'), 'Odmowa APK', kol.data('Złożono'), kol.data('Przypomnienie'), kol.data('Link ważny do'), 'Załatwiony'],
+				wiersze: wnioskiWidoczne.map((w) => [
+					wniosekNowy(w) ? 'pierwsza polisa' : 'odnowienie', w.nr_polisy, nazwaKlienta(w), w.email, w.okres_do, opisWnioskuExcel(w),
+					w.wyslano_at, w.otwarto_at, w.apk_at, w.apk_odmowa, w.zlozono_at, w.przypomniano_at, w.wazny_do, zamkniety(w)
+				])
+			}];
+		}
+		return [{
+			nazwa: 'Formularze APK',
+			kolumny: [kol.tekst('Nr referencyjny'), 'Klient', 'Doradca', kol.data('Data formularza'), 'Tryb', 'Status', kol.data('Złożono'), 'Powód rezygnacji', 'PDF zapisany'],
+			wiersze: filtered.map((f) => [
+				f.ref_number, f.crm_clients?.nazwa ?? f.client_name, f.advisor_name, f.form_date, f.mode === 'client' ? 'klient wypełnia sam' : 'doradca z klientem',
+				statusLabel(f), f.submitted_at, f.client_declined_reason, !!f.pdf_url
+			])
+		}];
+	}
+
 	const statusVariant = (f: ApkForm) => f.client_declined ? 'warning' : f.status === 'submitted' ? 'success' : 'neutral';
 	const statusLabel = (f: ApkForm) => f.client_declined ? 'Klient zrezygnował' : f.status === 'submitted' ? 'Złożony' : 'Szkic';
 
@@ -326,12 +358,16 @@
 				: 'Formularze APK zgodne z KNF art. 8 UDU'}
 		</p>
 	</div>
-	{#if widok === 'formularze'}
-		<button onclick={() => showNew = true}
-			class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover">
-			<Plus size={15} /> Nowy APK
-		</button>
-	{/if}
+	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik={widok === 'wnioski' ? 'apk-wnioski' : 'apk-formularze'} zakladka={widok === 'wnioski' ? 'APK: wnioski klientów' : 'APK: formularze'}
+			ile={widok === 'wnioski' ? wnioskiWidoczne.length : filtered.length} arkusze={arkuszeApk} />
+		{#if widok === 'formularze'}
+			<button onclick={() => showNew = true}
+				class="flex items-center gap-2 bg-accent text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover">
+				<Plus size={15} /> Nowy APK
+			</button>
+		{/if}
+	</div>
 </div>
 
 <!-- Widoki -->

@@ -8,8 +8,10 @@
 	import type { Snippet } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import SortTh from '$lib/components/SortTh.svelte';
-	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Download, Database, UserX, UserCheck } from 'lucide-svelte';
+	import { Search, Pencil, Building2, User, Eye, ExternalLink, FileText, Copy, Mail, Phone, ChevronDown, ChevronLeft, ChevronRight, X, Database, UserX, UserCheck } from 'lucide-svelte';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
@@ -364,26 +366,25 @@
 		};
 	}
 
-	function eksportujCsv() {
-		const wybrane = posortowane.filter(w => selected.has(w.c.id));
-		const pole = (v: string | number | null | undefined) => {
-			const s = v == null ? '' : String(v);
-			return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+	// Eksport do Excela: cała lista po filtrach (nagłówek) albo zaznaczeni klienci (pasek zaznaczenia).
+	function arkuszKlientow(lista: Wiersz[]): Arkusz {
+		return {
+			nazwa: 'Klienci',
+			kolumny: ['Nazwa', 'Nazwa skrócona', 'Typ', kol.tekst('NIP'), kol.tekst('PESEL'), kol.tekst('REGON'), kol.tekst('KRS'), 'Adres', 'E-mail', 'Telefon',
+				kol.liczba('Aktywne polisy'), kol.zl('Składka aktywnych polis'), kol.data('Najbliższe odnowienie'), 'Opiekun', 'Zgoda RODO', 'Beauty', 'Aktywny', kol.data('Dodano')],
+			wiersze: lista.map(({ c, p, opiekun }) => [
+				c.nazwa, c.nazwa_skrocona, c.typ, c.nip, c.pesel, c.regon, c.krs, c.ulica, c.email, c.telefon,
+				p?.polisy ?? 0, p ? Math.round(p.skladka * 100) / 100 : 0, p?.odnowienie ?? null, opiekun, !!c.rodo_zgoda,
+				c.beauty_id != null ? `import BEAUTY ${c.beauty_id}` : c.segment_beauty ? 'tak' : '', !klientNieaktywny(c), c.created_at?.slice(0, 10) ?? null
+			])
 		};
-		const naglowek = ['Nazwa', 'Nazwa skrócona', 'Typ', 'NIP', 'PESEL', 'REGON', 'KRS', 'Adres', 'E-mail', 'Telefon', 'Aktywne polisy', 'Składka aktywnych polis', 'Najbliższe odnowienie', 'Opiekun', 'Zgoda RODO'];
-		const linie = wybrane.map(({ c, p, opiekun }) => [
-			c.nazwa, c.nazwa_skrocona, c.typ, c.nip, c.pesel, c.regon, c.krs, c.ulica, c.email, c.telefon,
-			p?.polisy ?? 0, fmtPln(p?.skladka ?? 0), p?.odnowienie ?? '', opiekun ?? '', c.rodo_zgoda ? 'tak' : 'nie'
-		].map(pole).join(';'));
-		// BOM — Excel rozpozna polskie znaki.
-		const blob = new Blob(['﻿' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
-		const a = document.createElement('a');
-		a.href = URL.createObjectURL(blob);
-		a.download = `klienci-${dzis}.csv`;
-		a.click();
-		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-		void logAudit('clients_exported', 'client', null, odmiana(wybrane.length, 'klient', 'klientów', 'klientów'), { ids: wybrane.map(w => w.c.id) });
-		toast = { tekst: `Wyeksportowano: ${odmiana(wybrane.length, 'klient', 'klientów', 'klientów')}` };
+	}
+	const wybraniKlienci = () => posortowane.filter(w => selected.has(w.c.id));
+	// Zaznaczeni klienci trafiają do historii ich kart (clients_exported z listą ids).
+	function arkuszeZaznaczonych(): Arkusz[] {
+		const wybrane = wybraniKlienci();
+		void logAudit('clients_exported', 'client', null, odmiana(wybrane.length, 'klient', 'klientów', 'klientów'), { ids: wybrane.map(w => w.c.id), format: 'xlsx' });
+		return [arkuszKlientow(wybrane)];
 	}
 
 	function openNew(typ: 'firma' | 'osoba') {
@@ -458,6 +459,7 @@
 				<Database size={16} class="text-ink-3" /> Uzupełnij z GUS
 			</button>
 		{/if}
+		<EksportExcel plik="klienci" zakladka="Klienci" ile={posortowane.length} arkusze={() => [arkuszKlientow(posortowane)]} />
 		<button onclick={() => (showDuplicates = true)} class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
 			Duplikaty
 			{#if visibleDuplicateGroups.length > 0}
@@ -580,7 +582,7 @@
 					<option value="-">— bez opiekuna —</option>
 				</select>
 			</label>
-			<button onclick={eksportujCsv} class="h-7 flex items-center gap-1.5 px-2.5 border border-blue-300 rounded-lg bg-white font-medium hover:bg-blue-50"><Download size={14} /> Eksportuj CSV</button>
+			<EksportExcel plik="klienci-zaznaczeni" zakladka="Klienci (zaznaczeni)" arkusze={arkuszeZaznaczonych} etykieta="Eksportuj do Excela" maly />
 			<button onclick={() => (selected = new Set())} class="ml-auto h-7 px-2 font-semibold hover:underline">Odznacz</button>
 		</div>
 	{/if}

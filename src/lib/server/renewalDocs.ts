@@ -29,7 +29,9 @@ import {
 	kategoriaZRodzajow,
 	nazwaUbezpieczyciela,
 	opisZalacznika,
+	skladkaIndywidualna,
 	skladkaProgramu,
+	ADNOTACJA_OCENY_RYZYKA,
 	type Ankieta,
 	type Apk,
 	type RodzajWniosku,
@@ -105,7 +107,9 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 	const temat = przypomnienie
 		? `Przypomnienie: odnowienie ubezpieczenia OC — certyfikat ${r.nr_polisy ?? ''} kończy się ${koniec}`
 		: `Odnowienie ubezpieczenia OC gabinetu — certyfikat ${r.nr_polisy ?? ''} kończy się ${koniec}`;
-	const skladka = r.skladka != null ? formatZl(Number(r.skladka)) : null;
+	const skladka = r.skladka != null
+		? formatZl(Number(r.skladka)) + (skladkaIndywidualna(Number(r.skladka)) ? `, ${ADNOTACJA_OCENY_RYZYKA}` : '')
+		: null;
 	const html = ramka(przypomnienie ? 'Przypomnienie o odnowieniu' : 'Odnowienie ubezpieczenia OC', `
     <p style="margin:0 0 14px;">Dzień dobry,</p>
     <p style="margin:0 0 14px;">${przypomnienie ? 'przypominamy, że ' : ''}ochrona OC w programie Beauty❤️Polisa (STU Ergo Hestia SA) dla <strong>${esc(r.klient_nazwa)}</strong>
@@ -281,9 +285,17 @@ export function opisZmian(w: Wniosek | null, apk: Apk | null, ankieta: Pick<Anki
 const rodzajNazwa = (k: string) => RODZAJE_GABINETU.find((r) => r.key === k)?.nazwa ?? k;
 const osobyNazwa = (k: string) => LICZBA_OSOB.find((o) => o.key === k)?.nazwa ?? k;
 
-export function opisSkladki(r: Pick<RenewalRow, 'decyzja' | 'skladka_nowa'>): string {
+// Certyfikat zawarty indywidualnie (składka spoza taryfy programu): proponowana składka z adnotacją.
+export function opisSkladki(r: Pick<RenewalRow, 'decyzja' | 'skladka_nowa'> & Partial<Pick<RenewalRow, 'skladka'>>): string {
 	if (r.decyzja === 'nie') return '—';
-	if (r.skladka_nowa != null) return formatZl(Number(r.skladka_nowa)) + (r.decyzja === 'zmiany' || r.decyzja === 'nowa' ? ' (orientacyjnie wg programu, potwierdzi doradca)' : '');
+	if (r.skladka_nowa != null) {
+		const indywidualna = r.decyzja !== 'nowa' && skladkaIndywidualna(r.skladka != null ? Number(r.skladka) : null);
+		const uwagi = [
+			...(r.decyzja === 'zmiany' || r.decyzja === 'nowa' ? ['orientacyjnie wg programu, potwierdzi doradca'] : []),
+			...(indywidualna ? [ADNOTACJA_OCENY_RYZYKA] : [])
+		];
+		return formatZl(Number(r.skladka_nowa)) + (uwagi.length ? ` (${uwagi.join('; ')})` : '');
+	}
 	return 'do indywidualnej wyceny przez doradcę';
 }
 

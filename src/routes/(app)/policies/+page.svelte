@@ -10,9 +10,11 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import PolicyForm from '$lib/components/PolicyForm.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import {
 		Search, Pencil, FilePlus2, Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus,
-		ChevronDown, ChevronLeft, ChevronRight, X, Download, Upload, FileStack, FileText
+		ChevronDown, ChevronLeft, ChevronRight, X, Upload, FileStack, FileText
 	} from 'lucide-svelte';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy, polisaAktywna, polisaWygasla, statusPolisy } from '$lib/statusPolisy';
@@ -183,25 +185,25 @@
 		if (wszystkieNaStronie) naStronie.forEach(p => n.delete(p.id)); else naStronie.forEach(p => n.add(p.id));
 		selected = n;
 	}
-	function eksportujCsv() {
-		const wybrane = wiersze.filter(p => selected.has(p.id));
-		const pole = (v: string | number | null | undefined) => {
-			const t = v == null ? '' : String(v);
-			return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+	// Eksport do Excela: cała lista po filtrach (nagłówek) albo zaznaczone polisy (pasek zaznaczenia).
+	function arkuszPolis(lista: typeof wiersze): Arkusz {
+		const nipWg = new Map(appState.clients.map(c => [c.id, c.nip]));
+		return {
+			nazwa: trybUg ? 'Umowy generalne' : 'Polisy',
+			kolumny: [kol.tekst('Nr polisy'), 'Typ umowy', kol.tekst('Umowa generalna'), 'Klient', kol.tekst('NIP klienta'), 'Towarzystwo', 'Rodzaj', 'Przedmiot',
+				kol.data('Od'), kol.data('Do'), kol.zl('Składka przypisana'), kol.zl('Składka zainkasowana'), kol.proc('Prowizja %'), kol.zl('Prowizja przypisana'),
+				'Opiekun', 'Status'],
+			wiersze: lista.map(p => [
+				p.nr_polisy, p.typ_umowy, p.parent_id ? parentNr(p.parent_id) : '', p.crm_clients?.nazwa, nipWg.get(p.klient_id) ?? '', nazwaTu(p), nazwaRodzaju(p.rodzaj), opisPrzedmiotu(p.przedmiot),
+				p.data_od, p.data_do, p.skladka_przypisana, p.skladka_zainkasowana, p.prowizja_pct, p.prowizja_przypisana,
+				opiekunWg.get(opiekunKlienta.get(p.klient_id) ?? '') ?? '', status(p).tekst
+			])
 		};
-		const naglowek = ['Nr polisy', 'Typ umowy', 'Umowa generalna', 'Klient', 'Towarzystwo', 'Rodzaj', 'Przedmiot', 'Od', 'Do', 'Składka przypisana', 'Składka zainkasowana', 'Prowizja %', 'Prowizja przypisana', 'Status'];
-		const linie = wybrane.map(p => [
-			p.nr_polisy, p.typ_umowy, p.parent_id ? parentNr(p.parent_id) : '', p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), opisPrzedmiotu(p.przedmiot),
-			p.data_od, p.data_do, fmtPln(p.skladka_przypisana), fmtPln(p.skladka_zainkasowana), p.prowizja_pct, fmtPln(p.prowizja_przypisana), status(p).tekst
-		].map(pole).join(';'));
-		const blob = new Blob(['\uFEFF' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
-		const a = document.createElement('a');
-		a.href = URL.createObjectURL(blob);
-		a.download = `polisy-${dzis}.csv`;
-		a.click();
-		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-		void logAudit('policies_exported', 'policy', null, odmiana(wybrane.length, 'polisa', 'polisy', 'polis'), { ids: wybrane.map(p => p.id) });
-		ctxToast(`Wyeksportowano: ${odmiana(wybrane.length, 'polisa', 'polisy', 'polis')}`);
+	}
+	function arkuszeZaznaczonych(): Arkusz[] {
+		const wybrane = wiersze.filter(p => selected.has(p.id));
+		void logAudit('policies_exported', 'policy', null, odmiana(wybrane.length, 'polisa', 'polisy', 'polis'), { ids: wybrane.map(p => p.id), format: 'xlsx' });
+		return [arkuszPolis(wybrane)];
 	}
 
 	let nowaMenu = $state(false);
@@ -456,6 +458,7 @@
 		</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik={trybUg ? 'umowy-generalne' : 'polisy'} zakladka={trybUg ? 'Umowy generalne' : 'Polisy'} ile={wiersze.length} arkusze={() => [arkuszPolis(wiersze)]} />
 		<button onclick={() => { showClaim = true; formError = ''; }} class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2">
 			<AlertTriangle size={16} class="text-ink-3" /> Zgłoś szkodę
 		</button>
@@ -568,7 +571,7 @@
 	{#if selected.size > 0}
 		<div class="flex flex-wrap items-center gap-2 px-4 py-2 bg-accent-soft text-accent-text text-[13px]">
 			<span class="font-semibold mr-1">{odmiana(selected.size, 'polisa zaznaczona', 'polisy zaznaczone', 'polis zaznaczonych')}</span>
-			<button onclick={eksportujCsv} class="h-7 flex items-center gap-1.5 px-2.5 border border-blue-300 rounded-lg bg-white font-medium hover:bg-blue-50"><Download size={14} /> Eksportuj CSV</button>
+			<EksportExcel plik={trybUg ? 'umowy-generalne-zaznaczone' : 'polisy-zaznaczone'} zakladka={trybUg ? 'Umowy generalne (zaznaczone)' : 'Polisy (zaznaczone)'} arkusze={arkuszeZaznaczonych} etykieta="Eksportuj do Excela" maly />
 			<button onclick={() => (selected = new Set())} class="ml-auto h-7 px-2 font-semibold hover:underline">Odznacz</button>
 		</div>
 	{/if}

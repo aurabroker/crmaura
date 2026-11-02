@@ -10,6 +10,7 @@
 		ZABIEGI_ANKIETA,
 		formatSuma,
 		formatZl,
+		ADNOTACJA_OCENY_RYZYKA,
 		type Decyzja
 	} from '$lib/renewals/program';
 	import Bledy from './Bledy.svelte';
@@ -32,7 +33,7 @@
 		{
 			key: 'bez_zmian',
 			tytul: 'TAK — odnawiam bez zmian',
-			opis: `Ten sam zakres i suma gwarancyjna${w.skladka != null ? `, składka ${formatZl(w.skladka)} rocznie` : ''}.`
+			opis: `Ten sam zakres i suma gwarancyjna${w.skladka != null ? `, składka ${formatZl(w.skladka)} rocznie${w.skladka_indywidualna ? ` — ${ADNOTACJA_OCENY_RYZYKA}` : ''}` : ''}.`
 		},
 		{ key: 'zmiany', tytul: 'TAK — odnawiam ze zmianami', opis: 'Np. inna suma gwarancyjna, ochrona prawna, zabiegi z innej listy albo nowy adres.' },
 		{ key: 'nie', tytul: 'NIE — nie odnawiam', opis: `Ochrona wygaśnie ${w.okres_obecny.do ? fmtData(w.okres_obecny.do) : 'z końcem obecnego okresu'}.` }
@@ -146,6 +147,7 @@
 											Przy zabiegach wymagających ankiety składkę ustala indywidualnie ubezpieczyciel.
 										{:else}
 											Składki orientacyjne według taryfy programu{s.zm.ochrona_prawna || w.ochrona_prawna_obecnie ? ', z ochroną prawną' : ''}. Ostateczną składkę potwierdzimy przed wystawieniem certyfikatu.
+											{#if w.skladka_indywidualna}<span class="block font-medium text-amber-800">Obecny certyfikat był wyceniony indywidualnie, dlatego proponowana składka {ADNOTACJA_OCENY_RYZYKA}.</span>{/if}
 										{/if}
 									</p>
 								</fieldset>
@@ -343,7 +345,7 @@
 			</fieldset>
 
 			<div class="mt-6">
-				<WycenaInfo wycena={s.wycena} skladkaObecna={w.skladka} />
+				<WycenaInfo wycena={s.wycena} skladkaObecna={w.skladka} indywidualna={w.skladka_indywidualna} />
 			</div>
 		{/if}
 

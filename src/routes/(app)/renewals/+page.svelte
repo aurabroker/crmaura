@@ -4,8 +4,11 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, odmiana, opisPrzedmiotu, todayStr } from '$lib/utils';
 	import type { Snippet } from 'svelte';
-	import { Search, Eye, ExternalLink, RefreshCw, Pencil, User, Copy, X, Download, ChevronLeft, ChevronRight, Ban } from 'lucide-svelte';
+	import { Search, Eye, ExternalLink, RefreshCw, Pencil, User, Copy, X, ChevronLeft, ChevronRight, Ban } from 'lucide-svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
+	import { STATUS_ODNOWIENIA_ETYKIETA, etykietaDecyzji } from '$lib/renewals/staffApi';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, ctxToast, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -17,7 +20,6 @@
 	import { czyAktywny, wProgramieOcBeauty, wniosekTestowy } from '$lib/components/renewal/crmRenewals';
 	import { nazwaRodzaju, nazwaTu, nieOdnawiana } from '$lib/statusPolisy';
 	import ZakonczPolise from '$lib/components/ZakonczPolise.svelte';
-	import { logAudit } from '$lib/utils/audit';
 
 	const dzis = todayStr();
 	/** Ile dni po końcu ochrony polisa bez następczyni zostaje na liście. */
@@ -195,24 +197,24 @@
 		];
 	}
 
-	function eksportujCsv() {
-		const pole = (v: string | number | null | undefined) => {
-			const t = v == null ? '' : String(v);
-			return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+	// Eksport do Excela: lista po filtrach, z etapem wniosku online przy certyfikatach z programu OC beauty.
+	function opisWniosku(p: Policy): string {
+		if (!wnioski || !programIds.has(p.id) || nastepczyni.has(p.id)) return '';
+		const w = wnioski.get(p.id);
+		if (!w) return 'wniosek nie wysłany';
+		if (testowy(w)) return 'wniosek testowy';
+		return w.status === 'zlozony' && w.decyzja ? etykietaDecyzji(w.decyzja) : (STATUS_ODNOWIENIA_ETYKIETA[w.status] ?? w.status);
+	}
+	function arkuszOdnowien(): Arkusz {
+		return {
+			nazwa: 'Odnowienia',
+			kolumny: [kol.tekst('Nr polisy'), 'Klient', 'Towarzystwo', 'Rodzaj', 'Przedmiot', kol.data('Od'), kol.data('Do'), kol.liczba('Dni do końca'),
+				kol.zl('Składka przypisana'), kol.zl('Prowizja przypisana'), 'Opiekun klienta', 'Status', 'Wniosek online', kol.tekst('Odnowiona polisą')],
+			wiersze: wiersze.map((p) => [
+				p.nr_polisy, p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), opisPrzedmiotu(p.przedmiot), p.data_od, p.data_do, dni(p),
+				p.skladka_przypisana, p.prowizja_przypisana, nazwaOpiekuna(p), chip(p).tekst, opisWniosku(p), nastepczyni.get(p.id)?.nr_polisy
+			])
 		};
-		const naglowek = ['Nr polisy', 'Klient', 'Towarzystwo', 'Rodzaj', 'Przedmiot', 'Od', 'Do', 'Dni do końca', 'Składka przypisana', 'Prowizja przypisana', 'Opiekun klienta', 'Status', 'Odnowiona polisą'];
-		const linie = wiersze.map((p) => [
-			p.nr_polisy, p.crm_clients?.nazwa, nazwaTu(p), nazwaRodzaju(p.rodzaj), opisPrzedmiotu(p.przedmiot), p.data_od, p.data_do, dni(p),
-			fmtPln(p.skladka_przypisana), fmtPln(p.prowizja_przypisana), nazwaOpiekuna(p), chip(p).tekst, nastepczyni.get(p.id)?.nr_polisy
-		].map(pole).join(';'));
-		const blob = new Blob(['﻿' + [naglowek.join(';'), ...linie].join('\r\n')], { type: 'text/csv;charset=utf-8' });
-		const a = document.createElement('a');
-		a.href = URL.createObjectURL(blob);
-		a.download = `odnowienia-${dzis}.csv`;
-		a.click();
-		setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-		void logAudit('policies_exported', 'policy', null, odmiana(wiersze.length, 'polisa', 'polisy', 'polis'), { ids: wiersze.map((p) => p.id), widok: 'odnowienia' });
-		ctxToast(`Wyeksportowano: ${odmiana(wiersze.length, 'polisa', 'polisy', 'polis')}`);
 	}
 </script>
 
@@ -223,9 +225,7 @@
 		<h1 class="text-2xl font-semibold text-ink">Odnowienia</h1>
 		<p class="text-sm text-ink-3 mt-0.5">Polisy kończące się w najbliższych tygodniach i te, które wygasły bez odnowienia</p>
 	</div>
-	<button onclick={eksportujCsv} disabled={wiersze.length === 0} class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 disabled:opacity-50">
-		<Download size={16} class="text-ink-3" /> Eksportuj CSV
-	</button>
+	<EksportExcel plik="odnowienia" zakladka="Odnowienia" ile={wiersze.length} arkusze={() => [arkuszOdnowien()]} />
 </div>
 
 <!-- Podsumowanie -->

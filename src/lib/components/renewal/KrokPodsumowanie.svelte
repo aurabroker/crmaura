@@ -165,7 +165,7 @@
 		{#if s.decyzja === 'zmiany' || (s.decyzja === 'nowa' && s.wycena)}
 			<div>
 				{@render wiersz('Składka', null)}
-				<dd class="mt-2"><WycenaInfo wycena={s.wycena} skladkaObecna={w.skladka} /></dd>
+				<dd class="mt-2"><WycenaInfo wycena={s.wycena} skladkaObecna={w.skladka} indywidualna={w.skladka_indywidualna} /></dd>
 			</div>
 		{/if}
 

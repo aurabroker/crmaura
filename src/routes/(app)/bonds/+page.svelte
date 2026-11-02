@@ -7,6 +7,8 @@
 	import type { Bond, BondInsurer, BondLimitView, BondTenant, BondTuDict, BondAuditLog } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import BondForm from '$lib/components/BondForm.svelte';
 	import UlForm from '$lib/components/UlForm.svelte';
 	import { Search, Pencil, Plus, Shield, FileText, History, Building2, Copy } from 'lucide-svelte';
@@ -117,6 +119,27 @@
 	const kpiSkladka = $derived(filteredBonds.reduce((s, b) => s + (skladkaOf(b) ?? 0), 0));
 	const totalLimit = $derived(limitViews.reduce((s, v) => s + Number(v.bond_limit ?? 0), 0));
 	const totalWolny = $derived(limitViews.reduce((s, v) => s + Number(v.bond_wolny_limit ?? 0), 0));
+
+	// Eksport do Excela: gwarancje z listy (po wyszukiwaniu) i limity w umowach limitowych.
+	function arkuszeGwarancji(): Arkusz[] {
+		return [
+			{
+				nazwa: 'Gwarancje',
+				kolumny: [kol.tekst('Nr gwarancji'), 'Rodzaj', 'Podmiot', 'Kontrakt', 'Inwestor', 'Beneficjent', 'Towarzystwo', kol.tekst('Nr UL'),
+					kol.data('Od'), kol.data('Do'), kol.zl('Suma gwarancyjna'), kol.proc('Stawka %'), kol.zl('Składka'), 'Status'],
+				wiersze: filteredBonds.map((b) => [
+					b.bond_nr, bondRodzajLabel[b.bond_rodzaj] ?? b.bond_rodzaj, tenantName(b), b.bond_kontrakt, b.bond_inwestor, b.bond_beneficjent,
+					b.bond_insurers?.bond_nazwa ?? '', b.bond_insurers?.bond_ul_nr ?? '', b.bond_data_od, b.bond_data_do, b.bond_suma,
+					b.bond_stawka, skladkaOf(b), bondWygasl(b) ? 'wygasła' : policyStatus(b.bond_data_do).label
+				])
+			},
+			{
+				nazwa: 'Limity UL',
+				kolumny: ['Towarzystwo', kol.zl('Limit'), kol.zl('Zaangażowanie'), kol.zl('Wolny limit')],
+				wiersze: limitViews.map((v) => [v.bond_insurer_nazwa, v.bond_limit, v.bond_zaangazowane, v.bond_wolny_limit])
+			}
+		];
+	}
 
 	// ── Modale: gwarancja ──
 	let showBond = $state(false);
@@ -248,7 +271,8 @@
 		</h1>
 		<p class="text-sm text-slate-500 mt-1">Gwarancje, umowy limitowe (UL) i historia zmian</p>
 	</div>
-	<div class="flex gap-2">
+	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik="gwarancje" zakladka="Gwarancje" ile={filteredBonds.length + limitViews.length} arkusze={arkuszeGwarancji} />
 		{#if activeTab === 'gwarancje'}
 			<button onclick={() => openBond(null)} class="bg-violet-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-violet-700 transition-colors flex items-center gap-2">
 				<Plus size={15} /> Dodaj gwarancję

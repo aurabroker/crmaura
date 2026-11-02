@@ -4,6 +4,8 @@
 	import { fmtPln, todayStr } from '$lib/utils';
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import { Search, Download, CheckCircle, Eye, ExternalLink, User, Copy } from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
@@ -84,6 +86,25 @@
 		'prowizja-polisy'
 	);
 	const wiersze = $derived(sort.sortuj(filteredPolicies));
+
+	// Eksport do Excela: polisy z tabeli (po wyszukiwaniu) i historia rozliczeń miesięcznych.
+	function arkuszeProwizji(): Arkusz[] {
+		return [
+			{
+				nazwa: 'Prowizja z polis',
+				kolumny: [kol.tekst('Nr polisy'), 'Klient', 'Typ umowy', kol.zl('Składka przypisana'), kol.zl('Prowizja przypisana'), kol.zl('Prowizja zainkasowana'), kol.zl('Do rozliczenia')],
+				wiersze: wiersze.map((p) => [
+					p.nr_polisy, p.crm_clients?.nazwa, p.typ_umowy, p.skladka_przypisana, p.prowizja_przypisana, p.prowizja_zainkasowana,
+					Math.round((Number(p.prowizja_przypisana ?? 0) - Number(p.prowizja_zainkasowana ?? 0)) * 100) / 100
+				])
+			},
+			{
+				nazwa: 'Rozliczenia miesięczne',
+				kolumny: ['Miesiąc', kol.zl('Kwota przypisana'), kol.zl('Kwota rozliczona'), 'Status', kol.data('Zamknięto')],
+				wiersze: settlements.map((s) => [s.miesiac, s.kwota_przypisana, s.kwota_rozliczona, statusLabel(s.status), s.zamkniete_at])
+			}
+		];
+	}
 
 	// --- Load data on mount ---
 	$effect(() => {
@@ -169,9 +190,12 @@
 
 <svelte:head><title>Twoja Prowizja — AuraCRM</title></svelte:head>
 
-<div class="mb-6">
-	<h1 class="text-2xl font-semibold text-slate-900">Twoja Prowizja</h1>
-	<p class="text-sm text-slate-500 mt-1">Przegląd prowizji i rozliczenia miesięczne</p>
+<div class="flex flex-wrap items-end justify-between gap-3 mb-6">
+	<div>
+		<h1 class="text-2xl font-semibold text-slate-900">Twoja Prowizja</h1>
+		<p class="text-sm text-slate-500 mt-1">Przegląd prowizji i rozliczenia miesięczne</p>
+	</div>
+	<EksportExcel plik="prowizja" zakladka="Prowizja" ile={wiersze.length + settlements.length} arkusze={arkuszeProwizji} />
 </div>
 
 <!-- Summary cards -->

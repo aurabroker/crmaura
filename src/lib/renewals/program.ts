@@ -618,6 +618,16 @@ export function sumaZeSkladki(skladka: number | null): Suma | null {
 	return sumy.size === 1 ? [...sumy][0] : null;
 }
 
+// Certyfikat zawarty indywidualnie (po ocenie ryzyka przez ubezpieczyciela, np. zabiegi z ankietą albo
+// więcej niż 8 osób): składka nie pasuje do żadnej stawki z tabeli programu (z ochroną prawną lub bez).
+// Przy odnowieniu jego proponowana składka może się zmienić, więc wniosek pokazuje ADNOTACJA_OCENY_RYZYKA.
+export function skladkaIndywidualna(skladka: number | null): boolean {
+	if (skladka == null) return false;
+	const k = grosze(skladka);
+	return !skladkiTabeli(null).some((x) => grosze(x.kwota) === k || grosze(x.kwota + OCHRONA_PRAWNA_SKLADKA) === k);
+}
+export const ADNOTACJA_OCENY_RYZYKA = 'może ulec zmianie po ocenie ryzyka';
+
 // Wycena dla wniosku ze zmianami. null = składka bez zmian (np. tylko zmiana adresu).
 // opObecnie: obecny certyfikat ma już ochronę prawną (patrz ochronaPrawnaWSkladce) — nie doliczamy jej drugi raz.
 // sumaObecna: suma gwarancyjna obecnego certyfikatu — przy zmianie działalności bez zmiany sumy.

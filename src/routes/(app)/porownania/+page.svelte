@@ -7,6 +7,8 @@
 	import { nazwaRodzaju, nieOdnawiana, odnowionePolisy } from '$lib/statusPolisy';
 	import type { Policy } from '$lib/types/database';
 	import Kolumny from '$lib/components/wykresy/Kolumny.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import {
 		KOLOR, PRESETY, dzien, grupuj, liczba, liczonaPolisa, miesiacKrotko, miesiacPelny, miesiecznie, okresZPresetu,
 		podzialki, etykietaOsi, proc, rokWczesniej, sumuj, wOkresie, zl, zlKrotko, zmiana, type Okres, type PresetOkresu
@@ -55,8 +57,7 @@
 	const odnowione = $derived(odnowionePolisy(appState.policies));
 	const sumaPrzypisu = $derived(sumuj(wOkr).przypis);
 	type Kolumna = { k: string; nazwa: string; przypis: number; prowizja: number; stawka: number; polisy: number; srednia: number; klienci: number; zaleglosc: number; ratZaleglych: number; odnowienia60: number };
-	const kolumnyMacierzy = $derived<Kolumna[]>(
-		encje.map((k) => {
+	function kolumnaEncji(k: string): Kolumna {
 			const s = grupy.get(k)!;
 			const polisyEncji = polisyLiczone.filter((p) => klucz(p, wymiar) === k);
 			const ids = new Set(polisyEncji.map((p) => p.id));
@@ -68,8 +69,8 @@
 				zaleglosc: zalegle.reduce((a, r) => a + Number(r.kwota ?? 0), 0), ratZaleglych: zalegle.length,
 				odnowienia60: polisyEncji.filter((p) => p.data_do && p.data_do >= dzis && dateDiffDays(dzis, p.data_do) <= 60 && !odnowione.has(p.id) && !nieOdnawiana(p)).length
 			};
-		})
-	);
+	}
+	const kolumnyMacierzy = $derived<Kolumna[]>(encje.map(kolumnaEncji));
 	type Wiersz = { etykieta: string; podpowiedz: string; wartosc: (c: Kolumna) => number; fmt: (c: Kolumna) => string; pod?: (c: Kolumna) => string; lepiej: 'wiecej' | 'mniej' | null };
 	const WIERSZE: Wiersz[] = [
 		{ etykieta: 'Przypis składki', podpowiedz: 'w okresie', wartosc: (c) => c.przypis, fmt: (c) => zl(c.przypis), pod: (c) => `${proc(sumaPrzypisu ? (c.przypis / sumaPrzypisu) * 100 : 0)} całości`, lepiej: 'wiecej' },
@@ -162,6 +163,47 @@
 			.sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b))
 			.slice(0, 10);
 	});
+	// Eksport do Excela: macierz wskaźników dla wszystkich pozycji wymiaru (nie tylko 4 na ekranie) z przypisem
+	// miesiąc po miesiącu, a w widoku „Okresy” — dwa okresy obok siebie i towarzystwa w obu okresach.
+	function arkuszePorownan(): Arkusz[] {
+		if (wymiar === 'okres') {
+			const { a, b } = okresyPary;
+			const zm = (x: number, y: number) => { const d = zmiana(x, y); return d == null ? null : Math.round(d * 10) / 10; };
+			return [
+				{
+					nazwa: 'Okresy',
+					kolumny: ['Wskaźnik', a.etykieta, b.etykieta, kol.proc('Zmiana %')],
+					wiersze: [
+						['Przypis składki', sA.przypis, sB.przypis, zm(sB.przypis, sA.przypis)],
+						['Prowizja przypisana', sA.prowizja, sB.prowizja, zm(sB.prowizja, sA.prowizja)],
+						['Nowe polisy', sA.polisy, sB.polisy, zm(sB.polisy, sA.polisy)],
+						['Efektywna stawka %', sA.przypis ? (sA.prowizja / sA.przypis) * 100 : 0, sB.przypis ? (sB.prowizja / sB.przypis) * 100 : 0, null]
+					]
+				},
+				{
+					nazwa: 'Towarzystwa w okresach',
+					kolumny: ['Towarzystwo', kol.zl(`Przypis: ${a.etykieta}`), kol.zl(`Przypis: ${b.etykieta}`), kol.proc('Zmiana %')],
+					wiersze: tuOkresow.map((t) => [t.nazwa, t.a, t.b, zm(t.b, t.a)])
+				}
+			];
+		}
+		const etykietaWymiaru = WYMIARY.find((w) => w[0] === wymiar)?.[1] ?? 'Pozycja';
+		const wszystkie = dostepne.map(kolumnaEncji);
+		return [
+			{
+				nazwa: `Porównanie ${okres.etykieta}`,
+				kolumny: [etykietaWymiaru, kol.zl('Przypis składki'), kol.proc('Udział w przypisie %'), kol.zl('Prowizja przypisana'), kol.proc('Efektywna stawka %'), kol.liczba('Nowe polisy'),
+					kol.zl('Średnia składka'), kol.liczba('Klienci'), kol.zl('Należności po terminie'), kol.liczba('Raty po terminie'), kol.liczba('Odnowienia w 60 dni')],
+				wiersze: wszystkie.map((c) => [c.nazwa, c.przypis, sumaPrzypisu ? (c.przypis / sumaPrzypisu) * 100 : 0, c.prowizja, c.stawka, c.polisy, c.srednia, c.klienci,
+					c.zaleglosc, c.ratZaleglych, c.odnowienia60])
+			},
+			{
+				nazwa: 'Przypis miesięcznie',
+				kolumny: ['Miesiąc', ...wszystkie.map((c) => kol.zl(c.nazwa))],
+				wiersze: miesiecznie(wOkr, okres).map(({ ym }) => [ym, ...dostepne.map((k) => wOkr.filter((p) => klucz(p, wymiar) === k && p.data_od?.startsWith(ym)).reduce((x, p) => x + Number(p.skladka_przypisana ?? 0), 0))])
+			}
+		];
+	}
 	const skalaOkresow = $derived(podzialki(Math.max(0, ...tuOkresow.flatMap((t) => [t.a, t.b]))));
 	const zmianaTekst = (d: number | null) => (d == null ? 'nowe' : `${d >= 0 ? '+' : '−'}${proc(Math.abs(d), 0)}`);
 </script>
@@ -176,6 +218,7 @@
 		</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik="porownania" zakladka="Porównania" arkusze={arkuszePorownan} />
 		<a href="/statystyki" class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2"><ChartColumn size={16} class="text-ink-3" /> Statystyki</a>
 		<a href="/raporty" class="h-9 flex items-center gap-1.5 px-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover"><FileChartColumn size={16} /> Raporty</a>
 	</div>

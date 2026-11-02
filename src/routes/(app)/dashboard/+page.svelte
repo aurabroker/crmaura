@@ -20,6 +20,8 @@
 	import { adresOdnowieniaRecznego } from '$lib/formularzPolisy';
 	import { OPIS_WERSJI, WERSJA } from '$lib/wersja';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import { isBroker } from '$lib/stores/app.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
 	import type { CrmTask, Policy, WniosekOdnowienia } from '$lib/types/database';
@@ -110,6 +112,38 @@
 	const overdueSum = $derived(overduePayments.reduce((s, p) => s + Number(p.kwota), 0));
 
 	// „Top 5 klientów” jest w Statystykach; „Polisy wg TU” zdjęte z pulpitu (2026-10-17).
+
+	// Eksport do Excela: to, co pulpit pokazuje w tabelach — odnowienia 30 dni, zaległe raty, szkody w toku
+	// i składka z rat z ostatnich 12 miesięcy.
+	function arkuszePulpitu(): Arkusz[] {
+		const polisaWg = new Map(appState.policies.map((p) => [p.id, p]));
+		return [
+			{
+				nazwa: 'Odnowienia 30 dni',
+				kolumny: [kol.tekst('Nr polisy'), 'Klient', 'Towarzystwo', 'Rodzaj', kol.data('Koniec ochrony'), kol.liczba('Dni do końca'), kol.zl('Składka przypisana')],
+				wiersze: renewalsRows.map((p) => [p.nr_polisy, p.crm_clients?.nazwa, p.crm_insurers?.skrot ?? p.crm_insurers?.nazwa ?? '', p.rodzaj, p.data_do,
+					dateDiffDays(today, p.data_do), p.skladka_przypisana])
+			},
+			{
+				nazwa: 'Zaległe raty',
+				kolumny: [kol.tekst('Nr polisy'), 'Klient', 'Rata', kol.data('Termin płatności'), kol.liczba('Dni po terminie'), kol.zl('Kwota'), 'Status'],
+				wiersze: [...overduePayments].sort((a, b) => a.data_platnosci.localeCompare(b.data_platnosci)).map((r) => [
+					r.crm_policies?.nr_polisy ?? polisaWg.get(r.polisa_id)?.nr_polisy, r.crm_policies?.crm_clients?.nazwa, r.nr_raty, r.data_platnosci,
+					dateDiffDays(r.data_platnosci, today), r.kwota, r.status
+				])
+			},
+			{
+				nazwa: 'Szkody w toku',
+				kolumny: [kol.tekst('Nr szkody'), kol.data('Data szkody'), 'Klient', kol.tekst('Nr polisy'), kol.zl('Wartość roszczenia'), 'Status'],
+				wiersze: activeClaims.map((c) => [c.nr_szkody, c.data_szkody, c.crm_clients?.nazwa, c.crm_policies?.nr_polisy, c.wartosc_roszczenia, c.status])
+			},
+			{
+				nazwa: 'Składka z rat 12 mies',
+				kolumny: ['Miesiąc', kol.zl('Składka z rat'), kol.zl('Zainkasowana'), kol.zl('Prowizja'), kol.zl('Prowizja zainkasowana'), kol.proc('Średnia stawka %'), kol.liczba('Rat'), kol.liczba('Rat rozliczonych')],
+				wiersze: skladkaRat.map((m) => [m.ym, m.skladka, m.zainkasowana, m.prowizja, m.prowizjaZainkasowana, m.stawka, m.rat, m.ratRozliczonych])
+			}
+		];
+	}
 
 	// monthly_premium
 	const premiumThisMonth = $derived(
@@ -593,14 +627,17 @@
 		</h1>
 		<p class="text-sm text-ink-3 mt-0.5">{dzisOpis}{appState.tenantNazwa ? ` · ${appState.tenantNazwa}` : ''}</p>
 	</div>
-	<button
-		onclick={() => configMode = !configMode}
-		aria-expanded={configMode}
-		class="h-9 flex items-center gap-2 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 transition-colors"
-	>
-		<Settings2 size={15} />
-		{configMode ? 'Gotowe' : 'Dostosuj analitykę'}
-	</button>
+	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik="pulpit" zakladka="Pulpit" arkusze={arkuszePulpitu} />
+		<button
+			onclick={() => configMode = !configMode}
+			aria-expanded={configMode}
+			class="h-9 flex items-center gap-2 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 transition-colors"
+		>
+			<Settings2 size={15} />
+			{configMode ? 'Gotowe' : 'Dostosuj analitykę'}
+		</button>
+	</div>
 </div>
 
 {#if configMode}

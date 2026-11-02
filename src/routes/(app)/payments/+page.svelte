@@ -5,6 +5,8 @@
 	import type { PolicyPayment } from '$lib/types/database';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import Toast from '$lib/components/Toast.svelte';
 	import { fmtPln, todayStr, fmtDzien, fmtTermin, dateDiffDays, odmiana } from '$lib/utils';
 	import { poTerminie, ugBezRozliczania, ROZLICZONE, walidujDateWplaty, ratyWgDatyWplaty } from '$lib/platnosci';
@@ -644,6 +646,21 @@
 	);
 	const filtered = $derived(grupy.flatMap((g) => g.raty));
 
+	// Eksport do Excela: raty z listy (okres, wyszukiwanie, filtr grupy) w kolejności grup.
+	function arkuszRat(): Arkusz {
+		const nazwaTuWg = new Map(appState.insurers.map((i) => [i.id, i.skrot || i.nazwa]));
+		return {
+			nazwa: 'Raty',
+			kolumny: ['Grupa', kol.tekst('Nr polisy'), 'Klient', 'Towarzystwo', 'Rata', kol.data('Termin płatności'), kol.zl('Kwota'), 'Status', kol.data('Data opłacenia'),
+				kol.zl('Prowizja z noty'), 'Notatka'],
+			wiersze: grupy.flatMap((g) => g.raty.map((p) => {
+				const pol = polisaWg.get(p.polisa_id);
+				return [g.tytul, p.crm_policies?.nr_polisy ?? pol?.nr_polisy, p.crm_policies?.crm_clients?.nazwa, pol?.tu_id ? (nazwaTuWg.get(pol.tu_id) ?? '') : '',
+					rataZ(p), p.data_platnosci, p.kwota, p.status, p.data_oplacenia, p.prowizja_z_noty, p.notatka];
+			}))
+		};
+	}
+
 	const LIMIT = 25;
 	let rozwiniete = $state(new Set<Grupa>());
 	function przelaczGrupe(g: Grupa) {
@@ -904,6 +921,7 @@
 		<p class="text-sm text-ink-3 mt-0.5">Raty składek — terminy, wpłaty i rozliczenia not</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik="platnosci" zakladka="Płatności" ile={filtered.length} arkusze={() => [arkuszRat()]} />
 		<div class="relative">
 			<button
 				onclick={(e) => { e.stopPropagation(); rozliczMenu = !rozliczMenu; }}

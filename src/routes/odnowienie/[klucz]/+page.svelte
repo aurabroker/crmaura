@@ -4,7 +4,7 @@
 	import { CalendarClock, CheckCircle2, Link2Off, Mail, RefreshCw, XCircle } from 'lucide-svelte';
 	import type { WidokOdnowienia } from '$lib/renewals/api';
 	import { etykietaDecyzji } from '$lib/renewals/staffApi';
-	import { PROGRAM_NAZWA, SUMY, formatSuma, formatZl, nazwaUbezpieczyciela } from '$lib/renewals/program';
+	import { ADNOTACJA_OCENY_RYZYKA, PROGRAM_NAZWA, SUMY, formatSuma, formatZl, nazwaUbezpieczyciela } from '$lib/renewals/program';
 	import { KLAUZULA_INFORMACYJNA, KLAUZULA_URL } from '$lib/renewals/zgody';
 	import { DYSTRYBUTOR_NAZWA, DYSTRYBUTOR_PDF, DYSTRYBUTOR_STRONA } from '$lib/renewals/dystrybutor';
 	import LogoBeautyPolisa from '$lib/components/renewal/LogoBeautyPolisa.svelte';
@@ -245,7 +245,11 @@
 							<dt class="text-sm text-slate-500 sm:col-span-2">Składka roczna</dt>
 							<dd class="sm:col-span-3" data-testid="skladka">
 								<span class="font-medium text-slate-900">{w.skladka != null ? formatZl(w.skladka) : 'zgodnie z obecnym certyfikatem'}</span>
-								<span class="block text-sm text-slate-500">Przy odnowieniu bez zmian składka pozostaje taka sama.</span>
+								{#if w.skladka_indywidualna && w.skladka != null}
+									<span class="block text-sm font-medium text-amber-800" data-testid="skladka-adnotacja">Składka {ADNOTACJA_OCENY_RYZYKA}.</span>
+								{:else}
+									<span class="block text-sm text-slate-500">Przy odnowieniu bez zmian składka pozostaje taka sama.</span>
+								{/if}
 							</dd>
 						</div>
 						<div class="px-4 py-3 sm:grid sm:grid-cols-5 sm:gap-4">
@@ -348,10 +352,14 @@
 								{#if s.wynik?.wycena_indywidualna}
 									Składka zostanie wyceniona indywidualnie — doradca skontaktuje się z Tobą.
 								{:else if s.wynik?.skladka_nowa != null}
-									Składka orientacyjna: <strong>{formatZl(s.wynik.skladka_nowa)}</strong>. Doradca potwierdzi ostateczną składkę.
+									Składka orientacyjna: <strong>{formatZl(s.wynik.skladka_nowa)}</strong>{#if w.skladka_indywidualna}, {ADNOTACJA_OCENY_RYZYKA}{/if}. Doradca potwierdzi ostateczną składkę.
 								{:else}
 									Doradca potwierdzi składkę i zakres zmian.
 								{/if}
+							</p>
+						{:else if w.skladka_indywidualna && w.skladka != null}
+							<p class="mt-3 text-slate-700" data-testid="wynik-skladka">
+								Składka: <strong>{formatZl(w.skladka)}</strong> rocznie, {ADNOTACJA_OCENY_RYZYKA}. Doradca potwierdzi ostateczną składkę.
 							</p>
 						{/if}
 						<p class="mt-3 text-slate-700">Potwierdzenie złożenia wniosku (PDF) wyślemy na Twój adres e-mail.</p>

@@ -22,6 +22,8 @@
 	import Badge from '$lib/components/Badge.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import { kol, type Arkusz } from '$lib/eksport';
 	import Toast from '$lib/components/Toast.svelte';
 	import type { CrmNota } from '$lib/types/database';
 	import { Search, FileUp, CheckCircle, Eye, User, Copy, Undo2, FileText, AlertTriangle, ChevronDown } from 'lucide-svelte';
@@ -101,6 +103,26 @@
 		oczek: zaokr(widoczne.reduce((s, w) => s + w.oczekiwana, 0)),
 		zaliczona: zaokr(widoczne.reduce((s, w) => s + w.zaliczona, 0))
 	});
+
+	// Eksport do Excela: raty z tabeli (okres, TU, stan, wyszukiwanie) i noty TU.
+	function arkuszeRozliczen(): Arkusz[] {
+		return [
+			{
+				nazwa: 'Raty i prowizja',
+				kolumny: [kol.data('Termin'), kol.tekst('Nr polisy'), 'Rata', 'Klient', 'Towarzystwo', kol.zl('Kwota raty'), kol.proc('Prowizja %'), kol.zl('Prowizja oczekiwana'),
+					kol.zl('Prowizja zaliczona'), kol.zl('Różnica z noty'), 'Stan', kol.data('Opłacono'), kol.tekst('Nota')],
+				wiersze: wiersze.map((w) => [
+					w.rata.data_platnosci, nrPolisy(w), opisRaty(w), w.klient, w.tu, w.rata.kwota, w.pct, w.oczekiwana, w.zaliczona, w.roznica,
+					STAN_RATY_ETYKIETA[w.stan], w.rata.data_oplacenia, notaWg.get(w.rata.nota_id ?? '')?.numer_noty ?? ''
+				])
+			},
+			{
+				nazwa: 'Noty TU',
+				kolumny: [kol.tekst('Numer noty'), 'Towarzystwo', kol.data('Data zestawienia'), kol.data('Import'), kol.liczba('Pozycji'), kol.zl('Składka razem'), kol.zl('Prowizja razem')],
+				wiersze: noty.map((n) => [n.numer_noty, n.tu_skrot, n.data_zestawienia, n.data_importu, n.pozycji_count, n.razem_skladka, n.razem_prowizja])
+			}
+		];
+	}
 
 	function ustawOkres(o: Okres) { okres = o; miesiac = ''; }
 	function ustawMiesiac(v: string) { miesiac = v; if (/^\d{4}-\d{2}$/.test(v)) okres = v as Okres; }
@@ -253,6 +275,7 @@
 		<p class="text-sm text-ink-3 mt-0.5">Prowizja z rat: co TU rozliczyło notą, co czeka na rozliczenie</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
+		<EksportExcel plik="rozliczenia" zakladka="Rozliczenia" ile={wiersze.length + noty.length} arkusze={arkuszeRozliczen} />
 		<div class="relative">
 			<button onclick={() => (importMenu = !importMenu)} aria-expanded={importMenu} class="h-9 flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-accent text-white text-sm font-semibold hover:bg-accent-hover">
 				<FileUp size={15} /> Importuj notę TU <ChevronDown size={14} />
