@@ -7,8 +7,8 @@
 	import { logAudit } from '$lib/utils/audit';
 	import { magazynDostepny, wyslijPdfPolisy } from '$lib/plikiPolis';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
-	import { fmtPln } from '$lib/utils';
-	import { vehicleLabel } from '$lib/hestia/pojazd';
+	import { fmtPln, odmiana } from '$lib/utils';
+	import { opisUzytkowania, vehicleLabel } from '$lib/hestia/pojazd';
 	import { readPdf, type PdfDoc } from '$lib/policyImport/pdf';
 	import { templatesFor } from '$lib/policyImport/templates';
 	import { buildDraft, type Draft } from '$lib/policyImport/map';
@@ -33,7 +33,12 @@
 	let parsing = $state(false);
 	let saving = $state(false);
 	let parseError = $state('');
-	let extracted = $state<ExtractedPolicy | null>(null);
+	// Plik może nieść wiele polis (flota Hestii: jeden certyfikat na pojazd) — podgląd pokazuje jedną,
+	// zapis obejmuje wszystkie bez błędów.
+	let extractedAll = $state<ExtractedPolicy[]>([]);
+	let certIdx = $state(0);
+	const extracted = $derived<ExtractedPolicy | null>(extractedAll[certIdx] ?? null);
+	const wiele = $derived(extractedAll.length > 1);
 	let utworzPojazd = $state(false);
 	let wnioskujPojazd = $state(false);
 	let potwierdzOdnowienie = $state(false);
@@ -84,10 +89,10 @@
 		})
 	);
 
-	const draft = $derived<Draft | null>(
-		extracted && product && client && appState.profile
+	function zbudujDraft(ex: ExtractedPolicy): Draft | null {
+		return product && client && appState.profile
 			? buildDraft({
-					extracted,
+					extracted: ex,
 					product,
 					client,
 					clients: appState.clients,
@@ -104,14 +109,24 @@
 					renewalOf,
 					ugId
 				})
-			: null
-	);
+			: null;
+	}
+	const drafts = $derived<(Draft | null)[]>(extractedAll.map(zbudujDraft));
+	const draft = $derived<Draft | null>(drafts[certIdx] ?? null);
 
 	const bledy = $derived(draft?.issues.filter((i) => i.level === 'error') ?? []);
 	const moznaZapisac = $derived(!!draft && bledy.length === 0 && !saving);
 
+	// Wiele certyfikatów: zapis obejmuje te bez błędów, pominięte są wymienione przed kliknięciem.
+	const certyfikaty = $derived(
+		extractedAll.map((ex, i) => ({ ex, draft: drafts[i], bledy: drafts[i]?.issues.filter((x) => x.level === 'error') ?? [] }))
+	);
+	const doZapisu = $derived(certyfikaty.filter((c) => c.draft && !c.bledy.length));
+	const pominiete = $derived(certyfikaty.filter((c) => !c.draft || c.bledy.length));
+
 	function resetOdczyt() {
-		extracted = null;
+		extractedAll = [];
+		certIdx = 0;
 		parseError = '';
 		utworzPojazd = false;
 		wnioskujPojazd = false;
@@ -146,7 +161,8 @@
 		if (!file || !product) return;
 		parsing = true;
 		parseError = '';
-		extracted = null;
+		extractedAll = [];
+		certIdx = 0;
 		ugId = null;
 		try {
 			const doc: PdfDoc = await readPdf(file);
@@ -157,11 +173,20 @@
 					return;
 				}
 			}
-			if (!product.parse) {
+			if (!product.parse && !product.parseMany) {
 				parseError = product.todo ?? 'Ten produkt nie ma jeszcze szablonu mapowania.';
 				return;
 			}
-			extracted = product.parse(doc);
+			if (product.parseMany) {
+				const lista = product.parseMany(doc);
+				if (!lista.length) {
+					parseError = 'W pliku nie znaleziono żadnego certyfikatu do odczytu.';
+					return;
+				}
+				extractedAll = lista;
+			} else {
+				extractedAll = [product.parse!(doc)];
+			}
 		} catch (err) {
 			parseError = err instanceof Error ? err.message : 'Nie udało się odczytać pliku PDF.';
 		} finally {
@@ -169,46 +194,64 @@
 		}
 	}
 
-	async function save() {
-		if (!draft || !mozliweZapisanie()) return;
-		saving = true;
+	/** Finansujący i pojazdy założone w tym zapisie — przy wielu certyfikatach z jednego pliku powstają raz. */
+	type Zapis = { leasingi: Map<string, string>; pojazdy: Map<string, string> };
 
-		// Pojazd i finansujący muszą istnieć przed polisą — bez ich id nie byłoby powiązania.
-		const payload = { ...draft.payload };
+	/**
+	 * Zapis jednej polisy z draftu. Pojazd i finansujący muszą istnieć przed polisą — bez ich id
+	 * nie byłoby powiązania. Rzuca błąd z opisem; zwraca id nowej polisy.
+	 */
+	async function zapiszJeden(d: Draft, ctx: Zapis): Promise<string> {
+		const payload = { ...d.payload };
 
-		if (draft.nowyLeasing) {
-			const { data: leasing, error: lErr } = await sb
-				.from('crm_leasings')
-				.insert([draft.nowyLeasing])
-				.select('id')
-				.single();
-			if (lErr) {
-				saving = false;
-				parseError = `Nie udało się dopisać finansującego: ${lErr.message}`;
-				return;
+		if (d.nowyLeasing) {
+			const klucz = String(d.nowyLeasing.nip ?? d.nowyLeasing.nazwa ?? '').toUpperCase();
+			let id = ctx.leasingi.get(klucz);
+			if (!id) {
+				const { data: leasing, error: lErr } = await sb
+					.from('crm_leasings')
+					.insert([d.nowyLeasing])
+					.select('id')
+					.single();
+				if (lErr) throw new Error(`Nie udało się dopisać finansującego: ${lErr.message}`);
+				id = (leasing as { id: string }).id;
+				ctx.leasingi.set(klucz, id);
+				await logAudit('leasing_created', 'leasing', id, d.nowyLeasing.nazwa as string, {
+					zrodlo: 'import polisy',
+					plik: file?.name
+				});
 			}
-			payload.leasing_id = leasing!.id;
-			await logAudit('leasing_created', 'leasing', leasing!.id, draft.nowyLeasing.nazwa as string, {
-				zrodlo: 'import polisy',
-				plik: file?.name
-			});
+			payload.leasing_id = id;
 		}
 
-		if (draft.nowyPojazd) {
-			const { data: pojazd, error: vErr } = await sb
-				.from('crm_vehicles')
-				.insert([draft.nowyPojazd])
-				.select('id')
-				.single();
-			if (vErr) {
-				saving = false;
-				parseError = `Nie udało się założyć pojazdu: ${vErr.message}`;
-				return;
+		if (d.nowyPojazd) {
+			const klucz = String(d.nowyPojazd.vin ?? d.nowyPojazd.nr_rejestracyjny ?? '').toUpperCase();
+			let id = klucz ? ctx.pojazdy.get(klucz) : undefined;
+			if (!id) {
+				const { data: pojazd, error: vErr } = await sb
+					.from('crm_vehicles')
+					.insert([d.nowyPojazd])
+					.select('id')
+					.single();
+				if (vErr) throw new Error(`Nie udało się założyć pojazdu: ${vErr.message}`);
+				id = (pojazd as { id: string }).id;
+				if (klucz) ctx.pojazdy.set(klucz, id);
+				await logAudit('vehicle_created', 'vehicle', id, vehicleLabel(d.nowyPojazd as { nr_rejestracyjny?: string | null; vin?: string | null }), {
+					zrodlo: 'import polisy',
+					plik: file?.name
+				});
 			}
-			payload.pojazd_id = pojazd!.id;
-			await logAudit('vehicle_created', 'vehicle', pojazd!.id, vehicleLabel(draft.nowyPojazd as { nr_rejestracyjny?: string | null; vin?: string | null }), {
+			payload.pojazd_id = id;
+		}
+
+		// Zaszeregowanie z certyfikatu uzupełnia puste pola istniejącej kartoteki pojazdu.
+		if (d.pojazd && d.aktualizacjaPojazdu) {
+			const { error: uErr } = await sb.from('crm_vehicles').update(d.aktualizacjaPojazdu).eq('id', d.pojazd.id);
+			if (uErr) throw new Error(`Nie udało się uzupełnić kartoteki pojazdu: ${uErr.message}`);
+			await logAudit('vehicle_updated', 'vehicle', d.pojazd.id, vehicleLabel(d.pojazd), {
 				zrodlo: 'import polisy',
-				plik: file?.name
+				plik: file?.name,
+				pola: Object.keys(d.aktualizacjaPojazdu)
 			});
 		}
 
@@ -217,18 +260,14 @@
 			.insert([payload])
 			.select('id')
 			.single();
+		if (error) throw new Error(error.message);
+		const nowaId = (inserted as { id: string }).id;
 
-		if (error) {
-			saving = false;
-			parseError = error.message;
-			return;
-		}
-
-		if (draft.raty.length && inserted?.id) {
+		if (d.raty.length) {
 			await sb.from('crm_policy_payments').insert(
-				draft.raty.map((r) => ({
+				d.raty.map((r) => ({
 					tenant_id: appState.profile!.tenant_id,
-					polisa_id: inserted.id,
+					polisa_id: nowaId,
 					nr_raty: r.nr,
 					data_platnosci: r.data,
 					kwota: r.kwota,
@@ -239,13 +278,13 @@
 
 		// Wniosek o pojazd składamy po zapisie polisy, żeby administrator widział,
 		// której polisy dotyczy.
-		if (draft.wniosekPojazd && inserted?.id) {
+		if (d.wniosekPojazd) {
 			const { data: wniosek } = await sb
 				.from('crm_vehicle_requests')
 				.insert([
 					{
-						...draft.wniosekPojazd,
-						polisa_id: inserted.id,
+						...d.wniosekPojazd,
+						polisa_id: nowaId,
 						created_by: appState.profile!.id
 					}
 				])
@@ -254,31 +293,33 @@
 			await logAudit(
 				'vehicle_request_created',
 				'vehicle_request',
-				wniosek?.id ?? null,
-				(draft.wniosekPojazd.vin as string) ?? null,
+				(wniosek as { id?: string } | null)?.id ?? null,
+				(d.wniosekPojazd.vin as string) ?? null,
 				{ polisa: payload.nr_polisy, plik: file?.name }
 			);
 		}
 
 		// Plik polisy do magazynu (Cloudflare R2) — błąd nie cofa zapisu polisy, tylko o nim mówi.
-		const nowaId = (inserted as { id?: string } | null)?.id;
-		if (file && nowaId && (await magazynDostepny())) {
+		if (file && (await magazynDostepny())) {
 			try {
 				await wyslijPdfPolisy(nowaId, file, { rodzaj: 'polisa', zrodlo: 'import_pdf' });
 			} catch (e) {
-				ctxToast(`Polisa zapisana, ale PDF nie trafił do magazynu: ${(e as Error).message}`);
+				ctxToast(`Polisa ${payload.nr_polisy} zapisana, ale PDF nie trafił do magazynu: ${(e as Error).message}`);
 			}
 		}
 
-		await logAudit('policy_imported', 'policy', inserted?.id, payload.nr_polisy as string, {
+		await logAudit('policy_imported', 'policy', nowaId, payload.nr_polisy as string, {
 			produkt: product?.label,
 			ubezpieczyciel: insurer?.nazwa,
 			plik: file?.name,
-			ug: draft.ug?.nr_polisy ?? null,
+			ug: d.ug?.nr_polisy ?? null,
 			pojazd: (payload.pojazd_id as string | null) ?? null,
 			leasing: (payload.leasing_id as string | null) ?? null
 		});
+		return nowaId;
+	}
 
+	async function przeladujDane() {
 		const [rP, rPay, rV, rL, rVR] = await Promise.all([
 			wczytajPolisy(),
 			wczytajPlatnosci(),
@@ -291,8 +332,56 @@
 		appState.vehicles = (rV.data ?? []) as typeof appState.vehicles;
 		appState.leasings = (rL.data ?? []) as typeof appState.leasings;
 		appState.vehicleRequests = (rVR.data ?? []) as typeof appState.vehicleRequests;
+	}
+
+	async function save() {
+		if (!draft || !mozliweZapisanie()) return;
+		saving = true;
+		parseError = '';
+		let id: string;
+		try {
+			id = await zapiszJeden(draft, { leasingi: new Map(), pojazdy: new Map() });
+		} catch (e) {
+			saving = false;
+			parseError = e instanceof Error ? e.message : String(e);
+			return;
+		}
+		await przeladujDane();
 		saving = false;
-		goto(`/policies/${inserted!.id}`);
+		goto(`/policies/${id}`);
+	}
+
+	/**
+	 * Wiele certyfikatów z jednego pliku (flota): zapis po kolei tych bez błędów; pierwszy błąd
+	 * zatrzymuje zapis, a to, co już weszło, zostaje w CRM (ponowny import rozpozna je jako duplikaty).
+	 */
+	async function saveAll() {
+		if (!doZapisu.length || saving) return;
+		saving = true;
+		parseError = '';
+		const ctx: Zapis = { leasingi: new Map(), pojazdy: new Map() };
+		const zapisane: string[] = [];
+		const ilePominietych = pominiete.length;
+		const ug = doZapisu[0]?.draft?.ug ?? null;
+		let blad = '';
+		for (const c of doZapisu) {
+			try {
+				zapisane.push(await zapiszJeden(c.draft!, ctx));
+			} catch (e) {
+				blad = `${c.ex.nr_polisy ?? '?'}: ${e instanceof Error ? e.message : String(e)}`;
+				break;
+			}
+		}
+		await przeladujDane();
+		saving = false;
+		if (blad) {
+			parseError = `Zapisano ${zapisane.length} z ${doZapisu.length} certyfikatów, zapis zatrzymał się na ${blad}. Zapisane są już w CRM — po poprawie wgraj plik ponownie, zapisane zostaną rozpoznane jako duplikaty i pominięte.`;
+			return;
+		}
+		ctxToast(
+			`Zapisano ${odmiana(zapisane.length, 'certyfikat', 'certyfikaty', 'certyfikatów')}${ilePominietych ? `, pominięto ${ilePominietych}` : ''}${ug ? ` — pod umową ${ug.nr_polisy}` : ''}.`
+		);
+		goto(ug ? `/policies/${ug.id}` : `/clients/${clientId}?tab=polisy`);
 	}
 
 	function mozliweZapisanie() {
@@ -480,9 +569,98 @@
 	<!-- Krok 5: podgląd mapowania -->
 	{#if draft && extracted}
 		{@const e = extracted}
+
+		{#if wiele}
+			<!-- Plik z wieloma certyfikatami (flota Hestii): lista pozycji, szczegóły niżej dla zaznaczonej. -->
+			<div class="bg-white border border-line rounded-xl overflow-hidden shadow-sm mb-4" data-testid="import-certyfikaty">
+				<div class="px-5 py-3 border-b border-line bg-slate-50 flex flex-wrap items-center justify-between gap-3">
+					<h2 class="text-sm font-semibold text-slate-800">Certyfikaty w pliku ({extractedAll.length})</h2>
+					<span class="text-xs text-slate-500">
+						każdy certyfikat to osobna polisa komunikacyjna{drafts[0]?.ug ? ` pod umową generalną ${drafts[0].ug.nr_polisy}` : ''}
+					</span>
+				</div>
+				<div class="overflow-x-auto">
+					<table class="w-full text-sm">
+						<thead class="bg-slate-50 text-xs text-slate-500">
+							<tr>
+								<th class="text-left px-3 py-2 font-semibold">#</th>
+								<th class="text-left px-3 py-2 font-semibold">Certyfikat</th>
+								<th class="text-left px-3 py-2 font-semibold">Pojazd</th>
+								<th class="text-left px-3 py-2 font-semibold">Okres</th>
+								<th class="text-right px-3 py-2 font-semibold">Składka</th>
+								<th class="text-left px-3 py-2 font-semibold">Pojazd w CRM</th>
+								<th class="text-left px-3 py-2 font-semibold">Stan</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each certyfikaty as c, i (i)}
+								<tr
+									class="border-t border-line-soft cursor-pointer {i === certIdx ? 'bg-blue-50' : 'hover:bg-slate-50'}"
+									onclick={() => (certIdx = i)}
+								>
+									<td class="px-3 py-2 text-slate-500">{i + 1}</td>
+									<td class="px-3 py-2 font-medium text-slate-900 whitespace-nowrap">{c.ex.nr_polisy ?? '—'}</td>
+									<td class="px-3 py-2 text-slate-700">
+										{c.ex.pojazd ? `${c.ex.pojazd.nr_rejestracyjny ?? c.ex.pojazd.vin ?? '—'} · ${c.ex.pojazd.marka_model ?? ''}` : '—'}
+										{#if c.ex.pojazd?.rodzaj_kalkulacyjny}<span class="block text-xs text-slate-400">{c.ex.pojazd.rodzaj_kalkulacyjny}</span>{/if}
+									</td>
+									<td class="px-3 py-2 text-slate-600 whitespace-nowrap">{c.ex.data_od ?? '—'} → {c.ex.data_do ?? '—'}</td>
+									<td class="px-3 py-2 text-right text-slate-900 whitespace-nowrap">{fmtPln(c.ex.skladka)} zł</td>
+									<td class="px-3 py-2 text-xs text-slate-600">
+										{c.draft?.pojazd ? vehicleLabel(c.draft.pojazd) : c.draft?.nowyPojazd ? 'zostanie założony' : c.draft?.wniosekPojazd ? 'wniosek do administratora' : 'brak'}
+									</td>
+									<td class="px-3 py-2 text-xs">
+										{#if c.bledy.length}
+											<span class="text-red-700">{c.bledy[0].text}</span>
+										{:else}
+											<span class="text-emerald-700">gotowy do zapisu</span>
+										{/if}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+				<div class="px-5 py-3 border-t border-line bg-slate-50 flex flex-col gap-2">
+					<label class="flex items-start gap-2 text-sm text-slate-800 cursor-pointer">
+						<input type="checkbox" bind:checked={utworzPojazd} class="mt-0.5" />
+						<span>
+							Załóż brakujące pojazdy w kartotece klienta z danych certyfikatów
+							<span class="block text-xs text-slate-500">Dotyczy pojazdów z VIN i numerem rejestracyjnym; zaszeregowanie wg Cumulus idzie z certyfikatu.</span>
+						</span>
+					</label>
+					<label class="flex items-start gap-2 text-sm text-slate-800 cursor-pointer">
+						<input type="checkbox" bind:checked={wnioskujPojazd} class="mt-0.5" />
+						<span>
+							Pojazdy bez kompletu numerów zgłoś wnioskiem do administratora
+							<span class="block text-xs text-slate-500">Polisa zapisze się bez powiązania z pojazdem do czasu akceptacji wniosku.</span>
+						</span>
+					</label>
+				</div>
+			</div>
+		{/if}
+
 		<div class="bg-white border border-line rounded-xl overflow-hidden shadow-sm mb-4">
-			<div class="px-5 py-3 border-b border-line bg-slate-50">
-				<h2 class="text-sm font-semibold text-slate-800">Odczytane dane</h2>
+			<div class="px-5 py-3 border-b border-line bg-slate-50 flex items-center justify-between gap-3">
+				<h2 class="text-sm font-semibold text-slate-800">
+					Odczytane dane{wiele ? ` — certyfikat ${certIdx + 1} z ${extractedAll.length}` : ''}
+				</h2>
+				{#if wiele}
+					<div class="flex gap-1">
+						<button
+							type="button"
+							onclick={() => (certIdx = Math.max(0, certIdx - 1))}
+							disabled={certIdx === 0}
+							class="h-8 px-2.5 text-xs font-medium border border-line rounded-lg bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+						>‹ Poprzedni</button>
+						<button
+							type="button"
+							onclick={() => (certIdx = Math.min(extractedAll.length - 1, certIdx + 1))}
+							disabled={certIdx >= extractedAll.length - 1}
+							class="h-8 px-2.5 text-xs font-medium border border-line rounded-lg bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+						>Następny ›</button>
+					</div>
+				{/if}
 			</div>
 
 			<div class="p-5 space-y-5">
@@ -675,10 +853,26 @@
 								<dt class="text-slate-500">Rodzaj</dt>
 								<dd class="font-medium text-slate-900 text-right">{v.rodzaj_pojazdu ?? '—'}</dd>
 							</div>
+							{#if v.rodzaj_kalkulacyjny || v.rodzaj_rejestrowy || v.liczba_miejsc || v.data_pierwszej_rejestracji || v.uzytkowanie}
+								<!-- Zaszeregowanie z certyfikatu (Cumulus) — trafia do kartoteki pojazdu. -->
+								<div class="flex justify-between gap-3 border-b border-line-soft py-1 sm:col-span-2">
+									<dt class="text-slate-500">Zaszeregowanie z polisy</dt>
+									<dd class="font-medium text-slate-900 text-right">
+										{[
+											v.rodzaj_kalkulacyjny,
+											v.rodzaj_rejestrowy,
+											v.liczba_miejsc ? odmiana(v.liczba_miejsc, 'miejsce', 'miejsca', 'miejsc') : null,
+											v.data_pierwszej_rejestracji ? `pierwsza rejestracja ${v.data_pierwszej_rejestracji}` : null,
+											opisUzytkowania(v) || null
+										].filter(Boolean).join(' · ')}
+									</dd>
+								</div>
+							{/if}
 							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
 								<dt class="text-slate-500">W kartotece CRM</dt>
 								<dd class="font-medium text-right {draft.pojazd ? 'text-emerald-700' : 'text-amber-700'}">
 									{draft.pojazd ? vehicleLabel(draft.pojazd) : 'brak — do założenia'}
+									{#if draft.aktualizacjaPojazdu}<span class="block text-xs text-slate-500">kartoteka zostanie uzupełniona z polisy</span>{/if}
 								</dd>
 							</div>
 							{#if draft.pojazd}
@@ -827,24 +1021,49 @@
 			</div>
 
 			<div class="px-5 py-4 border-t border-line bg-slate-50 flex items-center justify-between gap-4">
-				<p class="text-xs text-slate-500">
-					{#if bledy.length}
-						Import zablokowany — popraw {bledy.length === 1 ? 'wskazany problem' : 'wskazane problemy'}.
-					{:else}
-						Polisa zostanie zapisana w CRM wraz z harmonogramem rat.
-					{/if}
-				</p>
-				<button
-					onclick={save}
-					disabled={!moznaZapisac}
-					class="flex items-center gap-2 bg-accent text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-				>
-					{#if saving}
-						<Loader2 size={15} class="animate-spin" /> Zapisuję…
-					{:else}
-						<Save size={15} /> Zapisz polisę w CRM
-					{/if}
-				</button>
+				{#if wiele}
+					<p class="text-xs text-slate-500">
+						{#if !doZapisu.length}
+							Import zablokowany — żaden certyfikat nie przeszedł walidacji.
+						{:else}
+							{odmiana(doZapisu.length, 'certyfikat zostanie zapisany', 'certyfikaty zostaną zapisane', 'certyfikatów zostanie zapisanych')} jako osobne polisy z harmonogramami rat.
+							{#if pominiete.length}
+								<span class="block text-amber-700">Pominięte (błędy): {pominiete.map((c) => c.ex.nr_polisy ?? '?').join(', ')}.</span>
+							{/if}
+						{/if}
+					</p>
+					<button
+						onclick={saveAll}
+						disabled={!doZapisu.length || saving}
+						data-testid="import-zapisz-wszystkie"
+						class="flex items-center gap-2 bg-accent text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					>
+						{#if saving}
+							<Loader2 size={15} class="animate-spin" /> Zapisuję…
+						{:else}
+							<Save size={15} /> Zapisz {doZapisu.length} z {extractedAll.length} certyfikatów
+						{/if}
+					</button>
+				{:else}
+					<p class="text-xs text-slate-500">
+						{#if bledy.length}
+							Import zablokowany — popraw {bledy.length === 1 ? 'wskazany problem' : 'wskazane problemy'}.
+						{:else}
+							Polisa zostanie zapisana w CRM wraz z harmonogramem rat.
+						{/if}
+					</p>
+					<button
+						onclick={save}
+						disabled={!moznaZapisac}
+						class="flex items-center gap-2 bg-accent text-white px-4 py-2.5 rounded-lg text-sm font-semibold hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+					>
+						{#if saving}
+							<Loader2 size={15} class="animate-spin" /> Zapisuję…
+						{:else}
+							<Save size={15} /> Zapisz polisę w CRM
+						{/if}
+					</button>
+				{/if}
 			</div>
 		</div>
 	{:else if krok < 4}

@@ -3,7 +3,7 @@
 // dopasowanie do złego podmiotu oznaczałoby udostępnienie polisy obcej firmie.
 
 import type { Client, Leasing, Policy, PolicyImportData, PolicyRisk, Vehicle } from '$lib/types/database';
-import type { ExtractedPolicy, ProductTemplate, RiskItem } from './types';
+import type { ExtractedPolicy, ProductTemplate, RiskItem, VehicleData } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
 import { poczatekUmowy, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
 import { znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
@@ -34,6 +34,8 @@ export interface Draft {
 	nowyPojazd: Record<string, unknown> | null;
 	/** Wniosek do administratora o dodanie pojazdu, którego nie da się zapisać wprost. */
 	wniosekPojazd: Record<string, unknown> | null;
+	/** Pola zaszeregowania z polisy do uzupełnienia w istniejącej kartotece pojazdu (tylko puste pola). */
+	aktualizacjaPojazdu: Record<string, unknown> | null;
 	leasing: Leasing | null;
 	/** Finansujący do dopisania do słownika leasingów, gdy jeszcze go nie ma. */
 	nowyLeasing: Record<string, unknown> | null;
@@ -176,7 +178,7 @@ export function buildDraft(input: BuildInput): Draft {
 			text: `Suma odczytanych rat (${sumaRat.toFixed(2)} zł) różni się od składki (${extracted.skladka.toFixed(2)} zł) — sprawdź harmonogram płatności.`
 		});
 
-	const { pojazd, nowyPojazd, wniosekPojazd } = dopasujPojazd(input, issues);
+	const { pojazd, nowyPojazd, wniosekPojazd, aktualizacjaPojazdu } = dopasujPojazd(input, issues);
 	const { leasing, nowyLeasing } = dopasujLeasing(input, issues);
 	const ubezpieczony = dopasujUbezpieczonego(input, issues);
 
@@ -253,6 +255,7 @@ export function buildDraft(input: BuildInput): Draft {
 		pojazd,
 		nowyPojazd,
 		wniosekPojazd,
+		aktualizacjaPojazdu,
 		leasing,
 		nowyLeasing,
 		ubezpieczony
@@ -305,10 +308,11 @@ function dopasujPojazd(
 	pojazd: Vehicle | null;
 	nowyPojazd: Record<string, unknown> | null;
 	wniosekPojazd: Record<string, unknown> | null;
+	aktualizacjaPojazdu: Record<string, unknown> | null;
 } {
 	const { extracted, client, vehicles, policies, tenantId, utworzPojazd, wnioskujPojazd } = input;
 	const dane = extracted.pojazd;
-	if (!dane) return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
+	if (!dane) return { pojazd: null, nowyPojazd: null, wniosekPojazd: null, aktualizacjaPojazdu: null };
 
 	const vin = dane.vin?.toUpperCase() ?? null;
 	const rej = normRej(dane.nr_rejestracyjny);
@@ -346,7 +350,14 @@ function dopasujPojazd(
 				level: 'warn',
 				text: `Pojazd ma już polisę ${zajety.nr_polisy} obejmującą ten sam okres (${zajety.data_od} — ${zajety.data_do}).`
 			});
-		return { pojazd: wlasny, nowyPojazd: null, wniosekPojazd: null };
+		// Certyfikat niesie zaszeregowanie (Cumulus) — uzupełniamy nim puste pola kartoteki, bez nadpisywania.
+		const uzupelnienie = uzupelnieniePojazdu(wlasny, dane);
+		if (uzupelnienie)
+			issues.push({
+				level: 'info',
+				text: `Kartoteka pojazdu ${wlasny.nr_rejestracyjny ?? wlasny.vin ?? ''} zostanie uzupełniona z polisy: ${uzupelnienie.etykiety.join(', ')}.`
+			});
+		return { pojazd: wlasny, nowyPojazd: null, wniosekPojazd: null, aktualizacjaPojazdu: uzupelnienie?.pola ?? null };
 	}
 
 	if (kandydaci.length) {
@@ -354,7 +365,7 @@ function dopasujPojazd(
 			level: 'error',
 			text: `Pojazd ${dane.nr_rejestracyjny ?? dane.vin} istnieje w bazie, ale jest przypisany do innego klienta.`
 		});
-		return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
+		return { pojazd: null, nowyPojazd: null, wniosekPojazd: null, aktualizacjaPojazdu: null };
 	}
 
 	const opis = [dane.nr_rejestracyjny, dane.vin, dane.marka_model].filter(Boolean).join(' — ');
@@ -381,7 +392,7 @@ function dopasujPojazd(
 				level: 'error',
 				text: `Polisa nie zawiera ${brak} pojazdu (${opis}), więc nie da się go zapisać w kartotece. Złóż wniosek do administratora albo dodaj pojazd wcześniej ręcznie.`
 			});
-			return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
+			return { pojazd: null, nowyPojazd: null, wniosekPojazd: null, aktualizacjaPojazdu: null };
 		}
 		issues.push({
 			level: 'warn',
@@ -396,7 +407,8 @@ function dopasujPojazd(
 				...wspolne,
 				zrodlo: input.fileName ?? null,
 				status: 'oczekuje'
-			}
+			},
+			aktualizacjaPojazdu: null
 		};
 	}
 
@@ -405,18 +417,85 @@ function dopasujPojazd(
 			level: 'error',
 			text: `Pojazd ${opis} nie występuje w kartotece klienta. Potwierdź założenie go z danych polisy albo dodaj go wcześniej ręcznie.`
 		});
-		return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
+		return { pojazd: null, nowyPojazd: null, wniosekPojazd: null, aktualizacjaPojazdu: null };
 	}
 
+	const zaszeregowanie = zaszeregowanieZPolisy(dane);
 	issues.push({
 		level: 'warn',
-		text: `Pojazd ${opis} zostanie założony w kartotece klienta na podstawie danych z polisy.`
+		text: `Pojazd ${opis} zostanie założony w kartotece klienta na podstawie danych z polisy${Object.keys(zaszeregowanie).length ? ' (wraz z zaszeregowaniem wg Cumulus)' : ''}.`
 	});
 	return {
 		pojazd: null,
-		nowyPojazd: { tenant_id: tenantId, klient_id: client.id, ...wspolne },
-		wniosekPojazd: null
+		// Pojazd z rejestracją i VIN — tablice stałe; zaszeregowanie z polisy, gdy ją niesie (Hestia).
+		nowyPojazd: { tenant_id: tenantId, klient_id: client.id, ...wspolne, ...zaszeregowanie, rodzaj_tablic: 'stała' },
+		wniosekPojazd: null,
+		aktualizacjaPojazdu: null
 	};
+}
+
+type PoleZaszeregowania =
+	| 'rodzaj_kalkulacyjny'
+	| 'rodzaj_rejestrowy'
+	| 'typ_pojazdu'
+	| 'liczba_miejsc'
+	| 'data_pierwszej_rejestracji'
+	| 'rok_produkcji'
+	| 'pojemnosc_silnika'
+	| 'ladownosc'
+	| 'moc';
+
+const POLA_ZASZEREGOWANIA: { pole: PoleZaszeregowania; etykieta: string }[] = [
+	{ pole: 'rodzaj_kalkulacyjny', etykieta: 'kalkulacyjny rodzaj pojazdu' },
+	{ pole: 'rodzaj_rejestrowy', etykieta: 'rodzaj rejestrowy' },
+	{ pole: 'typ_pojazdu', etykieta: 'typ pojazdu' },
+	{ pole: 'liczba_miejsc', etykieta: 'liczba miejsc' },
+	{ pole: 'data_pierwszej_rejestracji', etykieta: 'data pierwszej rejestracji' }
+];
+
+const POLA_TECHNICZNE: { pole: PoleZaszeregowania; etykieta: string }[] = [
+	{ pole: 'rok_produkcji', etykieta: 'rok produkcji' },
+	{ pole: 'pojemnosc_silnika', etykieta: 'pojemność silnika' },
+	{ pole: 'moc', etykieta: 'moc' },
+	{ pole: 'ladownosc', etykieta: 'ładowność' }
+];
+
+const maFlagi = (u: VehicleData['uzytkowanie']) => !!u && Object.values(u).some(Boolean);
+
+/** Pola zaszeregowania (Cumulus), które niesie polisa — tylko te z wartością, żeby nie nadpisywać pustką. */
+function zaszeregowanieZPolisy(dane: VehicleData): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const { pole } of POLA_ZASZEREGOWANIA) {
+		const v = dane[pole];
+		if (v != null && v !== '') out[pole] = v;
+	}
+	if (maFlagi(dane.uzytkowanie)) out.uzytkowanie = dane.uzytkowanie;
+	return out;
+}
+
+/**
+ * Uzupełnienie istniejącej kartoteki o dane z polisy: zaszeregowanie i parametry techniczne,
+ * których w kartotece brakuje. Wartości już wpisane zostają — polisa ich nie nadpisuje.
+ */
+function uzupelnieniePojazdu(
+	v: Vehicle,
+	dane: VehicleData
+): { pola: Record<string, unknown>; etykiety: string[] } | null {
+	const pola: Record<string, unknown> = {};
+	const etykiety: string[] = [];
+	for (const { pole, etykieta } of [...POLA_ZASZEREGOWANIA, ...POLA_TECHNICZNE]) {
+		const nowe = dane[pole];
+		const stare = v[pole];
+		if (nowe != null && nowe !== '' && (stare == null || stare === '')) {
+			pola[pole] = nowe;
+			etykiety.push(etykieta);
+		}
+	}
+	if (maFlagi(dane.uzytkowanie) && !maFlagi(v.uzytkowanie)) {
+		pola.uzytkowanie = dane.uzytkowanie;
+		etykiety.push('wykorzystanie pojazdu');
+	}
+	return etykiety.length ? { pola, etykiety } : null;
 }
 
 /**

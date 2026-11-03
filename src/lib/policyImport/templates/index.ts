@@ -6,6 +6,7 @@ import type { InsurerTemplate, ProductTemplate } from '../types';
 import * as wartaEkstrabiznes from './warta-ekstrabiznes';
 import * as ergoOcZawodowe from './ergo-oc-zawodowe';
 import * as ergoOcIndywidualna from './ergo-oc-indywidualna';
+import * as ergoFlota from './ergo-flota-komunikacja';
 import * as uniqaKomunikacja from './uniqa-komunikacja';
 
 export const INSURER_TEMPLATES: InsurerTemplate[] = [
@@ -55,9 +56,11 @@ export const INSURER_TEMPLATES: InsurerTemplate[] = [
 			},
 			{
 				id: 'ergo-flota-komunikacja',
-				label: 'Flota / Komunikacja',
-				rodzaj: 'flota',
-				todo: 'Szablon czeka na wzorcową polisę ERGO Hestii (flota / komunikacja).'
+				label: 'Flota / Komunikacja — certyfikaty z umowy generalnej (Cumulus)',
+				rodzaj: 'komunikacja',
+				parse: ergoFlota.parse,
+				parseMany: ergoFlota.parseMany,
+				detect: ergoFlota.detect
 			}
 		]
 	},

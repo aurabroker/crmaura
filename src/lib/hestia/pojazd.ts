@@ -3,8 +3,9 @@
 // dla agentów, jak i brokerów — te pola decydują o zaszeregowaniu pojazdu
 // i wyliczeniu składki, dlatego są obecne w każdym formularzu pojazdu.
 
-import type { Vehicle, VehicleUsage } from '$lib/types/database';
-import { odmiana, validateVin } from '$lib/utils';
+// Importy względne z rozszerzeniem, żeby moduł dało się uruchomić w testach node (--experimental-strip-types).
+import type { Vehicle, VehicleUsage } from '../types/database.ts';
+import { odmiana, validateVin } from '../utils.ts';
 
 /** KALKULACYJNY RODZAJ POJAZDU — wartości zaobserwowane w zrzucie Hestii. */
 export const RODZAJE_KALKULACYJNE = [
@@ -106,6 +107,60 @@ export function vehicleLabel(
 					? `silnik ${v.nr_silnika!.trim()}`
 					: 'bez identyfikatora';
 	return opts.zModelem && v.marka_model ? `${id} — ${v.marka_model}` : id;
+}
+
+/**
+ * Kalkulacyjny rodzaj pojazdu (Cumulus) z rodzaju rejestrowego i ładowności — reguła
+ * odczytana z wykazu floty Hestii: ciężarowe dzielą się progami ładowności 850 / 2500 kg.
+ * Null, gdy rodzaj jest nieznany albo ciężarowy bez ładowności (operator wybiera sam).
+ */
+export function rodzajKalkulacyjny(
+	rodzajRejestrowy: string | null | undefined,
+	ladownosc?: number | null
+): string | null {
+	const r = (rodzajRejestrowy ?? '').toUpperCase().replace(/\s+/g, ' ').trim();
+	if (!r) return null;
+	if (/CI[ĄA]GNIK SAMOCHODOWY|SIOD[ŁL]OW/.test(r)) return 'Ciągniki siodłowe';
+	if (/CI[ĄA]GNIK ROLNICZY/.test(r)) return 'Ciągniki rolnicze';
+	if (/NACZEP/.test(r)) return 'Naczepy - pozostałe';
+	if (/PRZYCZEP/.test(r)) return 'Przyczepy - pozostałe';
+	if (/AUTOBUS/.test(r)) return 'Autobusy';
+	if (/MOTOCYKL|MOTOROWER/.test(r)) return 'Motocykle';
+	if (/SPECJALN/.test(r)) return 'Pojazdy specjalne';
+	if (/WOLNOBIE[ŻZ]N/.test(r)) return 'Pojazdy wolnobieżne';
+	if (/OSOBOW/.test(r)) return 'Osobowe';
+	if (/CI[ĘE][ŻZ]AROW/.test(r)) {
+		if (ladownosc == null) return null;
+		if (ladownosc <= 850) return 'Ciężarowe o ładowności do 850kg';
+		if (ladownosc <= 2500) return 'Ciężarowe o ładowności pow. 850kg do 2500kg';
+		return 'Ciężarowe o ładowności pow. 2500kg';
+	}
+	return null;
+}
+
+/**
+ * Flagi użytkowania z tekstu certyfikatu („WYKORZYSTANIE POJAZDU: pojazd zastępczy na
+ * zasadach innych niż wynajem (ASO)”) — po słowach kluczowych etykiet Cumulus.
+ */
+export function uzytkowanieZTekstu(tekst: string | null | undefined): VehicleUsage {
+	const t = (tekst ?? '').toLowerCase();
+	const u: VehicleUsage = {};
+	if (!t.trim()) return u;
+	const testy: [keyof VehicleUsage, RegExp][] = [
+		['zastepczy_aso', /zast[eę]pcz/],
+		['wynajem_dlugoterminowy', /d[łl]ugoterminow|\bcfm\b/],
+		['kurier', /kurier/],
+		['adr', /niebezpieczn|\badr\b/],
+		['jazdy_probne', /pr[oó]bn|demonstracyjn/],
+		['nauka_jazdy', /nauk[aią] jazdy/],
+		['woz_interwencyjny', /interwencyjn/],
+		['leasing', /leasing/],
+		['rac', /\brac\b|zarobkow/],
+		['taxi', /taxi|uber|przew[oó]z os[oó]b/],
+		['jazdy_testowe', /testow/]
+	];
+	for (const [klucz, re] of testy) if (re.test(t)) u[klucz] = true;
+	return u;
 }
 
 /** „leasing, taxi” — zaznaczone flagi użytkowania; pusty napis, gdy żadna. */

@@ -11,6 +11,7 @@
 		RODZAJE_REJESTROWE,
 		RODZAJE_TABLIC,
 		UZYTKOWANIE_FLAGI,
+		rodzajKalkulacyjny,
 		validateVehicleIdentity
 	} from '$lib/hestia/pojazd';
 	import { Info } from 'lucide-svelte';
@@ -50,6 +51,13 @@
 
 	const int = (s: string) => (s.trim() ? parseInt(s, 10) : null);
 	const txt = (s: string) => s.trim() || null;
+
+	// Rodzaj rejestrowy (z dowodu) i ładowność wyznaczają kalkulacyjny rodzaj wg reguły Cumulus —
+	// podpowiadamy go, gdy pole jest puste; wpisany ręcznie zostaje.
+	function podpowiedzKalkulacyjny() {
+		if (fRodzajKalk.trim()) return;
+		fRodzajKalk = rodzajKalkulacyjny(fRodzajRej, int(fLadownosc)) ?? '';
+	}
 
 	export function isValid(): string | null {
 		if (showClient && !fKlient) return 'Wybierz klienta.';
@@ -215,7 +223,7 @@
 			</div>
 			<div>
 				<label class={lbl} for="vf-rejestrowy">Rodzaj rejestrowy (z dowodu)</label>
-				<input id="vf-rejestrowy" class={inp} bind:value={fRodzajRej} list="vf-rej-lista" placeholder="np. SAMOCHÓD CIĘŻAROWY" />
+				<input id="vf-rejestrowy" class={inp} bind:value={fRodzajRej} list="vf-rej-lista" placeholder="np. SAMOCHÓD CIĘŻAROWY" onchange={podpowiedzKalkulacyjny} />
 				<datalist id="vf-rej-lista">
 					{#each RODZAJE_REJESTROWE as r}<option value={r}></option>{/each}
 				</datalist>

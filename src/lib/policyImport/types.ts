@@ -2,6 +2,7 @@
 // zwraca ten sam kształt, dzięki czemu mapowanie na CRM jest jedno dla wszystkich.
 
 import type { PdfDoc } from './pdfDoc';
+import type { VehicleUsage } from '$lib/types/database';
 
 /** Pozycja ryzyka z tabeli "przedmiot ubezpieczenia / suma ubezpieczenia". */
 export interface RiskItem {
@@ -26,6 +27,13 @@ export interface VehicleData {
 	pojemnosc_silnika: number | null;
 	moc: number | null;
 	ladownosc: number | null;
+	/** Zaszeregowanie wg układu Cumulus — gdy dokument je niesie (certyfikaty ERGO Hestii). */
+	rodzaj_rejestrowy?: string | null;
+	rodzaj_kalkulacyjny?: string | null;
+	typ_pojazdu?: string | null;
+	liczba_miejsc?: number | null;
+	data_pierwszej_rejestracji?: string | null;
+	uzytkowanie?: VehicleUsage | null;
 }
 
 /** Finansujący wskazany na polisie (leasing / bank). */
@@ -120,6 +128,11 @@ export interface ProductTemplate {
 	rodzaj: string;
 	/** Brak parsera = produkt widoczny na liście, ale import zablokowany. */
 	parse?: (doc: PdfDoc) => ExtractedPolicy;
+	/**
+	 * Dokument z wieloma polisami (flota Hestii: jeden certyfikat na pojazd, każdy z własnym
+	 * numerem i składką). Import zapisuje każdą pozycję jako osobną polisę.
+	 */
+	parseMany?: (doc: PdfDoc) => ExtractedPolicy[];
 	/** Zdanie wyjaśniające, czego brakuje — pokazywane, gdy parse === undefined. */
 	todo?: string;
 	/** Sprawdza, czy wgrany plik to na pewno ten produkt. Zwraca komunikat błędu. */

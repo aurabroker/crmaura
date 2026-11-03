@@ -259,9 +259,16 @@ w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
 | ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia |
 | ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk (bez elementów stałych programu — patrz niżej), lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
 | UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
+| ERGO Hestia | Flota / Komunikacja — certyfikaty z umowy generalnej (Cumulus) | **plik wielocertyfikatowy**: jedna strona = jeden certyfikat (pojazd) z własnym numerem `…/KOM/A000004`, składką, ryzykami (OC/AC/KR/NNW z sumami i parametrami AC) i harmonogramem; każdy certyfikat to osobna polisa komunikacyjna pod Umową Generalną `…/KOM/A`; z certyfikatu idzie pełne zaszeregowanie pojazdu (rodzaj rejestrowy → kalkulacyjny wg ładowności, liczba miejsc, pierwsza rejestracja, wykorzystanie) |
 
 Produkt bez parsera jest widoczny na liście, ale import jest zablokowany.
 Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
+Szablon może zwracać wiele polis z jednego pliku (`parseMany`): import pokazuje
+wtedy listę certyfikatów ze stanem każdego (pojazd w kartotece / do założenia /
+wniosek / błąd), szczegóły zaznaczonego i zapisuje jednym kliknięciem wszystkie
+bez błędów — pominięte są wymienione przed zapisem, a zapis zatrzymuje się na
+pierwszym błędzie (to, co weszło, zostaje; ponowny import rozpozna je jako
+duplikaty).
 
 **Zasady mapowania**
 
@@ -281,6 +288,12 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
   w kartotece blokuje import do czasu zgody operatora na założenie go
   z danych polisy — założenie wprost wymaga **VIN i numeru rejestracyjnego**
   (warunek bezwzględny kartoteki, patrz „Pojazdy”).
+- **Zaszeregowanie pojazdu z polisy.** Gdy dokument niesie dane klasyfikacyjne
+  (certyfikaty Hestii: rodzaj rejestrowy, ładowność, liczba miejsc, pierwsza
+  rejestracja, wykorzystanie), nowy pojazd dostaje je od razu (kalkulacyjny
+  rodzaj wg reguły Cumulus: osobowe / ciężarowe progami 850 i 2500 kg
+  ładowności / ciągniki siodłowe / naczepy…), a w istniejącej kartotece
+  uzupełniane są **tylko puste pola** — wpisane wartości zostają.
 - **Pojazd bez numeru rejestracyjnego albo VIN → wniosek do administratora.**
   Kartoteka pojazdów wymaga obu numerów, a polisa nie zawsze je niesie
   (bywa sam VIN albo sama rejestracja). Takiego pojazdu broker nie zakłada
