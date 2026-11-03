@@ -379,8 +379,7 @@ podgląd importu, Pojazdy).
   załączniki w prywatnym buckecie `wyrejestrowania`): zakładka
   **Wyrejestrowania** pokazuje kto, kiedy, do kogo i z jakim dowodem wysłał
   (także nieudaną próbę), a wiadomość trafia też do historii **E-maile**
-  klienta (rodzaj `inne`, temat „Zgłoszenie wyrejestrowania pojazdu …”)
-  z dostawą śledzoną webhookiem Resend.
+  klienta (rodzaj `wyrejestrowanie`) z dostawą śledzoną webhookiem Resend.
   Po wysłaniu pojazd dostaje datę `wyrejestrowany_at`, nie liczy się już
   jako „bez ochrony” i ma własny filtr „Wyrejestrowane”.
 - Wyszukiwarka po rejestracji, VIN, numerze nadwozia, marce i kliencie

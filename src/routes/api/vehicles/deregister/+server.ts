@@ -12,10 +12,9 @@ import type { RequestHandler } from './$types';
 // w imieniu doradcy; odpowiedzi trafiają do doradcy (Reply-To).
 //
 // Ślad przy kliencie: crm_vehicle_deregistrations (kto, kiedy, do kogo, z jakim
-// dowodem — także nieudana próba) oraz crm_client_emails (rodzaj „inne” — słownik
-// rodzajów w bazie nie ma osobnej wartości), dzięki czemu webhook Resend dopisuje
-// stan dostawy, a zakładka „E-maile” klienta pokazuje wiadomość razem z resztą
-// korespondencji. Dowody wyrejestrowania (umowa
+// dowodem — także nieudana próba) oraz crm_client_emails (rodzaj „wyrejestrowanie”),
+// dzięki czemu webhook Resend dopisuje stan dostawy, a zakładka „E-maile” klienta
+// pokazuje wiadomość razem z resztą korespondencji. Dowody wyrejestrowania (umowa
 // sprzedaży, faktura, decyzja o złomowaniu) idą w załączniku i do prywatnego
 // bucketa „wyrejestrowania” (ścieżka zaczyna się od tenant_id — RLS).
 
@@ -241,7 +240,7 @@ ${tresc ? `<p style="white-space:pre-wrap">${esc(tresc)}</p>` : ''}
 			tenant_id: profile.tenant_id,
 			klient_id: klient.id,
 			polisa_ids: polisa ? [polisa.id] : [],
-			rodzaj: 'inne',
+			rodzaj: 'wyrejestrowanie',
 			adres: [...adresaci, ...cc.map((a) => `CC: ${a}`)].join(', ').slice(0, 320),
 			temat: temat.slice(0, 500),
 			tresc: text.slice(0, 20000),
