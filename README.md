@@ -229,7 +229,10 @@ POST /api/admin/update-role <- zmienia rolę / dane użytkownika
 
 Zakładki:
 - **Polisy** — wszystkie polisy klienta z statusem i kwotą
-- **Pojazdy** — flota z rejestracją, VIN, marką, modelem
+- **Pojazdy / Flota** — pojazdy z rejestracją, VIN, marką, modelem i zaszeregowaniem
+  wg układu Cumulus (Hestia); ikona koperty = „Zgłoś wyrejestrowanie pojazdu” do TU
+- **Wyrejestrowania** — zgłoszenia wyrejestrowania wysłane do TU: kto, kiedy, do kogo,
+  z jakim dowodem (załączniki do pobrania)
 - **Szkody** — historia zgłoszeń z inline edycją statusu
 - **Saldo** — zestawienie składek i płatności
 
@@ -276,17 +279,19 @@ Każdy szablon ma `detect()`, który odrzuca plik innego towarzystwa.
 - **Pojazd.** Wiązany po VIN, a przy jego braku po numerze rejestracyjnym.
   Pojazd należący do innego klienta blokuje import. Brak pojazdu
   w kartotece blokuje import do czasu zgody operatora na założenie go
-  z danych polisy.
-- **Pojazd bez numeru rejestracyjnego → wniosek do administratora.**
-  Kartoteka pojazdów wymaga rejestracji, a polisa nie zawsze ją niesie
-  (bywa sam VIN). Takiego pojazdu broker nie zakłada sam: potwierdza
-  złożenie wniosku, polisa zapisuje się bez powiązania z pojazdem,
-  a wniosek trafia do `crm_vehicle_requests` ze statusem `oczekuje`.
+  z danych polisy — założenie wprost wymaga **VIN i numeru rejestracyjnego**
+  (warunek bezwzględny kartoteki, patrz „Pojazdy”).
+- **Pojazd bez numeru rejestracyjnego albo VIN → wniosek do administratora.**
+  Kartoteka pojazdów wymaga obu numerów, a polisa nie zawsze je niesie
+  (bywa sam VIN albo sama rejestracja). Takiego pojazdu broker nie zakłada
+  sam: potwierdza złożenie wniosku, polisa zapisuje się bez powiązania
+  z pojazdem, a wniosek trafia do `crm_vehicle_requests` ze statusem `oczekuje`.
   Administrator widzi licznik przy ikonie Ustawień i rozpatruje wniosek
-  w zakładce **Ustawienia → Wnioski o pojazdy**: uzupełnia numer
-  rejestracyjny i akceptuje (pojazd powstaje i zostaje podpięty do polisy)
-  albo odrzuca z podaniem powodu. Obie decyzje trafiają do dziennika
-  aktywności.
+  w zakładce **Ustawienia → Wnioski o pojazdy**: uzupełnia brakujący numer
+  (rejestracja, VIN; dla pojazdu niepodlegającego rejestracji — numer
+  nadwozia/ramy albo silnika) i akceptuje (pojazd powstaje i zostaje
+  podpięty do polisy) albo odrzuca z podaniem powodu. Obie decyzje trafiają
+  do dziennika aktywności.
 - **Umowa Generalna.** Numer Programu Ubezpieczenia / Umowy generalnej
   z polisy wiąże ją z UG (`parent_id`) wraz z przejęciem domyślnej prowizji.
 - **Elementy stałe programu.** Klauzule i sublimity obowiązujące na każdej
@@ -326,13 +331,50 @@ widoczną na liście polis — nie jest zrzutem wszystkich parametrów.
 
 ### Pojazdy (`/vehicles`)
 
-Kartoteka pojazdów z pełnym zestawem pól (rejestracja, VIN, marka i model,
-rok, rodzaj, pojemność, moc, ładowność).
+Kartoteka pojazdów z pełnym zestawem pól: identyfikacja (rejestracja, VIN,
+numer nadwozia/ramy, numer silnika), dane techniczne (marka i model, rok,
+pierwsza rejestracja, rodzaj tablic, pojemność, moc, ładowność, liczba
+miejsc) oraz **zaszeregowanie wg układu Cumulus (STU ERGO Hestia)**:
+kalkulacyjny rodzaj pojazdu, rodzaj rejestrowy (z dowodu), typ pojazdu
+i 11 flag użytkowania (leasing, taxi, RAC, ADR, nauka jazdy…). Te pola
+decydują o składce, dlatego jeden wspólny formularz (`VehicleForm`) obsługuje
+każde miejsce, gdzie pojazd się dodaje lub edytuje: panel Pojazdy, kartę
+klienta (Flota), stronę „Dodaj pojazd” i zakładkę Pojazdy w Ustawieniach,
+a zaszeregowanie widać przy pojeździe w każdej zakładce (Flota, karta polisy,
+podgląd importu, Pojazdy).
 
-- Wyszukiwarka po rejestracji, VIN, marce i kliencie
-- Filtry: wszystkie / z czynną ochroną / bez ochrony
-- **Historia ochrony** — rozwijany wiersz z listą wszystkich polis pojazdu
-  (okres, TU, składka, oznaczenie odnowień), z linkiem do karty polisy
+- **Warunek bezwzględny identyfikacji** (CHECK `crm_vehicles_identyfikacja_chk`
+  i walidacja w formularzu): pojazdu nie da się zapisać bez **VIN i numeru
+  rejestracyjnego**. Wyjątek: pojazd niepodlegający rejestracji (specjalny,
+  wolnobieżny) — po zaznaczeniu „bez rejestracji” wystarczy VIN, numer
+  nadwozia/ramy albo numer silnika.
+- **Wykaz Cumulus** — eksport widocznych pojazdów do pliku .xlsx o układzie
+  identycznym ze zrzutem floty z systemu Cumulus Hestii (151 kolumn w 15
+  grupach, dwa wiersze nagłówka ze scaleniami, szerokości kolumn jak
+  w oryginale). Układ opisuje `src/lib/hestia/cumulusLayout.ts`, mapowanie
+  z CRM — `src/lib/hestia/cumulusExport.ts` (ubezpieczający, ubezpieczony /
+  finansujący z polisy, pojazd, zaszeregowanie, użytkowanie, polisa, UG, raty).
+- **Zgłoś wyrejestrowanie pojazdu** (ikona koperty przy pojeździe w panelu
+  Pojazdy i w zakładce Flota klienta): e-mail do towarzystwa na adresy
+  ustawione przy TU w **Ustawienia → System → Towarzystwa** („Zgłoszenia
+  wyrejestrowania pojazdu” — dwa adresy; bez nich wysyłka jest zablokowana),
+  kopia (CC) na adres brokera/agenta z **Ustawienia → Mój profil** (edytowalny
+  przy wysyłce). Wymagany dowód wyrejestrowania (umowa sprzedaży, faktura,
+  decyzja o złomowaniu — PDF lub zdjęcie, do 10 MB każdy, 25 MB łącznie).
+  Wychodzi kluczem Resend firmy z adresu firmy, w imieniu doradcy (Reply-To).
+  Zgłoszenie zapisuje się przy kliencie (`crm_vehicle_deregistrations`,
+  załączniki w prywatnym buckecie `wyrejestrowania`): zakładka
+  **Wyrejestrowania** pokazuje kto, kiedy, do kogo i z jakim dowodem wysłał
+  (także nieudaną próbę), a wiadomość trafia też do historii **E-maile**
+  klienta (rodzaj `inne`, temat „Zgłoszenie wyrejestrowania pojazdu …”)
+  z dostawą śledzoną webhookiem Resend.
+  Po wysłaniu pojazd dostaje datę `wyrejestrowany_at`, nie liczy się już
+  jako „bez ochrony” i ma własny filtr „Wyrejestrowane”.
+- Wyszukiwarka po rejestracji, VIN, numerze nadwozia, marce i kliencie
+- Filtry: wszystkie / z czynną ochroną / bez ochrony / wyrejestrowane
+- **Historia ochrony** — rozwijany wiersz z pełnym zaszeregowaniem pojazdu
+  i listą wszystkich polis (okres, TU, składka, oznaczenie odnowień),
+  z linkiem do karty polisy
 - Skrót „Wgraj odnowienie" dla pojazdu bez czynnej polisy
 - Zmiana numeru rejestracyjnego nie zrywa historii — pojazd wiąże VIN
 - Usunięcie zablokowane, gdy pojazd ma polisy w historii

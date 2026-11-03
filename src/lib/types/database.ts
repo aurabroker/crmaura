@@ -14,6 +14,8 @@ export interface Profile {
 	pesel: string | null;
 	/** Konto bez logowania (np. „Centrala” — domyślny opiekun polis). */
 	wirtualny?: boolean;
+	/** Domyślny adres CC brokera/agenta dla zgłoszeń wysyłanych do TU (np. wyrejestrowanie pojazdu). */
+	email_cc_zgloszenia?: string | null;
 }
 
 export interface Tenant {
@@ -87,6 +89,9 @@ export interface Insurer {
 	ulica: string | null;
 	nip: string | null;
 	krs: string | null;
+	/** Adresy w TU do zgłoszeń wyrejestrowania pojazdu (główny i drugi). */
+	email_wyrej_1?: string | null;
+	email_wyrej_2?: string | null;
 }
 
 export interface InsurerBranch {
@@ -195,7 +200,7 @@ export interface Policy {
 	ubezpieczony?: { nazwa: string } | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;
 	crm_insurer_contacts?: { imie_nazwisko: string; stanowisko: string | null; crm_insurer_branches?: { nazwa: string } | null } | null;
-	crm_vehicles?: { nr_rejestracyjny: string; marka_model: string; vin: string | null } | null;
+	crm_vehicles?: { nr_rejestracyjny: string | null; marka_model: string; vin: string | null } | null;
 	crm_leasings?: { nazwa: string } | null;
 }
 
@@ -295,6 +300,10 @@ export interface VehicleRequest {
 	pojemnosc_silnika: number | null;
 	moc: number | null;
 	ladownosc: number | null;
+	/** Pojazd specjalny / wolnobieżny: zamiast tablic numer nadwozia/ramy albo silnika. */
+	nr_nadwozia?: string | null;
+	nr_silnika?: string | null;
+	bez_rejestracji?: boolean;
 	zrodlo: string | null;
 	status: 'oczekuje' | 'zaakceptowany' | 'odrzucony';
 	powod: string | null;
@@ -346,11 +355,35 @@ export interface Claim {
 	crm_policies?: { nr_polisy: string } | null;
 }
 
+/**
+ * POJAZD WYKORZYSTYWANY — flagi użytkowania ze zrzutu Cumulus (Hestia); brak klucza = „nie”.
+ * Etykiety i kolejność: UZYTKOWANIE_FLAGI w $lib/hestia/pojazd.
+ */
+export interface VehicleUsage {
+	zastepczy_aso?: boolean;
+	wynajem_dlugoterminowy?: boolean;
+	kurier?: boolean;
+	adr?: boolean;
+	jazdy_probne?: boolean;
+	nauka_jazdy?: boolean;
+	woz_interwencyjny?: boolean;
+	leasing?: boolean;
+	rac?: boolean;
+	taxi?: boolean;
+	jazdy_testowe?: boolean;
+}
+
+/**
+ * Pojazd w kartotece. Warunek bezwzględny (CHECK crm_vehicles_identyfikacja_chk): VIN i numer
+ * rejestracyjny; pojazd niepodlegający rejestracji (bez_rejestracji) — VIN, numer nadwozia/ramy albo
+ * numer silnika. Pola zaszeregowania pochodzą z układu Cumulus (Hestia) i decydują o składce.
+ */
 export interface Vehicle {
 	id: string;
 	tenant_id: string;
 	klient_id: string;
-	nr_rejestracyjny: string;
+	/** Puste tylko dla pojazdu niepodlegającego rejestracji. */
+	nr_rejestracyjny: string | null;
 	marka_model: string;
 	vin: string | null;
 	rok_produkcji: number | null;
@@ -358,6 +391,50 @@ export interface Vehicle {
 	moc: number | null;
 	pojemnosc_silnika: number | null;
 	ladownosc: number | null;
+	/** KALKULACYJNY RODZAJ POJAZDU (Cumulus) — podstawa zaszeregowania i składki. */
+	rodzaj_kalkulacyjny?: string | null;
+	/** RODZAJ REJESTROWY — jak w dowodzie rejestracyjnym. */
+	rodzaj_rejestrowy?: string | null;
+	typ_pojazdu?: string | null;
+	nr_nadwozia?: string | null;
+	nr_silnika?: string | null;
+	/** stała / tymczasowa / zabytkowa / indywidualna / brak */
+	rodzaj_tablic?: string | null;
+	data_pierwszej_rejestracji?: string | null;
+	liczba_miejsc?: number | null;
+	uzytkowanie?: VehicleUsage | null;
+	/** Pojazd specjalny / wolnobieżny niepodlegający rejestracji. */
+	bez_rejestracji?: boolean;
+	/** Data zgłoszenia wyrejestrowania do TU (ostatniego). */
+	wyrejestrowany_at?: string | null;
+	created_at?: string;
+}
+
+/** Zgłoszenie wyrejestrowania pojazdu wysłane do TU (crm_vehicle_deregistrations) — ślad przy kliencie. */
+export interface VehicleDeregistration {
+	id: string;
+	tenant_id: string;
+	klient_id: string;
+	pojazd_id: string | null;
+	polisa_id: string | null;
+	tu_id: string | null;
+	powod: 'sprzedaz' | 'zlomowanie' | 'kradziez' | 'inne';
+	data_zdarzenia: string | null;
+	tresc: string | null;
+	/** Migawka pojazdu z chwili zgłoszenia. */
+	pojazd_opis: string | null;
+	adresaci: string[];
+	cc: string[];
+	nadawca: string | null;
+	temat: string | null;
+	/** Dowody wyrejestrowania w buckecie „wyrejestrowania”. */
+	zalaczniki: { nazwa: string; sciezka: string; rozmiar: number; typ: string }[];
+	status: 'wyslane' | 'blad';
+	resend_id: string | null;
+	blad: string | null;
+	wyslal_id: string | null;
+	wyslal_nazwa: string | null;
+	created_at: string;
 }
 
 export interface ApkLog {

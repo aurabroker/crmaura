@@ -8,6 +8,7 @@
 	import { magazynDostepny, wyslijPdfPolisy } from '$lib/plikiPolis';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { fmtPln } from '$lib/utils';
+	import { vehicleLabel } from '$lib/hestia/pojazd';
 	import { readPdf, type PdfDoc } from '$lib/policyImport/pdf';
 	import { templatesFor } from '$lib/policyImport/templates';
 	import { buildDraft, type Draft } from '$lib/policyImport/map';
@@ -205,7 +206,7 @@
 				return;
 			}
 			payload.pojazd_id = pojazd!.id;
-			await logAudit('vehicle_created', 'vehicle', pojazd!.id, draft.nowyPojazd.nr_rejestracyjny as string, {
+			await logAudit('vehicle_created', 'vehicle', pojazd!.id, vehicleLabel(draft.nowyPojazd as { nr_rejestracyjny?: string | null; vin?: string | null }), {
 				zrodlo: 'import polisy',
 				plik: file?.name
 			});
@@ -677,12 +678,21 @@
 							<div class="flex justify-between gap-3 border-b border-line-soft py-1">
 								<dt class="text-slate-500">W kartotece CRM</dt>
 								<dd class="font-medium text-right {draft.pojazd ? 'text-emerald-700' : 'text-amber-700'}">
-									{draft.pojazd ? draft.pojazd.nr_rejestracyjny : 'brak — do założenia'}
+									{draft.pojazd ? vehicleLabel(draft.pojazd) : 'brak — do założenia'}
 								</dd>
 							</div>
+							{#if draft.pojazd}
+								<div class="flex justify-between gap-3 border-b border-line-soft py-1">
+									<dt class="text-slate-500">Zaszeregowanie (Cumulus)</dt>
+									<dd class="font-medium text-right {draft.pojazd.rodzaj_kalkulacyjny ? 'text-slate-900' : 'text-amber-700'}">
+										{draft.pojazd.rodzaj_kalkulacyjny ?? 'brak — uzupełnij w kartotece'}
+									</dd>
+								</div>
+							{/if}
 						</dl>
 
-						{#if !draft.pojazd && v.nr_rejestracyjny}
+						<!-- Warunek bezwzględny kartoteki: VIN i numer rejestracyjny — bez obu pojazd idzie wnioskiem do administratora. -->
+						{#if !draft.pojazd && v.nr_rejestracyjny && v.vin}
 							<label
 								class="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer"
 							>
@@ -691,11 +701,12 @@
 									Załóż ten pojazd w kartotece klienta na podstawie danych z polisy.
 									<span class="block text-xs text-amber-700 mt-0.5">
 										Bez tego import jest zablokowany — polisa komunikacyjna musi wskazywać pojazd.
+										Zaszeregowanie (kalkulacyjny rodzaj pojazdu wg Cumulus) uzupełnisz po imporcie w kartotece.
 									</span>
 								</span>
 							</label>
 						{:else if !draft.pojazd}
-							<!-- Brak rejestracji: pojazdu nie da się zapisać, decyduje administrator. -->
+							<!-- Brak rejestracji albo VIN: pojazdu nie da się zapisać, decyduje administrator. -->
 							<label
 								class="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 cursor-pointer"
 							>
@@ -703,8 +714,9 @@
 								<span class="text-sm text-amber-900">
 									Złóż wniosek do administratora o dodanie tego pojazdu.
 									<span class="block text-xs text-amber-700 mt-0.5">
-										Polisa nie zawiera numeru rejestracyjnego, a kartoteka pojazdów go wymaga.
-										Administrator uzupełni numer i zaakceptuje albo odrzuci wniosek. Polisa zostanie
+										Polisa nie zawiera {!v.nr_rejestracyjny && !v.vin ? 'numeru rejestracyjnego ani VIN' : !v.nr_rejestracyjny ? 'numeru rejestracyjnego' : 'numeru VIN'},
+										a kartoteka pojazdów wymaga obu (pojazd niepodlegający rejestracji: VIN, numer nadwozia albo silnika).
+										Administrator uzupełni brakujący numer i zaakceptuje albo odrzuci wniosek. Polisa zostanie
 										zapisana bez powiązania z pojazdem.
 									</span>
 								</span>

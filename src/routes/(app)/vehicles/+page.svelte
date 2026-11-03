@@ -9,23 +9,28 @@
 	import { polisaAktywna } from '$lib/statusPolisy';
 	import { ochronaPojazdu, opisTechniczny } from '$lib/flota';
 	import { logAudit } from '$lib/utils/audit';
+	import { odmiana } from '$lib/utils';
+	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import EksportExcel from '$lib/components/EksportExcel.svelte';
+	import VehicleForm from '$lib/components/VehicleForm.svelte';
+	import DeregisterVehicleModal from '$lib/components/DeregisterVehicleModal.svelte';
 	import { kol, type Arkusz } from '$lib/eksport';
+	import { opisUzytkowania, vehicleLabel } from '$lib/hestia/pojazd';
+	import { downloadCumulus, mapToCumulus } from '$lib/hestia/cumulusExport';
 	import Badge from '$lib/components/Badge.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import type { Policy, Vehicle } from '$lib/types/database';
-	import { Car, Plus, Search, Pencil, Trash2, ChevronRight, RefreshCw, Upload } from 'lucide-svelte';
+	import { Car, Plus, Search, Pencil, Trash2, ChevronRight, RefreshCw, Upload, MailX, FileSpreadsheet } from 'lucide-svelte';
 
 	const inp =
 		'w-full border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
-	const lbl = 'block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1';
 
 	let szukaj = $state('');
-	let filtr = $state<'wszystkie' | 'ubezpieczone' | 'bez_ochrony'>('wszystkie');
+	let filtr = $state<'wszystkie' | 'ubezpieczone' | 'bez_ochrony' | 'wyrejestrowane'>('wszystkie');
 	let rozwiniety = $state<string | null>(null);
 	const today = todayStr();
 
@@ -49,17 +54,19 @@
 			.filter((v) => {
 				const q = szukaj.trim().toLowerCase();
 				if (q) {
-					const stog = [v.nr_rejestracyjny, v.marka_model, v.vin, klientNazwa(v.klient_id)]
+					const stog = [v.nr_rejestracyjny, v.marka_model, v.vin, v.nr_nadwozia, v.nr_silnika, klientNazwa(v.klient_id)]
 						.filter(Boolean)
 						.join(' ')
 						.toLowerCase();
 					if (!stog.includes(q)) return false;
 				}
-				if (filtr === 'ubezpieczone') return !!aktywnaPolisa(v.id);
-				if (filtr === 'bez_ochrony') return !aktywnaPolisa(v.id);
+				// Pojazd po zgłoszeniu wyrejestrowania nie liczy się jako „bez ochrony” — ma własny filtr.
+				if (filtr === 'wyrejestrowane') return !!v.wyrejestrowany_at;
+				if (filtr === 'ubezpieczone') return !v.wyrejestrowany_at && !!aktywnaPolisa(v.id);
+				if (filtr === 'bez_ochrony') return !v.wyrejestrowany_at && !aktywnaPolisa(v.id);
 				return true;
 			})
-			.sort((a, b) => (a.nr_rejestracyjny ?? '').localeCompare(b.nr_rejestracyjny ?? '', 'pl'))
+			.sort((a, b) => vehicleLabel(a).localeCompare(vehicleLabel(b), 'pl'))
 	);
 
 	// Eksport do Excela: pojazdy z listy (po wyszukiwaniu i filtrze) i historia polis na tych pojazdach.
@@ -68,25 +75,27 @@
 		return [
 			{
 				nazwa: 'Pojazdy',
-				kolumny: ['Nr rejestracyjny', 'Marka i model', kol.tekst('VIN'), kol.liczba('Rok produkcji'), 'Rodzaj pojazdu', kol.liczba('Pojemność cm³'), kol.liczba('Moc kW'),
-					kol.liczba('Ładowność kg'), 'Klient', kol.tekst('Czynna polisa'), 'Towarzystwo', kol.data('Ochrona do'), kol.zl('Składka')],
+				kolumny: ['Nr rejestracyjny', kol.tekst('VIN'), kol.tekst('Nr nadwozia'), 'Marka i model', kol.liczba('Rok produkcji'), kol.data('Pierwsza rejestracja'),
+					'Kalkulacyjny rodzaj (Cumulus)', 'Rodzaj rejestrowy', 'Rodzaj pojazdu', kol.liczba('Pojemność cm³'), kol.liczba('Moc kW'),
+					kol.liczba('Ładowność kg'), kol.liczba('Liczba miejsc'), 'Użytkowanie', 'Klient', kol.tekst('Czynna polisa'), 'Towarzystwo', kol.data('Ochrona do'), kol.zl('Składka'), kol.data('Wyrejestrowany')],
 				wiersze: pojazdy.map((v) => {
 					const p = aktywnaPolisa(v.id);
-					return [v.nr_rejestracyjny, v.marka_model, v.vin, v.rok_produkcji, v.rodzaj_pojazdu, v.pojemnosc_silnika, v.moc, v.ladownosc,
-						klientNazwa(v.klient_id), p?.nr_polisy ?? 'brak czynnej ochrony', p ? nazwaTuPolisy(p) : '', p?.data_do ?? null, p?.skladka_przypisana ?? null];
+					return [v.bez_rejestracji ? 'bez rejestracji' : v.nr_rejestracyjny, v.vin, v.nr_nadwozia ?? null, v.marka_model, v.rok_produkcji, v.data_pierwszej_rejestracji ?? null,
+						v.rodzaj_kalkulacyjny ?? null, v.rodzaj_rejestrowy ?? null, v.rodzaj_pojazdu, v.pojemnosc_silnika, v.moc, v.ladownosc,
+						v.liczba_miejsc ?? null, opisUzytkowania(v), klientNazwa(v.klient_id), p?.nr_polisy ?? 'brak czynnej ochrony', p ? nazwaTuPolisy(p) : '', p?.data_do ?? null, p?.skladka_przypisana ?? null, v.wyrejestrowany_at ?? null];
 				})
 			},
 			{
 				nazwa: 'Historia polis',
-				kolumny: ['Nr rejestracyjny', kol.tekst('Nr polisy'), 'Towarzystwo', 'Rodzaj', kol.data('Od'), kol.data('Do'), kol.zl('Składka'), 'Odnowienie'],
+				kolumny: ['Pojazd', kol.tekst('Nr polisy'), 'Towarzystwo', 'Rodzaj', kol.data('Od'), kol.data('Do'), kol.zl('Składka'), 'Odnowienie'],
 				wiersze: pojazdy.flatMap((v) => polisyPojazdu(v.id).map((p) => [
-					v.nr_rejestracyjny, p.nr_polisy, nazwaTuPolisy(p), p.rodzaj, p.data_od, p.data_do, p.skladka_przypisana, p.renewal_of ? 'tak' : ''
+					vehicleLabel(v), p.nr_polisy, nazwaTuPolisy(p), p.rodzaj, p.data_od, p.data_do, p.skladka_przypisana, p.renewal_of ? 'tak' : ''
 				]))
 			}
 		];
 	}
 
-	const bezOchrony = $derived(appState.vehicles.filter((v) => !aktywnaPolisa(v.id)).length);
+	const bezOchrony = $derived(appState.vehicles.filter((v) => !v.wyrejestrowany_at && !aktywnaPolisa(v.id)).length);
 
 	// Sortowanie historii polis rozwiniętego pojazdu (rozwinięty jest zawsze jeden).
 	// Domyślnie jak dotąd: najnowsze (data_od) pierwsze.
@@ -102,41 +111,22 @@
 	}, { klucz: 'od', kierunek: 'desc' }, 'pojazd-historia-polis');
 	const historiaWidok = $derived(rozwiniety ? sortHistorii.sortuj(polisyPojazdu(rozwiniety)) : []);
 
-	// --- Formularz pojazdu ---
+	// --- Formularz pojazdu --- wspólny komponent VehicleForm: identyfikacja (VIN + rejestracja,
+	// albo nadwozie/silnik dla pojazdu niepodlegającego rejestracji) i zaszeregowanie Cumulus.
 	let showForm = $state(false);
 	let edytowany = $state<Vehicle | null>(null);
-	let fKlient = $state('');
-	let fRej = $state('');
-	let fMarka = $state('');
-	let fVin = $state('');
-	let fRok = $state('');
-	let fRodzaj = $state('');
-	let fPojemnosc = $state('');
-	let fMoc = $state('');
-	let fLadownosc = $state('');
+	let form = $state<ReturnType<typeof VehicleForm> | null>(null);
 	let zapisywanie = $state(false);
 	let blad = $state('');
 
 	function nowy() {
 		edytowany = null;
-		fKlient = appState.clients[0]?.id ?? '';
-		fRej = ''; fMarka = ''; fVin = ''; fRok = '';
-		fRodzaj = ''; fPojemnosc = ''; fMoc = ''; fLadownosc = '';
 		blad = '';
 		showForm = true;
 	}
 
 	function edytuj(v: Vehicle) {
 		edytowany = v;
-		fKlient = v.klient_id;
-		fRej = v.nr_rejestracyjny ?? '';
-		fMarka = v.marka_model ?? '';
-		fVin = v.vin ?? '';
-		fRok = v.rok_produkcji?.toString() ?? '';
-		fRodzaj = v.rodzaj_pojazdu ?? '';
-		fPojemnosc = v.pojemnosc_silnika?.toString() ?? '';
-		fMoc = v.moc?.toString() ?? '';
-		fLadownosc = v.ladownosc?.toString() ?? '';
 		blad = '';
 		showForm = true;
 	}
@@ -147,32 +137,13 @@
 	}
 
 	async function zapisz() {
-		if (!fKlient) { blad = 'Wybierz klienta.'; return; }
-		if (!fRej.trim()) { blad = 'Numer rejestracyjny jest wymagany.'; return; }
-
-		const vin = fVin.trim().toUpperCase() || null;
-		// VIN jest stały i unikalny — dublet oznacza ten sam pojazd wpisany dwa razy.
-		const dublet = vin
-			? appState.vehicles.find((v) => v.vin?.toUpperCase() === vin && v.id !== edytowany?.id)
-			: null;
-		if (dublet) {
-			blad = `Pojazd o tym VIN już istnieje w kartotece (${dublet.nr_rejestracyjny}).`;
-			return;
-		}
+		if (!form) return;
+		const err = form.isValid();
+		if (err) { blad = err; return; }
 
 		zapisywanie = true;
 		blad = '';
-		const payload = {
-			klient_id: fKlient,
-			nr_rejestracyjny: fRej.trim().toUpperCase(),
-			marka_model: fMarka.trim() || null,
-			vin,
-			rok_produkcji: fRok ? parseInt(fRok, 10) : null,
-			rodzaj_pojazdu: fRodzaj.trim() || null,
-			pojemnosc_silnika: fPojemnosc ? parseInt(fPojemnosc, 10) : null,
-			moc: fMoc ? parseInt(fMoc, 10) : null,
-			ladownosc: fLadownosc ? parseInt(fLadownosc, 10) : null
-		};
+		const payload = form.getValues();
 
 		const { error } = edytowany
 			? await sb.from('crm_vehicles').update(payload).eq('id', edytowany.id)
@@ -187,7 +158,7 @@
 			edytowany ? 'vehicle_updated' : 'vehicle_created',
 			'vehicle',
 			edytowany?.id ?? null,
-			payload.nr_rejestracyjny
+			vehicleLabel(payload)
 		);
 		showForm = false;
 		await odswiezPojazdy();
@@ -201,14 +172,38 @@
 		}
 		const ok = await askConfirm({
 			title: 'Usunąć pojazd?',
-			message: `${v.nr_rejestracyjny} — ${v.marka_model ?? 'bez nazwy'}`,
+			message: `${vehicleLabel(v)} — ${v.marka_model ?? 'bez nazwy'}`,
 			detail: 'Operacji nie da się cofnąć.',
 			confirmLabel: 'Usuń'
 		});
 		if (!ok) return;
 		await sb.from('crm_vehicles').delete().eq('id', v.id);
-		await logAudit('vehicle_deleted', 'vehicle', v.id, v.nr_rejestracyjny);
+		await logAudit('vehicle_deleted', 'vehicle', v.id, vehicleLabel(v));
 		await odswiezPojazdy();
+	}
+
+	// --- Zgłoszenie wyrejestrowania pojazdu do TU (e-mail z dowodem, ślad przy kliencie) ---
+	let deregVehicle = $state<Vehicle | null>(null);
+
+	// --- Wykaz floty w układzie zrzutu Cumulus (Hestia): to, co widać po wyszukiwaniu i filtrze ---
+	function eksportCumulus() {
+		if (!pojazdy.length) return;
+		const rows = pojazdy.map((v) => {
+			const client = appState.clients.find((c) => c.id === v.klient_id) ?? null;
+			const policy = aktywnaPolisa(v.id) ?? polisyPojazdu(v.id)[0] ?? null;
+			const ug = policy?.parent_id ? (appState.policies.find((p) => p.id === policy.parent_id) ?? null) : null;
+			const leasing = policy?.leasing_id ? (appState.leasings.find((l) => l.id === policy.leasing_id) ?? null) : null;
+			const ubezpieczony = policy?.ubezpieczony_id ? (appState.clients.find((c) => c.id === policy.ubezpieczony_id) ?? null) : null;
+			return mapToCumulus({ vehicle: v, client, policy, ug, leasing, ubezpieczony });
+		});
+		downloadCumulus(rows, `wykaz-floty-cumulus-${today}.xlsx`);
+		void logAudit('data_exported', 'export', null, `Pojazdy (Cumulus): ${odmiana(rows.length, 'pojazd', 'pojazdy', 'pojazdów')}`, {
+			zakladka: 'Pojazdy',
+			format: 'xlsx',
+			uklad: 'cumulus',
+			wiersze: rows.length
+		});
+		ctxToast(`Pobrano wykaz floty w układzie Cumulus: ${odmiana(rows.length, 'pojazd', 'pojazdy', 'pojazdów')}`);
 	}
 </script>
 
@@ -226,6 +221,16 @@
 		</div>
 		<div class="flex flex-wrap gap-2">
 			<EksportExcel plik="pojazdy" zakladka="Pojazdy" ile={pojazdy.length} arkusze={arkuszePojazdow} />
+			<button
+				type="button"
+				onclick={eksportCumulus}
+				disabled={!pojazdy.length}
+				title="Wykaz pojazdów w układzie zrzutu Cumulus (STU ERGO Hestia) — 151 kolumn, do przesłania do towarzystwa"
+				data-testid="eksport-cumulus"
+				class="h-9 flex items-center gap-1.5 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 disabled:opacity-50"
+			>
+				<FileSpreadsheet size={16} class="text-sky-700" /> Wykaz Cumulus
+			</button>
 			<button
 				onclick={nowy}
 				class="flex items-center gap-1.5 bg-accent text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-accent-hover"
@@ -245,7 +250,7 @@
 			/>
 		</div>
 		<div class="flex gap-1">
-			{#each [['wszystkie', 'Wszystkie'], ['ubezpieczone', 'Z ochroną'], ['bez_ochrony', 'Bez ochrony']] as [id, label]}
+			{#each [['wszystkie', 'Wszystkie'], ['ubezpieczone', 'Z ochroną'], ['bez_ochrony', 'Bez ochrony'], ['wyrejestrowane', 'Wyrejestrowane']] as [id, label]}
 				<button
 					onclick={() => (filtr = id as typeof filtr)}
 					class="px-3 py-2 rounded-lg text-sm font-medium border transition-colors
@@ -295,9 +300,16 @@
 									<ChevronRight size={15} class="transition-transform {rozwiniety === v.id ? 'rotate-90' : ''}" />
 								</button>
 							</td>
-							<td class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{v.nr_rejestracyjny} <Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" /></td>
+							<td class="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">
+								{vehicleLabel(v)} {#if v.nr_rejestracyjny}<Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" />{/if}
+								{#if v.wyrejestrowany_at}
+									<div class="text-[11px] font-semibold text-slate-500" title="Zgłoszono wyrejestrowanie do TU">wyrejestrowany {v.wyrejestrowany_at}</div>
+								{/if}
+							</td>
 							<td class="px-4 py-3 text-slate-700">
 								{v.marka_model ?? '—'}
+								<!-- Zaszeregowanie (Cumulus) decyduje o składce — widać je w każdym widoku pojazdu. -->
+								<div class="text-xs {v.rodzaj_kalkulacyjny ? 'text-slate-500' : 'text-amber-700'}">{v.rodzaj_kalkulacyjny ?? 'brak zaszeregowania'}</div>
 								{#if tech}<div class="text-xs text-slate-400">{tech}</div>{/if}
 							</td>
 							<td class="px-4 py-3 font-mono text-xs text-slate-500 whitespace-nowrap">{v.vin ?? '—'} <Kopiuj tekst={v.vin} opis="VIN" /></td>
@@ -310,6 +322,9 @@
 							<td class="px-4 py-3 text-right text-slate-500">{historia.length}</td>
 							<td class="px-4 py-3">
 								<div class="flex items-center justify-end gap-1">
+									<button onclick={() => (deregVehicle = v)} data-testid="pojazd-wyrejestruj" class="p-1.5 rounded-lg text-slate-400 hover:text-amber-700 hover:bg-amber-50" title={v.wyrejestrowany_at ? `Wyrejestrowanie zgłoszono ${v.wyrejestrowany_at} — zgłoś ponownie` : 'Zgłoś wyrejestrowanie pojazdu do TU (e-mail z dowodem)'}>
+										<MailX size={14} />
+									</button>
 									<button onclick={() => edytuj(v)} class="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100" title="Edytuj">
 										<Pencil size={14} />
 									</button>
@@ -323,6 +338,17 @@
 						{#if rozwiniety === v.id}
 							<tr class="bg-slate-50/60">
 								<td colspan="9" class="px-4 py-4">
+									<!-- Zaszeregowanie wg układu Cumulus (Hestia): pola potrzebne do wyliczenia składki. -->
+									<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Zaszeregowanie (Cumulus)</p>
+									<div class="mb-4 grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-2 text-xs text-slate-700">
+										<div><div class="text-slate-400">Kalkulacyjny rodzaj pojazdu</div>{v.rodzaj_kalkulacyjny ?? '—'}</div>
+										<div><div class="text-slate-400">Rodzaj rejestrowy</div>{v.rodzaj_rejestrowy ?? '—'}</div>
+										<div><div class="text-slate-400">Typ / tablice</div>{[v.typ_pojazdu, v.bez_rejestracji ? 'bez rejestracji' : v.rodzaj_tablic].filter(Boolean).join(' · ') || '—'}</div>
+										<div><div class="text-slate-400">Pierwsza rejestracja</div>{v.data_pierwszej_rejestracji ?? '—'}</div>
+										<div><div class="text-slate-400">Nr nadwozia / silnika</div>{[v.nr_nadwozia, v.nr_silnika].filter(Boolean).join(' · ') || '—'}</div>
+										<div><div class="text-slate-400">Liczba miejsc</div>{v.liczba_miejsc ?? '—'}</div>
+										<div class="col-span-2"><div class="text-slate-400">Pojazd wykorzystywany jako</div>{opisUzytkowania(v) || 'standardowo'}</div>
+									</div>
 									{#if historia.length}
 										<p class="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
 											Historia ochrony
@@ -401,80 +427,32 @@
 </div>
 
 {#if showForm}
-	<Modal open={showForm} title={edytowany ? 'Edytuj pojazd' : 'Nowy pojazd'} onclose={() => (showForm = false)}>
-		<div class="space-y-4">
-			<div>
-				<label class={lbl} for="v-klient">Klient *</label>
-				<select id="v-klient" class={inp} bind:value={fKlient}>
-					{#each appState.clients as c (c.id)}
-						<option value={c.id}>{c.nazwa}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<label class={lbl} for="v-rej">Nr rejestracyjny *</label>
-					<input id="v-rej" class={inp} bind:value={fRej} placeholder="np. PO12345" />
-				</div>
-				<div>
-					<label class={lbl} for="v-vin">VIN</label>
-					<input id="v-vin" class={inp} bind:value={fVin} placeholder="17 znaków" />
-				</div>
-			</div>
-
-			<div class="grid grid-cols-2 gap-3">
-				<div>
-					<label class={lbl} for="v-marka">Marka i model</label>
-					<input id="v-marka" class={inp} bind:value={fMarka} placeholder="np. Peugeot Boxer" />
-				</div>
-				<div>
-					<label class={lbl} for="v-rok">Rok produkcji</label>
-					<input id="v-rok" class={inp} type="number" bind:value={fRok} placeholder="np. 2019" />
-				</div>
-			</div>
-
-			<div>
-				<label class={lbl} for="v-rodzaj">Rodzaj pojazdu</label>
-				<input id="v-rodzaj" class={inp} bind:value={fRodzaj} placeholder="np. Samochody osobowe" />
-			</div>
-
-			<div class="grid grid-cols-3 gap-3">
-				<div>
-					<label class={lbl} for="v-poj">Pojemność [ccm]</label>
-					<input id="v-poj" class={inp} type="number" bind:value={fPojemnosc} />
-				</div>
-				<div>
-					<label class={lbl} for="v-moc">Moc [kW]</label>
-					<input id="v-moc" class={inp} type="number" bind:value={fMoc} />
-				</div>
-				<div>
-					<label class={lbl} for="v-lad">Ładowność [kg]</label>
-					<input id="v-lad" class={inp} type="number" bind:value={fLadownosc} />
-				</div>
-			</div>
-
-			{#if edytowany && fRej.trim().toUpperCase() !== (edytowany.nr_rejestracyjny ?? '')}
-				<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-					Zmieniasz numer rejestracyjny z {edytowany.nr_rejestracyjny} na {fRej.trim().toUpperCase()}.
-					Historia polis pozostaje przy tym pojeździe — wiąże go VIN, nie tablice.
-				</p>
-			{/if}
-
-			{#if blad}<p class="text-sm text-red-600">{blad}</p>{/if}
-
-			<div class="flex justify-end gap-2 pt-1">
-				<button onclick={() => (showForm = false)} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-700 hover:bg-slate-50">
-					Anuluj
-				</button>
-				<button
-					onclick={zapisz}
-					disabled={zapisywanie}
-					class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50"
-				>
-					{zapisywanie ? 'Zapisywanie…' : 'Zapisz'}
-				</button>
-			</div>
-		</div>
+	<Modal open={showForm} title={edytowany ? `Edytuj pojazd ${vehicleLabel(edytowany)}` : 'Nowy pojazd'} onclose={() => (showForm = false)}>
+		{#snippet footer()}
+			<button onclick={() => (showForm = false)} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-700 hover:bg-slate-50">
+				Anuluj
+			</button>
+			<button
+				onclick={zapisz}
+				disabled={zapisywanie}
+				data-testid="pojazd-zapisz"
+				class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50"
+			>
+				{zapisywanie ? 'Zapisywanie…' : 'Zapisz'}
+			</button>
+		{/snippet}
+		{#if blad}<p class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{blad}</p>{/if}
+		{#key edytowany?.id ?? 'nowy'}
+			<VehicleForm bind:this={form} vehicle={edytowany} showClient={true} />
+		{/key}
 	</Modal>
+{/if}
+
+{#if deregVehicle}
+	<DeregisterVehicleModal
+		open={!!deregVehicle}
+		vehicle={deregVehicle}
+		onclose={() => (deregVehicle = null)}
+		onsent={() => { ctxToast('Zgłoszenie wyrejestrowania wysłane do towarzystwa — ślad przy kliencie.'); void odswiezPojazdy(); }}
+	/>
 {/if}

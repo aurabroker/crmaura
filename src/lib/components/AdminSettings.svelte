@@ -14,6 +14,10 @@
 	import { Pencil, UserPlus, Mail, Building2, UserRound, ChevronDown, ChevronRight, FileText, Settings, Users, ScrollText, Landmark, Car } from 'lucide-svelte';
 	import { fmtPln } from '$lib/utils';
 	import { logAudit } from '$lib/utils/audit';
+	import { validateVehicleIdentity } from '$lib/hestia/pojazd';
+
+	// Prosty test adresu e-mail (pełną walidację robi serwer przy wysyłce zgłoszenia).
+	const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 	// activeTab sterowany przez rodzica (/settings)
 	let { activeTab = 'system' }: { activeTab?: string } = $props();
@@ -55,12 +59,19 @@
 	const actionLabel: Record<string, string> = {
 		login: 'Logowanie', client_created: 'Nowy klient', client_updated: 'Edycja klienta',
 		policy_created: 'Nowa polisa', policy_renewed: 'Odnowienie polisy', policy_deleted: 'Usunięcie polisy',
+		vehicle_deregistration_sent: 'Zgłoszenie wyrejestrowania do TU', vehicle_deregistration_failed: 'Nieudane zgłoszenie wyrejestrowania',
 	};
 
 	// --- Wnioski o dodanie pojazdu (import polis) ---
-	// Polisa potrafi nie zawierać numeru rejestracyjnego, a kartoteka pojazdów go
-	// wymaga. Broker składa wniosek, administrator uzupełnia numer i decyduje.
+	// Polisa potrafi nie zawierać numeru rejestracyjnego albo VIN, a kartoteka
+	// pojazdów wymaga obu (pojazd niepodlegający rejestracji: VIN, numer
+	// nadwozia albo silnika). Broker składa wniosek, administrator uzupełnia
+	// brakujący numer i decyduje.
 	let vrRej = $state<Record<string, string>>({});
+	let vrVin = $state<Record<string, string>>({});
+	let vrBezRej = $state<Record<string, boolean>>({});
+	let vrNadwozie = $state<Record<string, string>>({});
+	let vrSilnik = $state<Record<string, string>>({});
 	let vrPowod = $state<Record<string, string>>({});
 	let vrBusy = $state<string | null>(null);
 	let vrError = $state('');
@@ -76,13 +87,18 @@
 		if (!bladPolis && polisy) appState.policies = polisy as typeof appState.policies;
 	}
 
+	const vrBezRejestracji = (w: VehicleRequest) => vrBezRej[w.id] ?? !!w.bez_rejestracji;
+
 	async function acceptVehicleRequest(w: VehicleRequest) {
-		const rej = (vrRej[w.id] ?? w.nr_rejestracyjny ?? '').trim().toUpperCase();
+		const bezRej = vrBezRejestracji(w);
+		const rej = bezRej ? null : (vrRej[w.id] ?? w.nr_rejestracyjny ?? '').trim().toUpperCase() || null;
+		const vin = (vrVin[w.id] ?? w.vin ?? '').trim().toUpperCase() || null;
+		const nadwozie = (vrNadwozie[w.id] ?? w.nr_nadwozia ?? '').trim().toUpperCase() || null;
+		const silnik = (vrSilnik[w.id] ?? w.nr_silnika ?? '').trim().toUpperCase() || null;
 		vrError = '';
-		if (!rej) {
-			vrError = 'Podaj numer rejestracyjny — bez niego pojazdu nie da się zapisać w kartotece.';
-			return;
-		}
+		// WARUNEK BEZWZGLĘDNY: VIN i rejestracja; pojazd niepodlegający rejestracji — VIN, nadwozie albo silnik.
+		const bladId = validateVehicleIdentity({ nr_rejestracyjny: rej, vin, nr_nadwozia: nadwozie, nr_silnika: silnik, bez_rejestracji: bezRej });
+		if (bladId) { vrError = bladId; return; }
 		vrBusy = w.id;
 
 		const { data: pojazd, error: vErr } = await sb
@@ -91,8 +107,12 @@
 				tenant_id: w.tenant_id,
 				klient_id: w.klient_id,
 				nr_rejestracyjny: rej,
+				vin,
+				nr_nadwozia: nadwozie,
+				nr_silnika: silnik,
+				bez_rejestracji: bezRej,
+				rodzaj_tablic: bezRej ? 'brak' : 'stała',
 				marka_model: w.marka_model,
-				vin: w.vin,
 				rok_produkcji: w.rok_produkcji,
 				rodzaj_pojazdu: w.rodzaj_pojazdu,
 				moc: w.moc,
@@ -112,12 +132,16 @@
 		await sb.from('crm_vehicle_requests').update({
 			status: 'zaakceptowany',
 			nr_rejestracyjny: rej,
+			vin,
+			nr_nadwozia: nadwozie,
+			nr_silnika: silnik,
+			bez_rejestracji: bezRej,
 			pojazd_id: pojazd!.id,
 			rozpatrzony_przez: appState.profile!.id,
 			rozpatrzony_at: new Date().toISOString()
 		}).eq('id', w.id);
 
-		await logAudit('vehicle_request_accepted', 'vehicle', pojazd!.id, rej, { wniosek: w.id });
+		await logAudit('vehicle_request_accepted', 'vehicle', pojazd!.id, rej ?? vin ?? nadwozie ?? silnik ?? '', { wniosek: w.id });
 		await reloadVehicleRequests();
 		vrBusy = null;
 	}
@@ -152,15 +176,20 @@
 	let editingTU = $state<Insurer | null>(null);
 	let fNazwa = $state(''); let fSkrot = $state(''); let fDzial = $state('Majątkowy');
 	let fUlica = $state(''); let fNip = $state(''); let fKrs = $state('');
+	// Adresy do zgłoszeń wyrejestrowania pojazdu — dwa, bo TU zwykle ma skrzynkę ogólną i opiekuna floty.
+	let fEmailWyrej1 = $state(''); let fEmailWyrej2 = $state('');
 	let savingTU = $state(false); let tuError = $state('');
 
-	function openNewTU() { editingTU = null; fNazwa=''; fSkrot=''; fDzial='Majątkowy'; fUlica=''; fNip=''; fKrs=''; tuError=''; showTU=true; }
-	function openEditTU(t: Insurer) { editingTU=t; fNazwa=t.nazwa; fSkrot=t.skrot??''; fDzial=t.dzial; fUlica=t.ulica??''; fNip=t.nip??''; fKrs=t.krs??''; tuError=''; showTU=true; }
+	function openNewTU() { editingTU = null; fNazwa=''; fSkrot=''; fDzial='Majątkowy'; fUlica=''; fNip=''; fKrs=''; fEmailWyrej1=''; fEmailWyrej2=''; tuError=''; showTU=true; }
+	function openEditTU(t: Insurer) { editingTU=t; fNazwa=t.nazwa; fSkrot=t.skrot??''; fDzial=t.dzial; fUlica=t.ulica??''; fNip=t.nip??''; fKrs=t.krs??''; fEmailWyrej1=t.email_wyrej_1??''; fEmailWyrej2=t.email_wyrej_2??''; tuError=''; showTU=true; }
 
 	async function saveTU() {
 		if (!fNazwa.trim()) { tuError='Podaj nazwę TU'; return; }
+		const emailWyrej1 = fEmailWyrej1.trim() || null;
+		const emailWyrej2 = fEmailWyrej2.trim() || null;
+		for (const a of [emailWyrej1, emailWyrej2]) if (a && !EMAIL_RE.test(a)) { tuError = `Nieprawidłowy adres e-mail do zgłoszeń wyrejestrowania: ${a}`; return; }
 		savingTU=true; tuError='';
-		const payload = { nazwa: fNazwa.trim(), skrot: fSkrot.trim()||null, dzial: fDzial, ulica: fUlica||null, nip: fNip||null, krs: fKrs||null };
+		const payload = { nazwa: fNazwa.trim(), skrot: fSkrot.trim()||null, dzial: fDzial, ulica: fUlica||null, nip: fNip||null, krs: fKrs||null, email_wyrej_1: emailWyrej1, email_wyrej_2: emailWyrej2 };
 		let error;
 		if (editingTU) ({ error } = await sb.from('crm_insurers').update(payload).eq('id', editingTU.id));
 		else ({ error } = await sb.from('crm_insurers').insert([{ tenant_id: appState.profile!.tenant_id, ...payload }]));
@@ -675,6 +704,8 @@
 						<p class="font-medium text-slate-900">
 							{w.marka_model ?? 'Pojazd bez nazwy'}
 							{#if w.vin}<span class="ml-2 text-xs font-mono text-slate-500">VIN {w.vin}</span>{/if}
+							{#if w.nr_rejestracyjny}<span class="ml-2 text-xs font-mono text-slate-500">rej. {w.nr_rejestracyjny}</span>{/if}
+							{#if w.nr_nadwozia}<span class="ml-2 text-xs font-mono text-slate-500">nadwozie {w.nr_nadwozia}</span>{/if}
 						</p>
 						<p class="text-xs text-slate-500 mt-0.5">
 							{klient?.nazwa ?? 'klient nieznany'}
@@ -690,19 +721,48 @@
 					</div>
 				</div>
 
+				<!-- Warunek bezwzględny kartoteki: VIN i rejestracja (pojazd niepodlegający rejestracji: VIN, nadwozie albo silnik). -->
+				<label class="flex items-center gap-2 text-xs text-slate-600 mb-2 cursor-pointer">
+					<input type="checkbox" checked={vrBezRejestracji(w)} onchange={(e) => (vrBezRej[w.id] = e.currentTarget.checked)} />
+					pojazd niepodlegający rejestracji (specjalny, wolnobieżny) — zamiast tablic numer nadwozia/ramy albo silnika
+				</label>
 				<div class="flex flex-wrap items-end gap-3">
 					<div>
 						<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vr-{w.id}">
-							Numer rejestracyjny *
+							Numer rejestracyjny {vrBezRejestracji(w) ? '' : '*'}
 						</label>
 						<input
 							id="vr-{w.id}"
 							value={vrRej[w.id] ?? w.nr_rejestracyjny ?? ''}
 							oninput={(e) => (vrRej[w.id] = e.currentTarget.value.toUpperCase())}
-							placeholder="np. PO12345"
-							class="border border-line rounded-lg px-3 py-2 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							disabled={vrBezRejestracji(w)}
+							placeholder={vrBezRejestracji(w) ? 'nie dotyczy' : 'np. PO12345'}
+							class="border border-line rounded-lg px-3 py-2 text-sm w-44 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
 						/>
 					</div>
+					<div>
+						<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vv-{w.id}">
+							VIN {vrBezRejestracji(w) ? '' : '*'}
+						</label>
+						<input
+							id="vv-{w.id}"
+							value={vrVin[w.id] ?? w.vin ?? ''}
+							oninput={(e) => (vrVin[w.id] = e.currentTarget.value.toUpperCase())}
+							maxlength="17"
+							placeholder="17 znaków"
+							class="border border-line rounded-lg px-3 py-2 text-sm w-52 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+						/>
+					</div>
+					{#if vrBezRejestracji(w)}
+						<div>
+							<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vn-{w.id}">Nr nadwozia / ramy</label>
+							<input id="vn-{w.id}" value={vrNadwozie[w.id] ?? w.nr_nadwozia ?? ''} oninput={(e) => (vrNadwozie[w.id] = e.currentTarget.value.toUpperCase())} class="border border-line rounded-lg px-3 py-2 text-sm w-44 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+						</div>
+						<div>
+							<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vs-{w.id}">Nr silnika</label>
+							<input id="vs-{w.id}" value={vrSilnik[w.id] ?? w.nr_silnika ?? ''} oninput={(e) => (vrSilnik[w.id] = e.currentTarget.value.toUpperCase())} class="border border-line rounded-lg px-3 py-2 text-sm w-40 font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+						</div>
+					{/if}
 					<div class="flex-1 min-w-[200px]">
 						<label class="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1" for="vp-{w.id}">
 							Powód odrzucenia
@@ -820,6 +880,14 @@
 		<div class="grid grid-cols-2 gap-3">
 			<div><label class={labelCls}>NIP</label><input bind:value={fNip} class={inputCls} /></div>
 			<div><label class={labelCls}>KRS</label><input bind:value={fKrs} class={inputCls} /></div>
+		</div>
+		<div class="border-t border-line-soft pt-3">
+			<p class="text-sm font-medium text-slate-700">Zgłoszenia wyrejestrowania pojazdu</p>
+			<p class="text-xs text-slate-500 mb-2">Na te adresy CRM wysyła „Zgłoś wyrejestrowanie pojazdu” (z kopią do brokera/agenta). Bez nich zgłoszenia do tego TU są zablokowane.</p>
+			<div class="grid grid-cols-2 gap-3">
+				<div><label class={labelCls} for="tu-wyrej-1">Adres e-mail 1</label><input id="tu-wyrej-1" type="email" bind:value={fEmailWyrej1} class={inputCls} placeholder="np. flota@tu.pl" /></div>
+				<div><label class={labelCls} for="tu-wyrej-2">Adres e-mail 2</label><input id="tu-wyrej-2" type="email" bind:value={fEmailWyrej2} class={inputCls} placeholder="opcjonalnie — opiekun floty" /></div>
+			</div>
 		</div>
 	</div>
 </Modal>

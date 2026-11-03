@@ -5,6 +5,8 @@ export type Zalacznik = { filename: string; content: string /* base64 */; conten
 export type Wiadomosc = {
 	from: string;
 	to: string[];
+	/** Kopia (np. broker/agent przy zgłoszeniu do TU). */
+	cc?: string[];
 	replyTo?: string;
 	subject: string;
 	html: string;
@@ -36,6 +38,7 @@ export async function wyslijEmail(apiKey: string, w: Wiadomosc): Promise<WynikWy
 			body: JSON.stringify({
 				from: w.from,
 				to: w.to,
+				...(w.cc?.length ? { cc: w.cc } : {}),
 				...(w.replyTo ? { reply_to: w.replyTo } : {}),
 				subject: w.subject,
 				html: w.html,

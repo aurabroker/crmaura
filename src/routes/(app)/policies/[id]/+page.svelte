@@ -15,6 +15,7 @@
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import { Pencil, FilePlus2, Users, Trash2, UserRound, RefreshCw, Plus, FileText, ChevronDown, Upload, Mail, Link2, Ellipsis, Building2, Wallet, Send, Ban, Undo2, AlertTriangle } from 'lucide-svelte';
 	import { dateDiffDays, todayStr } from '$lib/utils';
+	import { opisZaszeregowania, vehicleLabel } from '$lib/hestia/pojazd';
 	import { logAudit } from '$lib/utils/audit';
 	import type { PolicyAnnex, PolicyBroker, PolicyPayment } from '$lib/types/database';
 	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy, opisZakonczenia, polisaWygasla, statusPolisy } from '$lib/statusPolisy';
@@ -1085,8 +1086,9 @@
 					{@render wiersz('Okres', `${fmtDzien(policy.data_od, true)} – ${policy.data_do ? fmtDzien(policy.data_do, true) : 'bezterminowo'}`)}
 					{@render wiersz('Raty', ug ? null : iloscRat > 1 ? `${iloscRat} raty` : 'jednorazowo')}
 					{@render wiersz('Suma gwarancyjna', sumaGw != null ? `${fmtPln(sumaGw)} zł` : null)}
-					{@render wiersz('Pojazd', pojazd ? `${pojazd.nr_rejestracyjny} · ${pojazd.marka_model}` : null)}
+					{@render wiersz('Pojazd', pojazd ? `${vehicleLabel(pojazd)} · ${pojazd.marka_model}` : null)}
 					{@render wiersz('VIN', pojazd?.vin, true)}
+					{@render wiersz('Zaszeregowanie', pojazd ? opisZaszeregowania(pojazd) || null : null)}
 					{@render wiersz('Leasing', [policy.crm_leasings?.nazwa, policy.nr_umowy_leasingowej ? `umowa ${policy.nr_umowy_leasingowej}` : ''].filter(Boolean).join(' · ') || null)}
 					{@render wiersz('Gwarancja', policy.gwarancja_typ)}
 					{@render wiersz('Beneficjent', [policy.gwarancja_beneficjent_nazwa, policy.gwarancja_beneficjent_nip ? `NIP ${policy.gwarancja_beneficjent_nip}` : ''].filter(Boolean).join(' · ') || null)}

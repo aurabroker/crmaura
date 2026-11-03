@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import type { Policy } from '$lib/types/database';
 	import { assignedPolicyFor } from '$lib/utils';
+	import { vehicleLabel } from '$lib/hestia/pojazd';
 	import { opisDuplikatu, znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
 	import { opisZawezeniaTU, towarzystwaDlaRodzaju } from '$lib/formularzPolisy';
 	import { tuBezInfoPlatnosci } from '$lib/platnosci';
@@ -63,7 +64,7 @@
 	$effect(() => {
 		if (!isKomunikacja || !fpPojazdId) return;
 		const v = appState.vehicles.find(x => x.id === fpPojazdId);
-		if (v) fpPrzedmiot = `${v.nr_rejestracyjny}${v.vin ? ' / ' + v.vin : ''} — ${v.marka_model}`;
+		if (v) fpPrzedmiot = `${vehicleLabel(v)}${v.vin && v.nr_rejestracyjny ? ' / ' + v.vin : ''} — ${v.marka_model}`;
 	});
 
 	let fpOd = $state(policy?.data_od ?? presetOd);
@@ -528,7 +529,7 @@
 					<select bind:value={fpPojazdId} class={inp}>
 						<option value="">— wybierz pojazd —</option>
 						{#each availableVehicles as v}
-							<option value={v.id}>{v.nr_rejestracyjny}{v.vin ? ' / ' + v.vin : ''} — {v.marka_model}</option>
+							<option value={v.id}>{vehicleLabel(v)}{v.vin && v.nr_rejestracyjny ? ' / ' + v.vin : ''} — {v.marka_model}</option>
 						{/each}
 					</select>
 					{#if availableVehicles.length === 0}

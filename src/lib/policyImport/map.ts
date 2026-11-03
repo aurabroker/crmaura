@@ -370,20 +370,22 @@ function dopasujPojazd(
 		ladownosc: dane.ladownosc
 	};
 
-	// Kartoteka pojazdów wymaga numeru rejestracyjnego, a polisa nie zawsze go
-	// niesie (bywa sam VIN). Takiego pojazdu broker nie zakłada sam — składa
-	// wniosek, który administrator uzupełnia i akceptuje albo odrzuca.
-	if (!dane.nr_rejestracyjny) {
+	// WARUNEK BEZWZGLĘDNY kartoteki: pojazd wymaga numeru rejestracyjnego i VIN
+	// (CHECK crm_vehicles_identyfikacja_chk), a polisa nie zawsze niesie oba
+	// (bywa sam VIN albo sama rejestracja). Takiego pojazdu broker nie zakłada
+	// sam — składa wniosek, który administrator uzupełnia i akceptuje albo odrzuca.
+	if (!dane.nr_rejestracyjny || !dane.vin) {
+		const brak = !dane.nr_rejestracyjny && !dane.vin ? 'numeru rejestracyjnego ani VIN' : !dane.nr_rejestracyjny ? 'numeru rejestracyjnego' : 'numeru VIN';
 		if (!wnioskujPojazd) {
 			issues.push({
 				level: 'error',
-				text: `Polisa nie zawiera numeru rejestracyjnego pojazdu (${opis}), więc nie da się go zapisać w kartotece. Złóż wniosek do administratora albo dodaj pojazd wcześniej ręcznie.`
+				text: `Polisa nie zawiera ${brak} pojazdu (${opis}), więc nie da się go zapisać w kartotece. Złóż wniosek do administratora albo dodaj pojazd wcześniej ręcznie.`
 			});
 			return { pojazd: null, nowyPojazd: null, wniosekPojazd: null };
 		}
 		issues.push({
 			level: 'warn',
-			text: `Pojazd ${opis} nie ma numeru rejestracyjnego — powstanie wniosek do administratora. Polisa zostanie zapisana bez powiązania z pojazdem.`
+			text: `Pojazd ${opis} nie ma ${brak} — powstanie wniosek do administratora. Polisa zostanie zapisana bez powiązania z pojazdem.`
 		});
 		return {
 			pojazd: null,

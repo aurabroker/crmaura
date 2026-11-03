@@ -10,8 +10,11 @@
 	import AdminSettings from '$lib/components/AdminSettings.svelte';
 	import PlikiWMailach from '$lib/components/PlikiWMailach.svelte';
 	import PowiadomieniaDzienne from '$lib/components/PowiadomieniaDzienne.svelte';
+	import VehicleForm from '$lib/components/VehicleForm.svelte';
+	import { vehicleLabel } from '$lib/hestia/pojazd';
+	import { logAudit } from '$lib/utils/audit';
 	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark, Upload, Bell } from 'lucide-svelte';
-	import { fmtPln, validateVin, assignedPolicyFor } from '$lib/utils';
+	import { fmtPln, assignedPolicyFor } from '$lib/utils';
 	import { openStoredFile } from '$lib/utils/storageLink';
 	import { magazynDostepny, otworzPlikNoty, wyslijPlikNoty } from '$lib/plikiPolis';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
@@ -158,6 +161,8 @@
 	// --- Profile ---
 	let imie_nazwisko = $state(appState.profile?.imie_nazwisko ?? '');
 	let stanowisko = $state(appState.profile?.stanowisko ?? '');
+	// Domyślna kopia (CC) zgłoszeń do TU, np. wyrejestrowania pojazdu.
+	let email_cc_zgloszenia = $state(appState.profile?.email_cc_zgloszenia ?? '');
 	let profileMsg = $state('');
 	let profileError = $state('');
 	let profileLoading = $state(false);
@@ -172,16 +177,19 @@
 		if (appState.profile) {
 			imie_nazwisko = appState.profile.imie_nazwisko ?? '';
 			stanowisko = (appState.profile as any).stanowisko ?? '';
+			email_cc_zgloszenia = appState.profile.email_cc_zgloszenia ?? '';
 		}
 	});
 
 	async function saveProfile() {
 		profileMsg = '';
 		profileError = '';
+		const cc = email_cc_zgloszenia.trim() || null;
+		if (cc && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cc)) { profileError = 'Nieprawidłowy adres e-mail do kopii zgłoszeń.'; return; }
 		profileLoading = true;
 		const { error } = await sb
 			.from('crm_profiles')
-			.update({ imie_nazwisko, stanowisko })
+			.update({ imie_nazwisko, stanowisko, email_cc_zgloszenia: cc })
 			.eq('id', appState.profile!.id);
 		profileLoading = false;
 		if (error) {
@@ -190,6 +198,7 @@
 			if (appState.profile) {
 				appState.profile.imie_nazwisko = imie_nazwisko;
 				(appState.profile as any).stanowisko = stanowisko;
+				appState.profile.email_cc_zgloszenia = cc;
 			}
 			profileMsg = 'Dane zostały zapisane.';
 		}
@@ -218,26 +227,20 @@
 		}
 	}
 
-	// --- Vehicles ---
+	// --- Vehicles --- wspólny formularz VehicleForm (identyfikacja VIN + rejestracja, zaszeregowanie Cumulus)
 	let vehicleSearch = $state('');
 	let showVehicleModal = $state(false);
 	let editingVehicle = $state<Vehicle | null>(null);
-	let vKlientId = $state('');
-	let vNrRej = $state('');
-	let vMarkaModel = $state('');
-	let vVin = $state('');
-	let vRokProdukcji = $state('');
+	let vehicleForm = $state<ReturnType<typeof VehicleForm> | null>(null);
 	let vehicleSaving = $state(false);
 	let vehicleError = $state('');
 
 	const filteredVehicles = $derived(
-		appState.vehicles.filter(
-			(v) =>
-				!vehicleSearch ||
-				v.nr_rejestracyjny.toLowerCase().includes(vehicleSearch.toLowerCase()) ||
-				v.marka_model.toLowerCase().includes(vehicleSearch.toLowerCase()) ||
-				(v.vin ?? '').toLowerCase().includes(vehicleSearch.toLowerCase())
-		)
+		appState.vehicles.filter((v) => {
+			const q = vehicleSearch.trim().toLowerCase();
+			if (!q) return true;
+			return [v.nr_rejestracyjny, v.marka_model, v.vin, v.nr_nadwozia].some((s) => (s ?? '').toLowerCase().includes(q));
+		})
 	);
 
 	function clientName(klientId: string): string {
@@ -247,22 +250,12 @@
 
 	function openNewVehicle() {
 		editingVehicle = null;
-		vKlientId = appState.clients[0]?.id ?? '';
-		vNrRej = '';
-		vMarkaModel = '';
-		vVin = '';
-		vRokProdukcji = '';
 		vehicleError = '';
 		showVehicleModal = true;
 	}
 
 	function openEditVehicle(v: Vehicle) {
 		editingVehicle = v;
-		vKlientId = v.klient_id;
-		vNrRej = v.nr_rejestracyjny;
-		vMarkaModel = v.marka_model;
-		vVin = v.vin ?? '';
-		vRokProdukcji = v.rok_produkcji?.toString() ?? '';
 		vehicleError = '';
 		showVehicleModal = true;
 	}
@@ -274,22 +267,13 @@
 	}
 
 	async function saveVehicle() {
-		if (!vNrRej.trim()) { vehicleError = 'Nr rejestracyjny jest wymagany.'; return; }
-		if (!vMarkaModel.trim()) { vehicleError = 'Marka/Model jest wymagane.'; return; }
-		if (!vKlientId) { vehicleError = 'Wybierz klienta.'; return; }
-		const vinErr = validateVin(vVin);
-		if (vinErr) { vehicleError = vinErr; return; }
+		if (!vehicleForm) return;
+		const blad = vehicleForm.isValid();
+		if (blad) { vehicleError = blad; return; }
 
 		vehicleSaving = true;
 		vehicleError = '';
-
-		const payload = {
-			klient_id: vKlientId,
-			nr_rejestracyjny: vNrRej.trim().toUpperCase(),
-			marka_model: vMarkaModel.trim(),
-			vin: vVin.trim().toUpperCase() || null,
-			rok_produkcji: vRokProdukcji ? parseInt(vRokProdukcji) : null
-		};
+		const payload = vehicleForm.getValues();
 
 		let error;
 		if (editingVehicle) {
@@ -306,6 +290,7 @@
 			vehicleSaving = false;
 			return;
 		}
+		await logAudit(editingVehicle ? 'vehicle_updated' : 'vehicle_created', 'vehicle', editingVehicle?.id ?? null, vehicleLabel(payload));
 
 		// Reload vehicles
 		const { data } = await wczytajPojazdy();
@@ -448,6 +433,7 @@
 							<tr class="border-b border-line text-left text-slate-500">
 								<th class="pb-2 font-medium">Nr rej.</th>
 								<th class="pb-2 font-medium">Marka / Model</th>
+								<th class="pb-2 font-medium">Zaszeregowanie</th>
 								<th class="pb-2 font-medium">VIN</th>
 								<th class="pb-2 font-medium">Rok</th>
 								<th class="pb-2 font-medium">Klient</th>
@@ -459,8 +445,9 @@
 							{#each filteredVehicles as v (v.id)}
 								{@const assigned = assignedPolicyFor(v.id, appState.policies)}
 								<tr class="border-b border-line-soft hover:bg-slate-50">
-									<td class="py-2.5 font-medium text-slate-900">{v.nr_rejestracyjny}</td>
+									<td class="py-2.5 font-medium text-slate-900">{vehicleLabel(v)}</td>
 									<td class="py-2.5 text-slate-700">{v.marka_model}</td>
+									<td class="py-2.5 text-xs {v.rodzaj_kalkulacyjny ? 'text-slate-600' : 'text-amber-700'}">{v.rodzaj_kalkulacyjny ?? 'brak — uzupełnij'}</td>
 									<td class="py-2.5 text-slate-500 font-mono text-xs">{v.vin ?? '—'}</td>
 									<td class="py-2.5 text-slate-500">{v.rok_produkcji ?? '—'}</td>
 									<td class="py-2.5 text-slate-700">{clientName(v.klient_id)}</td>
@@ -486,43 +473,19 @@
 
 		<!-- Vehicle Modal -->
 		{#if showVehicleModal}
-			<Modal onclose={closeVehicleModal}>
-				<h3 class="text-lg font-semibold text-slate-900 mb-4">{editingVehicle ? 'Edytuj pojazd' : 'Nowy pojazd'}</h3>
-				<div class="space-y-4">
-					<div>
-						<label class={labelCls} for="vKlientId">Klient</label>
-						<select id="vKlientId" class={inputCls} bind:value={vKlientId}>
-							{#each appState.clients as c (c.id)}
-								<option value={c.id}>{c.nazwa}</option>
-							{/each}
-						</select>
-					</div>
-					<div>
-						<label class={labelCls} for="vNrRej">Nr rejestracyjny</label>
-						<input id="vNrRej" class={inputCls} type="text" bind:value={vNrRej} placeholder="np. WA12345" />
-					</div>
-					<div>
-						<label class={labelCls} for="vMarkaModel">Marka / Model</label>
-						<input id="vMarkaModel" class={inputCls} type="text" bind:value={vMarkaModel} placeholder="np. Toyota Corolla" />
-					</div>
-					<div>
-						<label class={labelCls} for="vVin">VIN</label>
-						<input id="vVin" class={inputCls} type="text" bind:value={vVin} placeholder="opcjonalnie" />
-					</div>
-					<div>
-						<label class={labelCls} for="vRokProdukcji">Rok produkcji</label>
-						<input id="vRokProdukcji" class={inputCls} type="number" bind:value={vRokProdukcji} placeholder="np. 2020" />
-					</div>
-					{#if vehicleError}
-						<p class="text-sm text-red-600">{vehicleError}</p>
-					{/if}
-					<div class="flex justify-end gap-2 pt-2">
-						<button onclick={closeVehicleModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-700 hover:bg-slate-50">Anuluj</button>
-						<button onclick={saveVehicle} disabled={vehicleSaving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50">
-							{vehicleSaving ? 'Zapisywanie...' : 'Zapisz'}
-						</button>
-					</div>
-				</div>
+			<Modal open={showVehicleModal} title={editingVehicle ? `Edytuj pojazd ${vehicleLabel(editingVehicle)}` : 'Nowy pojazd'} onclose={closeVehicleModal}>
+				{#snippet footer()}
+					<button onclick={closeVehicleModal} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-700 hover:bg-slate-50">Anuluj</button>
+					<button onclick={saveVehicle} disabled={vehicleSaving} class="px-4 py-2 text-sm bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-50">
+						{vehicleSaving ? 'Zapisywanie...' : 'Zapisz'}
+					</button>
+				{/snippet}
+				{#if vehicleError}
+					<p class="mb-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{vehicleError}</p>
+				{/if}
+				{#key editingVehicle?.id ?? 'nowy'}
+					<VehicleForm bind:this={vehicleForm} vehicle={editingVehicle} showClient={true} />
+				{/key}
 			</Modal>
 		{/if}
 	{/if}
@@ -559,6 +522,11 @@
 				<div>
 					<label class={labelCls} for="stanowisko">Stanowisko</label>
 					<input id="stanowisko" class={inputCls} type="text" bind:value={stanowisko} />
+				</div>
+				<div>
+					<label class={labelCls} for="email_cc_zgloszenia">Kopia (CC) zgłoszeń do TU</label>
+					<input id="email_cc_zgloszenia" class={inputCls} type="email" bind:value={email_cc_zgloszenia} placeholder="np. twoj.adres@firma.pl" />
+					<p class="text-xs text-slate-500 mt-1">Domyślny adres w polu CC przy zgłoszeniu wyrejestrowania pojazdu do towarzystwa (przy wysyłce można go zmienić).</p>
 				</div>
 				{#if profileMsg}
 					<p class="text-sm text-green-600">{profileMsg}</p>

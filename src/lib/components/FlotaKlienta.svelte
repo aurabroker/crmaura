@@ -14,8 +14,9 @@
 	import { adresOdnowieniaRecznego } from '$lib/formularzPolisy';
 	import { DNI_OSTRZEZENIA_FLOTY, etykietaRodzajuPojazdu, ochronaPojazdu, opisTechniczny, podsumowanieFloty, polisyBezPojazdu, polisyPojazdu, sortujPojazdy } from '$lib/flota';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
+	import { opisZaszeregowania, vehicleLabel } from '$lib/hestia/pojazd';
 	import type { Policy, Vehicle } from '$lib/types/database';
-	import { Car, ChevronRight, Link, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-svelte';
+	import { Car, ChevronRight, Link, MailX, Pencil, Plus, RefreshCw, Trash2, Upload } from 'lucide-svelte';
 
 	let {
 		klientId,
@@ -23,8 +24,18 @@
 		polisy,
 		dzis = todayStr(),
 		onnew,
-		onedit
-	}: { klientId: string; pojazdy: Vehicle[]; polisy: Policy[]; dzis?: string; onnew: () => void; onedit: (v: Vehicle) => void } = $props();
+		onedit,
+		onderegister
+	}: {
+		klientId: string;
+		pojazdy: Vehicle[];
+		polisy: Policy[];
+		dzis?: string;
+		onnew: () => void;
+		onedit: (v: Vehicle) => void;
+		/** „Zgłoś wyrejestrowanie pojazdu” — e-mail do TU z dowodem; okno ma karta klienta. */
+		onderegister?: (v: Vehicle) => void;
+	} = $props();
 
 	const podsum = $derived(podsumowanieFloty(pojazdy, polisy, dzis));
 	const lista = $derived(sortujPojazdy(pojazdy, polisy, dzis));
@@ -56,11 +67,11 @@
 		wiazePojazd = null;
 		wybranaPolisa = '';
 		await odswiezPolisy();
-		ctxToast(`Powiązano polisę ${p?.nr_polisy ?? ''} z pojazdem ${v?.nr_rejestracyjny ?? ''}`);
+		ctxToast(`Powiązano polisę ${p?.nr_polisy ?? ''} z pojazdem ${v ? vehicleLabel(v) : ''}`);
 	}
 
 	function nowaPolisa(v: Vehicle) {
-		const przedmiot = [v.nr_rejestracyjny, v.marka_model].filter(Boolean).join(' ') + (v.vin ? ` / ${v.vin}` : '');
+		const przedmiot = [v.nr_rejestracyjny ?? vehicleLabel(v), v.marka_model].filter(Boolean).join(' ') + (v.vin && v.nr_rejestracyjny ? ` / ${v.vin}` : '');
 		goto(`/policies/new?klient=${klientId}&rodzaj=komunikacja&przedmiot=${encodeURIComponent(przedmiot)}&pojazd_id=${v.id}`);
 	}
 
@@ -72,14 +83,14 @@
 		}
 		const ok = await askConfirm({
 			title: 'Usunąć pojazd?',
-			message: `${v.nr_rejestracyjny} — ${v.marka_model || 'bez nazwy'}`,
+			message: `${vehicleLabel(v)} — ${v.marka_model || 'bez nazwy'}`,
 			detail: 'Operacji nie da się cofnąć.',
 			confirmLabel: 'Usuń'
 		});
 		if (!ok) return;
 		const { error } = await sb.from('crm_vehicles').delete().eq('id', v.id);
 		if (error) { ctxToast(`Nie udało się usunąć: ${error.message}`); return; }
-		await logAudit('vehicle_deleted', 'vehicle', v.id, v.nr_rejestracyjny);
+		await logAudit('vehicle_deleted', 'vehicle', v.id, vehicleLabel(v));
 		const { data: d } = await wczytajPojazdy();
 		appState.vehicles = (d ?? []) as typeof appState.vehicles;
 	}
@@ -127,11 +138,16 @@
 						{@const historia = polisyPojazdu(v.id, polisy)}
 						{@const rodzaj = etykietaRodzajuPojazdu(v.rodzaj_pojazdu)}
 						{@const tech = opisTechniczny(v)}
+						{@const zaszeregowanie = opisZaszeregowania(v)}
 						{@const otwarty = rozwiniety === v.id}
 						<tr class="border-t border-line-soft align-top hover:bg-slate-50/60" data-testid="pojazd" data-stan={o.stan}>
 							<td class="px-5 py-3">
 								<div class="flex items-center gap-1 font-semibold text-ink whitespace-nowrap">
-									<span class="font-mono tracking-wide">{v.nr_rejestracyjny}</span> <Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" />
+									<span class="font-mono tracking-wide">{vehicleLabel(v)}</span>
+									{#if v.nr_rejestracyjny}<Kopiuj tekst={v.nr_rejestracyjny} opis="nr rejestracyjny" />{/if}
+									{#if v.wyrejestrowany_at}
+										<span class="ml-1 h-5 leading-5 px-1.5 rounded-full bg-surface-2 text-ink-2 text-[11px] font-semibold" title="Zgłoszono wyrejestrowanie do TU ({fmtDzien(v.wyrejestrowany_at, true)})">wyrejestrowany</span>
+									{/if}
 								</div>
 								<div class="text-[13px] text-ink-2">{v.marka_model || '—'}</div>
 								{#if rodzaj || v.rok_produkcji}
@@ -140,9 +156,13 @@
 							</td>
 							<td class="px-5 py-3">
 								<div class="flex items-center gap-1 font-mono text-xs text-ink-2 whitespace-nowrap">
-									{v.vin ?? 'VIN —'} {#if v.vin}<Kopiuj tekst={v.vin} opis="VIN" />{/if}
+									{v.vin ?? (v.nr_nadwozia ? `nadwozie ${v.nr_nadwozia}` : 'VIN —')} {#if v.vin}<Kopiuj tekst={v.vin} opis="VIN" />{/if}
 								</div>
 								{#if tech}<div class="text-xs text-ink-3 mt-0.5">{tech}</div>{/if}
+								<!-- Zaszeregowanie (Cumulus / Hestia) — decyduje o składce, więc widać je przy każdym pojeździe. -->
+								<div class="text-xs mt-0.5 {zaszeregowanie ? 'text-ink-2' : 'text-warn'}" title="Kalkulacyjny rodzaj pojazdu, rodzaj rejestrowy, liczba miejsc, użytkowanie (układ Cumulus)">
+									{zaszeregowanie || 'brak zaszeregowania — uzupełnij w edycji pojazdu'}
+								</div>
 							</td>
 							<td class="px-5 py-3">
 								<span class="inline-block h-[22px] leading-[22px] px-2 rounded-full text-xs font-semibold {o.cls}" data-testid="pojazd-ochrona">{o.tekst}</span>
@@ -177,7 +197,7 @@
 									{/if}
 									{#if bezPojazdu.length}
 										{#if wiazePojazd === v.id}
-											<select bind:value={wybranaPolisa} aria-label="Polisa do powiązania z pojazdem {v.nr_rejestracyjny}" class="h-8 border border-line rounded-lg px-2 text-xs bg-white">
+											<select bind:value={wybranaPolisa} aria-label="Polisa do powiązania z pojazdem {vehicleLabel(v)}" class="h-8 border border-line rounded-lg px-2 text-xs bg-white">
 												<option value="">— wybierz polisę —</option>
 												{#each bezPojazdu as p (p.id)}
 													<option value={p.id}>{p.nr_polisy} · {nazwaRodzaju(p.rodzaj)} · {nazwaTu(p)} · {p.data_od} – {p.data_do}</option>
@@ -189,9 +209,12 @@
 											<button onclick={() => { wiazePojazd = v.id; wybranaPolisa = ''; }} title="Przypisz do pojazdu polisę komunikacyjną, która nie ma jeszcze pojazdu" class="h-8 inline-flex items-center gap-1 px-2.5 rounded-lg border border-line bg-white text-[13px] font-medium text-ink hover:bg-surface-2"><Link size={13} /> Powiąż</button>
 										{/if}
 									{/if}
-									<button onclick={() => onedit(v)} aria-label="Edytuj pojazd {v.nr_rejestracyjny}" title="Edytuj" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><Pencil size={14} /></button>
+									{#if onderegister}
+										<button onclick={() => onderegister(v)} data-testid="pojazd-wyrejestruj" aria-label="Zgłoś wyrejestrowanie pojazdu {vehicleLabel(v)}" title={v.wyrejestrowany_at ? `Wyrejestrowanie zgłoszono ${fmtDzien(v.wyrejestrowany_at, true)} — zgłoś ponownie` : 'Zgłoś wyrejestrowanie pojazdu do TU (e-mail z dowodem)'} class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-warn hover:bg-warn-soft"><MailX size={14} /></button>
+									{/if}
+									<button onclick={() => onedit(v)} aria-label="Edytuj pojazd {vehicleLabel(v)}" title="Edytuj" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><Pencil size={14} /></button>
 									{#if !historia.length}
-										<button onclick={() => usun(v)} aria-label="Usuń pojazd {v.nr_rejestracyjny}" title="Usuń" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-danger hover:bg-danger-soft"><Trash2 size={14} /></button>
+										<button onclick={() => usun(v)} aria-label="Usuń pojazd {vehicleLabel(v)}" title="Usuń" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-danger hover:bg-danger-soft"><Trash2 size={14} /></button>
 									{/if}
 								</div>
 							</td>
@@ -266,7 +289,7 @@
 							<span class="ml-auto flex items-center gap-1.5">
 								<select bind:value={wybranyPojazd[p.id]} aria-label="Pojazd do polisy {p.nr_polisy}" class="h-8 border border-line rounded-lg px-2 text-xs bg-white">
 									<option value="">— pojazd —</option>
-									{#each pojazdy as v (v.id)}<option value={v.id}>{v.nr_rejestracyjny} · {v.marka_model}</option>{/each}
+									{#each pojazdy as v (v.id)}<option value={v.id}>{vehicleLabel(v)} · {v.marka_model}</option>{/each}
 								</select>
 								<button onclick={() => powiaz(p.id, wybranyPojazd[p.id] ?? '')} disabled={!wybranyPojazd[p.id] || zapis} class="h-8 px-2.5 rounded-lg bg-accent text-white text-xs font-semibold hover:bg-accent-hover disabled:opacity-50">Powiąż</button>
 							</span>
