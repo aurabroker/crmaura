@@ -68,6 +68,9 @@ export type RenewalRow = {
 	zgody: MigawkaZgod | null;
 	podpis_apk_at: string | null;
 	podpis_wniosku_at: string | null;
+	// Ostrzeżenia o końcu ochrony bez odnowienia (zadanie dzienne): ostatni dzień i dzień po wygaśnięciu.
+	mail_ostatni_dzien_at?: string | null;
+	mail_wygasla_at?: string | null;
 };
 
 // ---------- Link: /odnowienie/<id>.<podpis> ----------
@@ -456,6 +459,40 @@ export async function anulujNieaktualny(admin: SupabaseClient, r: Pick<RenewalRo
 		.select('id');
 	if (data?.length) await zapiszZdarzenie(admin, r, 'anulowanie', null, { powod, przez: 'automat' });
 	return true;
+}
+
+// Ochrona z certyfikatu kończy się (albo skończyła) bez kontynuacji: polisa nadal w CRM, niezakończona decyzją,
+// klient aktywny i nie ma następczyni — ani odnowienia w CRM (renewal_of), ani innego certyfikatu klienta
+// w programie OC beauty, który trwa dłużej (np. nowy certyfikat dodany bez powiązania z poprzednim).
+// Tylko wtedy klient dostaje ostrzeżenie „ochrona kończy się dziś” albo „ochrona wygasła”.
+export async function bezKontynuacji(admin: SupabaseClient, r: Pick<RenewalRow, 'tenant_id' | 'polisa_id' | 'okres_do'>): Promise<boolean> {
+	if (!r.polisa_id || !r.okres_do) return false;
+	const { data: p } = await admin
+		.from('crm_policies')
+		.select('id, klient_id, data_do, deleted_at, zakonczona_od')
+		.eq('id', r.polisa_id)
+		.eq('tenant_id', r.tenant_id)
+		.maybeSingle();
+	if (!p || p.deleted_at || p.zakonczona_od || p.data_do !== r.okres_do) return false;
+	const [{ data: klient }, { data: nastepca }, { data: umowy }] = await Promise.all([
+		admin.from('crm_clients').select('aktywny').eq('id', p.klient_id).maybeSingle(),
+		admin.from('crm_policies').select('id').eq('renewal_of', p.id).is('deleted_at', null).limit(1),
+		admin.from('crm_policies').select('id').eq('tenant_id', r.tenant_id).eq('typ_umowy', 'generalna').eq('ug_podtyp', 'oc_beauty').is('deleted_at', null)
+	]);
+	if (!klient || klient.aktywny === false || nastepca?.length) return false;
+	const ugIds = (umowy ?? []).map((u) => u.id);
+	if (!ugIds.length) return true;
+	const { data: dalszy } = await admin
+		.from('crm_policies')
+		.select('id')
+		.eq('tenant_id', r.tenant_id)
+		.eq('klient_id', p.klient_id)
+		.in('parent_id', ugIds)
+		.neq('id', p.id)
+		.is('deleted_at', null)
+		.gt('data_do', p.data_do)
+		.limit(1);
+	return !dalszy?.length;
 }
 
 export const czyAktywny = (r: RenewalRow) => (AKTYWNE as readonly string[]).includes(r.status);
