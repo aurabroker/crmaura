@@ -5,6 +5,7 @@ import {
 	DNI_PRZED_KONCEM,
 	dzisWarszawa,
 	anulujNieaktualny,
+	bezKontynuacji,
 	podzielWnioski,
 	polisaProgramu,
 	trybTestowy,
@@ -12,16 +13,22 @@ import {
 	utworzOdnowienie,
 	type RenewalRow
 } from '$lib/server/renewals';
-import { wyslijZaproszenie } from '$lib/server/renewalFlow';
+import { wyslijOstrzezenie, wyslijZaproszenie, type Ostrzezenie } from '$lib/server/renewalFlow';
 import type { RequestHandler } from './$types';
 
 // Zadanie dzienne (pg_cron → public.crm_run_renewals(), nagłówek x-cron-token z Vault):
 // 1) wygasza nieużyte linki po terminie,
 // 2) dla firm z włączonym modułem „odnowienia_auto” wysyła wnioski 45 dni przed końcem certyfikatu
 //    (w trybie testowym „odnowienia_test” nowych nie zakłada),
-// 3) wysyła jedno przypomnienie po 7 dniach bez złożonego wniosku.
+// 3) wysyła jedno przypomnienie po 7 dniach bez złożonego wniosku,
+// 4) ostrzega klienta bez odnowienia: w ostatnim dniu ochrony (czerwony e-mail z linkiem) i po jej końcu
+//    („ochrona ubezpieczeniowa wygasła” — kontakt z biurem).
 const MAKS_ZAPROSZEN = 50;
 const MAKS_PRZYPOMNIEN = 50;
+const MAKS_OSTRZEZEN = 50;
+// Ostrzeżenie „ochrona wygasła” idzie dzień po końcu; okno kilku dni chroni przed dniem bez uruchomienia,
+// a nie wysyła zaległych e-maili o certyfikatach, które skończyły się dawno.
+const DNI_PO_KONCU = 3;
 const PORTAL = 'https://portal.beautypolisa.eu';
 
 export const POST: RequestHandler = async ({ request, url }) => {
@@ -35,7 +42,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	// pg_cron woła adres *.pages.dev (domena portalu ma ochronę przed botami, która zatrzymuje żądania z bazy) —
 	// linki w e-mailach mają jednak prowadzić na portal.
 	const origin = url.hostname.endsWith('.pages.dev') ? PORTAL : url.origin;
-	const wynik = { wygaszone: 0, zaproszenia: 0, przypomnienia: 0, pominiete: 0, usunietePliki: 0, bledy: [] as string[] };
+	const wynik = { wygaszone: 0, zaproszenia: 0, przypomnienia: 0, ostatniDzien: 0, wygasla: 0, pominiete: 0, usunietePliki: 0, bledy: [] as string[] };
 	const teraz = new Date().toISOString();
 
 	const { data: wygasle } = await admin
@@ -171,7 +178,86 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		}
 	}
 
-	// 4) Pliki bez wpisu we wniosku (w zakończonych wnioskach z ostatnich dni) — sprzątanie magazynu.
+	// 4) Ostrzeżenia o końcu ochrony bez odnowienia — tylko firmy z automatem odnowień i kluczem Resend.
+	// Pole mail_*_at zajmowane przed wysyłką: każdy e-mail idzie najwyżej raz, nieudana wysyłka je zwalnia.
+	async function ostrzez(r: RenewalRow, rodzaj: Ostrzezenie) {
+		const pole = rodzaj === 'ostatni_dzien' ? 'mail_ostatni_dzien_at' : 'mail_wygasla_at';
+		const { data: zajete } = await admin
+			.from('crm_renewals')
+			.update({ [pole]: new Date().toISOString() })
+			.eq('id', r.id)
+			.is(pole, null)
+			.select('id')
+			.maybeSingle();
+		if (!zajete) return;
+		const w = await wyslijOstrzezenie(admin, r, origin, rodzaj);
+		if (w.ok) {
+			if (rodzaj === 'ostatni_dzien') wynik.ostatniDzien++;
+			else wynik.wygasla++;
+			return;
+		}
+		await admin.from('crm_renewals').update({ [pole]: null }).eq('id', r.id);
+		wynik.bledy.push(`${rodzaj} ${r.id}: ${w.status}`);
+		if ([401, 403, 422].includes(w.status)) zablokowane.add(r.tenant_id);
+	}
+	const firmyAuto = (firmy ?? []).filter((t) => t.features?.odnowienia_auto === true && t.resend_api_key).map((t) => t.id);
+	if (firmyAuto.length) {
+		// 4a) Ostatni dzień ochrony: link do wniosku wysłany, wniosek niezłożony, certyfikat bez kontynuacji.
+		const { data: ostatniDzien } = await admin
+			.from('crm_renewals')
+			.select('*')
+			.in('tenant_id', firmyAuto)
+			.or('rodzaj.is.null,rodzaj.eq.odnowienie')
+			.in('status', ['wyslany', 'otwarty', 'apk'])
+			.eq('okres_do', dzis)
+			.is('mail_ostatni_dzien_at', null)
+			.not('email', 'is', null)
+			.gt('wazny_do', teraz)
+			.limit(MAKS_OSTRZEZEN);
+		for (const r of (ostatniDzien ?? []) as RenewalRow[]) {
+			if (zablokowane.has(r.tenant_id)) continue;
+			if (await anulujNieaktualny(admin, r)) continue;
+			if (!(await bezKontynuacji(admin, r))) continue;
+			await ostrzez(r, 'ostatni_dzien');
+		}
+
+		// 4b) Ochrona wygasła: certyfikat skończył się 1–3 dni temu, link wysłany i wygasły (albo jeszcze
+		// nieoznaczony), klient nie złożył wniosku. Wniosek anulowany przez pracownika nie jest kandydatem
+		// (sprawą zajmuje się doradca); pomijamy też polisy z wnioskiem złożonym i już ostrzeżone.
+		const { data: poKoncu } = await admin
+			.from('crm_renewals')
+			.select('*')
+			.in('tenant_id', firmyAuto)
+			.or('rodzaj.is.null,rodzaj.eq.odnowienie')
+			.in('status', ['wygasl', 'wyslany', 'otwarty', 'apk'])
+			.not('wyslano_at', 'is', null)
+			.gte('okres_do', dzisWarszawa(-DNI_PO_KONCU))
+			.lt('okres_do', dzis)
+			.is('mail_wygasla_at', null)
+			.not('email', 'is', null)
+			.order('created_at', { ascending: false })
+			.limit(MAKS_OSTRZEZEN);
+		const kandydaci = (poKoncu ?? []) as RenewalRow[];
+		const polisy = [...new Set(kandydaci.map((r) => r.polisa_id).filter((id): id is string => !!id))];
+		const { data: inne } = polisy.length
+			? await admin.from('crm_renewals').select('polisa_id, status, mail_wygasla_at').in('polisa_id', polisy)
+			: { data: [] };
+		const zalatwione = new Set(
+			((inne ?? []) as { polisa_id: string; status: string; mail_wygasla_at: string | null }[])
+				.filter((x) => x.status === 'zlozony' || x.mail_wygasla_at)
+				.map((x) => x.polisa_id)
+		);
+		const ostrzezone = new Set<string>();
+		for (const r of kandydaci) {
+			if (!r.polisa_id || zalatwione.has(r.polisa_id) || ostrzezone.has(r.polisa_id)) continue;
+			if (zablokowane.has(r.tenant_id)) continue;
+			ostrzezone.add(r.polisa_id);
+			if (!(await bezKontynuacji(admin, r))) continue;
+			await ostrzez(r, 'wygasla');
+		}
+	}
+
+	// 5) Pliki bez wpisu we wniosku (w zakończonych wnioskach z ostatnich dni) — sprzątanie magazynu.
 	const { data: zakonczone } = await admin
 		.from('crm_renewals')
 		.select('id, tenant_id, zalaczniki')

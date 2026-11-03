@@ -74,7 +74,10 @@ const data = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split('
 const dataGodzina = (iso: string | null | undefined) =>
 	iso ? new Intl.DateTimeFormat('pl-PL', { timeZone: 'Europe/Warsaw', dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso)) : '—';
 
-function ramka(tytul: string, tresc: string) {
+// alarm: czerwony nagłówek (ostatni dzień ochrony, ochrona wygasła) zamiast granatowego.
+function ramka(tytul: string, tresc: string, o: { alarm?: boolean } = {}) {
+	const tlo = o.alarm ? '#b91c1c' : '#2a3b69';
+	const podtytul = o.alarm ? '#fecaca' : '#c7d2fe';
 	return `<!DOCTYPE html>
 <html lang="pl">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
@@ -82,9 +85,9 @@ function ramka(tytul: string, tresc: string) {
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6f8;padding:28px 16px;">
   <tr><td align="center">
     <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#fff;border:1px solid #e5e7eb;border-radius:8px;">
-      <tr><td style="background:#2a3b69;padding:20px 28px;border-radius:8px 8px 0 0;">
-        <p style="margin:0;font-size:13px;color:#c7d2fe;">Beauty❤️Polisa · ${esc(UBEZPIECZYCIEL)}</p>
-        <h1 style="margin:4px 0 0;font-size:20px;color:#fff;">${esc(tytul)}</h1>
+      <tr><td style="background:${tlo};padding:20px 28px;border-radius:8px 8px 0 0;">
+        <p style="margin:0;font-size:13px;color:${podtytul};">Beauty❤️Polisa · ${esc(UBEZPIECZYCIEL)}</p>
+        <h1 style="margin:4px 0 0;font-size:${o.alarm ? 22 : 20}px;color:#fff;">${esc(tytul)}</h1>
       </td></tr>
       <tr><td style="padding:24px 28px;font-size:15px;line-height:1.6;color:#334155;">${tresc}</td></tr>
       <tr><td style="padding:14px 28px;border-top:1px solid #eef0f3;font-size:12px;color:#94a3b8;">${STOPKA_HTML}</td></tr>
@@ -131,6 +134,81 @@ export function mailZaproszenie(r: RenewalRow, link: string, przypomnienie = fal
 		'',
 		`We wniosku: analiza potrzeb (APK), potwierdzenie odnowienia bez zmian${skladka ? ` (składka ${skladka})` : ''} albo ze zmianami, możliwość rezygnacji.`,
 		`Link jest ważny do ${dataGodzina(r.wazny_do)}. Pytania? Odpowiedz na tę wiadomość.`,
+		'',
+		STOPKA
+	].join('\n');
+	return { temat, html, tekst };
+}
+
+// ---------- Koniec ochrony bez odnowienia ----------
+// Dwa ostrzeżenia dla klienta, który nie złożył wniosku: w ostatnim dniu ochrony (link do wniosku działa
+// do północy) i dzień po jej końcu (link już nie działa — kontakt z biurem: odnowienie albo nowa polisa).
+
+const ramkaAlarmu = (tekst: string) =>
+	`<p style="margin:0 0 16px;padding:14px 16px;background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;border-radius:6px;color:#991b1b;font-size:16px;font-weight:700;line-height:1.45;">${tekst}</p>`;
+const dokument = (r: Pick<RenewalRow, 'nr_polisy'>) => (polisaIndywidualna(r) ? 'polisa' : 'certyfikat');
+
+export function mailOstatniDzien(r: RenewalRow, link: string) {
+	const koniec = data(r.okres_do);
+	const nowy = nowyOkres(r);
+	const nr = r.nr_polisy ?? '';
+	const temat = `PILNE: ochrona OC Twojego gabinetu kończy się DZIŚ (${koniec}) — odnów ubezpieczenie`;
+	const html = ramka('Twoje ubezpieczenie OC kończy się DZIŚ!', `
+    ${ramkaAlarmu(`Dziś, ${esc(koniec)}, o północy kończy się ochrona OC dla ${esc(r.klient_nazwa)}. Od jutra Twój gabinet będzie bez ubezpieczenia!`)}
+    <p style="margin:0 0 14px;">Dzień dobry,</p>
+    <p style="margin:0 0 14px;">nie otrzymaliśmy jeszcze wniosku o odnowienie — ${dokument(r)} nr <strong>${esc(nr)}</strong> w programie Beauty❤️Polisa
+      (STU Ergo Hestia SA) wygasa <strong style="color:#b91c1c;">dziś</strong>. Bez odnowienia każda szkoda wyrządzona klientce lub klientowi
+      od jutra obciąży Ciebie osobiście.</p>
+    <p style="margin:0 0 14px;"><strong>Zrób to teraz:</strong> wypełnij krótki wniosek online (około 5 minut), a przedłużymy ochronę na okres
+      ${esc(data(nowy.od))}–${esc(data(nowy.do))}.</p>
+    <p style="margin:22px 0;"><a href="${esc(link)}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;font-weight:700;font-size:16px;padding:14px 28px;border-radius:6px;">Odnów ubezpieczenie teraz</a></p>
+    <p style="margin:0 0 10px;font-size:13px;color:#b91c1c;font-weight:600;">Link działa tylko do ${esc(dataGodzina(r.wazny_do))}.</p>
+    <p style="margin:0 0 10px;font-size:13px;color:#64748b;">Masz pytania albo nie chcesz odnawiać? Odpowiedz na tę wiadomość — pomożemy.</p>`, { alarm: true });
+	const tekst = [
+		'Dzień dobry,',
+		'',
+		`PILNE: dziś, ${koniec}, o północy kończy się ochrona OC dla ${r.klient_nazwa ?? ''}. Od jutra Twój gabinet będzie bez ubezpieczenia!`,
+		'',
+		`Nie otrzymaliśmy jeszcze wniosku o odnowienie — ${dokument(r)} nr ${nr} w programie Beauty❤️Polisa (STU Ergo Hestia SA) wygasa dziś.`,
+		'Bez odnowienia każda szkoda wyrządzona klientce lub klientowi od jutra obciąży Ciebie osobiście.',
+		'',
+		`Zrób to teraz: wypełnij wniosek online (około 5 minut), a przedłużymy ochronę na okres ${data(nowy.od)}–${data(nowy.do)}:`,
+		link,
+		'',
+		`Link działa tylko do ${dataGodzina(r.wazny_do)}. Masz pytania albo nie chcesz odnawiać? Odpowiedz na tę wiadomość.`,
+		'',
+		STOPKA
+	].join('\n');
+	return { temat, html, tekst };
+}
+
+export function mailOchronaWygasla(r: RenewalRow) {
+	const koniec = data(r.okres_do);
+	const bezOchronyOd = data(nowyOkres(r).od);
+	const nr = r.nr_polisy ?? '';
+	const temat = `OCHRONA UBEZPIECZENIOWA WYGASŁA — Twój gabinet jest bez ubezpieczenia OC (${dokument(r)} ${nr})`;
+	const mailto = `mailto:${KONTAKT}?subject=${encodeURIComponent(`Odnowienie ubezpieczenia OC — ${r.klient_nazwa ?? ''} (${nr})`)}`;
+	const html = ramka('OCHRONA UBEZPIECZENIOWA WYGASŁA!', `
+    ${ramkaAlarmu('JESTEŚ BEZ UBEZPIECZENIA!')}
+    <p style="margin:0 0 14px;">Dzień dobry,</p>
+    <p style="margin:0 0 14px;">ochrona OC dla ${esc(r.klient_nazwa)} z ${dokument(r) === 'polisa' ? 'polisy' : 'certyfikatu'} nr <strong>${esc(nr)}</strong> w programie Beauty❤️Polisa
+      (STU Ergo Hestia SA) <strong style="color:#b91c1c;">skończyła się ${esc(koniec)}</strong>, a nie otrzymaliśmy wniosku o odnowienie.
+      Od ${esc(bezOchronyOd)} Twój gabinet <strong>nie ma ubezpieczenia OC</strong> — każda szkoda wyrządzona klientce lub klientowi obciąży Ciebie osobiście.</p>
+    <p style="margin:0 0 14px;font-size:16px;"><strong>Skontaktuj się z nami, żeby odnowić polisę lub zawrzeć nową.</strong>
+      Odpowiedz na tę wiadomość albo napisz na <a href="${esc(mailto)}" style="color:#b91c1c;font-weight:600;">${esc(KONTAKT)}</a> — przygotujemy ubezpieczenie jak najszybciej.</p>
+    <p style="margin:22px 0;"><a href="${esc(mailto)}" style="display:inline-block;background:#dc2626;color:#fff;text-decoration:none;font-weight:700;font-size:16px;padding:14px 28px;border-radius:6px;">Napisz do nas — chcę się ubezpieczyć</a></p>
+    <p style="margin:0 0 10px;font-size:13px;color:#64748b;">Jeśli ubezpieczyłaś lub ubezpieczyłeś gabinet w inny sposób, zignoruj tę wiadomość albo daj nam znać, a nie będziemy się już odzywać w tej sprawie.</p>`, { alarm: true });
+	const tekst = [
+		'Dzień dobry,',
+		'',
+		'OCHRONA UBEZPIECZENIOWA WYGASŁA! JESTEŚ BEZ UBEZPIECZENIA!',
+		'',
+		`Ochrona OC dla ${r.klient_nazwa ?? ''} z ${dokument(r) === 'polisa' ? 'polisy' : 'certyfikatu'} nr ${nr} w programie Beauty❤️Polisa (STU Ergo Hestia SA) skończyła się ${koniec}, a nie otrzymaliśmy wniosku o odnowienie.`,
+		`Od ${bezOchronyOd} Twój gabinet nie ma ubezpieczenia OC — każda szkoda wyrządzona klientce lub klientowi obciąży Ciebie osobiście.`,
+		'',
+		`Skontaktuj się z nami, żeby odnowić polisę lub zawrzeć nową: odpowiedz na tę wiadomość albo napisz na ${KONTAKT}.`,
+		'',
+		'Jeśli ubezpieczyłaś lub ubezpieczyłeś gabinet w inny sposób, zignoruj tę wiadomość albo daj nam znać.',
 		'',
 		STOPKA
 	].join('\n');

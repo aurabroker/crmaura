@@ -15,7 +15,7 @@ import {
 	type Klient,
 	type RenewalRow
 } from '$lib/server/renewals';
-import { mailApk, mailBiuro, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, BRAK_PDF_ANKIETY, decyzjaTekst, opisNowej, opisSkladki, opisZmian } from '$lib/server/renewalDocs';
+import { mailApk, mailBiuro, mailOchronaWygasla, mailOstatniDzien, mailPotwierdzenie, mailZaproszenie, pdfAnkieta, pdfApk, pdfWniosku, sygnalyApk, BRAK_PDF_ANKIETY, decyzjaTekst, opisNowej, opisSkladki, opisZmian } from '$lib/server/renewalDocs';
 import { pobierzPodpis, podpisDoPdf } from '$lib/server/podpis';
 import { formatSuma } from '$lib/renewals/program';
 
@@ -170,6 +170,35 @@ export async function wyslijZaproszenie(
 	await zapiszZdarzenie(admin, r, o.przypomnienie ? 'przypomnienie' : 'wyslanie', null, { przez: o.kto ?? 'automat', ...(test ? { test: adres } : {}) });
 	// Link do wniosku nie trafia do historii — to jedyne uprawnienie klienta do formularza.
 	await zapiszEmailKlienta(admin, r, adres, temat, m.tekst.replace(link, '[link do wniosku]'), wynik.id);
+	return { ...wynik, adres, test };
+}
+
+// Ostrzeżenie o końcu ochrony bez odnowienia: 'ostatni_dzien' (czerwony e-mail z linkiem do wniosku, ważnym
+// do północy) albo 'wygasla' (ochrona skończyła się — kontakt z biurem). Tryb testowy jak przy zaproszeniu.
+// Zajęcie pola mail_*_at (jednorazowość) robi zadanie dzienne przed wywołaniem.
+export type Ostrzezenie = 'ostatni_dzien' | 'wygasla';
+export async function wyslijOstrzezenie(
+	admin: SupabaseClient,
+	r: RenewalRow,
+	origin: string,
+	rodzaj: Ostrzezenie
+): Promise<Exclude<WynikWysylki, { ok: true }> | { ok: true; id: string | null; adres: string; test: boolean }> {
+	if (!r.email) return { ok: false, status: 400, blad: 'Klient nie ma adresu e-mail.' };
+	const firma = await ustawieniaFirmy(admin, r.tenant_id);
+	if (!firma?.resend_api_key) return { ok: false, status: 400, blad: 'Firma nie ma klucza Resend (SAAS Admin).' };
+	const link = rodzaj === 'ostatni_dzien' ? await linkDla(r.id, origin) : null;
+	const m = link ? mailOstatniDzien(r, link) : mailOchronaWygasla(r);
+	const test = czyTest(firma, r);
+	const adres = test ? adresTestowy() : r.email;
+	const temat = (test ? PREFIKS_TESTU : '') + m.temat;
+	const wynik = await wyslijEmail(firma.resend_api_key, { from: nadawca(), to: [adres], replyTo: biuro(), subject: temat, html: m.html, text: m.tekst });
+	const zdarzenie = rodzaj === 'ostatni_dzien' ? 'ostrzezenie_ostatni_dzien' : 'ostrzezenie_wygasla';
+	if (!wynik.ok) {
+		await zapiszZdarzenie(admin, r, `blad_${zdarzenie}`, null, { status: wynik.status, blad: wynik.blad });
+		return wynik;
+	}
+	await zapiszZdarzenie(admin, r, zdarzenie, null, { przez: 'automat', ...(test ? { test: adres } : {}) });
+	await zapiszEmailKlienta(admin, r, adres, temat, link ? m.tekst.replace(link, '[link do wniosku]') : m.tekst, wynik.id);
 	return { ...wynik, adres, test };
 }
 
