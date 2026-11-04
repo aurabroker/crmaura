@@ -13,7 +13,11 @@ import type { ProfilFirmy } from './pliki';
 import { nazwaRodzaju } from '$lib/statusPolisy';
 
 /** Program (ug_podtyp umowy generalnej) → alias szablonu w Resend. */
-export const SZABLON_PROGRAMU: Record<string, string> = { oc_beauty: 'beauty-polisa-wystawiona' };
+export const SZABLON_PROGRAMU: Record<string, string> = {
+	oc_beauty: 'beauty-polisa-wystawiona',
+	// Certyfikat NNW z programu ubezpieczeń osobowych Beauty Razem (Biznes & Podróż, ERGO Hestia).
+	nnw: 'beauty-nnw-polisa-wystawiona'
+};
 /** Alias ogólnego szablonu w Resend dla polis spoza programów; bez niego — wbudowana treść CRM. */
 export const SZABLON_OGOLNY = 'polisa-wystawiona';
 export const SZABLON_WBUDOWANY = 'wbudowany';

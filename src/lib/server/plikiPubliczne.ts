@@ -21,6 +21,7 @@ const PNG = 'image/png';
 const JPG = 'image/jpeg';
 const PDF = 'application/pdf';
 const BEAUTY = 'oc_beauty';
+const NNW = 'nnw';
 
 export const PLIKI_PUBLICZNE: Record<string, PlikPubliczny> = {
 	'beautypolisa/baner-beauty-polisa.png': { zrodlo: `${GR_ZDJECIA}/3f6d750e-5f81-4999-80d5-f25d411f8e99.png`, typ: PNG, nazwa: 'baner-beauty-polisa.png', opis: 'Baner Beauty Polisa (nagłówek maili)', program: BEAUTY },
@@ -41,7 +42,11 @@ export const PLIKI_PUBLICZNE: Record<string, PlikPubliczny> = {
 	'beautypolisa/owu-oc-zawodowe-ergo-hestia.pdf': { zrodlo: null, typ: PDF, nazwa: 'OWU OC z tytułu wykonywania czynności zawodowych.pdf', opis: 'OWU OC z tytułu wykonywania czynności zawodowych (ERGO Hestia)', program: BEAUTY },
 	'beautypolisa/warunki-ubezpieczenia-ulotka.pdf': { zrodlo: null, typ: PDF, nazwa: 'Warunki ubezpieczenia - ulotka.pdf', opis: 'Warunki ubezpieczenia OC zawodowego – ulotka', program: BEAUTY },
 	'beautypolisa/klauzula-reklamacyjna.pdf': { zrodlo: null, typ: PDF, nazwa: 'Klauzula reklamacyjna.pdf', opis: 'Klauzula reklamacyjna', program: BEAUTY },
-	'beautypolisa/oswiadczenie-administratora-danych.pdf': { zrodlo: null, typ: PDF, nazwa: 'Oświadczenie Administratora Danych Osobowych.pdf', opis: 'Oświadczenie Administratora Danych Osobowych', program: BEAUTY }
+	'beautypolisa/oswiadczenie-administratora-danych.pdf': { zrodlo: null, typ: PDF, nazwa: 'Oświadczenie Administratora Danych Osobowych.pdf', opis: 'Oświadczenie Administratora Danych Osobowych', program: BEAUTY },
+	// Dokumenty linkowane w mailu z wystawioną polisą NNW (szablon Resend „beauty-nnw-polisa-wystawiona”);
+	// pozostałe linki tego maila (dystrybutor, RODO, pełnomocnictwo, klauzula, oświadczenie) są wspólne z OC.
+	'beautypolisa/wyciag-z-programu-nnw-beauty-razem.pdf': { zrodlo: null, typ: PDF, nazwa: 'Wyciąg z programu ubezpieczeń osobowych NNW Beauty Razem.pdf', opis: 'Wyciąg z programu ubezpieczeń osobowych (NNW) Beauty Razem', program: NNW },
+	'beautypolisa/owu-biznes-i-podroz-ergo-hestia.pdf': { zrodlo: null, typ: PDF, nazwa: 'OWU Biznes i Podróż.pdf', opis: 'OWU Biznes & Podróż (ERGO Hestia) — NNW', program: NNW }
 };
 
 export const MAKS_PLIKU_PUBLICZNEGO = 15 * 1024 * 1024;
