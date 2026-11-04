@@ -315,7 +315,7 @@
 		['majątkowa','Majątkowa'],['życie','Życie'],['grupowe_medyczne','Grupowe Medyczne'],
 		['grupowe_życie','Grupowe Życie'],['utrata_dochodu','Utrata dochodu'],
 		['komunikacja','Komunikacja'],['flota','Flota'],['finansowa','Finansowa (Gwarancje)'],
-		['OC','OC Zawodowe / Działalności'],['techniczna','Techniczna'],['karno_skarbowa','Polisa Karno-Skarbowa'],['polisa_obca','Polisa Obca']
+		['OC','OC Zawodowe / Działalności'],['nnw','NNW'],['techniczna','Techniczna'],['karno_skarbowa','Polisa Karno-Skarbowa'],['polisa_obca','Polisa Obca']
 	];
 </script>
 

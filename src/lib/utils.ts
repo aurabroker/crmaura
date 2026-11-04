@@ -43,6 +43,7 @@ export const rodzajColor: Record<string, string> = {
 	OC:               'bg-orange-100 text-orange-800',
 	techniczna:       'bg-slate-200 text-slate-700',
 	karno_skarbowa:   'bg-red-100 text-red-800',
+	nnw:              'bg-teal-100 text-teal-800',
 	polisa_obca:      'bg-gray-100 text-gray-600',
 };
 // Color classes for UG podtyp badges
@@ -53,6 +54,7 @@ export const ugPodtypColor: Record<string, string> = {
 	car_ear:    'bg-blue-100 text-blue-800',
 	oc_beauty:  'bg-pink-100 text-pink-800',
 	beauty_tax: 'bg-red-100 text-red-800',
+	nnw:        'bg-teal-100 text-teal-800',
 };
 export function rodzajCls(rodzaj: string): string {
 	return rodzajColor[rodzaj] ?? 'bg-slate-100 text-slate-700';

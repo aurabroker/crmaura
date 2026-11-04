@@ -7,6 +7,7 @@ import * as wartaEkstrabiznes from './warta-ekstrabiznes';
 import * as ergoOcZawodowe from './ergo-oc-zawodowe';
 import * as ergoOcIndywidualna from './ergo-oc-indywidualna';
 import * as ergoFlota from './ergo-flota-komunikacja';
+import * as ergoNnw from './ergo-nnw-program';
 import * as uniqaKomunikacja from './uniqa-komunikacja';
 
 export const INSURER_TEMPLATES: InsurerTemplate[] = [
@@ -53,6 +54,15 @@ export const INSURER_TEMPLATES: InsurerTemplate[] = [
 				rodzaj: 'OC',
 				parse: ergoOcIndywidualna.parse,
 				detect: ergoOcIndywidualna.detect
+			},
+			{
+				id: 'ergo-nnw-program',
+				label: 'NNW — certyfikat z programu (Biznes & Podróż)',
+				rodzaj: 'nnw',
+				parse: ergoNnw.parse,
+				detect: ergoNnw.detect,
+				// Certyfikat nie drukuje numeru programu — umowa generalna NNW po podtypie i towarzystwie.
+				ugPodtyp: 'nnw'
 			},
 			{
 				id: 'ergo-flota-komunikacja',

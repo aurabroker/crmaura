@@ -59,7 +59,8 @@
 		cpm: 'CPM',
 		car_ear: 'CAR/EAR',
 		beauty_tax: 'BeautyTAX',
-		oc_beauty: 'OC Beauty'
+		oc_beauty: 'OC Beauty',
+		nnw: 'NNW'
 	};
 
 	// Policy brokers management

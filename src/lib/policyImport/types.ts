@@ -2,7 +2,7 @@
 // zwraca ten sam kształt, dzięki czemu mapowanie na CRM jest jedno dla wszystkich.
 
 import type { PdfDoc } from './pdfDoc';
-import type { VehicleUsage } from '$lib/types/database';
+import type { UgPodtyp, VehicleUsage } from '$lib/types/database';
 
 /** Pozycja ryzyka z tabeli "przedmiot ubezpieczenia / suma ubezpieczenia". */
 export interface RiskItem {
@@ -133,6 +133,11 @@ export interface ProductTemplate {
 	 * numerem i składką). Import zapisuje każdą pozycję jako osobną polisę.
 	 */
 	parseMany?: (doc: PdfDoc) => ExtractedPolicy[];
+	/**
+	 * Produkt z programu, którego dokument nie drukuje numeru umowy generalnej (certyfikat NNW
+	 * Hestii): mapper wiąże polisę z umową generalną tego podtypu u tego towarzystwa.
+	 */
+	ugPodtyp?: UgPodtyp;
 	/** Zdanie wyjaśniające, czego brakuje — pokazywane, gdy parse === undefined. */
 	todo?: string;
 	/** Sprawdza, czy wgrany plik to na pewno ten produkt. Zwraca komunikat błędu. */

@@ -259,6 +259,7 @@ w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
 | ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia |
 | ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk (bez elementów stałych programu — patrz niżej), lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
 | UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
+| ERGO Hestia | NNW — certyfikat z programu (Biznes & Podróż) | układ „POLISA/POLICY” jak OC zawodowe; ubezpieczona osoba (bez NIP) zostaje w parametrach; klauzula HIV/WZW z limitem „zgodnie z Programem” jako pozycja ryzyk; **dokument nie drukuje numeru programu**, więc umowa generalna jest dobierana po podtypie `nnw` i towarzystwie (operator może zmienić) |
 | ERGO Hestia | Flota / Komunikacja — certyfikaty z umowy generalnej (Cumulus) | **plik wielocertyfikatowy**: jedna strona = jeden certyfikat (pojazd) z własnym numerem `…/KOM/A000004`, składką, ryzykami (OC/AC/KR/NNW z sumami i parametrami AC) i harmonogramem; każdy certyfikat to osobna polisa komunikacyjna pod Umową Generalną `…/KOM/A`; z certyfikatu idzie pełne zaszeregowanie pojazdu (rodzaj rejestrowy → kalkulacyjny wg ładowności, liczba miejsc, pierwsza rejestracja, wykorzystanie) |
 
 Produkt bez parsera jest widoczny na liście, ale import jest zablokowany.

@@ -690,8 +690,9 @@
 					</div>
 				{/if}
 
-				<!-- Program przedłużany z tym samym numerem: kilka Umów Generalnych do wyboru -->
-				{#if draft.ugKandydaci.length > 1}
+				<!-- Program przedłużany z tym samym numerem: kilka Umów Generalnych do wyboru; dokument bez
+				     numeru programu (certyfikat NNW): umowa po podtypie, operator może ją zmienić -->
+				{#if draft.ugKandydaci.length > 1 || (!e.program_ug && draft.ugKandydaci.length > 0)}
 					<div class="bg-slate-50 border border-line rounded-lg px-4 py-3">
 						<label for="import-ug" class={lbl}>Umowa Generalna</label>
 						<select
@@ -707,8 +708,13 @@
 							{/each}
 						</select>
 						<p class="text-xs text-slate-500 mt-1">
-							Domyślnie umowa obowiązująca w dniu zawarcia polisy (liczy się od zawarcia umowy do końca jej okresu).
-							Zmień tylko, gdy polisa należy do innego roku programu.
+							{#if e.program_ug}
+								Domyślnie umowa obowiązująca w dniu zawarcia polisy (liczy się od zawarcia umowy do końca jej okresu).
+								Zmień tylko, gdy polisa należy do innego roku programu.
+							{:else}
+								Dokument nie drukuje numeru programu — umowa dobrana po podtypie produktu ({product?.ugPodtyp?.toUpperCase()})
+								i towarzystwie, obowiązująca w dniu zawarcia. Zmień, jeśli certyfikat należy do innej umowy.
+							{/if}
 						</p>
 					</div>
 				{/if}

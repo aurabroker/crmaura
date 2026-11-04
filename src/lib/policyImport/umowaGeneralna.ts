@@ -61,6 +61,21 @@ export function umowyProgramu<T extends Umowa>(policies: T[], program: string | 
 }
 
 /**
+ * Umowy Generalne danego podtypu u danego towarzystwa, od najnowszej — dla dokumentów, które nie
+ * drukują numeru programu (certyfikat NNW Hestii): umowę wskazuje podtyp produktu, nie numer.
+ */
+export function umowyPodtypu<T extends Umowa & Pick<Policy, 'ug_podtyp' | 'tu_id'>>(
+	policies: T[],
+	podtyp: string | null | undefined,
+	tuId: string | null | undefined
+): T[] {
+	if (!podtyp) return [];
+	return policies
+		.filter((p) => p.typ_umowy === 'generalna' && !p.deleted_at && p.ug_podtyp === podtyp && (!tuId || p.tu_id === tuId))
+		.sort(odNajnowszej);
+}
+
+/**
  * Umowa dla polisy zawartej w dniu `dzien` (YYYY-MM-DD):
  * - umowa obowiązująca tego dnia (przy nakładaniu się okresów — najnowsza),
  * - polisa zawarta w przerwie między umowami — następna umowa,

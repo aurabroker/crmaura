@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bezSerii, numerProgramu, tenSamProgram, umowyProgramu, wybierzUmowe } from './umowaGeneralna.ts';
+import { bezSerii, numerProgramu, tenSamProgram, umowyPodtypu, umowyProgramu, wybierzUmowe } from './umowaGeneralna.ts';
 
 const ug = (nr: string, od: string, do_: string, zawarcia: string | null = null) => ({
 	id: nr + od,
@@ -35,6 +35,20 @@ test('umowy programu: certyfikat floty Hestii „…/KOM/A” trafia pod umowę 
 	assert.equal(hit.length, 1);
 	assert.equal(hit[0].nr_polisy, 'SZUG03982/26/KOM');
 	assert.equal(wybierzUmowe(hit, '2026-06-23')?.nr_polisy, 'SZUG03982/26/KOM');
+});
+
+test('umowy podtypu: dokument bez numeru programu trafia pod umowę podtypu u tego towarzystwa', () => {
+	const umowy = [
+		{ ...ug('NNW/2026', '2026-11-04', '2027-11-03', '2026-11-04'), ug_podtyp: 'nnw' as const, tu_id: 'hestia' },
+		{ ...ug('NNW/2025', '2025-11-04', '2026-11-03', '2025-11-04'), ug_podtyp: 'nnw' as const, tu_id: 'hestia' },
+		{ ...ug('WA50/003353/24/A', '2025-10-13', '2026-10-12'), ug_podtyp: 'oc_beauty' as const, tu_id: 'hestia' },
+		{ ...ug('NNW/INNE', '2026-01-01', '2026-12-31'), ug_podtyp: 'nnw' as const, tu_id: 'uniqa' }
+	];
+	assert.deepEqual(umowyPodtypu(umowy, 'nnw', 'hestia').map((u) => u.nr_polisy), ['NNW/2026', 'NNW/2025']);
+	assert.equal(wybierzUmowe(umowyPodtypu(umowy, 'nnw', 'hestia'), '2026-11-04')?.nr_polisy, 'NNW/2026');
+	assert.equal(wybierzUmowe(umowyPodtypu(umowy, 'nnw', 'hestia'), '2026-05-01')?.nr_polisy, 'NNW/2025');
+	assert.deepEqual(umowyPodtypu(umowy, 'nnw', null).map((u) => u.nr_polisy), ['NNW/2026', 'NNW/INNE', 'NNW/2025']);
+	assert.deepEqual(umowyPodtypu(umowy, null, 'hestia'), []);
 });
 
 test('umowy programu: pełna zgodność numeru ma pierwszeństwo przed zgodnością bez serii', () => {

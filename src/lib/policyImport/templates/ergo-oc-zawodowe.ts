@@ -3,10 +3,11 @@
 // Certyfikaty wystawiane pod Programem Ubezpieczenia niosą jego numer w treści —
 // mapper wiąże po nim polisę z Umową Generalną.
 
-import type { ExtractedPolicy, RiskItem } from '../types';
-import { emptyExtraction } from '../types';
-import type { PdfDoc } from '../pdfDoc';
-import { collapse, grab, grabAll, toAmount, toDate } from '../parse';
+// Importy względne z rozszerzeniem, żeby szablon dało się uruchomić w testach node (--experimental-strip-types).
+import type { ExtractedPolicy, RiskItem } from '../types.ts';
+import { emptyExtraction } from '../types.ts';
+import type { PdfDoc } from '../pdfDoc.ts';
+import { collapse, grab, grabAll, toAmount, toDate } from '../parse.ts';
 
 const X_PRAWA_KOLUMNA = 330;
 
@@ -18,6 +19,10 @@ export function detect(doc: PdfDoc): string | null {
 			return 'To polisa wystawiona indywidualnie, nie certyfikat z programu — wybierz produkt „OC zawodowe — polisa indywidualna”.';
 		return 'Brak nagłówka „POLISA/POLICY” — to nie jest certyfikat OC zawodowego w tym układzie.';
 	}
+	// Ten sam układ ma certyfikat NNW z programu — gdy w tabeli ryzyk jest tylko NNW, to nie OC.
+	const nazwyRyzyk = parseRyzyka(doc).map((r) => r.przedmiot);
+	if (nazwyRyzyk.length && nazwyRyzyk.every((n) => /NIESZCZ[ĘE][ŚS]LIWYCH WYPADK/i.test(n)))
+		return 'To certyfikat NNW z programu — wybierz produkt „NNW — certyfikat z programu (Biznes & Podróż)”.';
 	return null;
 }
 

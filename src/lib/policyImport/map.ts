@@ -5,7 +5,7 @@
 import type { Client, Leasing, Policy, PolicyImportData, PolicyRisk, Vehicle } from '$lib/types/database';
 import type { ExtractedPolicy, ProductTemplate, RiskItem, VehicleData } from './types';
 import { digits, isValidNip, isValidRegon } from './parse';
-import { poczatekUmowy, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
+import { poczatekUmowy, umowyPodtypu, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
 import { znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
 import { tuBezInfoPlatnosci } from '$lib/platnosci';
 
@@ -115,6 +115,26 @@ export function buildDraft(input: BuildInput): Draft {
 			issues.push({
 				level: 'warn',
 				text: `Na polisie wskazano Program Ubezpieczenia ${extracted.program_ug}, ale nie ma w CRM Umowy Generalnej o takim numerze — polisa zostanie zapisana jako jednostkowa.`
+			});
+	} else if (product.ugPodtyp) {
+		// Dokument nie drukuje numeru programu (certyfikat NNW): umowa po podtypie produktu u tego
+		// towarzystwa, obowiązująca w dniu zawarcia; operator może wskazać inną spośród kandydatek.
+		ugKandydaci = umowyPodtypu(policies, product.ugPodtyp, insurerId);
+		const dzien = extracted.data_zawarcia ?? extracted.data_od;
+		const wskazana = input.ugId ? (ugKandydaci.find((u) => u.id === input.ugId) ?? null) : null;
+		ug = wskazana ?? wybierzUmowe(ugKandydaci, dzien);
+		const podtyp = product.ugPodtyp.toUpperCase();
+		if (ug)
+			issues.push({
+				level: 'info',
+				text: wskazana
+					? `Polisa zostanie podpięta pod Umowę Generalną ${ug.nr_polisy} (${podtyp}) — wybraną ręcznie.`
+					: `Certyfikat nie drukuje numeru programu — polisa zostanie podpięta pod Umowę Generalną ${ug.nr_polisy} (${podtyp}${ugKandydaci.length > 1 ? `, obowiązującą w dniu zawarcia${dzien ? ` ${dzien}` : ''}` : ''}).`
+			});
+		else
+			issues.push({
+				level: 'warn',
+				text: `W CRM nie ma Umowy Generalnej podtypu ${podtyp} tego towarzystwa — polisa zostanie zapisana jako jednostkowa. Załóż umowę (Polisy → Umowa generalna → ${podtyp}) i wgraj plik ponownie.`
 			});
 	}
 

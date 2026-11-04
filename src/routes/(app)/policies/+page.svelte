@@ -326,7 +326,7 @@
 	}
 
 	const ugLabel: Record<string, string> = {
-		flota: 'Flota', gwarancje: 'Gwarancje', cpm: 'CPM', car_ear: 'CAR/EAR'
+		flota: 'Flota', gwarancje: 'Gwarancje', cpm: 'CPM', car_ear: 'CAR/EAR', nnw: 'NNW'
 	};
 
 	// Preset typ_umowy/ug_podtyp for new policy form
@@ -487,7 +487,7 @@
 						</button>
 						<button role="menuitem" onclick={() => goto('/policies/new-ug')} class="w-full flex items-start gap-3 text-left px-4 py-2.5 hover:bg-surface-2">
 							<FileStack size={16} class="text-ink-3 mt-0.5" />
-							<span><span class="block text-sm font-medium text-ink">Umowa generalna</span><span class="block text-xs text-ink-3">flota, gwarancje, CPM, CAR/EAR</span></span>
+							<span><span class="block text-sm font-medium text-ink">Umowa generalna</span><span class="block text-xs text-ink-3">flota, gwarancje, CPM, CAR/EAR, NNW</span></span>
 						</button>
 					</div>
 				{/if}

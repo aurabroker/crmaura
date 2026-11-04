@@ -198,7 +198,7 @@
 	<div>
 		<label class={lbl}>Podtyp Umowy Generalnej *</label>
 		<div class="grid grid-cols-3 gap-1.5">
-			{#each [['flota','Flota'],['gwarancje','Gwarancje'],['cpm','CPM'],['car_ear','CAR/EAR'],['beauty_tax','BeautyTAX'], ...(isAuraTenant ? [['oc_beauty','OC Beauty']] : [])] as [val, label]}
+			{#each [['flota','Flota'],['gwarancje','Gwarancje'],['cpm','CPM'],['car_ear','CAR/EAR'],['nnw','NNW'],['beauty_tax','BeautyTAX'], ...(isAuraTenant ? [['oc_beauty','OC Beauty']] : [])] as [val, label]}
 				<button type="button" onclick={() => fpUgPodtyp = val}
 					class="py-2 px-3 rounded-lg text-sm border text-center transition-colors
 						{fpUgPodtyp === val ? 'bg-blue-50 text-blue-700 border-blue-400 font-semibold' : 'bg-white text-slate-600 border-line hover:bg-slate-50'}">

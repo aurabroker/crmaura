@@ -138,7 +138,7 @@ export interface PolicyImportData {
 }
 
 export type TypUmowy = 'jednostkowa' | 'generalna';
-export type UgPodtyp = 'flota' | 'gwarancje' | 'cpm' | 'car_ear' | 'oc_beauty';
+export type UgPodtyp = 'flota' | 'gwarancje' | 'cpm' | 'car_ear' | 'oc_beauty' | 'beauty_tax' | 'nnw';
 
 export interface Policy {
 	id: string;
