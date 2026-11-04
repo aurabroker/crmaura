@@ -11,6 +11,7 @@ import { EMAIL_RE, base64, bezAdresow, esc, wyslijEmail, type Wiadomosc, type Wy
 import { LIMIT_NA_GODZINE, adresNadawcy, ustawieniaWysylki } from './emailKlienta';
 import type { ProfilFirmy } from './pliki';
 import { nazwaRodzaju } from '$lib/statusPolisy';
+import type { PolicyImportData } from '$lib/policyImport/types';
 
 /** Program (ug_podtyp umowy generalnej) → alias szablonu w Resend. */
 export const SZABLON_PROGRAMU: Record<string, string> = {
@@ -117,6 +118,26 @@ export function szablonWbudowany(bezPlatnosci = false): SzablonResend {
 export const kwotaSlownie = (n: number | string | null | undefined) =>
 	(Number(n) || 0).toLocaleString('pl-PL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+const KLAUZULA_HIV = /HIV/i;
+
+/**
+ * Zmienne tylko dla szablonu programu (poza zmiennymi wspólnymi). NNW z programu Beauty Razem: klauzula
+ * HIV/WZW to płatne rozszerzenie (150 zł NNW + 75 zł klauzula od osoby rocznie), więc mail wspomina o niej
+ * tylko, gdy polisa ją ma (KLAUZULA_HIV_ZDANIE), a składkę rozbija na NNW i klauzulę według pozycji ryzyk
+ * z importu certyfikatu (SKLADKA_ROZBICIE, np. „ (NNW 150,00 zł + klauzula HIV/WZW 75,00 zł)”).
+ */
+export function zmienneProgramu(program: string | null, polisa: { przedmiot?: string | null; dane_importu?: PolicyImportData | null }): Record<string, string> {
+	if (program !== 'nnw') return {};
+	const ryzyka = polisa.dane_importu?.ryzyka ?? [];
+	const klauzula = ryzyka.find((r) => KLAUZULA_HIV.test(r.przedmiot));
+	const nnw = ryzyka.find((r) => r !== klauzula && r.skladka != null);
+	const maKlauzule = !!klauzula || KLAUZULA_HIV.test(polisa.przedmiot ?? '');
+	return {
+		KLAUZULA_HIV_ZDANIE: maKlauzule ? ' Polisa obejmuje również klauzulę ubezpieczenia na wypadek zakażenia wirusem HIV i WZW podczas wykonywania czynności zawodowych.' : '',
+		SKLADKA_ROZBICIE: klauzula?.skladka != null && nnw ? ` (NNW ${kwotaSlownie(nnw.skladka)} zł + klauzula HIV/WZW ${kwotaSlownie(klauzula.skladka)} zł)` : ''
+	};
+}
+
 /** Zapasowa wersja tekstowa, gdy szablon jej nie ma. */
 export function htmlNaTekst(html: string): string {
 	return html
@@ -138,7 +159,7 @@ export function htmlNaTekst(html: string): string {
 
 type Polisa = {
 	id: string; nr_polisy: string; data_od: string | null; data_do: string | null; klient_id: string; parent_id: string | null;
-	rodzaj?: string | null; przedmiot?: string | null; skladka_przypisana?: number | string | null; typ_umowy?: string | null;
+	rodzaj?: string | null; przedmiot?: string | null; skladka_przypisana?: number | string | null; typ_umowy?: string | null; dane_importu?: PolicyImportData | null;
 	bez_info_platnosci?: boolean | null;
 	crm_insurers?: { nazwa: string; skrot: string | null } | null;
 };
@@ -149,7 +170,7 @@ async function wczytaj(admin: SupabaseClient, profil: ProfilFirmy, polisaId: str
 	if (!UUID.test(polisaId)) throw error(404, 'Nie ma takiej polisy.');
 	const { data: p } = await admin
 		.from('crm_policies')
-		.select('id, nr_polisy, data_od, data_do, klient_id, parent_id, rodzaj, przedmiot, skladka_przypisana, typ_umowy, bez_info_platnosci, crm_insurers(nazwa, skrot)')
+		.select('id, nr_polisy, data_od, data_do, klient_id, parent_id, rodzaj, przedmiot, skladka_przypisana, typ_umowy, bez_info_platnosci, dane_importu, crm_insurers(nazwa, skrot)')
 		.eq('id', polisaId)
 		.eq('tenant_id', profil.tenant_id)
 		.is('deleted_at', null)
@@ -160,10 +181,14 @@ async function wczytaj(admin: SupabaseClient, profil: ProfilFirmy, polisaId: str
 
 	// Polisa z programu ma własny szablon w Resend; każda inna — ogólny (albo wbudowaną treść CRM).
 	let szablon: string | null = null;
+	let program: string | null = null;
 	if (polisa.parent_id) {
 		const { data: ug } = await admin.from('crm_policies').select('typ_umowy, ug_podtyp').eq('id', polisa.parent_id).eq('tenant_id', profil.tenant_id).maybeSingle();
 		const u = ug as { typ_umowy: string | null; ug_podtyp: string | null } | null;
-		if (u?.typ_umowy === 'generalna' && u.ug_podtyp) szablon = SZABLON_PROGRAMU[u.ug_podtyp] ?? null;
+		if (u?.typ_umowy === 'generalna' && u.ug_podtyp && SZABLON_PROGRAMU[u.ug_podtyp]) {
+			program = u.ug_podtyp;
+			szablon = SZABLON_PROGRAMU[u.ug_podtyp];
+		}
 	}
 	const ogolny = !szablon;
 	if (!szablon) szablon = SZABLON_OGOLNY;
@@ -205,6 +230,7 @@ async function wczytaj(admin: SupabaseClient, profil: ProfilFirmy, polisaId: str
 	return {
 		polisa,
 		szablon,
+		program,
 		ogolny,
 		klient,
 		adresy,
@@ -313,7 +339,8 @@ export async function mailPolisy(
 		OWU: owu.join(', '),
 		OWU_ZDANIE: owu.length ? ' Załączamy też Ogólne Warunki Ubezpieczenia (OWU).' : '',
 		DORADCA: profil.imie_nazwisko ?? '',
-		FIRMA: ust.firma
+		FIRMA: ust.firma,
+		...zmienneProgramu(w.program, w.polisa)
 	};
 	const zastepcze = Object.fromEntries((t.variables ?? []).map((v) => [v.key, v.fallback_value == null ? '' : String(v.fallback_value)]));
 	const html = wypelnijSzablon(t.html ?? '', zmienne, true, zastepcze);

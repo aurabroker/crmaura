@@ -14,6 +14,10 @@ import { collapse, grab, grabAll, toAmount, toDate } from '../parse.ts';
 
 const X_PRAWA_KOLUMNA = 330;
 const RYZYKO_NNW = /NAST[ĘE]PSTW NIESZCZ[ĘE][ŚS]LIWYCH WYPADK[ÓO]W/i;
+const KLAUZULA_HIV = /HIV/i;
+/** Składka roczna od osoby w programie Beauty Razem: NNW (wariant I) i płatne rozszerzenie o klauzulę HIV/WZW. */
+export const SKLADKA_NNW_OSOBA = 150;
+export const SKLADKA_HIV_OSOBA = 75;
 /** Wiersz tabeli ryzyk: nazwa | symbol (A05 - 12) | suma ubezpieczenia | składka. */
 const WIERSZ_RYZYKA = /^(.+?)\s+([A-Z]\d{2}\s*-\s*\d+)\s+([\d\s.,]+)\s*zł(?:\s+([\d\s.,]+)\s*zł)?\s*$/;
 
@@ -43,6 +47,7 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	parseStrony(doc, out);
 
 	out.ryzyka = parseRyzyka(doc);
+	rozdzielSkladke(out.ryzyka);
 	// Pierwsza pozycja to NNW — jej suma jest sumą ubezpieczenia certyfikatu.
 	out.suma_gwarancyjna = out.ryzyka.find((r) => r.suma != null)?.suma ?? null;
 	out.przedmiot = out.ryzyka.length
@@ -130,6 +135,21 @@ function parseStrony(doc: PdfDoc, out: ExtractedPolicy) {
 
 	// Ubezpieczony tożsamy z ubezpieczającym — w CRM zostawiamy puste pole "ubezpieczony".
 	if (out.ubezpieczony_nip && out.ubezpieczony_nip === out.klient_nip) out.ubezpieczony_nazwa = out.klient_nazwa;
+}
+
+/**
+ * Certyfikat drukuje całą składkę przy wierszu NNW, a klauzula HIV/WZW jest osobno płatnym rozszerzeniem
+ * (150 zł NNW + 75 zł klauzula od osoby rocznie). Dzielimy składkę w tej proporcji — także przy kilku
+ * osobach i okresie krótszym niż rok, bo obie części Hestia liczy od tych samych osobo-dni — żeby pozycje
+ * ryzyk (i mail z polisą do klienta) pokazywały, ile kosztuje NNW, a ile klauzula.
+ */
+export function rozdzielSkladke(ryzyka: RiskItem[]): void {
+	const nnw = ryzyka.find((r) => r.sekcja === 'UBEZPIECZONE RYZYKA' && RYZYKO_NNW.test(r.przedmiot));
+	const hiv = ryzyka.find((r) => r.sekcja === 'KLAUZULE DODATKOWE' && KLAUZULA_HIV.test(r.przedmiot));
+	if (!nnw || !hiv || nnw.skladka == null || hiv.skladka != null) return;
+	const grosze = (n: number) => Math.round(n * 100) / 100;
+	hiv.skladka = grosze((nnw.skladka * SKLADKA_HIV_OSOBA) / (SKLADKA_NNW_OSOBA + SKLADKA_HIV_OSOBA));
+	nnw.skladka = grosze(nnw.skladka - hiv.skladka);
 }
 
 /**

@@ -98,19 +98,34 @@ test('certyfikat NNW: numer, okres, zawarcie, strony, składka, rata, konto, OWU
 	assert.equal(e.dodatkowe['Klasa ryzyka'], 'Klasa I');
 });
 
-test('certyfikat NNW: ryzyko z symbolem i sumą oraz klauzula z limitem jako pozycje ryzyk', () => {
+test('certyfikat NNW: ryzyko z symbolem i sumą oraz klauzula z limitem jako pozycje ryzyk; składka 225 zł to 150 zł NNW + 75 zł klauzula HIV/WZW', () => {
 	const e = parse(doc);
 	assert.deepEqual(e.ryzyka, [
-		{ sekcja: 'UBEZPIECZONE RYZYKA', przedmiot: 'UBEZPIECZENIE NASTĘPSTW NIESZCZĘŚLIWYCH WYPADKÓW (A05 - 12)', suma: 100000, skladka: 225 },
+		{ sekcja: 'UBEZPIECZONE RYZYKA', przedmiot: 'UBEZPIECZENIE NASTĘPSTW NIESZCZĘŚLIWYCH WYPADKÓW (A05 - 12)', suma: 100000, skladka: 150 },
 		{
 			sekcja: 'KLAUZULE DODATKOWE',
 			przedmiot: 'Klauzula ubezpieczenia na wypadek zakażenia wirusem HIV i WZW podczas wykonywania czynności zawodowych — limit: zgodnie z Programem',
-			suma: null
+			suma: null,
+			skladka: 75
 		}
 	]);
+	assert.equal(e.skladka, 225);
 	// toLocaleString('pl-PL') rozdziela tysiące wąską spacją niełamliwą — porównujemy po zwykłej spacji.
 	assert.equal(
 		e.przedmiot?.replace(/[  ]/g, ' '),
 		'UBEZPIECZENIE NASTĘPSTW NIESZCZĘŚLIWYCH WYPADKÓW (A05 - 12): 100 000 zł; Klauzula ubezpieczenia na wypadek zakażenia wirusem HIV i WZW podczas wykonywania czynności zawodowych — limit: zgodnie z Programem'
 	);
+});
+
+test('certyfikat NNW bez klauzuli HIV/WZW: cała składka zostaje przy NNW', () => {
+	// Ten sam certyfikat bez sekcji klauzul (wiersze 581.4, 574.5 i 567.6) i ze składką podstawową 150 zł.
+	const bezKlauzuli = strona1
+		.filter((w) => ![581.4, 574.5, 567.6].includes(w.y))
+		.map((w) => (w.text === '225,00' ? { ...w, text: '150,00' } : w));
+	const e = parse(new PdfDoc(bezKlauzuli, 1, 595));
+	assert.deepEqual(e.ryzyka, [
+		{ sekcja: 'UBEZPIECZONE RYZYKA', przedmiot: 'UBEZPIECZENIE NASTĘPSTW NIESZCZĘŚLIWYCH WYPADKÓW (A05 - 12)', suma: 100000, skladka: 150 }
+	]);
+	assert.equal(e.skladka, 150);
+	assert.equal(e.przedmiot?.replace(/[  ]/g, ' '), 'UBEZPIECZENIE NASTĘPSTW NIESZCZĘŚLIWYCH WYPADKÓW (A05 - 12): 100 000 zł');
 });
