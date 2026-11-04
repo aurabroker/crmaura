@@ -10,6 +10,23 @@ export function numerProgramu(nr: string | null | undefined): string {
 	return (nr ?? '').replace(/\s/g, '').toUpperCase().replace(/_\d{4}$/, '');
 }
 
+/**
+ * Numer bez końcowego członu serii („SZUG03982/26/KOM/A” → „SZUG03982/26/KOM”). Certyfikaty
+ * floty Hestii wskazują umowę z literą serii, a w CRM umowa bywa wpisana bez niej — to ta sama
+ * umowa, więc porównujemy też bez serii (dopiero gdy pełne numery się nie zgadzają).
+ */
+export function bezSerii(nr: string): string {
+	return nr.replace(/\/[A-Z]$/, '');
+}
+
+/** Ten sam program: pełne numery równe albo równe po odcięciu litery serii. */
+export function tenSamProgram(a: string | null | undefined, b: string | null | undefined): boolean {
+	const na = numerProgramu(a);
+	const nb = numerProgramu(b);
+	if (!na || !nb) return false;
+	return na === nb || bezSerii(na) === bezSerii(nb);
+}
+
 type Umowa = Pick<Policy, 'id' | 'nr_polisy' | 'typ_umowy' | 'data_od' | 'data_do' | 'data_zawarcia' | 'deleted_at'>;
 
 const DNI_ZAWARCIA_PRZED_OKRESEM = 92;
@@ -37,9 +54,10 @@ const odNajnowszej = (a: Umowa, b: Umowa) =>
 export function umowyProgramu<T extends Umowa>(policies: T[], program: string | null | undefined): T[] {
 	const szukany = numerProgramu(program);
 	if (!szukany) return [];
-	return policies
-		.filter((p) => p.typ_umowy === 'generalna' && !p.deleted_at && numerProgramu(p.nr_polisy) === szukany)
-		.sort(odNajnowszej);
+	const umowy = policies.filter((p) => p.typ_umowy === 'generalna' && !p.deleted_at);
+	// Pełna zgodność numeru ma pierwszeństwo; bez serii szukamy tylko, gdy pełnej nie ma.
+	const pelne = umowy.filter((p) => numerProgramu(p.nr_polisy) === szukany);
+	return (pelne.length ? pelne : umowy.filter((p) => tenSamProgram(p.nr_polisy, szukany))).sort(odNajnowszej);
 }
 
 /**
