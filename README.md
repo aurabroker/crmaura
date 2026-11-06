@@ -256,7 +256,7 @@ w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
 | Towarzystwo | Produkt | Uwagi |
 |-------------|---------|-------|
 | WARTA | Ekstrabiznes Plus | sekcje ryzyk, składki sekcyjne, wiele lokalizacji |
-| ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia |
+| ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia; tabela ryzyk czytana po kolumnach (długa nazwa zakresu łamie wiersz — symbol i suma lądują linię niżej); klauzule z sekcji „KLAUZULE DODATKOWE” także bez słowa „Klauzula” (dopłata za 6–8 osób) |
 | ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk (bez elementów stałych programu — patrz niżej), lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
 | UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
 | ERGO Hestia | NNW — certyfikat z programu (Biznes & Podróż) | układ „POLISA/POLICY” jak OC zawodowe; ubezpieczona osoba (bez NIP) zostaje w parametrach; klauzula HIV/WZW z limitem „zgodnie z Programem” jako pozycja ryzyk; **dokument nie drukuje numeru programu**, więc umowa generalna jest dobierana po podtypie `nnw` i towarzystwie (operator może zmienić) |
@@ -319,6 +319,15 @@ duplikaty).
 - **Suma gwarancyjna.** Szablony OC (ERGO: certyfikat i polisa indywidualna)
   przekazują sumę ubezpieczenia do `suma_gwarancyjna` — korzystają z niej
   odnowienia OC beauty.
+- **Wniosek a polisa (program OC beauty).** Przy imporcie certyfikatu OC
+  ERGO podgląd porównuje go ze złożonym wnioskiem klienta (`crm_renewals`:
+  pierwsza polisa albo odnowienie — przy odnowieniu wniosek do poprzedniej
+  polisy, poza tym najnowszy złożony bez polisy): suma gwarancyjna, składka
+  z wyceny, ochrona prawna (klauzula), liczba osób (klauzula „Liczba
+  zatrudnionych od 6 do 8”), zakres z rodzaju działalności, początek ochrony,
+  NIP i adres firmy. Każda różnica to osobne ostrzeżenie (import nie jest
+  blokowany), zgodność — jedna informacja z listą sprawdzonych elementów
+  (`src/lib/policyImport/wniosek.ts`).
 - **Raty a składka.** Gdy suma odczytanych rat różni się od składki,
   podgląd pokazuje ostrzeżenie (zwykle ucięty harmonogram) — import nie jest
   blokowany.

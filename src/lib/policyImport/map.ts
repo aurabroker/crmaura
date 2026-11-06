@@ -8,6 +8,7 @@ import { digits, isValidNip, isValidRegon } from './parse';
 import { poczatekUmowy, umowyPodtypu, umowyProgramu, wybierzUmowe } from './umowaGeneralna';
 import { znajdzDuplikatPolisy } from '$lib/duplikatPolisy';
 import { tuBezInfoPlatnosci } from '$lib/platnosci';
+import { porownajZWnioskiem, wniosekDoPolisy, type WniosekDoPorownania } from './wniosek';
 
 export type IssueLevel = 'error' | 'warn' | 'info';
 
@@ -68,6 +69,8 @@ export interface BuildInput {
 	renewalOf?: string | null;
 	/** Umowa Generalna wybrana przez operatora spośród umów programu. */
 	ugId?: string | null;
+	/** Złożone wnioski klienta z programu OC beauty (crm_renewals) — polisa jest z nimi porównywana. */
+	wnioski?: WniosekDoPorownania[];
 }
 
 export function buildDraft(input: BuildInput): Draft {
@@ -163,6 +166,13 @@ export function buildDraft(input: BuildInput): Draft {
 				level: 'warn',
 				text: `Polisa jest wznowieniem numeru ${extracted.wznowienie_nr}, którego nie ma w CRM — powiązanie zostanie pominięte.`
 			});
+	}
+
+	// Certyfikat OC z programu beauty a złożony wniosek klienta (suma, składka, ochrona prawna, liczba osób,
+	// zakres, początek ochrony, dane firmy) — różnice to ostrzeżenia dla doradcy, nie blokada.
+	if (input.wnioski?.length && /^ergo-oc/.test(product.id)) {
+		const wniosek = wniosekDoPolisy(input.wnioski, { klientId: client.id, poprzedniaId: poprzednia?.id ?? null, policies });
+		if (wniosek) issues.push(...porownajZWnioskiem(extracted, wniosek));
 	}
 
 	// Prowizji nie ma na żadnej polisie — to dana brokerska. Pochodzi z UG albo

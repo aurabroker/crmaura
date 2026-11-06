@@ -12,6 +12,7 @@
 	import { readPdf, type PdfDoc } from '$lib/policyImport/pdf';
 	import { templatesFor } from '$lib/policyImport/templates';
 	import { buildDraft, type Draft } from '$lib/policyImport/map';
+	import { WNIOSEK_KOLUMNY, type WniosekDoPorownania } from '$lib/policyImport/wniosek';
 	import type { ExtractedPolicy, ProductTemplate } from '$lib/policyImport/types';
 	import type { Client, Insurer } from '$lib/types/database';
 	import {
@@ -62,6 +63,27 @@
 		insurerId = renewalSource.tu_id;
 	});
 
+	// Złożone wnioski wybranego klienta (program OC beauty) — podgląd porównuje z nimi certyfikat.
+	// Odpowiedź spóźniona (zmieniony klient) jest pomijana.
+	let wnioskiKlienta = $state<WniosekDoPorownania[]>([]);
+	let wnioskiDla = '';
+	$effect(() => {
+		const dla = clientId;
+		if (dla === wnioskiDla) return;
+		wnioskiDla = dla;
+		wnioskiKlienta = [];
+		if (!dla) return;
+		sb.from('crm_renewals')
+			.select(WNIOSEK_KOLUMNY)
+			.eq('klient_id', dla)
+			.eq('status', 'zlozony')
+			.order('zlozono_at', { ascending: false })
+			.limit(10)
+			.then(({ data, error }) => {
+				if (!error && wnioskiDla === dla) wnioskiKlienta = (data ?? []) as unknown as WniosekDoPorownania[];
+			});
+	});
+
 	const insurer = $derived(appState.insurers.find((i) => i.id === insurerId) ?? null);
 	const produkty = $derived<ProductTemplate[]>(insurer ? templatesFor(insurer) : []);
 	const product = $derived(produkty.find((p) => p.id === productId) ?? null);
@@ -107,7 +129,8 @@
 					wnioskujPojazd,
 					potwierdzOdnowienie,
 					renewalOf,
-					ugId
+					ugId,
+					wnioski: wnioskiKlienta
 				})
 			: null;
 	}

@@ -11,6 +11,7 @@ import type { ExtractedPolicy, RiskItem } from '../types.ts';
 import { emptyExtraction } from '../types.ts';
 import type { PdfDoc } from '../pdfDoc.ts';
 import { collapse, grab, grabAll, toAmount, toDate } from '../parse.ts';
+import { SEKCJA_RYZYK, tabelaRyzyk } from './ergo-tabelaRyzyk.ts';
 
 const X_PRAWA_KOLUMNA = 330;
 const RYZYKO_NNW = /NAST[ĘE]PSTW NIESZCZ[ĘE][ŚS]LIWYCH WYPADK[ÓO]W/i;
@@ -18,8 +19,6 @@ const KLAUZULA_HIV = /HIV/i;
 /** Składka roczna od osoby w programie Beauty Razem: NNW (wariant I) i płatne rozszerzenie o klauzulę HIV/WZW. */
 export const SKLADKA_NNW_OSOBA = 150;
 export const SKLADKA_HIV_OSOBA = 75;
-/** Wiersz tabeli ryzyk: nazwa | symbol (A05 - 12) | suma ubezpieczenia | składka. */
-const WIERSZ_RYZYKA = /^(.+?)\s+([A-Z]\d{2}\s*-\s*\d+)\s+([\d\s.,]+)\s*zł(?:\s+([\d\s.,]+)\s*zł)?\s*$/;
 
 export function detect(doc: PdfDoc): string | null {
 	if (!/ERGO Hestia/i.test(doc.text))
@@ -144,7 +143,7 @@ function parseStrony(doc: PdfDoc, out: ExtractedPolicy) {
  * ryzyk (i mail z polisą do klienta) pokazywały, ile kosztuje NNW, a ile klauzula.
  */
 export function rozdzielSkladke(ryzyka: RiskItem[]): void {
-	const nnw = ryzyka.find((r) => r.sekcja === 'UBEZPIECZONE RYZYKA' && RYZYKO_NNW.test(r.przedmiot));
+	const nnw = ryzyka.find((r) => r.sekcja === SEKCJA_RYZYK && RYZYKO_NNW.test(r.przedmiot));
 	const hiv = ryzyka.find((r) => r.sekcja === 'KLAUZULE DODATKOWE' && KLAUZULA_HIV.test(r.przedmiot));
 	if (!nnw || !hiv || nnw.skladka == null || hiv.skladka != null) return;
 	const grosze = (n: number) => Math.round(n * 100) / 100;
@@ -153,28 +152,17 @@ export function rozdzielSkladke(ryzyka: RiskItem[]): void {
 }
 
 /**
- * Tabela ryzyk (wiersze z symbolem i sumą) oraz klauzule dodatkowe pod nią — klauzula idzie
- * jako pozycja bez sumy, z limitem drukowanym w kolumnie LIMIT („zgodnie z Programem”).
+ * Tabela ryzyk (pozycje z symbolem i sumą — po kolumnach, bo długa nazwa łamie wiersz) oraz klauzule
+ * dodatkowe pod nią — klauzula idzie jako pozycja bez sumy, z limitem drukowanym w kolumnie LIMIT
+ * („zgodnie z Programem”).
  */
 function parseRyzyka(doc: PdfDoc): RiskItem[] {
-	const ryzyka: RiskItem[] = [];
+	const ryzyka: RiskItem[] = tabelaRyzyk(doc);
 	const linie = doc.text.split('\n');
 	let wKlauzulach = false;
 	let klauzula: RiskItem | null = null;
 	for (const linia of linie) {
 		if (/^SKŁADKA\s*\/\s*PREMIUM/i.test(linia) || /^INFORMACJE DODATKOWE/i.test(linia)) break;
-		const m = linia.match(WIERSZ_RYZYKA);
-		if (m) {
-			const przedmiot = collapse(m[1]);
-			if (!przedmiot) continue;
-			ryzyka.push({
-				sekcja: 'UBEZPIECZONE RYZYKA',
-				przedmiot: `${przedmiot} (${collapse(m[2])})`,
-				suma: toAmount(m[3]),
-				skladka: toAmount(m[4])
-			});
-			continue;
-		}
 		if (/^KLAUZULE DODATKOWE/i.test(linia)) {
 			wKlauzulach = true;
 			continue;

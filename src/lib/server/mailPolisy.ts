@@ -11,7 +11,7 @@ import { EMAIL_RE, base64, bezAdresow, esc, wyslijEmail, type Wiadomosc, type Wy
 import { LIMIT_NA_GODZINE, adresNadawcy, ustawieniaWysylki } from './emailKlienta';
 import type { ProfilFirmy } from './pliki';
 import { nazwaRodzaju } from '$lib/statusPolisy';
-import type { PolicyImportData } from '$lib/policyImport/types';
+import type { PolicyImportData } from '$lib/types/database';
 
 /** Program (ug_podtyp umowy generalnej) → alias szablonu w Resend. */
 export const SZABLON_PROGRAMU: Record<string, string> = {

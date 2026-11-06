@@ -4,10 +4,11 @@
 // mapper wiąże po nim polisę z Umową Generalną.
 
 // Importy względne z rozszerzeniem, żeby szablon dało się uruchomić w testach node (--experimental-strip-types).
-import type { ExtractedPolicy, RiskItem } from '../types.ts';
+import type { ExtractedPolicy } from '../types.ts';
 import { emptyExtraction } from '../types.ts';
 import type { PdfDoc } from '../pdfDoc.ts';
 import { collapse, grab, grabAll, toAmount, toDate } from '../parse.ts';
+import { tabelaRyzyk } from './ergo-tabelaRyzyk.ts';
 
 const X_PRAWA_KOLUMNA = 330;
 
@@ -20,7 +21,7 @@ export function detect(doc: PdfDoc): string | null {
 		return 'Brak nagłówka „POLISA/POLICY” — to nie jest certyfikat OC zawodowego w tym układzie.';
 	}
 	// Ten sam układ ma certyfikat NNW z programu — gdy w tabeli ryzyk jest tylko NNW, to nie OC.
-	const nazwyRyzyk = parseRyzyka(doc).map((r) => r.przedmiot);
+	const nazwyRyzyk = tabelaRyzyk(doc).map((r) => r.przedmiot);
 	if (nazwyRyzyk.length && nazwyRyzyk.every((n) => /NIESZCZ[ĘE][ŚS]LIWYCH WYPADK/i.test(n)))
 		return 'To certyfikat NNW z programu — wybierz produkt „NNW — certyfikat z programu (Biznes & Podróż)”.';
 	return null;
@@ -52,7 +53,9 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	out.ilosc_rat = out.raty.length || null;
 	out.konto_do_wplat = collapse(grab(text, /numer konta:\s*([\d\s]{20,34})/i));
 
-	out.ryzyka = parseRyzyka(doc);
+	// Tabela ryzyk po pozycji kolumn — długa nazwa („GABINETY KOSMETYCZNE, KOSMETOLOGICZNE, FRYZJERSKIE
+	// I PODOLOGICZNE”) łamie wiersz i symbol z sumą lądują linię niżej.
+	out.ryzyka = tabelaRyzyk(doc);
 	out.przedmiot = out.ryzyka.length
 		? out.ryzyka
 				.map((r) =>
@@ -66,9 +69,7 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	out.program_ug = grab(text, /Programem Ubezpieczenia nr\s*([A-Z0-9/]+?)\.?\s*$/im);
 	out.produkt_owu = grab(text, /nr\s+(AB-[A-Z]+-\d+\/\d+)/i);
 
-	const klauzule = grabAll(text, /^\s*\d+\.\s*(Klauzula[^\n]+)$/gm)
-		.map((m) => collapse(m[1]))
-		.filter(Boolean) as string[];
+	const klauzule = parseKlauzule(doc);
 	if (klauzule.length) out.dodatkowe['Klauzule dodatkowe'] = klauzule.join(' | ');
 
 	// Zakres terytorialny, underwriter, liczba ubezpieczonych i numer programu (certyfikat jest
@@ -124,22 +125,20 @@ function parseStrony(doc: PdfDoc, out: ExtractedPolicy) {
 	}
 }
 
-// Tabela ryzyk: nazwa | symbol (M30 - 13) | suma ubezpieczenia | składka.
-function parseRyzyka(doc: PdfDoc): RiskItem[] {
-	const ryzyka: RiskItem[] = [];
-	for (const linia of doc.text.split('\n')) {
-		const m = linia.match(
-			/^(.+?)\s+([A-Z]\d{2}\s*-\s*\d+)\s+([\d\s.,]+)\s*zł(?:\s+([\d\s.,]+)\s*zł)?\s*$/
-		);
-		if (!m) continue;
-		const przedmiot = collapse(m[1]);
-		if (!przedmiot) continue;
-		ryzyka.push({
-			sekcja: 'UBEZPIECZONE RYZYKA',
-			przedmiot: `${przedmiot} (${collapse(m[2])})`,
-			suma: toAmount(m[3]),
-			skladka: toAmount(m[4])
-		});
+/**
+ * Sekcja „KLAUZULE DODATKOWE / ADDITIONAL CLAUSES”: numerowane pozycje do franszyzy albo składki. Nie każda
+ * zaczyna się od „Klauzula” — np. „1. Liczba zatrudnionych od 6 do 8 przy SG 300.000,00 zł” (dopłata
+ * za 6–8 osób z programu beauty). Linia bez numeru to dalszy ciąg poprzedniej.
+ */
+function parseKlauzule(doc: PdfDoc): string[] {
+	const start = doc.lines.findIndex((l) => /^KLAUZULE DODATKOWE/i.test(l.text));
+	if (start < 0) return [];
+	const out: string[] = [];
+	for (const l of doc.lines.slice(start + 1)) {
+		if (/^(Franszyza|SKŁADKA\s*\/\s*PREMIUM|INFORMACJE DODATKOWE|PŁATNOŚĆ)/i.test(l.text)) break;
+		const m = l.text.match(/^\d+\.\s*(.+)$/);
+		if (m) out.push(m[1].trim());
+		else if (out.length) out[out.length - 1] = `${out[out.length - 1]} ${l.text}`.trim();
 	}
-	return ryzyka;
+	return out;
 }
