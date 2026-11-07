@@ -5,6 +5,8 @@ import {
 	klientDoWniosku,
 	krotkiLinkDla,
 	linkDla,
+	originKlienta,
+	smsDostepny,
 	polisaProgramu,
 	trybTestowy,
 	ustawieniaFirmy,
@@ -46,20 +48,22 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		if (tryb === 'email' && !klient.email) throw bezEmaila();
 		r = await utworzNowyWniosek(admin, klient, { zastap: body.zastap === true, utworzyl: user.id });
 	}
-	const link = await linkDla(r.id, url.origin);
-	const krotki_link = await krotkiLinkDla(admin, r, url.origin);
+	const origin = originKlienta(url);
+	const link = await linkDla(r.id, origin);
+	const krotki_link = await krotkiLinkDla(admin, r, origin);
+	const sms = await smsDostepny(admin, r);
 
 	if (tryb === 'email') {
-		const w = await wyslijZaproszenie(admin, r, url.origin, { kto: user.id });
+		const w = await wyslijZaproszenie(admin, r, origin, { kto: user.id });
 		if (!w.ok) {
 			// Wniosek zostaje (link działa), ale e-mail nie wyszedł — pracownik może wysłać link sam.
 			throw error(w.status === 400 ? 400 : 502, { message: `Wniosek utworzony, ale e-mail nie został wysłany: ${w.blad}` });
 		}
-		const odp: OdnowienieUtworzone = { id: r.id, link, krotki_link, wazny_do: r.wazny_do, status: 'wyslany', wyslano: true, adres: w.adres, test: w.test };
+		const odp: OdnowienieUtworzone = { id: r.id, link, krotki_link, wazny_do: r.wazny_do, sms, status: 'wyslany', wyslano: true, adres: w.adres, test: w.test };
 		return json(odp);
 	}
 	// Wniosek utworzony w trybie testowym ma zapisany adres testowy.
-	const odp: OdnowienieUtworzone = { id: r.id, link, krotki_link, wazny_do: r.wazny_do, status: 'utworzony', wyslano: false, test: czyTest(null, r) };
+	const odp: OdnowienieUtworzone = { id: r.id, link, krotki_link, wazny_do: r.wazny_do, sms, status: 'utworzony', wyslano: false, test: czyTest(null, r) };
 	return json(odp);
 };
 

@@ -3,7 +3,7 @@ import { requireSaasAdmin } from '$lib/server/auth';
 import { createTenantWithAdmin, parseTenantPatch } from '$lib/server/tenants';
 import type { RequestHandler } from './$types';
 
-// Klucz Resend i sekret webhooka nigdy nie wracają do przeglądarki — pokazujemy tylko końcówkę. Krótki klucz
+// Klucz Resend, sekret webhooka i token SMSAPI nigdy nie wracają do przeglądarki — pokazujemy tylko końcówkę. Krótki klucz
 // (zapisany dawniej bez walidacji) nie jest pokazywany nawet częściowo.
 function keyHint(key: unknown): string | null {
 	if (typeof key !== 'string' || key.length === 0) return null;
@@ -18,11 +18,12 @@ export const GET: RequestHandler = async ({ request }) => {
 		admin.from('crm_profiles').select('id, email, imie_nazwisko, rola, tenant_id')
 	]);
 
-	const tenants = (tRes.data ?? []).map(({ resend_api_key, resend_webhook_secret, ...rest }) => ({
+	const tenants = (tRes.data ?? []).map(({ resend_api_key, resend_webhook_secret, smsapi_token, ...rest }) => ({
 		...rest,
 		features: rest.features ?? {},
 		resend_key_hint: keyHint(resend_api_key),
-		webhook_secret_hint: keyHint(resend_webhook_secret)
+		webhook_secret_hint: keyHint(resend_webhook_secret),
+		smsapi_token_hint: keyHint(smsapi_token)
 	}));
 
 	return json({ tenants, profiles: pRes.data ?? [] });
@@ -47,7 +48,7 @@ export const POST: RequestHandler = async ({ request }) => {
 	return json({ success: true, tenant_id: tenantId });
 };
 
-// Moduły firmy (features), klucz Resend i adres nadawcy e-maili — zapis wyłącznie przez serwer po sprawdzeniu roli
+// Moduły firmy (features), klucz Resend, adres nadawcy e-maili i SMSAPI (token, pole nadawcy) — zapis wyłącznie przez serwer po sprawdzeniu roli
 // ADMIN GOD. Wcześniej panel pisał do crm_tenants z przeglądarki, a RLS dopuszczał to tylko
 // dla własnej firmy, więc zmiany cudzych firm po cichu nie zapisywały się.
 export const PATCH: RequestHandler = async ({ request }) => {
@@ -69,6 +70,8 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		features: data.features ?? {},
 		resend_key_hint: keyHint(data.resend_api_key),
 		webhook_secret_hint: keyHint(data.resend_webhook_secret),
-		email_from: data.email_from ?? null
+		email_from: data.email_from ?? null,
+		smsapi_token_hint: keyHint(data.smsapi_token),
+		sms_nadawca: data.sms_nadawca ?? null
 	});
 };

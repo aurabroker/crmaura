@@ -13,7 +13,19 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const RESERVED_FEATURE_KEYS = new Set(['constructor', 'prototype', 'hasownproperty', 'tostring', 'valueof']);
 
-export type TenantPatch = { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null; resend_webhook_secret?: string | null };
+export type TenantPatch = {
+	features?: Record<string, boolean>;
+	resend_api_key?: string | null;
+	email_from?: string | null;
+	resend_webhook_secret?: string | null;
+	smsapi_token?: string | null;
+	sms_nadawca?: string | null;
+};
+
+// Token OAuth SMSAPI (Panel SMSAPI → Ustawienia API → Tokeny API): ciąg znaków bez spacji.
+const SMSAPI_TOKEN_RE = /^[A-Za-z0-9._~+/=-]{20,300}$/;
+// Pole nadawcy SMS (zarejestrowane w SMSAPI): do 11 znaków — litery, cyfry, spacja, kropka, myślnik.
+const SMS_NADAWCA_RE = /^[A-Za-z0-9 .-]{1,11}$/;
 
 // Sekret podpisu webhooka Resend (Resend → Webhooks → Signing secret).
 const WEBHOOK_SECRET_RE = /^whsec_[A-Za-z0-9+/=]{16,200}$/;
@@ -25,7 +37,7 @@ const EMAIL_FROM_RE = /^(?:[^<>\r\n"@]{1,100} <[^\s@<>"]+@[a-z0-9-]+(?:\.[a-z0-9
 // Waliduje ciało PATCH /api/saas-admin/tenants. Zwraca identyfikator firmy i czyste pola do zapisu.
 export function parseTenantPatch(body: unknown): { tenantId: string; patch: TenantPatch } {
 	if (!body || typeof body !== 'object') throw error(400, { message: 'Nieprawidłowe dane.' });
-	const { tenant_id, features, resend_api_key, email_from, resend_webhook_secret } = body as Record<string, unknown>;
+	const { tenant_id, features, resend_api_key, email_from, resend_webhook_secret, smsapi_token, sms_nadawca } = body as Record<string, unknown>;
 
 	if (typeof tenant_id !== 'string' || !UUID.test(tenant_id)) {
 		throw error(400, { message: 'Nieprawidłowy identyfikator firmy.' });
@@ -75,6 +87,26 @@ export function parseTenantPatch(body: unknown): { tenantId: string; patch: Tena
 			patch.resend_webhook_secret = resend_webhook_secret.trim();
 		} else {
 			throw error(400, { message: 'Nieprawidłowy sekret webhooka — skopiuj „Signing secret” z Resend (zaczyna się od whsec_).' });
+		}
+	}
+
+	if (smsapi_token !== undefined) {
+		if (smsapi_token === null || smsapi_token === '') {
+			patch.smsapi_token = null;
+		} else if (typeof smsapi_token === 'string' && SMSAPI_TOKEN_RE.test(smsapi_token.trim())) {
+			patch.smsapi_token = smsapi_token.trim();
+		} else {
+			throw error(400, { message: 'Nieprawidłowy token SMSAPI — skopiuj token z panelu SMSAPI (Ustawienia API → Tokeny API).' });
+		}
+	}
+
+	if (sms_nadawca !== undefined) {
+		if (sms_nadawca === null || sms_nadawca === '') {
+			patch.sms_nadawca = null;
+		} else if (typeof sms_nadawca === 'string' && SMS_NADAWCA_RE.test(sms_nadawca.trim())) {
+			patch.sms_nadawca = sms_nadawca.trim();
+		} else {
+			throw error(400, { message: 'Nieprawidłowe pole nadawcy — do 11 znaków (litery, cyfry, spacja, kropka, myślnik), zarejestrowane w SMSAPI.' });
 		}
 	}
 

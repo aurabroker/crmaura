@@ -284,6 +284,8 @@ export const ZDARZENIA: Record<string, string> = {
 	blad_pdf_ankiety: 'PDF ankiety nie powstał — wyślij klientowi ankietę ręcznie',
 	pdf_apk_utworzony: 'Utworzono PDF APK z zapisanych odpowiedzi (na żądanie w CRM)',
 	przypomnienie: 'Wysłano przypomnienie',
+	sms: 'Wysłano SMS z linkiem do wniosku (SMSAPI)',
+	blad_sms: 'Nie udało się wysłać SMS-a',
 	ostrzezenie_ostatni_dzien: 'Wysłano e-mail: ochrona kończy się dziś (wniosek niezłożony)',
 	ostrzezenie_wygasla: 'Wysłano e-mail: ochrona wygasła, klient bez ubezpieczenia',
 	blad_ostrzezenie_ostatni_dzien: 'Nie udało się wysłać e-maila o ostatnim dniu ochrony',
@@ -296,7 +298,10 @@ export const ZDARZENIA: Record<string, string> = {
 
 export const opisZdarzenia = (e: Pick<RenewalEvent, 'zdarzenie' | 'szczegoly'>) => {
 	const powod = typeof e.szczegoly?.powod === 'string' ? ` (${e.szczegoly.powod})` : '';
-	return (ZDARZENIA[e.zdarzenie] ?? e.zdarzenie) + powod;
+	// SMS: numer odbiorcy, a przy błędzie — powód z SMSAPI.
+	const numer = typeof e.szczegoly?.numer === 'string' ? ` — ${e.szczegoly.numer}` : '';
+	const blad = e.zdarzenie === 'blad_sms' && typeof e.szczegoly?.blad === 'string' ? `: ${e.szczegoly.blad}` : '';
+	return (ZDARZENIA[e.zdarzenie] ?? e.zdarzenie) + numer + powod + blad;
 };
 
 // Krótki opis przeglądarki z nagłówka User-Agent (pełny tekst zostaje w podpowiedzi).

@@ -56,6 +56,9 @@
 	// Krótki link do SMS-a (/w/<kod>) i ważność linku — do treści SMS-a.
 	let krotki = $state<string | null>(null);
 	let waznyDo = $state<string | null>(null);
+	// Wniosek pokazanego linku i czy firma wysyła SMS-y przez SMSAPI.
+	let linkWniosku = $state<string | null>(null);
+	let smsapi = $state(false);
 	let pracuje = $state<'' | TrybWyslania | 'kopiuj' | 'anuluj'>('');
 	let apkOpen = $state(false);
 	let ankietaOpen = $state(false);
@@ -204,6 +207,8 @@
 			link = w.data.link ?? '';
 			krotki = w.data.krotki_link ?? null;
 			waznyDo = w.data.wazny_do ?? null;
+			linkWniosku = w.data.id;
+			smsapi = w.data.sms === true;
 			if (tryb === 'email') {
 				if (w.data.wyslano)
 					ctxToast(
@@ -239,6 +244,8 @@
 				link = d.link;
 				krotki = d.krotki_link;
 				waznyDo = d.wazny_do;
+				linkWniosku = d.id;
+				smsapi = d.sms === true;
 			} catch (e) {
 				blad = (e as Error).message;
 				return;
@@ -446,7 +453,7 @@
 
 {#if link}
 	<div class="mb-3">
-		<LinkDlaKlienta {link} {krotki} {waznyDo} {telefon} {nowa} onzamknij={() => { link = ''; krotki = null; }} />
+		<LinkDlaKlienta {link} {krotki} {waznyDo} {telefon} {nowa} renewalId={linkWniosku} {smsapi} onsms={(_, przezApi) => { if (przezApi) void zaladuj(); }} onzamknij={() => { link = ''; krotki = null; }} />
 	</div>
 {/if}
 

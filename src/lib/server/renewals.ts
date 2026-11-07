@@ -112,6 +112,11 @@ export async function sprawdzKlucz(klucz: string): Promise<string | null> {
 	return roznica === 0 ? m[1] : null;
 }
 
+// Linki dla klienta prowadzą na portal: CRM działa pod adresem *.pages.dev (tam też woła pg_cron), a klient
+// dostaje adres portal.beautypolisa.eu — ten sam w e-mailu z automatu, z karty CRM i w SMS-ie.
+export const PORTAL = 'https://portal.beautypolisa.eu';
+export const originKlienta = (url: URL): string => (url.hostname.endsWith('.pages.dev') ? PORTAL : url.origin);
+
 export function bazaLinku(origin: string): string {
 	return (env.RENEWAL_LINK_BASE || origin).replace(/\/$/, '');
 }
@@ -616,6 +621,17 @@ export async function zapiszZWersja(
 export async function ustawieniaFirmy(admin: SupabaseClient, tenantId: string) {
 	const { data } = await admin.from('crm_tenants').select('id, nazwa, resend_api_key, features').eq('id', tenantId).maybeSingle();
 	return data as { id: string; nazwa: string; resend_api_key: string | null; features: Record<string, boolean> | null } | null;
+}
+
+// SMSAPI firmy (token czyta tylko serwer). SMS do klienta wychodzi, gdy firma ma token i wniosek nie jest testowy.
+export async function smsFirmy(admin: SupabaseClient, tenantId: string): Promise<{ token: string | null; nadawca: string | null; features: Record<string, boolean> | null }> {
+	const { data } = await admin.from('crm_tenants').select('smsapi_token, sms_nadawca, features').eq('id', tenantId).maybeSingle();
+	const t = data as { smsapi_token: string | null; sms_nadawca: string | null; features: Record<string, boolean> | null } | null;
+	return { token: t?.smsapi_token ?? null, nadawca: t?.sms_nadawca ?? null, features: t?.features ?? null };
+}
+export async function smsDostepny(admin: SupabaseClient, r: Pick<RenewalRow, 'tenant_id' | 'email'>): Promise<boolean> {
+	const f = await smsFirmy(admin, r.tenant_id);
+	return !!f.token && !czyTest({ features: f.features }, r);
 }
 
 export const nadawca = () => env.RENEWAL_EMAIL_FROM || 'BeautyPolisa <odnowienia@beautypolisa.eu>';
