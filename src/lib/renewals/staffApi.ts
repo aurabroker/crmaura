@@ -23,6 +23,8 @@ export type OdnowienieUtworzone = {
 	krotki_link: string | null;
 	/** Do kiedy działa link (koniec ochrony przy odnowieniu, 30 dni przy pierwszej polisie). */
 	wazny_do: string;
+	/** Firma ma SMSAPI, a wniosek nie jest testowy — „Wyślij SMS” idzie z CRM (POST /api/sms). */
+	sms: boolean;
 	status: 'utworzony' | 'wyslany';
 	wyslano: boolean;
 	/** Adres, na który poszedł e-mail (w trybie testowym — adres testowy). */
@@ -32,7 +34,10 @@ export type OdnowienieUtworzone = {
 };
 
 /** Link do istniejącego, aktywnego wniosku (POST /api/renewals/link). */
-export type LinkWniosku = { link: string; krotki_link: string | null; wazny_do: string };
+export type LinkWniosku = { id: string; link: string; krotki_link: string | null; wazny_do: string; sms: boolean };
+
+// POST /api/sms   { renewal_id, numer }   → 200 { ok: true, numer }   SMS z krótkim linkiem przez SMSAPI firmy
+export type SmsWyslany = { ok: true; numer: string };
 
 /** Domyślny adres trybu testowego odnowień (serwer: RENEWAL_TEST_EMAIL). */
 export const ADRES_TESTOWY = 'zarzad@auraexpert.pl';

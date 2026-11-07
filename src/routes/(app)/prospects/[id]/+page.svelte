@@ -354,7 +354,7 @@
 				alert(w.message);
 				return;
 			}
-			wniosekLink = { link: w.data.link ?? '', krotki_link: w.data.krotki_link ?? null, wazny_do: w.data.wazny_do };
+			wniosekLink = { id: w.data.id, link: w.data.link ?? '', krotki_link: w.data.krotki_link ?? null, wazny_do: w.data.wazny_do, sms: w.data.sms === true };
 			if (tryb === 'email') {
 				ctxToast(w.data.test ? `TEST: wniosek wysłany na adres testowy ${w.data.adres ?? ''}` : `Wysłano link do APK i wniosku${w.data.adres ? ` na ${w.data.adres}` : ''}`);
 			} else {
@@ -395,15 +395,17 @@
 		}
 	}
 
-	// „Wyślij SMS” otwiera aplikację SMS z gotową treścią — w historii leada zostaje notatka.
-	async function poSms(numer: string) {
+	// SMS z linkiem (wysłany z CRM przez SMSAPI albo otwarty w aplikacji SMS) — w historii leada zostaje notatka.
+	async function poSms(numer: string, przezApi: boolean) {
 		if (!prospect) return;
 		await sb.from('crm_prospect_activities').insert([{
 			tenant_id: prospect.tenant_id,
 			prospect_id: prospect.id,
 			author_id: appState.profile?.id ?? null,
 			typ: 'notatka',
-			tresc: `Przekazano klientowi SMS-em link do APK i wniosku o pierwszą polisę OC (${numer}).`
+			tresc: przezApi
+				? `Wysłano klientowi SMS (SMSAPI) z linkiem do APK i wniosku o pierwszą polisę OC (${numer}).`
+				: `Przekazano klientowi SMS-em z telefonu link do APK i wniosku o pierwszą polisę OC (${numer}).`
 		}] as never);
 		const { data: acts } = await sb.from('crm_prospect_activities').select('*, crm_profiles(imie_nazwisko)').eq('prospect_id', prospect.id).order('created_at', { ascending: true });
 		activities = (acts ?? []) as Activity[];
@@ -692,7 +694,7 @@
 				<p class="mt-2 text-xs text-ink-3">Klient ma aktywny link (ważny do {fmtDzien(aktywnyWniosek.wazny_do.slice(0, 10), true)}) — „Link do SMS” pokaże go z gotową treścią SMS-a, bez unieważniania wysłanego e-maila.</p>
 			{/if}
 			{#if wniosekLink}
-				<LinkDlaKlienta link={wniosekLink.link} krotki={wniosekLink.krotki_link} waznyDo={wniosekLink.wazny_do} telefon={klient?.telefon ?? prospect.telefon} nowa onsms={poSms} onzamknij={() => (wniosekLink = null)} />
+				<LinkDlaKlienta link={wniosekLink.link} krotki={wniosekLink.krotki_link} waznyDo={wniosekLink.wazny_do} telefon={klient?.telefon ?? prospect.telefon} nowa renewalId={wniosekLink.id} smsapi={wniosekLink.sms} onsms={poSms} onzamknij={() => (wniosekLink = null)} />
 			{/if}
 			{#if prospect.klient_id}
 				<p class="mt-2 text-xs text-ink-3">Przebieg wniosku (APK, podpisy, PDF-y) jest na <a href="/clients/{prospect.klient_id}?tab=apk" class="font-semibold text-accent-text hover:underline">karcie klienta → APK</a>.</p>

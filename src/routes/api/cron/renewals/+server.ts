@@ -4,6 +4,7 @@ import {
 	DNI_DO_PRZYPOMNIENIA,
 	DNI_PRZED_KONCEM,
 	dzisWarszawa,
+	originKlienta,
 	anulujNieaktualny,
 	bezKontynuacji,
 	podzielWnioski,
@@ -29,7 +30,6 @@ const MAKS_OSTRZEZEN = 50;
 // Ostrzeżenie „ochrona wygasła” idzie dzień po końcu; okno kilku dni chroni przed dniem bez uruchomienia,
 // a nie wysyła zaległych e-maili o certyfikatach, które skończyły się dawno.
 const DNI_PO_KONCU = 3;
-const PORTAL = 'https://portal.beautypolisa.eu';
 
 export const POST: RequestHandler = async ({ request, url }) => {
 	const admin = getAdminClient();
@@ -41,7 +41,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 
 	// pg_cron woła adres *.pages.dev (domena portalu ma ochronę przed botami, która zatrzymuje żądania z bazy) —
 	// linki w e-mailach mają jednak prowadzić na portal.
-	const origin = url.hostname.endsWith('.pages.dev') ? PORTAL : url.origin;
+	const origin = originKlienta(url);
 	const wynik = { wygaszone: 0, zaproszenia: 0, przypomnienia: 0, ostatniDzien: 0, wygasla: 0, pominiete: 0, usunietePliki: 0, bledy: [] as string[] };
 	const teraz = new Date().toISOString();
 
