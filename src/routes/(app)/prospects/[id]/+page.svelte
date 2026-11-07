@@ -13,7 +13,8 @@
 	import { fmtDzien } from '$lib/utils';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { klientBeauty, programOcBeauty, wywolajApi } from '$lib/components/renewal/crmRenewals';
-	import type { OdnowienieUtworzone } from '$lib/renewals/staffApi';
+	import type { LinkWniosku, OdnowienieUtworzone } from '$lib/renewals/staffApi';
+	import LinkDlaKlienta from '$lib/components/renewal/LinkDlaKlienta.svelte';
 	import {
 		ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, posortujZainteresowania,
 		stanMaila, type MailKampanii, type Zgloszenie
@@ -129,7 +130,27 @@
 			.order('created_at', { ascending: true });
 		activities = (acts ?? []) as Activity[];
 		loading = false;
+		void wczytajAktywnyWniosek();
 		await loadTasks();
+	}
+
+	// Aktywny wniosek o pierwszą polisę klienta leada: jego link (także krótki, do SMS-a) można pokazać
+	// bez tworzenia nowego wniosku, który unieważniłby link wysłany już e-mailem.
+	let aktywnyWniosek = $state<{ id: string; wazny_do: string } | null>(null);
+	async function wczytajAktywnyWniosek() {
+		aktywnyWniosek = null;
+		if (!prospect?.klient_id) return;
+		const { data } = await sb
+			.from('crm_renewals')
+			.select('id, wazny_do')
+			.eq('klient_id', prospect.klient_id)
+			.eq('rodzaj', 'nowa')
+			.in('status', ['utworzony', 'wyslany', 'otwarty', 'apk'])
+			.gt('wazny_do', new Date().toISOString())
+			.order('created_at', { ascending: false })
+			.limit(1)
+			.maybeSingle();
+		aktywnyWniosek = (data as { id: string; wazny_do: string } | null) ?? null;
 	}
 
 	// Ta sama trasa `[id]` jest współdzielona między prospektami — przy przejściu
@@ -306,8 +327,8 @@
 
 	// Pierwsza polisa OC beauty: link do APK i wniosku dla leada (klient bez certyfikatu). Lead spoza kartoteki
 	// najpierw trafia do Klientów (convertToClient) — wniosek jest zawsze przypięty do klienta.
-	let wniosekPracuje = $state<'' | 'email' | 'link'>('');
-	let wniosekLink = $state('');
+	let wniosekPracuje = $state<'' | 'email' | 'link' | 'sms'>('');
+	let wniosekLink = $state<LinkWniosku | null>(null);
 	async function wyslijWniosek(tryb: 'email' | 'link') {
 		if (!prospect || wniosekPracuje) return;
 		if (!prospect.klient_id) {
@@ -333,12 +354,12 @@
 				alert(w.message);
 				return;
 			}
-			wniosekLink = w.data.link ?? '';
+			wniosekLink = { link: w.data.link ?? '', krotki_link: w.data.krotki_link ?? null, wazny_do: w.data.wazny_do };
 			if (tryb === 'email') {
 				ctxToast(w.data.test ? `TEST: wniosek wysłany na adres testowy ${w.data.adres ?? ''}` : `Wysłano link do APK i wniosku${w.data.adres ? ` na ${w.data.adres}` : ''}`);
 			} else {
 				try {
-					await navigator.clipboard.writeText(wniosekLink);
+					await navigator.clipboard.writeText(wniosekLink.krotki_link || wniosekLink.link);
 					ctxToast('Skopiowano link do APK i wniosku');
 				} catch {
 					ctxToast('Link utworzony — skopiuj go z pola poniżej');
@@ -355,6 +376,37 @@
 		} finally {
 			wniosekPracuje = '';
 		}
+	}
+
+	// Link (krótki, do SMS-a) do aktywnego wniosku — bez tworzenia nowego.
+	async function pokazLinkAktywnego() {
+		if (!aktywnyWniosek || wniosekPracuje) return;
+		wniosekPracuje = 'sms';
+		try {
+			const w = await wywolajApi<LinkWniosku>('POST', '/api/renewals/link', { id: aktywnyWniosek.id });
+			if (!w.ok) {
+				ctxToast(w.message);
+				await wczytajAktywnyWniosek();
+				return;
+			}
+			wniosekLink = w.data;
+		} finally {
+			wniosekPracuje = '';
+		}
+	}
+
+	// „Wyślij SMS” otwiera aplikację SMS z gotową treścią — w historii leada zostaje notatka.
+	async function poSms(numer: string) {
+		if (!prospect) return;
+		await sb.from('crm_prospect_activities').insert([{
+			tenant_id: prospect.tenant_id,
+			prospect_id: prospect.id,
+			author_id: appState.profile?.id ?? null,
+			typ: 'notatka',
+			tresc: `Przekazano klientowi SMS-em link do APK i wniosku o pierwszą polisę OC (${numer}).`
+		}] as never);
+		const { data: acts } = await sb.from('crm_prospect_activities').select('*, crm_profiles(imie_nazwisko)').eq('prospect_id', prospect.id).order('created_at', { ascending: true });
+		activities = (acts ?? []) as Activity[];
 	}
 
 	function formatDate(dt: string) {
@@ -627,16 +679,20 @@
 						{wniosekPracuje === 'email' ? 'Wysyłanie…' : 'Wyślij e-mailem'}
 					</button>
 					<button onclick={() => wyslijWniosek('link')} disabled={!!wniosekPracuje} class="h-9 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 disabled:opacity-60">
-						{wniosekPracuje === 'link' ? 'Tworzenie…' : 'Utwórz link'}
+						{wniosekPracuje === 'link' ? 'Tworzenie…' : aktywnyWniosek ? 'Utwórz nowy link' : 'Utwórz link'}
 					</button>
+					{#if aktywnyWniosek && !wniosekLink}
+						<button onclick={pokazLinkAktywnego} disabled={!!wniosekPracuje} class="h-9 px-3 text-sm font-medium border border-line rounded-lg bg-white text-ink hover:bg-surface-2 disabled:opacity-60" data-testid="link-sms">
+							{wniosekPracuje === 'sms' ? 'Wczytywanie…' : 'Link do SMS'}
+						</button>
+					{/if}
 				</div>
 			</div>
+			{#if aktywnyWniosek && !wniosekLink}
+				<p class="mt-2 text-xs text-ink-3">Klient ma aktywny link (ważny do {fmtDzien(aktywnyWniosek.wazny_do.slice(0, 10), true)}) — „Link do SMS” pokaże go z gotową treścią SMS-a, bez unieważniania wysłanego e-maila.</p>
+			{/if}
 			{#if wniosekLink}
-				<div class="mt-3 flex flex-wrap items-center gap-2 text-sm bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-					<span class="text-xs font-semibold text-blue-700 uppercase tracking-wide">Link dla klienta</span>
-					<input readonly value={wniosekLink} onfocus={(e) => e.currentTarget.select()} class="flex-1 min-w-[240px] border border-blue-200 bg-white rounded-md px-2 py-1 text-xs font-mono text-slate-700" />
-					<button type="button" onclick={() => (wniosekLink = '')} class="text-blue-400 hover:text-blue-700" aria-label="Ukryj link">✕</button>
-				</div>
+				<LinkDlaKlienta link={wniosekLink.link} krotki={wniosekLink.krotki_link} waznyDo={wniosekLink.wazny_do} telefon={klient?.telefon ?? prospect.telefon} nowa onsms={poSms} onzamknij={() => (wniosekLink = null)} />
 			{/if}
 			{#if prospect.klient_id}
 				<p class="mt-2 text-xs text-ink-3">Przebieg wniosku (APK, podpisy, PDF-y) jest na <a href="/clients/{prospect.klient_id}?tab=apk" class="font-semibold text-accent-text hover:underline">karcie klienta → APK</a>.</p>

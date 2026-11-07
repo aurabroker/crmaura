@@ -11,7 +11,8 @@
 		RODZAJE_GABINETU, formatSuma, formatZl, okresOdDaty, opisZalacznika, sumaZeSkladki, wycenaNowej, wycenaWniosku,
 		type Ankieta, type Apk, type RodzajWniosku
 	} from '$lib/renewals/program';
-	import { ADRES_TESTOWY, etykietaDecyzji, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
+	import { ADRES_TESTOWY, etykietaDecyzji, type LinkWniosku, type OdnowienieUtworzone, type TrybWyslania } from '$lib/renewals/staffApi';
+	import LinkDlaKlienta from './LinkDlaKlienta.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
 	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, wariantDecyzji, wywolajApi } from './crmRenewals';
@@ -36,8 +37,10 @@
 		odnowiona?: boolean;
 		/** Pierwsza polisa: przyciski wysyłki w nagłówku panelu (karta klienta nie ma menu „Odnów polisę”). */
 		przyciski?: boolean;
+		/** Telefon klienta z kartoteki — „Wyślij SMS” z krótkim linkiem do wniosku. */
+		telefon?: string | null;
 	}
-	let { policy = null, klientId = null, rodzaj = 'odnowienie', email = null, odnowiona = false, przyciski = false }: Props = $props();
+	let { policy = null, klientId = null, rodzaj = 'odnowienie', email = null, odnowiona = false, przyciski = false, telefon = null }: Props = $props();
 
 	const BUCKET = 'renewal-files';
 	const nowa = $derived(rodzaj === 'nowa');
@@ -50,6 +53,9 @@
 	let blad = $state('');
 	// Link z ostatniego utworzenia/kopiowania — w bazie go nie ma (podpis zna tylko serwer).
 	let link = $state('');
+	// Krótki link do SMS-a (/w/<kod>) i ważność linku — do treści SMS-a.
+	let krotki = $state<string | null>(null);
+	let waznyDo = $state<string | null>(null);
 	let pracuje = $state<'' | TrybWyslania | 'kopiuj' | 'anuluj'>('');
 	let apkOpen = $state(false);
 	let ankietaOpen = $state(false);
@@ -196,6 +202,8 @@
 				return;
 			}
 			link = w.data.link ?? '';
+			krotki = w.data.krotki_link ?? null;
+			waznyDo = w.data.wazny_do ?? null;
 			if (tryb === 'email') {
 				if (w.data.wyslano)
 					ctxToast(
@@ -205,7 +213,7 @@
 					);
 				else blad = 'Wniosek utworzony, ale e-mail nie został wysłany. Skopiuj link poniżej i przekaż go klientowi.';
 			} else if (link) {
-				const ok = await kopiujDoSchowka(Promise.resolve(link));
+				const ok = await kopiujDoSchowka(Promise.resolve(krotki || link));
 				ctxToast(ok ? 'Skopiowano link do wniosku' : 'Link utworzony — skopiuj go poniżej');
 			}
 			await zaladuj();
@@ -218,15 +226,19 @@
 		if (pracuje) return;
 		blad = '';
 		pracuje = 'kopiuj';
-		const linkP = wywolajApi<{ link: string }>('POST', '/api/renewals/link', { id: r.id }).then((w) => {
+		const linkP = wywolajApi<LinkWniosku>('POST', '/api/renewals/link', { id: r.id }).then((w) => {
 			if (!w.ok) throw new Error(w.message);
 			if (!w.data.link) throw new Error('Serwer nie zwrócił linku.');
-			return w.data.link;
+			return w.data;
 		});
 		try {
-			const ok = await kopiujDoSchowka(linkP);
+			// Kopiujemy krótki link (pasuje i do e-maila, i do SMS-a); pełny zostaje pod spodem.
+			const ok = await kopiujDoSchowka(linkP.then((d) => d.krotki_link || d.link));
 			try {
-				link = await linkP;
+				const d = await linkP;
+				link = d.link;
+				krotki = d.krotki_link;
+				waznyDo = d.wazny_do;
 			} catch (e) {
 				blad = (e as Error).message;
 				return;
@@ -270,11 +282,6 @@
 		} catch (e) {
 			blad = `Nie udało się otworzyć: ${nazwa}. ${(e as { message?: string })?.message ?? ''}`.trim();
 		}
-	}
-
-	async function kopiujPokazany() {
-		const ok = await kopiujDoSchowka(Promise.resolve(link));
-		ctxToast(ok ? 'Skopiowano link do wniosku' : 'Nie udało się skopiować');
 	}
 
 	// ---------- Opisy odpowiedzi klienta ----------
@@ -438,18 +445,8 @@
 {/if}
 
 {#if link}
-	<div class="mb-3 flex flex-wrap items-center gap-2 text-sm bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
-		<Link2 size={14} class="text-blue-600 shrink-0" />
-		<span class="text-xs font-semibold text-blue-700 uppercase tracking-wide">Link do wniosku</span>
-		<input
-			readonly
-			value={link}
-			onfocus={(e) => e.currentTarget.select()}
-			class="flex-1 min-w-[240px] border border-blue-200 bg-white rounded-md px-2 py-1 text-xs font-mono text-slate-700"
-			data-testid="renewal-link"
-		/>
-		<button type="button" onclick={kopiujPokazany} class={przyciskCls}><Copy size={12} /> Kopiuj</button>
-		<button type="button" onclick={() => (link = '')} class="text-blue-400 hover:text-blue-700" aria-label="Ukryj link">✕</button>
+	<div class="mb-3">
+		<LinkDlaKlienta {link} {krotki} {waznyDo} {telefon} {nowa} onzamknij={() => { link = ''; krotki = null; }} />
 	</div>
 {/if}
 
