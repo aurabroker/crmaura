@@ -6,7 +6,7 @@
 //        → 409 { message, aktywny: true }   gdy polisa (albo klient) ma aktywny wniosek, a nie podano zastap
 //        → 400 { message }                  np. polisa spoza programu OC beauty, już odnowiona,
 //                                           brak e-maila klienta (tryb email), brak klucza Resend
-// POST   /api/renewals/link   { id }   → 200 { link }   link do istniejącego, aktywnego wniosku
+// POST   /api/renewals/link   { id }   → 200 LinkWniosku   link do istniejącego, aktywnego wniosku
 // DELETE /api/renewals        { id }   → 200 { ok: true }  anulowanie (link przestaje działać)
 //
 // Listę i szczegóły odnowień panel czyta wprost z tabel crm_renewals i crm_renewal_events
@@ -19,6 +19,10 @@ export type TrybWyslania = 'email' | 'link';
 export type OdnowienieUtworzone = {
 	id: string;
 	link: string;
+	/** Krótki link do SMS-a (<portal>/w/<kod>); null, gdy kodu nie udało się nadać. */
+	krotki_link: string | null;
+	/** Do kiedy działa link (koniec ochrony przy odnowieniu, 30 dni przy pierwszej polisie). */
+	wazny_do: string;
 	status: 'utworzony' | 'wyslany';
 	wyslano: boolean;
 	/** Adres, na który poszedł e-mail (w trybie testowym — adres testowy). */
@@ -26,6 +30,9 @@ export type OdnowienieUtworzone = {
 	/** Wniosek testowy: e-maile idą na adres testowy, nie do klienta. */
 	test?: boolean;
 };
+
+/** Link do istniejącego, aktywnego wniosku (POST /api/renewals/link). */
+export type LinkWniosku = { link: string; krotki_link: string | null; wazny_do: string };
 
 /** Domyślny adres trybu testowego odnowień (serwer: RENEWAL_TEST_EMAIL). */
 export const ADRES_TESTOWY = 'zarzad@auraexpert.pl';

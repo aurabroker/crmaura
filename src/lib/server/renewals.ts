@@ -21,6 +21,7 @@ import {
 	type Wniosek
 } from '$lib/renewals/program';
 import type { MigawkaZgod } from '$lib/renewals/zgody';
+import { losowyKod } from '$lib/renewals/sms';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
 // panelu CRM (/api/renewals) i zadania dziennego (/api/cron/renewals). Wszystko działa kluczem
@@ -71,6 +72,8 @@ export type RenewalRow = {
 	// Ostrzeżenia o końcu ochrony bez odnowienia (zadanie dzienne): ostatni dzień i dzień po wygaśnięciu.
 	mail_ostatni_dzien_at?: string | null;
 	mail_wygasla_at?: string | null;
+	// Kod krótkiego linku do SMS-a (/w/<kod>), nadawany przy pierwszej prośbie (krotkiLinkDla).
+	kod_krotki?: string | null;
 };
 
 // ---------- Link: /odnowienie/<id>.<podpis> ----------
@@ -115,6 +118,30 @@ export function bazaLinku(origin: string): string {
 
 export async function linkDla(id: string, origin: string): Promise<string> {
 	return `${bazaLinku(origin)}/odnowienie/${await kluczDla(id)}`;
+}
+
+// Krótki link do SMS-a: <portal>/w/<kod> przekierowuje na pełny link (trasa /w/[kod]). Kod nadajemy przy
+// pierwszej prośbie i nie zmieniamy go — kolejne kopiowanie daje ten sam adres. Kolizja kodu (unikalny
+// indeks) to tylko kolejne losowanie. null, gdy kodu nie udało się zapisać (wtedy zostaje pełny link).
+export async function krotkiLinkDla(admin: SupabaseClient, r: Pick<RenewalRow, 'id'> & { kod_krotki?: string | null }, origin: string): Promise<string | null> {
+	let kod = r.kod_krotki ?? null;
+	for (let proba = 0; !kod && proba < 3; proba++) {
+		const { data, error: e } = await admin
+			.from('crm_renewals')
+			.update({ kod_krotki: losowyKod() })
+			.eq('id', r.id)
+			.is('kod_krotki', null)
+			.select('kod_krotki')
+			.maybeSingle();
+		if (data?.kod_krotki) kod = data.kod_krotki;
+		else if (!e) {
+			// Kod nadało w międzyczasie inne żądanie.
+			const { data: obecny } = await admin.from('crm_renewals').select('kod_krotki').eq('id', r.id).maybeSingle();
+			kod = obecny?.kod_krotki ?? null;
+			break;
+		}
+	}
+	return kod ? `${bazaLinku(origin)}/w/${kod}` : null;
 }
 
 // ---------- Daty (czas polski) ----------

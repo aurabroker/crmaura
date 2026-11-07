@@ -1845,7 +1845,7 @@
 	{:else if activeTab === 'apk'}
 		<!-- Pierwsza polisa OC beauty: link do APK i wniosku dla klienta beauty bez certyfikatu (ten sam formularz co odnowienia). -->
 		{#if pierwszaPolisaBeauty}
-			<CrmRenewalPanel bind:this={panelNowej} klientId={clientId} rodzaj="nowa" email={client?.email ?? null} przyciski />
+			<CrmRenewalPanel bind:this={panelNowej} klientId={clientId} rodzaj="nowa" email={client?.email ?? null} telefon={client?.telefon ?? null} przyciski />
 		{/if}
 		<div class="flex items-center justify-between mb-4">
 			<p class="text-sm text-slate-500">Formularze APK dla tego klienta</p>

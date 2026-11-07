@@ -171,6 +171,7 @@
 	const klientEmail = $derived(
 		policy ? (appState.clients.find(c => c.id === policy!.klient_id)?.email ?? '').trim() || null : null
 	);
+	const klientTelefon = $derived(policy ? (appState.clients.find(c => c.id === policy!.klient_id)?.telefon ?? '').trim() || null : null);
 	let renewalPanel = $state<ReturnType<typeof CrmRenewalPanel> | null>(null);
 
 	// Odnowienie ręczne: formularz z klientem, rodzajem, przedmiotem, pojazdem, UG programu oraz okresem na kolejny
@@ -820,7 +821,7 @@
 		<div class="flex-[2_1_560px] min-w-0 flex flex-col gap-4">
 			<!-- Wniosek o odnowienie (program OC beauty) -->
 			{#if wProgramie}
-				<CrmRenewalPanel bind:this={renewalPanel} {policy} email={klientEmail} odnowiona={!!renewalPolicy} />
+				<CrmRenewalPanel bind:this={renewalPanel} {policy} email={klientEmail} telefon={klientTelefon} odnowiona={!!renewalPolicy} />
 			{/if}
 
 			<!-- Płatności -->
