@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {
 	ZABIEGI_ANKIETA,
 	polisaIndywidualna,
+	kategoriaZRodzajow,
+	powodPozaTaryfa,
+	waliduj_apk,
 	waliduj_wniosek,
 	wycenaNowej,
 	wycenaWniosku,
@@ -102,4 +105,24 @@ test('polisa indywidualna: znacznik importu, a bez niego seria numeru 436 (certy
 	assert.equal(polisaIndywidualna({ nr_polisy: 'X1', dane_importu: { zrodlo: { produkt: 'OC zawodowe — polisa indywidualna (po ocenie ryzyka)' } } }), true);
 	assert.equal(polisaIndywidualna({ nr_polisy: '436000450758', dane_importu: { owu: 'AB-OCZL-01/25' } }), false); // OWU rozstrzyga przed numerem
 	assert.equal(polisaIndywidualna({ nr_polisy: null }), false);
+});
+
+test('gabinet masażu: taryfa podstawowa, nie podnosi kategorii; salon tatuażu: poza taryfą', () => {
+	assert.equal(kategoriaZRodzajow(['masaz']), 'kosmetyczny_fryzjerski');
+	assert.equal(kategoriaZRodzajow(['masaz', 'kosmetologiczny']), 'kosmetologiczny');
+	assert.equal(kategoriaZRodzajow(['masaz', 'podologiczny']), 'pelny');
+	assert.equal(kategoriaZRodzajow(['tatuaz']), null);
+	assert.equal(kategoriaZRodzajow(['tatuaz', 'kosmetyczny']), null);
+	assert.equal(powodPozaTaryfa(['masaz']), null);
+	assert.match(powodPozaTaryfa(['tatuaz', 'kosmetyczny']) ?? '', /tatuaży/);
+	// Pierwsza polisa: masaż z taryfy, tatuaż do wyceny ubezpieczyciela.
+	assert.equal(kw(wycenaNowej(wnNowy({ wyzsza_suma: 200000 }), { ...apkA, rodzaje: ['masaz'] })), 500);
+	const t = wycenaNowej(wnNowy({ wyzsza_suma: 200000 }), { ...apkA, rodzaje: ['tatuaz'] });
+	assert.equal(t?.rodzaj, 'indywidualna');
+	assert.match(t?.rodzaj === 'indywidualna' ? t.powod : '', /tatuaż/);
+	// Odnowienie ze zmianą działalności na salon tatuażu — też do wyceny.
+	assert.equal(wycenaWniosku(wn({ zmiana_dzialalnosci: true, rodzaje: ['tatuaz'] }), apkA, 400, false, 100000)?.rodzaj, 'indywidualna');
+	// APK przyjmuje nowe rodzaje.
+	const v = waliduj_apk({ ...apkA, rodzaje: ['masaz', 'tatuaz', 'nieznany'] });
+	assert.deepEqual(v.ok ? v.value.rodzaje : null, ['masaz', 'tatuaz']);
 });
