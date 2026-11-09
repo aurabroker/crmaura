@@ -10,6 +10,7 @@ import {
 	SUMY,
 	brakiDokumentow,
 	kategoriaZRodzajow,
+	powodPozaTaryfa,
 	okresOdDaty,
 	przesunDate,
 	skladkaProgramu,
@@ -203,14 +204,20 @@ export class Odnowienie {
 	okresNowy = $derived.by(() => (this.nowa ? okresOdDaty(this.nw.ochrona_od || this.widok.ochrona_od?.domyslna || this.widok.okres_nowy.od) : this.widok.okres_nowy));
 	// Suma na nowy okres: każdy wariant programu poza obecnym (także niższy) — bez rekomendacji.
 	inneSumy = $derived(SUMY.filter((s) => s !== this.widok.suma));
+	// Rodzaj działalności do wyceny: przy zmianie działalności — od nowego okresu, inaczej z APK albo z wniosku.
+	rodzajeDoWyceny = $derived.by((): RodzajGabinetu[] => {
+		const apk = this.apkDoWyceny;
+		return this.zmianaDzialalnosci && this.zm.rodzaje.length ? this.zm.rodzaje : apk?.rodzaje.length ? apk.rodzaje : this.zm.rodzaje;
+	});
+	// Działalność poza taryfą programu (salon tatuażu): bez kwot przy sumach, składkę ustala ubezpieczyciel.
+	pozaTaryfa = $derived(powodPozaTaryfa(this.rodzajeDoWyceny) !== null);
 	// Orientacyjna składka każdego wariantu sumy wg taryfy programu (gdy znamy rodzaj gabinetu i liczbę osób).
 	skladkiSum = $derived.by((): Partial<Record<Suma, number>> => {
 		// Zabiegi z ankietą: całą składkę wycenia ubezpieczyciel (jak w wycenaWniosku) — bez kwot przy sumach.
 		if (this.zm.ankieta && this.zm.zabiegi_ankieta.length) return {};
 		const apk = this.apkDoWyceny;
 		// Zmiana działalności: składki przy sumach liczone dla działalności od nowego okresu.
-		const rodzaje = this.zmianaDzialalnosci && this.zm.rodzaje.length ? this.zm.rodzaje : apk?.rodzaje.length ? apk.rodzaje : this.zm.rodzaje;
-		const kategoria = kategoriaZRodzajow(rodzaje);
+		const kategoria = kategoriaZRodzajow(this.rodzajeDoWyceny);
 		const osoby = apk?.osoby || this.zm.osoby;
 		if (!kategoria || !osoby) return {};
 		const ochronaPrawna = this.zm.ochrona_prawna || this.widok.ochrona_prawna_obecnie;

@@ -33,12 +33,14 @@ export const KLAUZULA_OCHRONY_PRAWNEJ =
 	'za pisemną zgodą Ubezpieczyciela ochroną zgodnie z § 6 ust. 3 Warunków Ubezpieczenia (klauzula 7). ' +
 	'Limit: 100.000 zł. Składka dodatkowa: 92 zł rocznie.';
 
-export type RodzajGabinetu = 'kosmetyczny' | 'fryzjerski' | 'kosmetologiczny' | 'podologiczny';
+export type RodzajGabinetu = 'kosmetyczny' | 'fryzjerski' | 'kosmetologiczny' | 'podologiczny' | 'masaz' | 'tatuaz';
 export const RODZAJE_GABINETU: { key: RodzajGabinetu; nazwa: string }[] = [
 	{ key: 'kosmetyczny', nazwa: 'Gabinet kosmetyczny' },
 	{ key: 'fryzjerski', nazwa: 'Salon fryzjerski' },
 	{ key: 'kosmetologiczny', nazwa: 'Gabinet kosmetologiczny' },
-	{ key: 'podologiczny', nazwa: 'Gabinet podologiczny' }
+	{ key: 'podologiczny', nazwa: 'Gabinet podologiczny' },
+	{ key: 'masaz', nazwa: 'Gabinet masażu' },
+	{ key: 'tatuaz', nazwa: 'Salon tatuażu' }
 ];
 
 export type LiczbaOsob = '1-5' | '6-8' | '9+';
@@ -50,13 +52,21 @@ export const LICZBA_OSOB: { key: LiczbaOsob; nazwa: string }[] = [
 
 // Kategoria taryfy z rodzajów działalności: podologia albo fryzjerstwo razem z kosmetologią
 // to taryfa pełna; kosmetologia (z kosmetyką lub bez) — kosmetologiczna; sama kosmetyka
-// i fryzjerstwo — podstawowa.
+// i fryzjerstwo — podstawowa. Gabinet masażu: zabiegi masażu są w Załączniku nr 1 (gabinety kosmetyczne
+// i fryzjerskie), więc taryfa podstawowa — masaż nie podnosi kategorii. Salon tatuażu: tatuowania nie ma
+// na listach programu — bez taryfy, składkę ustala ubezpieczyciel (powodPozaTaryfa).
 export function kategoriaZRodzajow(rodzaje: RodzajGabinetu[]): Kategoria | null {
 	if (!rodzaje.length) return null;
 	const r = new Set(rodzaje);
+	if (r.has('tatuaz')) return null;
 	if (r.has('podologiczny') || (r.has('kosmetologiczny') && r.has('fryzjerski'))) return 'pelny';
 	if (r.has('kosmetologiczny')) return 'kosmetologiczny';
 	return 'kosmetyczny_fryzjerski';
+}
+
+// Działalność poza taryfą programu — powód wyceny indywidualnej przez ubezpieczyciela (null: taryfa programu).
+export function powodPozaTaryfa(rodzaje: readonly RodzajGabinetu[]): string | null {
+	return rodzaje.includes('tatuaz') ? 'wykonywanie tatuaży nie jest objęte taryfą programu, składkę ustala ubezpieczyciel po ocenie ryzyka' : null;
 }
 
 export type Wycena =
@@ -533,6 +543,8 @@ export function wycenaNowej(w: Wniosek, apk: Apk | null): Wycena | null {
 	if (w.decyzja !== 'nowa' || !z || !suma) return null;
 	if (z.zabiegi_ankieta.length) return { rodzaj: 'indywidualna', powod: 'zabiegi wymagające ankiety podlegają ocenie ubezpieczyciela' };
 	const rodzaje = apk?.rodzaje.length ? apk.rodzaje : z.rodzaje;
+	const poza = powodPozaTaryfa(rodzaje);
+	if (poza) return { rodzaj: 'indywidualna', powod: poza };
 	const osoby = apk?.osoby || z.osoby;
 	const kategoria = kategoriaZRodzajow(rodzaje);
 	if (!kategoria || !osoby) return { rodzaj: 'indywidualna', powod: 'brak danych do wyceny' };
@@ -651,6 +663,8 @@ export function wycenaWniosku(
 	if (z.zabiegi_ankieta.length) return { rodzaj: 'indywidualna', powod: 'zabiegi wymagające ankiety podlegają ocenie ubezpieczyciela' };
 	// Zabiegi z innej listy = nowa działalność: składka z taryfy dla nowej kategorii (i nowej albo obecnej sumy).
 	if (z.zmiana_dzialalnosci) {
+		const poza = powodPozaTaryfa(z.rodzaje);
+		if (poza) return { rodzaj: 'indywidualna', powod: poza };
 		const kategoria = kategoriaZRodzajow(z.rodzaje);
 		const suma = z.wyzsza_suma ?? (SUMY.includes(sumaObecna as Suma) ? (sumaObecna as Suma) : null);
 		const osoby = apk?.osoby || z.osoby;
@@ -659,6 +673,8 @@ export function wycenaWniosku(
 	}
 	if (z.wyzsza_suma) {
 		const rodzaje = apk?.rodzaje.length ? apk.rodzaje : z.rodzaje;
+		const poza = powodPozaTaryfa(rodzaje);
+		if (poza) return { rodzaj: 'indywidualna', powod: poza };
 		const osoby = apk?.osoby || z.osoby;
 		const kategoria = kategoriaZRodzajow(rodzaje);
 		if (!kategoria || !osoby) return { rodzaj: 'indywidualna', powod: 'brak danych do wyceny' };
