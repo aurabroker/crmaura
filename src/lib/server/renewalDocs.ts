@@ -28,7 +28,6 @@ import {
 	formatZl,
 	kategoriaZRodzajow,
 	nazwaUbezpieczyciela,
-	powodPozaTaryfa,
 	opisZalacznika,
 	polisaIndywidualna,
 	skladkaProgramu,
@@ -267,8 +266,6 @@ function wariantySum(r: RenewalRow): string {
 	const zCenami = linie.some((l) => l.includes(' rocznie'));
 	const skladka = zCenami
 		? 'Składki orientacyjne według taryfy programu.'
-		: a && powodPozaTaryfa(a.rodzaje)
-			? `Składkę ustala indywidualnie ${UBEZPIECZYCIEL} po ocenie ryzyka (salon tatuażu — poza taryfą programu).`
 		: a?.osoby === '9+'
 			? `Składkę ustala indywidualnie ${UBEZPIECZYCIEL} (więcej niż 8 osób wykonujących zabiegi).`
 			: 'Składka według taryfy programu.';
@@ -464,7 +461,6 @@ export function sygnalyApk(r: RenewalRow): string[] {
 	if (!a) return [];
 	const s: string[] = [];
 	if (a.osoby === '9+') s.push('APK: więcej niż 8 osób wykonujących zabiegi — poza taryfą programu');
-	if (powodPozaTaryfa(a.rodzaje ?? [])) s.push('APK: salon tatuażu — poza taryfą programu, wycena indywidualna ubezpieczyciela');
 	if (a.szkody === 'tak') s.push(`APK: szkody lub roszczenia${a.szkody_opis ? ` — ${a.szkody_opis}` : ''}`);
 	if (a.spoza_listy === 'tak') s.push(`APK: zabiegi spoza list programu${a.spoza_listy_opis ? ` — ${a.spoza_listy_opis}` : ''}`);
 	if (a.suma_oczekiwana === 'wiecej') s.push(`APK: oczekiwana suma gwarancyjna wyższa niż ${formatSuma(300000)}`);

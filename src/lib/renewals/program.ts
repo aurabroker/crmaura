@@ -39,7 +39,7 @@ export const RODZAJE_GABINETU: { key: RodzajGabinetu; nazwa: string }[] = [
 	{ key: 'fryzjerski', nazwa: 'Salon fryzjerski' },
 	{ key: 'kosmetologiczny', nazwa: 'Gabinet kosmetologiczny' },
 	{ key: 'podologiczny', nazwa: 'Gabinet podologiczny' },
-	{ key: 'masaz', nazwa: 'Gabinet masażu' },
+	{ key: 'masaz', nazwa: 'Salon masażu' },
 	{ key: 'tatuaz', nazwa: 'Salon tatuażu' }
 ];
 
@@ -50,23 +50,18 @@ export const LICZBA_OSOB: { key: LiczbaOsob; nazwa: string }[] = [
 	{ key: '9+', nazwa: 'więcej niż 8 osób' }
 ];
 
-// Kategoria taryfy z rodzajów działalności: podologia albo fryzjerstwo razem z kosmetologią
-// to taryfa pełna; kosmetologia (z kosmetyką lub bez) — kosmetologiczna; sama kosmetyka
-// i fryzjerstwo — podstawowa. Gabinet masażu: zabiegi masażu są w Załączniku nr 1 (gabinety kosmetyczne
-// i fryzjerskie), więc taryfa podstawowa — masaż nie podnosi kategorii. Salon tatuażu: tatuowania nie ma
-// na listach programu — bez taryfy, składkę ustala ubezpieczyciel (powodPozaTaryfa).
+// Kategoria taryfy z rodzajów działalności: podologia albo fryzjerstwo razem z zabiegami z Załącznika nr 2
+// (kosmetologia, tatuaż) to taryfa pełna; kosmetologia albo salon tatuażu (z kosmetyką lub bez) — kosmetologiczna;
+// sama kosmetyka i fryzjerstwo — podstawowa. Tatuaż jest w Załączniku nr 2 (gabinety kosmetyczne
+// i kosmetologiczne), więc salon tatuażu liczy się jak gabinet kosmetologiczny. Salon masażu: masaż manualny
+// ciała jest w Załączniku nr 1 (gabinety kosmetyczne i fryzjerskie) — taryfa podstawowa, masaż nie podnosi kategorii.
 export function kategoriaZRodzajow(rodzaje: RodzajGabinetu[]): Kategoria | null {
 	if (!rodzaje.length) return null;
 	const r = new Set(rodzaje);
-	if (r.has('tatuaz')) return null;
-	if (r.has('podologiczny') || (r.has('kosmetologiczny') && r.has('fryzjerski'))) return 'pelny';
-	if (r.has('kosmetologiczny')) return 'kosmetologiczny';
+	const lista2 = r.has('kosmetologiczny') || r.has('tatuaz');
+	if (r.has('podologiczny') || (lista2 && r.has('fryzjerski'))) return 'pelny';
+	if (lista2) return 'kosmetologiczny';
 	return 'kosmetyczny_fryzjerski';
-}
-
-// Działalność poza taryfą programu — powód wyceny indywidualnej przez ubezpieczyciela (null: taryfa programu).
-export function powodPozaTaryfa(rodzaje: readonly RodzajGabinetu[]): string | null {
-	return rodzaje.includes('tatuaz') ? 'wykonywanie tatuaży nie jest objęte taryfą programu, składkę ustala ubezpieczyciel po ocenie ryzyka' : null;
 }
 
 export type Wycena =
@@ -123,7 +118,8 @@ export const ZABIEGI_LISTA_1 = [
 	'Zabiegi wykorzystujące terapeutyczne działanie światła – światło LED', 'Zagęszczanie włosów'
 ] as const;
 
-// Załącznik nr 2 do Programu — gabinety kosmetyczne i kosmetologiczne.
+// Załącznik nr 2 do Programu — gabinety kosmetyczne i kosmetologiczne (także tatuaż). 64 pozycje w kolejności
+// z dokumentu ERGO Hestii („Lista zabiegów – gabinety kosmetyczne i kosmetologiczne”).
 export const ZABIEGI_LISTA_2 = [
 	'Chemiczne usuwanie makijażu permanentnego', 'Cool Lifting', 'Depilacja pastą cukrową', 'Depilacja woskiem',
 	'Elektroliza', 'Elektrokoagulacja', 'Elektroporacja', 'Elektrostymulacja',
@@ -136,14 +132,16 @@ export const ZABIEGI_LISTA_2 = [
 	'Opalanie natryskowe', 'Oxybrazja', 'Pedicure kosmetyczny w zakresie zabiegów niezastrzeżonych dla podologów',
 	'Peeling węglowy', 'Piercing – przekłuwanie innych części ciała', 'Przedłużanie i zagęszczanie rzęs',
 	'Presoterapia', 'Przekłuwanie uszu', 'Radiofrekwencja mikroigłowa', 'Radiotermoliza zmian skórnych',
-	'Różnorodne peelingi chemiczne', 'Sauny infrared', 'Sonoforeza',
+	'Różnorodne peelingi chemiczne', 'Sauny infrared', 'Sonoforeza', 'Tatuaż',
 	'Wykonywanie zabiegów kosmetycznych z zastosowaniem składników aktywnych',
 	'Wykonywanie zabiegów na twarz i ciało z zastosowaniem fali radiowej',
 	'Zabiegi wykorzystujące światło IPL: fotoodmładzanie, likwidowanie przebarwień, terapia trądziku, zamykanie naczyń – teleangiektazje, usuwanie zbędnego owłosienia',
 	'Zabiegi wykorzystujące terapeutyczne działanie światła – światło LED', 'Zabiegi z zastosowaniem fali radiowej',
-	'Zabiegi z zastosowaniem lasera frakcyjnego nieablacyjnego',
+	'Zabiegi z zastosowaniem lasera frakcyjnego nieablacyjnego, laser subablacyjny',
 	'Zabiegi z wykorzystaniem laserów nieablacyjnych, w tym laserowe zamykanie naczyń – teleangiektazje, usuwanie tatuażu i makijażu permanentnego, usuwanie zbędnego owłosienia',
-	'Zabiegi z zastosowaniem podczerwieni', 'Zastosowanie prądów małej i dużej częstotliwości'
+	'Zabiegi z zastosowaniem podczerwieni', 'Zastosowanie prądów małej i dużej częstotliwości', 'Stymulatory tkankowe',
+	'Kosmetyczny zabieg trychologiczny', 'Kosmetyczna diagnostyka trychologiczna', 'Masaż transbukalny',
+	'Masaż mięśniowo-powięziowy', 'Suche igłowanie', 'Needle shaping'
 ] as const;
 
 export const ZABIEGI_LISTY = Array.from(new Set<string>([...ZABIEGI_LISTA_1, ...ZABIEGI_LISTA_2])).sort((a, b) =>
@@ -543,8 +541,6 @@ export function wycenaNowej(w: Wniosek, apk: Apk | null): Wycena | null {
 	if (w.decyzja !== 'nowa' || !z || !suma) return null;
 	if (z.zabiegi_ankieta.length) return { rodzaj: 'indywidualna', powod: 'zabiegi wymagające ankiety podlegają ocenie ubezpieczyciela' };
 	const rodzaje = apk?.rodzaje.length ? apk.rodzaje : z.rodzaje;
-	const poza = powodPozaTaryfa(rodzaje);
-	if (poza) return { rodzaj: 'indywidualna', powod: poza };
 	const osoby = apk?.osoby || z.osoby;
 	const kategoria = kategoriaZRodzajow(rodzaje);
 	if (!kategoria || !osoby) return { rodzaj: 'indywidualna', powod: 'brak danych do wyceny' };
@@ -663,8 +659,6 @@ export function wycenaWniosku(
 	if (z.zabiegi_ankieta.length) return { rodzaj: 'indywidualna', powod: 'zabiegi wymagające ankiety podlegają ocenie ubezpieczyciela' };
 	// Zabiegi z innej listy = nowa działalność: składka z taryfy dla nowej kategorii (i nowej albo obecnej sumy).
 	if (z.zmiana_dzialalnosci) {
-		const poza = powodPozaTaryfa(z.rodzaje);
-		if (poza) return { rodzaj: 'indywidualna', powod: poza };
 		const kategoria = kategoriaZRodzajow(z.rodzaje);
 		const suma = z.wyzsza_suma ?? (SUMY.includes(sumaObecna as Suma) ? (sumaObecna as Suma) : null);
 		const osoby = apk?.osoby || z.osoby;
@@ -673,8 +667,6 @@ export function wycenaWniosku(
 	}
 	if (z.wyzsza_suma) {
 		const rodzaje = apk?.rodzaje.length ? apk.rodzaje : z.rodzaje;
-		const poza = powodPozaTaryfa(rodzaje);
-		if (poza) return { rodzaj: 'indywidualna', powod: poza };
 		const osoby = apk?.osoby || z.osoby;
 		const kategoria = kategoriaZRodzajow(rodzaje);
 		if (!kategoria || !osoby) return { rodzaj: 'indywidualna', powod: 'brak danych do wyceny' };
