@@ -145,8 +145,6 @@
 									<p class="mt-2 text-xs text-slate-500">
 										{#if s.zm.ankieta && s.zm.zabiegi_ankieta.length}
 											Przy zabiegach wymagających ankiety składkę ustala indywidualnie ubezpieczyciel.
-										{:else if s.pozaTaryfa}
-											Salon tatuażu nie jest objęty taryfą programu — składkę ustala ubezpieczyciel po ocenie ryzyka, doradca skontaktuje się z Tobą.
 										{:else}
 											Składki orientacyjne według taryfy programu{s.zm.ochrona_prawna || w.ochrona_prawna_obecnie ? ', z ochroną prawną' : ''}. Ostateczną składkę potwierdzimy przed wystawieniem certyfikatu.
 											{#if w.polisa_indywidualna}<span class="block font-medium text-amber-800">Twoja polisa była zawarta indywidualnie, po ocenie ryzyka, dlatego proponowana składka {ADNOTACJA_OCENY_RYZYKA}.</span>{/if}

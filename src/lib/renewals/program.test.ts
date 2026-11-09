@@ -4,8 +4,8 @@ import {
 	ZABIEGI_ANKIETA,
 	polisaIndywidualna,
 	kategoriaZRodzajow,
-	powodPozaTaryfa,
 	waliduj_apk,
+	ZABIEGI_LISTA_2,
 	waliduj_wniosek,
 	wycenaNowej,
 	wycenaWniosku,
@@ -107,22 +107,28 @@ test('polisa indywidualna: znacznik importu, a bez niego seria numeru 436 (certy
 	assert.equal(polisaIndywidualna({ nr_polisy: null }), false);
 });
 
-test('gabinet masażu: taryfa podstawowa, nie podnosi kategorii; salon tatuażu: poza taryfą', () => {
+test('salon masażu: taryfa podstawowa; salon tatuażu: jak kosmetologia (tatuaż w Załączniku nr 2)', () => {
 	assert.equal(kategoriaZRodzajow(['masaz']), 'kosmetyczny_fryzjerski');
 	assert.equal(kategoriaZRodzajow(['masaz', 'kosmetologiczny']), 'kosmetologiczny');
 	assert.equal(kategoriaZRodzajow(['masaz', 'podologiczny']), 'pelny');
-	assert.equal(kategoriaZRodzajow(['tatuaz']), null);
-	assert.equal(kategoriaZRodzajow(['tatuaz', 'kosmetyczny']), null);
-	assert.equal(powodPozaTaryfa(['masaz']), null);
-	assert.match(powodPozaTaryfa(['tatuaz', 'kosmetyczny']) ?? '', /tatuaży/);
-	// Pierwsza polisa: masaż z taryfy, tatuaż do wyceny ubezpieczyciela.
+	assert.equal(kategoriaZRodzajow(['tatuaz']), 'kosmetologiczny');
+	assert.equal(kategoriaZRodzajow(['tatuaz', 'kosmetyczny', 'masaz']), 'kosmetologiczny');
+	assert.equal(kategoriaZRodzajow(['tatuaz', 'fryzjerski']), 'pelny');
+	// Pierwsza polisa, suma 200 000 zł: masaż 500 zł, tatuaż 790 zł (taryfa kosmetologiczna).
 	assert.equal(kw(wycenaNowej(wnNowy({ wyzsza_suma: 200000 }), { ...apkA, rodzaje: ['masaz'] })), 500);
-	const t = wycenaNowej(wnNowy({ wyzsza_suma: 200000 }), { ...apkA, rodzaje: ['tatuaz'] });
-	assert.equal(t?.rodzaj, 'indywidualna');
-	assert.match(t?.rodzaj === 'indywidualna' ? t.powod : '', /tatuaż/);
-	// Odnowienie ze zmianą działalności na salon tatuażu — też do wyceny.
-	assert.equal(wycenaWniosku(wn({ zmiana_dzialalnosci: true, rodzaje: ['tatuaz'] }), apkA, 400, false, 100000)?.rodzaj, 'indywidualna');
+	assert.equal(kw(wycenaNowej(wnNowy({ wyzsza_suma: 200000 }), { ...apkA, rodzaje: ['tatuaz'] })), 790);
+	// Odnowienie ze zmianą działalności na salon tatuażu przy obecnej sumie 100 000 zł.
+	assert.equal(kw(wycenaWniosku(wn({ zmiana_dzialalnosci: true, rodzaje: ['tatuaz'] }), apkA, 400, false, 100000)), 650);
 	// APK przyjmuje nowe rodzaje.
 	const v = waliduj_apk({ ...apkA, rodzaje: ['masaz', 'tatuaz', 'nieznany'] });
 	assert.deepEqual(v.ok ? v.value.rodzaje : null, ['masaz', 'tatuaz']);
+});
+
+test('Załącznik nr 2: 64 pozycje, z tatuażem i nowymi zabiegami', () => {
+	assert.equal(ZABIEGI_LISTA_2.length, 64);
+	assert.equal(new Set(ZABIEGI_LISTA_2).size, 64);
+	for (const z of ['Tatuaż', 'Stymulatory tkankowe', 'Masaż transbukalny', 'Masaż mięśniowo-powięziowy', 'Suche igłowanie', 'Needle shaping'])
+		assert.ok((ZABIEGI_LISTA_2 as readonly string[]).includes(z), z);
+	assert.equal(ZABIEGI_LISTA_2[47], 'Tatuaż');
+	assert.equal(ZABIEGI_LISTA_2[63], 'Needle shaping');
 });

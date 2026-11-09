@@ -10,7 +10,6 @@ import {
 	SUMY,
 	brakiDokumentow,
 	kategoriaZRodzajow,
-	powodPozaTaryfa,
 	okresOdDaty,
 	przesunDate,
 	skladkaProgramu,
@@ -209,8 +208,6 @@ export class Odnowienie {
 		const apk = this.apkDoWyceny;
 		return this.zmianaDzialalnosci && this.zm.rodzaje.length ? this.zm.rodzaje : apk?.rodzaje.length ? apk.rodzaje : this.zm.rodzaje;
 	});
-	// Działalność poza taryfą programu (salon tatuażu): bez kwot przy sumach, składkę ustala ubezpieczyciel.
-	pozaTaryfa = $derived(powodPozaTaryfa(this.rodzajeDoWyceny) !== null);
 	// Orientacyjna składka każdego wariantu sumy wg taryfy programu (gdy znamy rodzaj gabinetu i liczbę osób).
 	skladkiSum = $derived.by((): Partial<Record<Suma, number>> => {
 		// Zabiegi z ankietą: całą składkę wycenia ubezpieczyciel (jak w wycenaWniosku) — bez kwot przy sumach.
