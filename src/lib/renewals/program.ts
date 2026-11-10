@@ -87,39 +87,52 @@ export const formatZl = (n: number) =>
 
 // ---------- Zabiegi ----------
 
-// Zabiegi wyłączone z programu — objęcie ich ochroną wymaga ankiety ERGO Hestii i oceny ryzyka.
-// Te same 8 pozycji i ta sama kolejność co w punkcie 2 formularza ankiety Ergo (PDF ankiety pokazuje wszystkie).
+// Zabiegi podlegające indywidualnej ocenie ubezpieczyciela — objęcie ich ochroną wymaga ankiety ERGO Hestii.
+// Lista i kolejność z Aneksu nr 5 do Programu (od 06.11.2026), pkt 2 lit. a–h; PDF ankiety pokazuje wszystkie pozycje.
 export const ZABIEGI_ANKIETA = [
-	'Zabiegi urządzeniami opartymi na technologii HIFU (skupiona wiązka fal ultradźwiękowych o dużym natężeniu)',
-	'Zabiegi z użyciem toksyny botulinowej',
-	'Zabiegi z użyciem osocza bogatopłytkowego',
-	'Zabiegi z użyciem urządzeń wykorzystujących technologię PLASMA',
 	'Zabiegi z użyciem wypełniaczy na bazie kwasu hialuronowego',
-	'Zabiegi z użyciem nici PDO',
 	'Zabiegi lipolizy iniekcyjnej',
-	'Zabiegi laserem ablacyjnym'
+	'Zabiegi z użyciem fibryny, osocza bogatopłytkowego i wypełniaczy autologicznych',
+	'Zabiegi urządzeniami opartymi na technologii HIFU (skupiona wiązka fal ultradźwiękowych o dużym natężeniu)',
+	'Zabiegi z użyciem urządzeń wykorzystujących technologię PLASMA',
+	'Zabiegi laserami ablacyjnymi i frakcyjno-ablacyjnymi',
+	'Zabiegi z użyciem nici PDO, PLLA i PLA/CL',
+	'Zabiegi z użyciem toksyny botulinowej'
 ] as const;
 
-// Załącznik nr 1 do Programu — gabinety kosmetyczne i fryzjerskie.
+// Brzmienie sprzed Aneksu nr 5: trzy pozycje miały węższy opis. Wnioski złożone wcześniej zachowują dawne nazwy
+// (dziennik, PDF-y); wniosek wypełniany w chwili zmiany (szkic, otwarta karta) przechodzi na nowe.
+const ZABIEGI_ANKIETA_DAWNE: Record<string, (typeof ZABIEGI_ANKIETA)[number]> = {
+	'Zabiegi z użyciem osocza bogatopłytkowego': 'Zabiegi z użyciem fibryny, osocza bogatopłytkowego i wypełniaczy autologicznych',
+	'Zabiegi laserem ablacyjnym': 'Zabiegi laserami ablacyjnymi i frakcyjno-ablacyjnymi',
+	'Zabiegi z użyciem nici PDO': 'Zabiegi z użyciem nici PDO, PLLA i PLA/CL'
+};
+export const zabiegAnkietyAktualny = (z: string): string => ZABIEGI_ANKIETA_DAWNE[z] ?? z;
+
+// Załącznik nr 1 do Programu — gabinety kosmetyczne i fryzjerskie. 49 pozycji w kolejności z dokumentu
+// ERGO Hestii w brzmieniu Aneksu nr 5 (od 06.11.2026).
 export const ZABIEGI_LISTA_1 = [
 	'Barbering', 'Depilacja pastą cukrową', 'Depilacja woskiem', 'Dermabrazja i peeling skóry głowy',
 	'Diagnoza skóry głowy i USG włosa', 'Elektrostymulacja', 'Endermologia – masaż podciśnieniowy', 'Golenie głowy',
 	'Henna', 'Koloryzacja i dekoloryzacja włosów', 'Kosmetyczna diagnostyka trychologiczna',
 	'Kosmetyczny zabieg trychologiczny', 'Kuracje nawilżające, regenerujące i odbudowujące włosy',
 	'Laminowanie brwi i rzęs', 'Laminowanie włosów', 'Makijaż', 'Manicure', 'Manualne oczyszczanie twarzy',
-	'Masaż bańką chińską', 'Masaż endodermiczny i drenaż limfatyczny', 'Masaż manualny ciała, w tym masaż głowy i twarzy',
-	'Mycie i suszenie włosów', 'Oczyszczanie włosów', 'Pasemka i baleyage', 'Pedicure kosmetyczny',
-	'Piercing – przekłuwanie innych części ciała', 'Presoterapia', 'Przekłuwanie uszu',
-	'Przedłużanie i zagęszczanie rzęs', 'Przedłużanie włosów', 'Prostowanie włosów na stałe', 'Retusz siwizny',
-	'Sauna na włosy', 'Strzyżenie nożyczkami, maszynką, brzytwą oraz metodą Split-ender i Hair-dusting; trymowanie',
-	'Trwała ondulacja', 'Wykonywanie zabiegów kosmetycznych z zastosowaniem składników aktywnych',
+	'Masaż bańką chińską', 'Masaż endodermiczny i drenaż limfatyczny',
+	'Masaż manualny ciała, w tym masaż głowy i twarzy', 'Mycie i suszenie włosów', 'Oczyszczanie włosów',
+	'Pasemka i baleyage', 'Pedicure kosmetyczny', 'Piercing – przekłuwanie innych części ciała', 'Presoterapia',
+	'Przekłuwanie uszu', 'Przedłużanie i zagęszczanie rzęs', 'Przedłużanie włosów', 'Prostowanie włosów na stałe',
+	'Retusz siwizny', 'Sauna na włosy',
+	'Strzyżenie nożyczkami, maszynką, brzytwą oraz metodą Split-ender i Hair-dusting; trymowanie', 'Trwała ondulacja',
+	'Wykonywanie zabiegów kosmetycznych z zastosowaniem składników aktywnych',
 	'Zabieg pielęgnacyjny włosów z użyciem fal ultradźwiękowych', 'Zabieg rekonstrukcji włosów',
 	'Zabieg regeneracyjny włosów z użyciem podczerwieni', 'Zabiegi keratynowe', 'Zabiegi przeciwłupieżowe',
-	'Zabiegi wykorzystujące terapeutyczne działanie światła – światło LED', 'Zagęszczanie włosów'
+	'Zabiegi wykorzystujące terapeutyczne działanie światła – światło LED i jego pochodnych', 'Zagęszczanie włosów',
+	'Warkocze syntetyczne', 'Masaż kobido', 'Masaż mięśniowo-powięziowy', 'Masaż transbukalny', 'Suche igłowanie',
+	'Opalanie natryskowe'
 ] as const;
 
-// Załącznik nr 2 do Programu — gabinety kosmetyczne i kosmetologiczne (także tatuaż). 64 pozycje w kolejności
-// z dokumentu ERGO Hestii („Lista zabiegów – gabinety kosmetyczne i kosmetologiczne”).
+// Załącznik nr 2 do Programu — gabinety kosmetyczne i kosmetologiczne (także tatuaż). 63 pozycje w kolejności
+// z dokumentu ERGO Hestii w brzmieniu Aneksu nr 5 (od 06.11.2026).
 export const ZABIEGI_LISTA_2 = [
 	'Chemiczne usuwanie makijażu permanentnego', 'Cool Lifting', 'Depilacja pastą cukrową', 'Depilacja woskiem',
 	'Elektroliza', 'Elektrokoagulacja', 'Elektroporacja', 'Elektrostymulacja',
@@ -139,14 +152,15 @@ export const ZABIEGI_LISTA_2 = [
 	'Zabiegi wykorzystujące terapeutyczne działanie światła – światło LED', 'Zabiegi z zastosowaniem fali radiowej',
 	'Zabiegi z zastosowaniem lasera frakcyjnego nieablacyjnego, laser subablacyjny',
 	'Zabiegi z wykorzystaniem laserów nieablacyjnych, w tym laserowe zamykanie naczyń – teleangiektazje, usuwanie tatuażu i makijażu permanentnego, usuwanie zbędnego owłosienia',
-	'Zabiegi z zastosowaniem podczerwieni', 'Zastosowanie prądów małej i dużej częstotliwości', 'Stymulatory tkankowe',
+	'Zabiegi z zastosowaniem podczerwieni', 'Zastosowanie prądów małej i dużej częstotliwości',
 	'Kosmetyczny zabieg trychologiczny', 'Kosmetyczna diagnostyka trychologiczna', 'Masaż transbukalny',
 	'Masaż mięśniowo-powięziowy', 'Suche igłowanie', 'Needle shaping'
 ] as const;
 
-export const ZABIEGI_LISTY = Array.from(new Set<string>([...ZABIEGI_LISTA_1, ...ZABIEGI_LISTA_2])).sort((a, b) =>
-	a.localeCompare(b, 'pl')
-);
+// Obie listy razem, bez powtórzeń (załączniki różnią się wielkością liter: „Masaż kobido” / „Masaż Kobido”).
+export const ZABIEGI_LISTY = [
+	...new Map([...ZABIEGI_LISTA_1, ...ZABIEGI_LISTA_2].map((z): [string, string] => [z.toLocaleLowerCase('pl'), z])).values()
+].sort((a, b) => a.localeCompare(b, 'pl'));
 
 // ---------- APK (analiza potrzeb) dla OC zawodowego gabinetu ----------
 
@@ -367,6 +381,10 @@ const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
 const listOf = <T extends string>(v: unknown, allowed: readonly T[], max = 200): T[] =>
 	Array.isArray(v) ? Array.from(new Set(v.filter((x): x is T => typeof x === 'string' && (allowed as readonly string[]).includes(x)))).slice(0, max) : [];
 
+// Zabiegi z listy ankietowej z żądania klienta; dawne nazwy (sprzed Aneksu nr 5) przechodzą na obecne.
+const zabiegiAnkietyZ = (v: unknown) =>
+	listOf(Array.isArray(v) ? v.map((x) => (typeof x === 'string' ? zabiegAnkietyAktualny(x) : x)) : v, ZABIEGI_ANKIETA);
+
 const RODZAJE_KEYS = RODZAJE_GABINETU.map((r) => r.key);
 const OSOBY_KEYS = LICZBA_OSOB.map((o) => o.key);
 
@@ -407,7 +425,9 @@ function parsujWykonawcow(raw: unknown, zgloszone: string[], bledy: string[]): W
 		wykonawcy.push({
 			id,
 			imie_nazwisko: str(x.imie_nazwisko, 200),
-			zabiegi: Array.isArray(x.zabiegi) ? Array.from(new Set(x.zabiegi.filter((t): t is string => typeof t === 'string' && zgloszone.includes(t)))) : []
+			zabiegi: Array.isArray(x.zabiegi)
+				? Array.from(new Set(x.zabiegi.filter((t): t is string => typeof t === 'string').map(zabiegAnkietyAktualny).filter((t) => zgloszone.includes(t))))
+				: []
 		});
 	}
 	if (!wykonawcy.length) bledy.push('Podaj osoby, które będą wykonywać zgłaszane zabiegi.');
@@ -442,7 +462,7 @@ export function waliduj_wniosek(raw: unknown, apk: Apk | null, o: { pomijajWykon
 		adres: adresRaw ? { ulica: str(adresRaw.ulica, 200), kod: str(adresRaw.kod, 10), miasto: str(adresRaw.miasto, 100) } : null,
 		// Pojedyncze zabiegi z list programu nie są już częścią wniosku (patrz zmiana_dzialalnosci).
 		nowe_zabiegi: [],
-		zabiegi_ankieta: listOf(z.zabiegi_ankieta, ZABIEGI_ANKIETA),
+		zabiegi_ankieta: zabiegiAnkietyZ(z.zabiegi_ankieta),
 		inne: str(z.inne, 3000),
 		rodzaje: listOf(z.rodzaje, RODZAJE_KEYS),
 		osoby: oneOf(z.osoby, OSOBY_KEYS),
@@ -512,7 +532,7 @@ export function waliduj_wniosek_nowy(raw: unknown, apk: Apk | null, o: { pomijaj
 		ochrona_prawna: z.ochrona_prawna === true,
 		adres: null,
 		nowe_zabiegi: [],
-		zabiegi_ankieta: listOf(z.zabiegi_ankieta, ZABIEGI_ANKIETA),
+		zabiegi_ankieta: zabiegiAnkietyZ(z.zabiegi_ankieta),
 		inne: str(z.inne, 3000),
 		rodzaje: listOf(z.rodzaje, RODZAJE_KEYS),
 		osoby: oneOf(z.osoby, OSOBY_KEYS),

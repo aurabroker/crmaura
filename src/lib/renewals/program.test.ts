@@ -5,7 +5,11 @@ import {
 	polisaIndywidualna,
 	kategoriaZRodzajow,
 	waliduj_apk,
+	ZABIEGI_LISTA_1,
 	ZABIEGI_LISTA_2,
+	ZABIEGI_LISTY,
+	czyZabieg,
+	zabiegAnkietyAktualny,
 	waliduj_wniosek,
 	wycenaNowej,
 	wycenaWniosku,
@@ -124,11 +128,60 @@ test('salon masażu: taryfa podstawowa; salon tatuażu: jak kosmetologia (tatua�
 	assert.deepEqual(v.ok ? v.value.rodzaje : null, ['masaz', 'tatuaz']);
 });
 
-test('Załącznik nr 2: 64 pozycje, z tatuażem i nowymi zabiegami', () => {
-	assert.equal(ZABIEGI_LISTA_2.length, 64);
-	assert.equal(new Set(ZABIEGI_LISTA_2).size, 64);
-	for (const z of ['Tatuaż', 'Stymulatory tkankowe', 'Masaż transbukalny', 'Masaż mięśniowo-powięziowy', 'Suche igłowanie', 'Needle shaping'])
+test('Aneks nr 5: Załącznik nr 1 ma 49 pozycji, Załącznik nr 2 — 63', () => {
+	assert.equal(ZABIEGI_LISTA_1.length, 49);
+	assert.equal(new Set(ZABIEGI_LISTA_1).size, 49);
+	for (const z of ['Warkocze syntetyczne', 'Masaż kobido', 'Masaż mięśniowo-powięziowy', 'Masaż transbukalny', 'Suche igłowanie', 'Opalanie natryskowe'])
+		assert.ok((ZABIEGI_LISTA_1 as readonly string[]).includes(z), z);
+	assert.equal(ZABIEGI_LISTA_1[41], 'Zabiegi wykorzystujące terapeutyczne działanie światła – światło LED i jego pochodnych');
+	assert.equal(ZABIEGI_LISTA_1[48], 'Opalanie natryskowe');
+
+	assert.equal(ZABIEGI_LISTA_2.length, 63);
+	assert.equal(new Set(ZABIEGI_LISTA_2).size, 63);
+	for (const z of ['Tatuaż', 'Masaż transbukalny', 'Masaż mięśniowo-powięziowy', 'Suche igłowanie', 'Needle shaping'])
 		assert.ok((ZABIEGI_LISTA_2 as readonly string[]).includes(z), z);
 	assert.equal(ZABIEGI_LISTA_2[47], 'Tatuaż');
-	assert.equal(ZABIEGI_LISTA_2[63], 'Needle shaping');
+	assert.equal(ZABIEGI_LISTA_2[62], 'Needle shaping');
+	// Wersja robocza listy miała „Stymulatory tkankowe” — w aneksie tej pozycji nie ma.
+	assert.equal((ZABIEGI_LISTA_2 as readonly string[]).includes('Stymulatory tkankowe'), false);
+
+	// Lista łączna: „Masaż kobido” i „Masaż Kobido” to jedna pozycja.
+	assert.equal(ZABIEGI_LISTY.filter((z) => z.toLowerCase() === 'masaż kobido').length, 1);
+	assert.equal(ZABIEGI_LISTY.length, new Set(ZABIEGI_LISTY.map((z) => z.toLowerCase())).size);
+});
+
+test('Aneks nr 5: zabiegi do indywidualnej oceny — 8 pozycji w kolejności a–h, dawne nazwy przechodzą na nowe', () => {
+	assert.deepEqual([...ZABIEGI_ANKIETA], [
+		'Zabiegi z użyciem wypełniaczy na bazie kwasu hialuronowego',
+		'Zabiegi lipolizy iniekcyjnej',
+		'Zabiegi z użyciem fibryny, osocza bogatopłytkowego i wypełniaczy autologicznych',
+		'Zabiegi urządzeniami opartymi na technologii HIFU (skupiona wiązka fal ultradźwiękowych o dużym natężeniu)',
+		'Zabiegi z użyciem urządzeń wykorzystujących technologię PLASMA',
+		'Zabiegi laserami ablacyjnymi i frakcyjno-ablacyjnymi',
+		'Zabiegi z użyciem nici PDO, PLLA i PLA/CL',
+		'Zabiegi z użyciem toksyny botulinowej'
+	]);
+	assert.equal(zabiegAnkietyAktualny('Zabiegi z użyciem nici PDO'), 'Zabiegi z użyciem nici PDO, PLLA i PLA/CL');
+	assert.equal(zabiegAnkietyAktualny('Zabiegi laserem ablacyjnym'), 'Zabiegi laserami ablacyjnymi i frakcyjno-ablacyjnymi');
+	assert.equal(zabiegAnkietyAktualny('Zabiegi z użyciem toksyny botulinowej'), 'Zabiegi z użyciem toksyny botulinowej');
+	assert.equal(czyZabieg('Zabiegi z użyciem nici PDO'), false);
+	assert.equal(czyZabieg('Zabiegi z użyciem nici PDO, PLLA i PLA/CL'), true);
+	assert.equal(czyZabieg('Warkocze syntetyczne'), true);
+
+	// Wniosek wysłany z otwartej karty sprzed zmiany: dawne nazwy (także u osób wykonujących) stają się obecnymi.
+	const v = waliduj_wniosek(
+		{
+			decyzja: 'zmiany',
+			zmiany: {
+				...pusteZmiany(),
+				zabiegi_ankieta: ['Zabiegi z użyciem osocza bogatopłytkowego', 'Zabiegi z użyciem toksyny botulinowej', 'nieznany'],
+				wykonawcy: [{ id: 'a1', imie_nazwisko: 'Anna Testowa', zabiegi: ['Zabiegi z użyciem osocza bogatopłytkowego', 'Zabiegi z użyciem toksyny botulinowej'] }]
+			}
+		},
+		apkA
+	);
+	assert.ok(v.ok, v.ok ? '' : v.bledy.join(' | '));
+	const nowe = ['Zabiegi z użyciem fibryny, osocza bogatopłytkowego i wypełniaczy autologicznych', 'Zabiegi z użyciem toksyny botulinowej'];
+	assert.deepEqual(v.ok ? v.value.zmiany?.zabiegi_ankieta : null, nowe);
+	assert.deepEqual(v.ok ? v.value.zmiany?.wykonawcy[0].zabiegi : null, nowe);
 });

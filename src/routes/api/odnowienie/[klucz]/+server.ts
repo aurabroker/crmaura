@@ -27,6 +27,7 @@ import {
 	ZALACZNIK_TYPY_MIME,
 	brakiDokumentow,
 	czyZabieg,
+	zabiegAnkietyAktualny,
 	zabiegiWniosku,
 	waliduj_ankiete,
 	waliduj_apk,
@@ -185,7 +186,9 @@ export const POST: RequestHandler = async (event) => {
 			if (lacznie + rozmiar > ZALACZNIKI_MAX_LACZNIE) return blad(400, 'Przekroczono łączny limit plików (60 MB). Usuń niepotrzebne pliki albo zmniejsz zdjęcia.');
 			// Dyplom należy do osoby, certyfikat — do osoby i jej zabiegu.
 			const osoba = typeof body.osoba === 'string' && ID_WYKONAWCY.test(body.osoba) ? body.osoba : null;
-			const zabieg = czyZabieg(body.zabieg) ? body.zabieg : null;
+			// Otwarta karta ze stroną sprzed Aneksu nr 5 wysyła dawną nazwę zabiegu — zapisujemy obecną.
+			const nazwaZabiegu = typeof body.zabieg === 'string' ? zabiegAnkietyAktualny(body.zabieg) : null;
+			const zabieg = czyZabieg(nazwaZabiegu) ? nazwaZabiegu : null;
 			const osoba_nazwa = osoba && typeof body.osoba_nazwa === 'string' ? body.osoba_nazwa.trim().slice(0, 200) || null : null;
 			if ((typ === 'dyplom' || typ === 'certyfikat') && !osoba) return blad(400, 'Wskaż osobę, do której należy dokument.');
 			if (typ === 'certyfikat' && !zabieg) return blad(400, 'Wskaż zabieg, którego dotyczy certyfikat.');
