@@ -4,10 +4,16 @@ import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { plikPubliczny } from '$lib/server/plikiPubliczne';
 
-export const GET: RequestHandler = async ({ params, platform }) => {
+export const GET: RequestHandler = async ({ params, platform, url }) => {
 	const kubelek = platform?.env?.POLISY_PDF;
 	if (!kubelek) throw error(503, 'Magazyn plików nie jest skonfigurowany.');
-	const plik = await plikPubliczny(kubelek, params.sciezka);
+	// Źródło „/dokumenty/…” to zasób statyczny aplikacji (binding ASSETS, jak czcionki w $lib/server/pdf).
+	const plik = await plikPubliczny(kubelek, params.sciezka, (zrodlo) => {
+		if (!zrodlo.startsWith('/')) return fetch(zrodlo, { redirect: 'follow' });
+		const adres = new URL(zrodlo, url.origin);
+		const assets = platform?.env?.ASSETS;
+		return assets ? assets.fetch(new Request(adres)) : fetch(adres);
+	});
 	// Brak pliku nie może zostać w pamięci przeglądarki ani Cloudflare — po wgraniu dokumentu link ma działać od razu.
 	if (!plik) return new Response('Nie ma takiego pliku.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' } });
 	const pdf = plik.opis.typ === 'application/pdf';

@@ -8,6 +8,7 @@ import {
 	MAKS_WYKONAWCOW,
 	NOWA_OCHRONA_OD_MIN_DNI,
 	SUMY,
+	ZABIEGI_ANKIETA,
 	brakiDokumentow,
 	kategoriaZRodzajow,
 	okresOdDaty,
@@ -18,6 +19,7 @@ import {
 	waliduj_wniosek_nowy,
 	wycenaNowej,
 	wycenaWniosku,
+	zabiegAnkietyAktualny,
 	type Ankieta,
 	type Apk,
 	type Decyzja,
@@ -488,6 +490,8 @@ export class Odnowienie {
 			zm.inne_zaznaczone = true;
 		}
 		if (this.nowa) zm.suma = true;
+		// Szkic sprzed Aneksu nr 5: dawne nazwy zabiegów z listy ankietowej przechodzą na obecne, nieznane odpadają.
+		zm.zabiegi_ankieta = Array.from(new Set(zm.zabiegi_ankieta.map(zabiegAnkietyAktualny))).filter((z) => (ZABIEGI_ANKIETA as readonly string[]).includes(z));
 		this.zm = zm;
 		if (this.nowa && s.nw && typeof s.nw === 'object') {
 			const nw = scal(pustaNowa(this.widok), s.nw as Record<string, unknown>);
@@ -504,7 +508,7 @@ export class Odnowienie {
 				.map((w) => ({
 					id: String(w.id).slice(0, 40),
 					imie_nazwisko: typeof w.imie_nazwisko === 'string' ? w.imie_nazwisko : '',
-					zabiegi: Array.isArray(w.zabiegi) ? w.zabiegi.filter((t): t is string => typeof t === 'string') : []
+					zabiegi: Array.isArray(w.zabiegi) ? Array.from(new Set(w.zabiegi.filter((t): t is string => typeof t === 'string').map(zabiegAnkietyAktualny))) : []
 				}))
 				.slice(0, MAKS_WYKONAWCOW);
 		}

@@ -20,6 +20,8 @@ declare global {
 		body: ReadableStream;
 		size: number;
 		httpMetadata?: { contentType?: string };
+		/** Metadane zapisane przy put (np. „zrodlo” kopii pliku publicznego, „wgral” przy podmianie w Ustawieniach). */
+		customMetadata?: Record<string, string>;
 		arrayBuffer(): Promise<ArrayBuffer>;
 	}
 	interface R2Kubelek {

@@ -4,6 +4,9 @@
 // (pliki polis mają klucze <tenant>/…). Część plików pochodzi z GetResponse, z którego rezygnujemy — przy
 // pierwszym żądaniu serwer kopiuje je jednorazowo ze starego adresu. Dokumenty bez źródła (zrodlo: null)
 // wgrywa administrator programu w Ustawieniach → Dokumenty; podmiana pliku nie zmienia adresu.
+// Dokument programu wdrażany razem z aplikacją (np. listy zabiegów po aneksie) ma źródło w zasobach
+// statycznych: zrodlo „/dokumenty/…” (katalog static/). Nowa wersja = nowy plik i nowa ścieżka w zrodlo —
+// kopia w kubełku zrobiona z poprzedniego źródła odświeża się sama przy pierwszym żądaniu.
 
 type PlikPubliczny = {
 	zrodlo: string | null;
@@ -17,6 +20,8 @@ type PlikPubliczny = {
 
 const GR_ZDJECIA = 'https://us-ms.gr-cdn.com/getresponse-VnDsp/photos';
 const GR_PLIKI = 'https://us-wbe-img2.gr-cdn.com/user/fbd8f5a9-6595-4640-bd21-ab95d01fa5ca';
+// Dokumenty programu wdrażane z aplikacją (zasoby statyczne: static/dokumenty/beautypolisa).
+const DOK_BEAUTY = '/dokumenty/beautypolisa';
 const PNG = 'image/png';
 const JPG = 'image/jpeg';
 const PDF = 'application/pdf';
@@ -30,8 +35,9 @@ export const PLIKI_PUBLICZNE: Record<string, PlikPubliczny> = {
 	'beautypolisa/facebook.png': { zrodlo: 'https://us-as.gr-cdn.com/images/common/templates/messages/v2/social/facebook1.png', typ: PNG, nazwa: 'facebook.png', opis: 'Ikona Facebooka', program: BEAUTY },
 	// Logo z maila Tax Protect — wcześniej wklejone jako załącznik na GitHubie
 	'beautypolisa/logo-colonnade.png': { zrodlo: 'https://github.com/user-attachments/assets/cabd8c8d-1d72-4e25-88b1-f8d98a570a37', typ: PNG, nazwa: 'logo-colonnade.png', opis: 'Logo Colonnade', program: BEAUTY },
-	'beautypolisa/lista-zabiegow-kosmetyczne-fryzjerskie.pdf': { zrodlo: `${GR_PLIKI}/34ba33fc-299f-4df6-b8ec-eb9ac8543b9e.pdf`, typ: PDF, nazwa: 'Lista zabiegów - kosmetyczne, fryzjerskie.pdf', opis: 'Lista zabiegów – kosmetyczne, fryzjerskie', program: BEAUTY },
-	'beautypolisa/lista-zabiegow-kosmetologiczne-tatuaze.pdf': { zrodlo: `${GR_PLIKI}/3e42aa27-f9ab-4a96-8011-d81c205194cf.pdf`, typ: PDF, nazwa: 'Lista zabiegów - kosmetyczne, kosmetologiczne, tatuaże.pdf', opis: 'Lista zabiegów – kosmetologiczne, tatuaże', program: BEAUTY },
+	// Załączniki nr 1 i nr 2 do Programu w brzmieniu Aneksu nr 5 (od 06.11.2026) — pliki w static/dokumenty/beautypolisa.
+	'beautypolisa/lista-zabiegow-kosmetyczne-fryzjerskie.pdf': { zrodlo: `${DOK_BEAUTY}/lista-zabiegow-nr-1-kosmetyczne-fryzjerskie-aneks-5.pdf`, typ: PDF, nazwa: 'Lista zabiegów - kosmetyczne, fryzjerskie.pdf', opis: 'Lista zabiegów nr 1 – kosmetyczne, fryzjerskie (Aneks nr 5)', program: BEAUTY },
+	'beautypolisa/lista-zabiegow-kosmetologiczne-tatuaze.pdf': { zrodlo: `${DOK_BEAUTY}/lista-zabiegow-nr-2-kosmetyczne-kosmetologiczne-aneks-5.pdf`, typ: PDF, nazwa: 'Lista zabiegów - kosmetyczne, kosmetologiczne, tatuaże.pdf', opis: 'Lista zabiegów nr 2 – kosmetyczne, kosmetologiczne, tatuaże (Aneks nr 5)', program: BEAUTY },
 	'beautypolisa/lista-zabiegow-podologiczne.pdf': { zrodlo: `${GR_PLIKI}/c507c6c6-b126-4098-a3f6-630164e0f74c.pdf`, typ: PDF, nazwa: 'Lista zabiegów - podologiczne.pdf', opis: 'Lista zabiegów – podologiczne', program: BEAUTY },
 	'beautypolisa/ankieta-oceny-ryzyka.pdf': { zrodlo: `${GR_PLIKI}/91e7a9d4-4357-4e29-9cc9-2386092033ce.pdf`, typ: PDF, nazwa: 'Ankieta oceny ryzyka.pdf', opis: 'Ankieta oceny ryzyka', program: BEAUTY },
 	'beautypolisa/informacja-o-dystrybutorze-aura-expert.pdf': { zrodlo: `${GR_PLIKI}/e8560860-e79c-409e-8ce6-ed85ab666017.pdf`, typ: PDF, nazwa: 'Informacja o dystrybutorze Aura Expert.pdf', opis: 'Z001 – Informacja o dystrybutorze (Aura Expert)', program: BEAUTY },
@@ -62,19 +68,42 @@ export function zgodnyTyp(b: Uint8Array, typ: string): boolean {
 	return false;
 }
 
-/** Plik z R2; gdy go nie ma — jednorazowa kopia ze starego adresu. null, gdy ścieżki nie ma na liście albo pliku nie ma skąd wziąć. */
-export async function plikPubliczny(kubelek: R2Kubelek, sciezka: string): Promise<{ dane: ArrayBuffer; opis: PlikPubliczny } | null> {
+/** Pobranie źródła pliku: adres http(s) albo ścieżka zasobu statycznego aplikacji („/dokumenty/…” — podaje ją trasa /media). */
+export type PobierzZrodlo = (zrodlo: string) => Promise<Response>;
+
+async function zeZrodla(opis: PlikPubliczny, pobierz: PobierzZrodlo): Promise<ArrayBuffer | null> {
+	if (!opis.zrodlo) return null;
+	try {
+		const odp = await pobierz(opis.zrodlo);
+		if (!odp.ok) return null;
+		const dane = await odp.arrayBuffer();
+		return dane.byteLength === 0 || dane.byteLength > MAKS_PLIKU_PUBLICZNEGO || !zgodnyTyp(new Uint8Array(dane), opis.typ) ? null : dane;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Plik z R2; gdy go nie ma — kopia ze źródła. Kopia zrobiona z innego źródła niż obecne w kodzie (dokument ma nową
+ * wersję) jest odświeżana; plik wgrany w Ustawieniach (bez metadanej „zrodlo”) ma zawsze pierwszeństwo.
+ * null, gdy ścieżki nie ma na liście albo pliku nie ma skąd wziąć.
+ */
+export async function plikPubliczny(
+	kubelek: R2Kubelek,
+	sciezka: string,
+	pobierz: PobierzZrodlo = (zrodlo) => fetch(zrodlo, { redirect: 'follow' })
+): Promise<{ dane: ArrayBuffer; opis: PlikPubliczny } | null> {
 	const opis = PLIKI_PUBLICZNE[sciezka];
 	if (!opis) return null;
 	const zapisany = await kubelek.get(klucz(sciezka));
-	if (zapisany) return { dane: await zapisany.arrayBuffer(), opis };
-	if (!opis.zrodlo) return null;
+	const kopiaZ = zapisany?.customMetadata?.zrodlo;
+	const nieaktualny = !!zapisany && !!kopiaZ && !!opis.zrodlo && kopiaZ !== opis.zrodlo;
+	if (zapisany && !nieaktualny) return { dane: await zapisany.arrayBuffer(), opis };
 
-	const odp = await fetch(opis.zrodlo, { redirect: 'follow' });
-	if (!odp.ok) return null;
-	const dane = await odp.arrayBuffer();
-	if (dane.byteLength === 0 || dane.byteLength > MAKS_PLIKU_PUBLICZNEGO || !zgodnyTyp(new Uint8Array(dane), opis.typ)) return null;
-	await kubelek.put(klucz(sciezka), dane, { httpMetadata: { contentType: opis.typ }, customMetadata: { zrodlo: opis.zrodlo } });
+	const dane = await zeZrodla(opis, pobierz);
+	// Nowe źródło chwilowo niedostępne: dotychczasowa kopia jest lepsza niż brak pliku.
+	if (!dane) return zapisany ? { dane: await zapisany.arrayBuffer(), opis } : null;
+	await kubelek.put(klucz(sciezka), dane, { httpMetadata: { contentType: opis.typ }, customMetadata: { zrodlo: opis.zrodlo! } });
 	return { dane, opis };
 }
 

@@ -31,6 +31,7 @@ import {
 	opisZalacznika,
 	polisaIndywidualna,
 	skladkaProgramu,
+	zabiegAnkietyAktualny,
 	ADNOTACJA_OCENY_RYZYKA,
 	type Ankieta,
 	type Apk,
@@ -925,7 +926,8 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 
 	// 2. Zabiegi kosmetologiczne: wszystkie pozycje formularza, kwadrat z „X” przy zabiegach z wniosku.
 	y = punkt('2. Zabiegi kosmetologiczne:', y);
-	const wybrane = new Set(r.wniosek?.zmiany?.zabiegi_ankieta ?? []);
+	// Wniosek sprzed Aneksu nr 5 ma dawne nazwy trzech zabiegów — w formularzu zaznaczamy ich obecne odpowiedniki.
+	const wybrane = new Set((r.wniosek?.zmiany?.zabiegi_ankieta ?? []).map(zabiegAnkietyAktualny));
 	const inne = a.inne_zabiegi?.trim() ?? '';
 	const zaznaczone = [...ZABIEGI_ANKIETA.map((z) => wybrane.has(z)), !!inne];
 	tabela({
