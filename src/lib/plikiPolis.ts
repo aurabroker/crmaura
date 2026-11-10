@@ -1,6 +1,7 @@
 // Pliki w Cloudflare R2 po stronie przeglądarki (PDF polis, pliki not prowizyjnych): lista z bazy (RLS — tylko pliki firmy),
 // wysyłka / otwieranie / usuwanie przez API serwera z tokenem sesji.
 import { sb } from '$lib/supabase';
+import { nazwaPliku, pobierzZAdresu } from '$lib/pobieranie';
 
 export type PlikPolisy = {
 	id: string;
@@ -79,6 +80,11 @@ export async function otworzPlikPolisy(id: string): Promise<void> {
 	}
 }
 
+/** „Pobierz”: PDF polisy zapisany na dysk pod swoją nazwą. */
+export async function pobierzPlikPolisy(id: string, nazwa: string | null): Promise<void> {
+	await pobierzZAdresu(`/api/pliki/${id}?pobierz=1`, nazwaPliku(nazwa, '.pdf', 'polisa'), await naglowki());
+}
+
 export async function usunPlikPolisy(id: string): Promise<void> {
 	const res = await fetch(`/api/pliki/${id}`, { method: 'DELETE', headers: await naglowki() });
 	if (!res.ok) throw await blad(res);
@@ -123,6 +129,11 @@ export async function otworzPlikNoty(notaId: string, nazwa: string | null, typ: 
 		okno?.close();
 		throw e;
 	}
+}
+
+/** „Pobierz”: plik noty albo zestawienia zapisany na dysk pod zapisaną nazwą (także PDF, który „Otwórz” pokazuje w karcie). */
+export async function pobierzPlikNoty(notaId: string, nazwa: string | null): Promise<void> {
+	await pobierzZAdresu(`/api/noty/${notaId}/plik`, nazwaPliku(nazwa, null, 'zestawienie'), await naglowki());
 }
 
 // ── Polisa wysłana klientowi (szablon Resend programu + PDF polisy) ──

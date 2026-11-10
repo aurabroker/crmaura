@@ -6,6 +6,8 @@
 	import type { VehicleDeregistration } from '$lib/types/database';
 	import Badge from '$lib/components/Badge.svelte';
 	import { Paperclip, Mail, RefreshCw } from 'lucide-svelte';
+	import { downloadStoredFile } from '$lib/utils/storageLink';
+	import PobierzPlik from './PobierzPlik.svelte';
 
 	interface Props {
 		klientId: string;
@@ -90,12 +92,16 @@
 					{#if z.zalaczniki?.length}
 						<div class="flex flex-wrap gap-2 mt-2">
 							{#each z.zalaczniki as f}
-								<button
-									onclick={() => otworz(f.sciezka)}
-									class="inline-flex items-center gap-1.5 text-xs border border-line rounded-lg px-2.5 py-1 text-slate-700 hover:bg-slate-50"
-								>
-									<Paperclip size={12} class="text-slate-400" /> {f.nazwa}
-								</button>
+								<span class="inline-flex max-w-full">
+									<button
+										onclick={() => otworz(f.sciezka)}
+										title="Otwórz: {f.nazwa}"
+										class="inline-flex items-center gap-1.5 min-w-0 text-xs border border-line rounded-l-lg px-2.5 py-1 text-slate-700 hover:bg-slate-50"
+									>
+										<Paperclip size={12} class="text-slate-400 shrink-0" /> <span class="truncate">{f.nazwa}</span>
+									</button>
+									<PobierzPlik ikona class="inline-flex items-center -ml-px text-xs border border-line rounded-r-lg px-2 py-1 text-slate-600 hover:bg-slate-50 disabled:opacity-50" nazwa={f.nazwa} pobierz={() => downloadStoredFile('wyrejestrowania', f.sciezka, f.nazwa)} />
+								</span>
 							{/each}
 						</div>
 					{/if}

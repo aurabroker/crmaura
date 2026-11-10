@@ -30,17 +30,19 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import Kopiuj from '$lib/components/Kopiuj.svelte';
 	import TaskModal from '$lib/components/TaskModal.svelte';
-	import { Pencil, Plus, Car, FileText, UserPlus, Trash2, ClipboardList, Copy, Check, Download, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip, Phone, Ellipsis, ShieldCheck, ShieldAlert, Users, AlertTriangle, UserX, UserCheck } from 'lucide-svelte';
+	import { Pencil, Plus, Car, FileText, UserPlus, Trash2, ClipboardList, Copy, Check, Download, ExternalLink, CheckCircle2, Circle, Clock, AlertCircle, Link, RefreshCw, Mail, MailCheck, Send, History, Paperclip, Phone, Ellipsis, ShieldCheck, ShieldAlert, Users, AlertTriangle, UserX, UserCheck } from 'lucide-svelte';
 	import { todayStr } from '$lib/utils';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import { apkTokenLink, apkOpenLink, apkCopyLink, newApkToken } from '$lib/utils/apkLink';
-	import { openStoredFile } from '$lib/utils/storageLink';
+	import { downloadStoredFile, openStoredFile } from '$lib/utils/storageLink';
+	import { bezUkosnikow } from '$lib/pobieranie';
+	import PobierzPlik from '$lib/components/PobierzPlik.svelte';
 	import type { ApkForm } from '$lib/types/database';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import SortTh from '$lib/components/SortTh.svelte';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
 	import CrmRenewalPanel from '$lib/components/renewal/CrmRenewalPanel.svelte';
-	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, adresWniosku, folderWniosku, klientBeauty as czyKlientBeauty, opisPrzegladarki, opisZdarzenia, otworzPdfApk, programOcBeauty, rozmiarPliku, wProgramieOcBeauty, wniosekNowy } from '$lib/components/renewal/crmRenewals';
+	import { ANKIETA_PDF, APK_PDF, BUCKET_ODNOWIEN, adresWniosku, folderWniosku, klientBeauty as czyKlientBeauty, opisPrzegladarki, opisZdarzenia, otworzPdfApk, pobierzPdfApk, programOcBeauty, rozmiarPliku, wProgramieOcBeauty, wniosekNowy } from '$lib/components/renewal/crmRenewals';
 	import { opisZalacznika } from '$lib/renewals/program';
 
 	let pdfSaving = $state<string | null>(null);
@@ -585,26 +587,28 @@
 
 	const maPdfApk = (w: WniosekKlienta) => APK_PDF in (plikiWBuckecie[w.id] ?? {});
 
-	type PlikWniosku = { klucz: string; tytul: string; opis: string; path: string; rozmiar: number | null; at: string | null; zalacznik: boolean };
+	// nazwa: pod nią plik zapisuje się po „Pobierz” — PDF-y z numerem certyfikatu, załączniki pod nazwą od klienta.
+	type PlikWniosku = { klucz: string; tytul: string; opis: string; path: string; rozmiar: number | null; at: string | null; zalacznik: boolean; nazwa: string };
+	const nazwaPdfWniosku = (rodzaj: string, w: WniosekKlienta) => `${rodzaj} ${bezUkosnikow(nrCertyfikatu(w))}.pdf`;
 	function plikiWniosku(w: WniosekKlienta): PlikWniosku[] {
 		const folder = folderWniosku(w);
 		const wBuckecie = plikiWBuckecie[w.id] ?? {};
 		const out: PlikWniosku[] = [];
 		if (maPdfApk(w)) {
-			out.push({ klucz: 'apk', tytul: 'Analiza potrzeb (APK) — PDF', opis: w.apk_odmowa ? 'świadoma odmowa' : '', path: `${folder}/${APK_PDF}`, rozmiar: wBuckecie[APK_PDF] ?? null, at: w.apk_at, zalacznik: false });
+			out.push({ klucz: 'apk', tytul: 'Analiza potrzeb (APK) — PDF', opis: w.apk_odmowa ? 'świadoma odmowa' : '', path: `${folder}/${APK_PDF}`, rozmiar: wBuckecie[APK_PDF] ?? null, at: w.apk_at, zalacznik: false, nazwa: nazwaPdfWniosku('APK', w) });
 		}
 		if (w.pdf_path) {
 			const nazwa = w.pdf_path.split('/').pop() ?? '';
 			const rozmiar = w.pdf_path.startsWith(`${folder}/`) ? wBuckecie[nazwa] ?? null : null;
-			out.push({ klucz: 'wniosek', tytul: 'Wniosek o odnowienie — PDF', opis: '', path: w.pdf_path, rozmiar, at: w.zlozono_at, zalacznik: false });
+			out.push({ klucz: 'wniosek', tytul: 'Wniosek o odnowienie — PDF', opis: '', path: w.pdf_path, rozmiar, at: w.zlozono_at, zalacznik: false, nazwa: nazwaPdfWniosku('Wniosek', w) });
 		}
 		// Ankieta Ergo Hestii: osobny PDF do podpisu klienta (tylko wnioski z zabiegami wymagającymi ankiety).
 		if (ANKIETA_PDF in wBuckecie) {
-			out.push({ klucz: 'ankieta', tytul: 'Ankieta ERGO Hestia — PDF do podpisu', opis: '', path: `${folder}/${ANKIETA_PDF}`, rozmiar: wBuckecie[ANKIETA_PDF] ?? null, at: w.zlozono_at, zalacznik: false });
+			out.push({ klucz: 'ankieta', tytul: 'Ankieta ERGO Hestia — PDF do podpisu', opis: '', path: `${folder}/${ANKIETA_PDF}`, rozmiar: wBuckecie[ANKIETA_PDF] ?? null, at: w.zlozono_at, zalacznik: false, nazwa: nazwaPdfWniosku('Ankieta', w) });
 		}
 		for (const z of w.zalaczniki ?? []) {
 			// Rodzaj + osoba (+ zabieg przy certyfikacie), jak w panelu polisy i e-mailu do biura.
-			out.push({ klucz: z.id, tytul: opisZalacznika(z, w.wniosek?.zmiany?.wykonawcy), opis: z.nazwa, path: z.path, rozmiar: z.rozmiar ?? null, at: z.at ?? null, zalacznik: true });
+			out.push({ klucz: z.id, tytul: opisZalacznika(z, w.wniosek?.zmiany?.wykonawcy), opis: z.nazwa, path: z.path, rozmiar: z.rozmiar ?? null, at: z.at ?? null, zalacznik: true, nazwa: z.nazwa });
 		}
 		return out;
 	}
@@ -1917,10 +1921,11 @@
 											<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
 										</button>
 										{#if f.pdf_url}
-											<button onclick={() => openPdf(f)} title="Ostatni zapisany PDF"
+											<button onclick={() => openPdf(f)} title="Otwórz ostatni zapisany PDF" aria-label="Otwórz ostatni zapisany PDF"
 												class="text-blue-500 hover:text-blue-700">
-												<Download size={12} />
+												<ExternalLink size={12} />
 											</button>
+											<PobierzPlik ikona class="text-blue-500 hover:text-blue-700 disabled:opacity-60" nazwa="ostatni zapisany PDF APK" pobierz={() => downloadStoredFile('apk-pdfs', f.pdf_url, `APK_${bezUkosnikow(f.ref_number)}_${f.form_date}.pdf`)} onblad={(t) => (pdfError = t)} />
 										{/if}
 										{#if appState.profile?.rola === 'ADMIN GOD'}
 											<button onclick={() => deleteApk(f.id)} disabled={deletingApk === f.id}
@@ -1986,12 +1991,14 @@
 													class="text-xs text-blue-600 hover:underline flex items-center gap-1">
 													<FileText size={12} /> PDF APK
 												</button>
+												<PobierzPlik class="text-xs text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-60" nazwa="PDF APK" pobierz={() => downloadStoredFile(BUCKET_ODNOWIEN, `${folderWniosku(w)}/${APK_PDF}`, nazwaPdfWniosku('APK', w))} onblad={(t) => (plikBlad = t)} />
 											{:else if plikiGotowe}
 												<!-- Wniosek sprzed osobnego PDF APK: serwer tworzy PDF z zapisanych odpowiedzi. -->
 												<button type="button" onclick={async () => { plikBlad = await otworzPdfApk(w.id); }}
 													class="text-xs text-blue-600 hover:underline flex items-center gap-1" title="Wniosek sprzed zapisywania PDF APK — PDF powstanie teraz z zapisanych odpowiedzi">
 													<FileText size={12} /> Utwórz PDF APK
 												</button>
+												<PobierzPlik class="text-xs text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-60" nazwa="PDF APK" pobierz={() => pobierzPdfApk(w.id, nazwaPdfWniosku('APK', w))} onblad={(t) => (plikBlad = t)} />
 											{/if}
 											{#if !wniosekNowy(w)}<a href="/policies/{w.polisa_id}" class="text-xs text-blue-600 hover:underline">Karta polisy →</a>{/if}
 										</div>
@@ -2053,8 +2060,9 @@
 										</div>
 										<button type="button" onclick={() => otworzPlikWniosku(f.path, f.zalacznik ? f.opis : f.tytul)}
 											class="shrink-0 inline-flex items-center gap-1.5 text-xs border border-line rounded-lg px-2.5 py-1.5 text-slate-600 bg-white hover:bg-slate-50">
-											<Download size={12} /> Otwórz
+											<ExternalLink size={12} /> Otwórz
 										</button>
+										<PobierzPlik nazwa={f.zalacznik ? f.opis : f.tytul} pobierz={() => downloadStoredFile(BUCKET_ODNOWIEN, f.path, f.nazwa)} onblad={(t) => (plikBlad = t)} />
 									</li>
 								{/each}
 							</ul>

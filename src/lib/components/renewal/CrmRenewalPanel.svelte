@@ -5,7 +5,9 @@
 	import CrmRenewalBadge from './CrmRenewalBadge.svelte';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
-	import { openStoredFile } from '$lib/utils/storageLink';
+	import { downloadStoredFile, openStoredFile } from '$lib/utils/storageLink';
+	import { bezUkosnikow } from '$lib/pobieranie';
+	import PobierzPlik from '$lib/components/PobierzPlik.svelte';
 	import {
 		APK_ODMOWA_TRESC, APK_ODPOWIEDZI, APK_PYTANIA, LICZBA_OSOB, OCHRONA_PRAWNA_SKLADKA, OSWIADCZENIE_ANKIETY,
 		RODZAJE_GABINETU, formatSuma, formatZl, okresOdDaty, opisZalacznika, sumaZeSkladki, wycenaNowej, wycenaWniosku,
@@ -15,7 +17,7 @@
 	import LinkDlaKlienta from './LinkDlaKlienta.svelte';
 	import { appState } from '$lib/stores/app.svelte';
 	import type { Policy, RenewalEvent, RenewalRow } from '$lib/types/database';
-	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, wariantDecyzji, wywolajApi } from './crmRenewals';
+	import { ANKIETA_PDF, czyLinkDziala, fmtData, fmtDataCzas, folderWniosku, opisPrzegladarki, opisZdarzenia, otworzPdfApk, pobierzPdfApk, wariantDecyzji, wywolajApi } from './crmRenewals';
 	import { ZGODA_TYTUL } from '$lib/renewals/zgody';
 	import { ChevronDown, Copy, FileText, Paperclip, Ban, History, Link2, Mail } from 'lucide-svelte';
 
@@ -291,6 +293,13 @@
 		}
 	}
 
+	// „Pobierz”: plik trafia na dysk pod czytelną nazwą — PDF-y z numerem polisy, załączniki pod nazwą od klienta.
+	const dopisekNazwy = $derived(policy?.nr_polisy ? ` ${bezUkosnikow(policy.nr_polisy)}` : '');
+	const nazwaPdf = (rodzaj: 'Wniosek' | 'APK' | 'Ankieta', dzien?: string | null) => `${rodzaj}${dopisekNazwy}${dzien ? ` ${dzien.slice(0, 10)}` : ''}.pdf`;
+	const pokazBlad = (t: string) => (blad = t);
+	// Ikona „Pobierz” doklejona do przycisku „Otwórz” (jedna grupa: lewy otwiera, prawy pobiera).
+	const pobierzObokCls = 'inline-flex items-center -ml-px text-xs border border-line rounded-r-lg px-2 py-1.5 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50';
+
 	// ---------- Opisy odpowiedzi klienta ----------
 
 	// Oświadczenie o odmowie APK w brzmieniu, które klient zaznaczył (dziennik); dla starszych wpisów bieżąca treść.
@@ -490,28 +499,37 @@
 					{/if}
 					{#if latest.apk_at}
 						<!-- PDF APK powstaje od razu po APK; starszym wnioskom serwer tworzy go przy pierwszym otwarciu. -->
-						<button
-							type="button"
-							onclick={async () => {
-								blad = '';
-								blad = await otworzPdfApk(latest!.id);
-							}}
-							class={przyciskCls}
-							data-testid="renewal-pdf-apk"
-						>
-							<FileText size={12} /> PDF APK
-						</button>
+						<span class="inline-flex">
+							<button
+								type="button"
+								onclick={async () => {
+									blad = '';
+									blad = await otworzPdfApk(latest!.id);
+								}}
+								class="{przyciskCls} rounded-r-none"
+								data-testid="renewal-pdf-apk"
+							>
+								<FileText size={12} /> PDF APK
+							</button>
+							<PobierzPlik ikona class={pobierzObokCls} nazwa="PDF APK" pobierz={() => pobierzPdfApk(latest!.id, nazwaPdf('APK'))} onblad={pokazBlad} />
+						</span>
 					{/if}
 					{#if latest.pdf_path}
-						<button type="button" onclick={() => otworzPlik(latest!.pdf_path, 'PDF wniosku')} class={przyciskCls}>
-							<FileText size={12} /> PDF wniosku
-						</button>
+						<span class="inline-flex">
+							<button type="button" onclick={() => otworzPlik(latest!.pdf_path, 'PDF wniosku')} class="{przyciskCls} rounded-r-none">
+								<FileText size={12} /> PDF wniosku
+							</button>
+							<PobierzPlik ikona class={pobierzObokCls} nazwa="PDF wniosku" pobierz={() => downloadStoredFile(BUCKET, latest!.pdf_path, nazwaPdf('Wniosek'))} onblad={pokazBlad} />
+						</span>
 					{/if}
 					{#if latest.ankieta && (plikAnkiety === 'jest' || plikAnkiety === 'nieznany')}
 						<!-- Ankieta Ergo Hestii: osobny PDF do podpisu klienta, ten sam folder co wniosek. -->
-						<button type="button" onclick={() => otworzPlik(`${folderWniosku(latest!)}/${ANKIETA_PDF}`, 'PDF ankiety')} class={przyciskCls} data-testid="renewal-pdf-ankiety">
-							<FileText size={12} /> PDF ankiety
-						</button>
+						<span class="inline-flex">
+							<button type="button" onclick={() => otworzPlik(`${folderWniosku(latest!)}/${ANKIETA_PDF}`, 'PDF ankiety')} class="{przyciskCls} rounded-r-none" data-testid="renewal-pdf-ankiety">
+								<FileText size={12} /> PDF ankiety
+							</button>
+							<PobierzPlik ikona class={pobierzObokCls} nazwa="PDF ankiety" pobierz={() => downloadStoredFile(BUCKET, `${folderWniosku(latest!)}/${ANKIETA_PDF}`, nazwaPdf('Ankieta'))} onblad={pokazBlad} />
+						</span>
 					{:else if brakPdfAnkiety}
 						<span class="text-xs font-semibold text-red-700" data-testid="renewal-brak-pdf-ankiety">PDF ankiety nie powstał</span>
 					{/if}
@@ -599,6 +617,7 @@
 											{opisZalacznika(z, r.wniosek?.zmiany?.wykonawcy)} · {rozmiar(z.rozmiar)}{z.at ? ` · ${fmtDataCzas(z.at)}` : ''}
 										</p>
 									</div>
+									<PobierzPlik nazwa={z.nazwa} pobierz={() => downloadStoredFile(BUCKET, z.path, z.nazwa)} onblad={pokazBlad} />
 								</li>
 							{/each}
 						</ul>
@@ -740,9 +759,12 @@
 									wysłano {fmtData(h.wyslano_at)}{h.zlozono_at ? ` · złożono ${fmtData(h.zlozono_at)}` : ''}
 								</span>
 								{#if h.pdf_path}
-									<button type="button" onclick={() => otworzPlik(h.pdf_path, 'PDF wniosku')} class="{przyciskCls} ml-auto">
-										<FileText size={12} /> PDF
-									</button>
+									<span class="inline-flex ml-auto">
+										<button type="button" onclick={() => otworzPlik(h.pdf_path, 'PDF wniosku')} class="{przyciskCls} rounded-r-none">
+											<FileText size={12} /> PDF
+										</button>
+										<PobierzPlik ikona class={pobierzObokCls} nazwa="PDF wniosku" pobierz={() => downloadStoredFile(BUCKET, h.pdf_path, nazwaPdf('Wniosek', h.zlozono_at ?? h.wyslano_at))} onblad={pokazBlad} />
+									</span>
 								{/if}
 							</li>
 						{/each}

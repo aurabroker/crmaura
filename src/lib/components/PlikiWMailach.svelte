@@ -5,6 +5,8 @@
 	import { fmtDzien } from '$lib/utils';
 	import { podmienPlikPubliczny, rozmiar, wczytajPlikiPubliczne, type PlikPubliczny } from '$lib/plikiPolis';
 	import { Copy, ExternalLink, Link2, Upload } from 'lucide-svelte';
+	import { nazwaPliku, pobierzZAdresu } from '$lib/pobieranie';
+	import PobierzPlik from './PobierzPlik.svelte';
 
 	let pliki = $state<PlikPubliczny[]>([]);
 	let mozeZmieniac = $state(false);
@@ -84,6 +86,8 @@
 						<button onclick={() => kopiuj(p)} title="Kopiuj link" aria-label="Kopiuj link: {p.opis}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><Copy size={15} /></button>
 						{#if p.w_magazynie || p.ze_zrodla}
 							<a href={p.adres} target="_blank" rel="noopener noreferrer" title="Otwórz" aria-label="Otwórz: {p.opis}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><ExternalLink size={15} /></a>
+							<!-- Ten sam plik co pod publicznym adresem, pobrany przez /media tej aplikacji. -->
+							<PobierzPlik ikona rozmiar={15} nazwa={p.opis} pobierz={() => pobierzZAdresu(`/media/${p.sciezka}`, nazwaPliku(p.sciezka))} />
 						{/if}
 						{#if mozeZmieniac}
 							<label class="h-8 inline-flex items-center gap-1.5 px-2.5 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-surface-2 cursor-pointer {wysylany === p.sciezka ? 'opacity-60 pointer-events-none' : ''}">
