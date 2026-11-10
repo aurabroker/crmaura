@@ -48,9 +48,22 @@
 	const grupy = $derived(wymiar === 'okres' ? new Map() : grupuj(wOkr, (p) => klucz(p, wymiar)));
 	const dostepne = $derived([...grupy.entries()].sort((a, b) => b[1].przypis - a[1].przypis).map(([k]) => k as string));
 	// Domyślnie 3 największe (według przypisu w okresie); wybór zapamiętany osobno dla każdego wymiaru.
-	const encje = $derived((wybrane[wymiar] ?? dostepne.slice(0, 3)).filter((k) => dostepne.includes(k)).slice(0, 4));
+	// Bez limitu pozycji: można porównać wszystkie towarzystwa, rodzaje albo opiekunów z polisami w okresie —
+	// tabele dostają wtedy stałą szerokość kolumn i przewijają się w poziomie, a nazwy wskaźników zostają na miejscu.
+	const DOMYSLNIE = 3;
+	const encje = $derived((wybrane[wymiar] ?? dostepne.slice(0, DOMYSLNIE)).filter((k) => dostepne.includes(k)));
+	const wybraneDomyslne = $derived(encje.length === Math.min(DOMYSLNIE, dostepne.length) && encje.every((k, i) => k === dostepne[i]));
 	function usun(k: string) { wybrane = { ...wybrane, [wymiar]: encje.filter((x) => x !== k) }; }
-	function dodaj(k: string) { if (k) wybrane = { ...wybrane, [wymiar]: [...encje, k].slice(0, 4) }; }
+	function dodaj(k: string) { if (k && !encje.includes(k)) wybrane = { ...wybrane, [wymiar]: [...encje, k] }; }
+	function dodajWszystkie() { wybrane = { ...wybrane, [wymiar]: [...dostepne] }; }
+	function przywrocDomyslne() { wybrane = { ...wybrane, [wymiar]: undefined }; }
+	// Szerokość tabel przy wielu pozycjach: kolumna nazw + stała szerokość każdej porównywanej pozycji.
+	const SZER_POZYCJI = 172;
+	const szerMacierzy = $derived(Math.max(640, 200 + encje.length * SZER_POZYCJI));
+	const szerMiesiecy = $derived(Math.max(480, 150 + encje.length * 132));
+	// Szerokość okna z macierzą — gdy tabela jest szersza, nagłówek podpowiada przewijanie w prawo.
+	let szerOknaMacierzy = $state(0);
+	const macierzPrzewijana = $derived(szerOknaMacierzy > 0 && szerMacierzy > szerOknaMacierzy + 1);
 
 	// ── Macierz wskaźników ──
 	const ugBez = $derived(ugBezRozliczania(appState.policies));
@@ -163,7 +176,7 @@
 			.sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b))
 			.slice(0, 10);
 	});
-	// Eksport do Excela: macierz wskaźników dla wszystkich pozycji wymiaru (nie tylko 4 na ekranie) z przypisem
+	// Eksport do Excela: macierz wskaźników dla wszystkich pozycji wymiaru (nie tylko wybranych na ekranie) z przypisem
 	// miesiąc po miesiącu, a w widoku „Okresy” — dwa okresy obok siebie i towarzystwa w obu okresach.
 	function arkuszePorownan(): Arkusz[] {
 		if (wymiar === 'okres') {
@@ -241,7 +254,7 @@
 					<button onclick={() => usun(k)} aria-label="Usuń z porównania: {nazwa(k, wymiar)}" class="w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={12} /></button>
 				</span>
 			{/each}
-			{#if encje.length < 4 && dostepne.some((k) => !encje.includes(k))}
+			{#if dostepne.some((k) => !encje.includes(k))}
 				<label class="relative inline-flex items-center h-8 px-2.5 rounded-lg border border-dashed border-[#C4CAD4] text-[13px] font-medium text-ink-2 hover:bg-surface-2 focus-within:ring-2 focus-within:ring-accent/40">
 					<Plus size={14} class="mr-1" /> Dodaj
 					<select aria-label="Dodaj do porównania" value="" onchange={(e) => { dodaj((e.currentTarget as HTMLSelectElement).value); (e.currentTarget as HTMLSelectElement).value = ''; }} class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
@@ -249,6 +262,10 @@
 						{#each dostepne.filter((k) => !encje.includes(k)) as k}<option value={k}>{nazwa(k, wymiar)}</option>{/each}
 					</select>
 				</label>
+				<button type="button" onclick={dodajWszystkie} class="h-8 px-2 rounded-lg text-[13px] font-semibold text-accent-text hover:bg-surface-2" data-testid="por-wszystkie">Wszystkie ({dostepne.length})</button>
+			{/if}
+			{#if !wybraneDomyslne && dostepne.length > DOMYSLNIE}
+				<button type="button" onclick={przywrocDomyslne} class="h-8 px-2 rounded-lg text-[13px] font-medium text-ink-2 hover:bg-surface-2" title="Wróć do {DOMYSLNIE} pozycji z największym przypisem w okresie">{DOMYSLNIE} największe</button>
 			{/if}
 		</div>
 		<label class="sm:ml-auto relative inline-flex items-center h-8 rounded-lg border border-line bg-white text-[13px] font-medium text-ink focus-within:ring-2 focus-within:ring-accent/40">
@@ -284,18 +301,18 @@
 			<div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line-soft">
 				<div class="flex-1 min-w-[220px]">
 					<h2 id="por-macierz" class="text-[15px] font-semibold text-ink">Wskaźniki obok siebie</h2>
-					<span class="text-xs text-ink-3">pasek pokazuje wartość względem najwyższej w wierszu</span>
+					<span class="text-xs text-ink-3">pasek pokazuje wartość względem najwyższej w wierszu{#if macierzPrzewijana}{` · ${odmiana(encje.length, 'pozycja', 'pozycje', 'pozycji')}, przewiń tabelę w prawo`}{/if}</span>
 				</div>
 				<span class="flex gap-3 text-xs text-ink-2">
 					<span class="flex items-center gap-1"><Award size={14} class="text-ok" /> najlepszy w wierszu</span>
 					<span class="flex items-center gap-1"><AlertTriangle size={14} class="text-warn" /> wymaga uwagi</span>
 				</span>
 			</div>
-			<div class="overflow-x-auto">
-				<table class="w-full min-w-[640px] table-fixed text-[13px]">
+			<div class="overflow-x-auto" bind:clientWidth={szerOknaMacierzy}>
+				<table class="w-full table-fixed text-[13px]" style="min-width: {szerMacierzy}px" data-testid="por-macierz-tabela">
 					<thead>
 						<tr class="bg-surface-2 text-ink-2 text-left">
-							<th class="px-4 py-2.5 font-semibold w-[200px]">Wskaźnik</th>
+							<th class="sticky left-0 z-[1] bg-surface-2 px-4 py-2.5 font-semibold w-[136px] sm:w-[200px] shadow-[1px_0_0_var(--color-line-soft)]">Wskaźnik</th>
 							{#each kolumnyMacierzy as c (c.k)}
 								<th class="px-4 py-2.5 font-semibold">
 									<span class="block text-ink">{c.nazwa}</span>
@@ -308,7 +325,7 @@
 						{#each WIERSZE as w}
 							{@const maks = Math.max(0, ...kolumnyMacierzy.map(w.wartosc))}
 							<tr class="border-t border-line-soft align-top">
-								<th scope="row" class="px-4 py-2.5 text-left font-normal">
+								<th scope="row" class="sticky left-0 z-[1] bg-white px-4 py-2.5 text-left font-normal shadow-[1px_0_0_var(--color-line-soft)]">
 									<span class="block font-medium text-ink">{w.etykieta}</span>
 									<span class="block text-xs text-ink-3">{w.podpowiedz}</span>
 								</th>
@@ -388,17 +405,17 @@
 				</div>
 			{:else}
 				<div class="overflow-x-auto">
-					<table class="w-full min-w-[480px] text-[13px]">
+					<table class="w-full text-[13px]" style="min-width: {szerMiesiecy}px">
 						<thead>
 							<tr class="bg-surface-2 text-ink-2 text-left">
-								<th class="px-3 py-2 font-semibold">Miesiąc</th>
-								{#each seriaMies as s (s.k)}<th class="px-3 py-2 font-semibold text-right">{s.nazwa}</th>{/each}
+								<th class="sticky left-0 z-[1] bg-surface-2 px-3 py-2 font-semibold shadow-[1px_0_0_var(--color-line-soft)]">Miesiąc</th>
+								{#each seriaMies as s (s.k)}<th class="px-3 py-2 font-semibold text-right whitespace-nowrap">{s.nazwa}</th>{/each}
 							</tr>
 						</thead>
 						<tbody>
 							{#each seriaMies[0]?.mies ?? [] as m, i (m.ym)}
 								<tr class="border-t border-line-soft">
-									<td class="px-3 py-1.5">{miesiacPelny(m.ym)}</td>
+									<td class="sticky left-0 z-[1] bg-white px-3 py-1.5 whitespace-nowrap shadow-[1px_0_0_var(--color-line-soft)]">{miesiacPelny(m.ym)}</td>
 									{#each seriaMies as s (s.k)}<td class="px-3 py-1.5 text-right tabular-nums">{zl(s.mies[i].s.przypis)}</td>{/each}
 								</tr>
 							{/each}
