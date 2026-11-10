@@ -2,13 +2,16 @@
 // treść z kubełka R2 (patrz $lib/server/plikiPubliczne). Bez logowania — linki trafiają do klientów.
 import { error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { plikPubliczny } from '$lib/server/plikiPubliczne';
+import { GENEROWANA_ANKIETA, plikPubliczny } from '$lib/server/plikiPubliczne';
+import { pdfAnkietaPusta } from '$lib/server/renewalDocs';
 
 export const GET: RequestHandler = async ({ params, platform, url }) => {
 	const kubelek = platform?.env?.POLISY_PDF;
 	if (!kubelek) throw error(503, 'Magazyn plików nie jest skonfigurowany.');
 	// Źródło „/dokumenty/…” to zasób statyczny aplikacji (binding ASSETS, jak czcionki w $lib/server/pdf).
-	const plik = await plikPubliczny(kubelek, params.sciezka, (zrodlo) => {
+	const plik = await plikPubliczny(kubelek, params.sciezka, async (zrodlo) => {
+		// Czysty formularz ankiety powstaje tutaj — raz na wersję listy zabiegów, potem leży w kubełku.
+		if (zrodlo.startsWith(GENEROWANA_ANKIETA)) return new Response(new Blob([(await pdfAnkietaPusta({ url, platform })) as BlobPart]));
 		if (!zrodlo.startsWith('/')) return fetch(zrodlo, { redirect: 'follow' });
 		const adres = new URL(zrodlo, url.origin);
 		const assets = platform?.env?.ASSETS;

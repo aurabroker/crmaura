@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PLIKI_PUBLICZNE, plikPubliczny } from './plikiPubliczne.ts';
+import { GENEROWANA_ANKIETA, PLIKI_PUBLICZNE, plikPubliczny } from './plikiPubliczne.ts';
 
 const SCIEZKA = 'beautypolisa/lista-zabiegow-kosmetyczne-fryzjerskie.pdf';
 const KLUCZ = `publiczne/${SCIEZKA}`;
@@ -79,4 +79,21 @@ test('pierwsze żądanie bez kopii zapisuje plik ze źródła', async () => {
 	const plik = await plikPubliczny(b.k, SCIEZKA, pobierz('lista'));
 	assert.equal(tekst(plik!.dane), '%PDF-1.7 lista');
 	assert.deepEqual(b.zapisy, [KLUCZ]);
+});
+
+test('czysty formularz ankiety: źródło generowane ze skrótem listy zabiegów, stara kopia z GetResponse jest zastępowana', async () => {
+	const sciezka = 'beautypolisa/ankieta-oceny-ryzyka.pdf';
+	const klucz = `publiczne/${sciezka}`;
+	const z = PLIKI_PUBLICZNE[sciezka].zrodlo!;
+	assert.match(z, new RegExp(`^${GENEROWANA_ANKIETA}/u\\d+-[0-9a-f]{8}$`));
+	assert.match(PLIKI_PUBLICZNE[sciezka].opis, /Aneks nr 5/);
+	const b = kubelek({ [klucz]: { dane: pdf('formularz z dawnymi nazwami'), customMetadata: { zrodlo: 'https://us-wbe-img2.gr-cdn.com/user/x/ankieta.pdf' } } });
+	const w: string[] = [];
+	const plik = await plikPubliczny(b.k, sciezka, pobierz('formularz wg aneksu', w));
+	assert.equal(tekst(plik!.dane), '%PDF-1.7 formularz wg aneksu');
+	assert.deepEqual(w, [z]);
+	assert.deepEqual(b.obiekty.get(klucz)?.customMetadata, { zrodlo: z });
+	// Kopia z obecnej wersji listy: formularz nie jest rysowany ponownie.
+	await plikPubliczny(b.k, sciezka, pobierz('kolejny', w));
+	assert.equal(w.length, 1);
 });
