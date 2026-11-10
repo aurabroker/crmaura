@@ -20,7 +20,7 @@
 	import { logAudit } from '$lib/utils/audit';
 	import { Sortowanie } from '$lib/utils/sortowanie.svelte';
 	import { dateDiffDays, fmtDzien, fmtPln, fmtTermin, inicjaly, miastoZAdresu, odmiana, todayStr } from '$lib/utils';
-	import { klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
+	import { klientNieaktywny, odnowionePolisy, opisNieaktywnosci, polisaAktywna, polisaNiezakonczona } from '$lib/statusPolisy';
 	import { programOcBeauty } from '$lib/components/renewal/crmRenewals';
 	import KlientNieaktywny from '$lib/components/KlientNieaktywny.svelte';
 	import { przywrocKlienta } from '$lib/zakonczenie';
@@ -192,16 +192,22 @@
 
 	// ── Portfel klienta: aktywne polisy (ubezpieczający), składka, najbliższe odnowienie ──
 	const dzis = todayStr();
-	type Portfel = { polisy: number; skladka: number; odnowienie: string | null; tu: Set<string>; rodzaje: Set<string> };
+	// Liczba polis i składka: tylko polisy aktywne, czyli takie, których okres ubezpieczenia obejmuje dziś. Polisa
+	// wystawiona na okres, który się jeszcze nie zaczął (np. wznowienie), jest liczona osobno jako oczekująca.
+	type Portfel = { polisy: number; skladka: number; oczekujace: number; odnowienie: string | null; tu: Set<string>; rodzaje: Set<string> };
+	const odnowione = $derived(odnowionePolisy(appState.policies));
 	const portfele = $derived.by(() => {
 		const m = new Map<string, Portfel>();
 		for (const p of appState.policies) {
-			if (p.deleted_at || !polisaAktywna(p, dzis)) continue;
+			if (p.deleted_at || !polisaNiezakonczona(p, dzis)) continue;
 			let w = m.get(p.klient_id);
-			if (!w) { w = { polisy: 0, skladka: 0, odnowienie: null, tu: new Set(), rodzaje: new Set() }; m.set(p.klient_id, w); }
-			w.polisy++;
-			w.skladka += Number(p.skladka_przypisana ?? 0);
-			if (p.data_do && (!w.odnowienie || p.data_do < w.odnowienie)) w.odnowienie = p.data_do;
+			if (!w) { w = { polisy: 0, skladka: 0, oczekujace: 0, odnowienie: null, tu: new Set(), rodzaje: new Set() }; m.set(p.klient_id, w); }
+			if (polisaAktywna(p, dzis)) {
+				w.polisy++;
+				w.skladka += Number(p.skladka_przypisana ?? 0);
+			} else w.oczekujace++;
+			// Polisa, która ma już wznowienie, nie wyznacza terminu odnowienia — liczy się koniec jej następczyni.
+			if (p.data_do && !odnowione.has(p.id) && (!w.odnowienie || p.data_do < w.odnowienie)) w.odnowienie = p.data_do;
 			if (p.tu_id) w.tu.add(p.tu_id);
 			if (p.rodzaj) w.rodzaje.add(p.rodzaj);
 		}
@@ -231,7 +237,7 @@
 	const SEGMENTY: [Segment, string][] = [['wszyscy', 'Wszyscy'], ['portfel', 'Z polisami'], ['bez', 'Bez polis'], ['rodo', 'Bez zgody RODO']];
 	const podpowiedz = $derived.by(() => {
 		if (segment === 'wszyscy') return 'Cała kartoteka, także firmy z importu BEAUTY bez polis. Prawy przycisk myszy na kliencie: więcej akcji.';
-		if (segment === 'portfel') return 'Klienci z co najmniej jedną aktywną polisą (jako ubezpieczający).';
+		if (segment === 'portfel') return 'Klienci z co najmniej jedną aktywną albo oczekującą na początek okresu polisą (jako ubezpieczający).';
 		if (segment === 'bez') {
 			const proc = liczSeg.wszyscy ? Math.round((liczSeg.bez / liczSeg.wszyscy) * 100) : 0;
 			const beauty = wiersze.filter(w => !w.p && w.c.beauty_id != null).length;
@@ -609,7 +615,7 @@
 						<span class="block text-xs text-ink-3">{podpis(c)}{opiekun ? ` · ${opiekun}` : ''}</span>
 						{#if p}
 							<span class="block mt-1 text-[13px] text-ink-2 tabular-nums">
-								{odmiana(p.polisy, 'polisa', 'polisy', 'polis')} · {fmtPln(p.skladka)} zł
+								{odmiana(p.polisy, 'polisa', 'polisy', 'polis')} · {fmtPln(p.skladka)} zł{#if p.oczekujace}{` · ${odmiana(p.oczekujace, 'oczekująca', 'oczekujące', 'oczekujących')}`}{/if}
 								{#if p.odnowienie} · <span class={blisko(p.odnowienie) ? 'text-warn font-semibold' : ''}>odnowienie {fmtDzien(p.odnowienie)}</span>{/if}
 							</span>
 						{/if}
@@ -652,7 +658,7 @@
 							<td class="px-3 {py} font-mono text-xs whitespace-nowrap text-ink-2">
 								{#if c.nip}{c.nip}{:else if c.pesel}<span title="PESEL — pełny w profilu klienta">{maskaPesel(c.pesel)}</span>{:else}<span class="text-ink-3">—</span>{/if}
 							</td>
-							<td class="px-3 {py} text-right tabular-nums">{p ? p.polisy : '—'}</td>
+							<td class="px-3 {py} text-right tabular-nums">{p ? p.polisy : '—'}{#if p?.oczekujace}<span class="block text-[11px] text-ink-3 whitespace-nowrap" title="Polisy wystawione na okres, który się jeszcze nie zaczął — nie wchodzą do liczby aktywnych ani do składki">+{p.oczekujace} oczek.</span>{/if}</td>
 							<td class="px-3 {py} text-right tabular-nums whitespace-nowrap">{p ? `${fmtPln(p.skladka)} zł` : '—'}</td>
 							<td class="px-3 {py} whitespace-nowrap">
 								{#if p?.odnowienie}

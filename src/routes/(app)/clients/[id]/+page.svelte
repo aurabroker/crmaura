@@ -17,7 +17,7 @@
 	import { vehicleLabel } from '$lib/hestia/pojazd';
 	import { ETYKIETA_ETAPU, KLASA_ETAPU, ETYKIETA_ZAINTERESOWANIA, OPIS_ZAINTERESOWANIA, ZRODLO_LEADA, nazwaKampanii, opisZrodlaZgloszenia, posortujZainteresowania, stanMaila, type MailKampanii, type Zgloszenie } from '$lib/sprzedaz';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu, klientNieaktywny, opisNieaktywnosci, polisaAktywna } from '$lib/statusPolisy';
+	import { statusPolisy as statusPolisyWspolny, nazwaRodzaju, nazwaTu, klientNieaktywny, opisNieaktywnosci, polisaAktywna, polisaNiezakonczona, polisaOczekujaca } from '$lib/statusPolisy';
 	import { adresOdnowieniaRecznego } from '$lib/formularzPolisy';
 	import { przywrocKlienta } from '$lib/zakonczenie';
 	import KlientNieaktywny from '$lib/components/KlientNieaktywny.svelte';
@@ -140,8 +140,12 @@
 	const clientApk = $derived(appState.apkForms.filter(f => f.klient_id === clientId));
 	const hasPortal = $derived(!!client?.auth_user_id);
 
-	const totalPrzyp = $derived(ownPolicies.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
-	const totalOpl = $derived(ownPolicies.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
+	// Saldo składek: bez polis oczekujących — składka polisy wystawionej na okres, który się jeszcze nie zaczął, nie jest należna.
+	const oczekujaceWlasne = $derived(ownPolicies.filter(p => polisaOczekujaca(p, dzisPolisy)));
+	const skladkaOczekujacych = $derived(oczekujaceWlasne.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
+	const rozliczaneWlasne = $derived(ownPolicies.filter(p => !polisaOczekujaca(p, dzisPolisy)));
+	const totalPrzyp = $derived(rozliczaneWlasne.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
+	const totalOpl = $derived(rozliczaneWlasne.reduce((s, p) => s + Number(p.skladka_zainkasowana ?? 0), 0));
 	const activeClaims = $derived(clientClaims.filter(c => c.status === 'Zgłoszona' || c.status === 'W toku'));
 
 	const renewedPolicyIds = $derived(
@@ -174,9 +178,13 @@
 
 	// Zakładka Polisy: aktywne i archiwum — sortowanie po kliknięciu w nagłówek kolumny.
 	const dzisPolisy = new Date().toISOString().slice(0, 10);
-	// Aktywność z końca ochrony: data_do albo wcześniejsze zakończenie decyzją (od dnia).
+	// Aktywna: okres ubezpieczenia obejmuje dziś (początek dziś albo wcześniej; koniec ochrony z data_do albo z wcześniejszego
+	// zakończenia decyzją). Oczekująca: wystawiona na okres, który się jeszcze nie zaczął — widać ją na liście bieżących
+	// polis ze statusem „Oczekująca”, ale nie wchodzi do liczby aktywnych ani do składki. Archiwum: ochrona się skończyła.
 	const activePolicies = $derived(clientPolicies.filter(p => polisaAktywna(p, dzisPolisy)));
-	const archivedPolicies = $derived(clientPolicies.filter(p => !polisaAktywna(p, dzisPolisy) && p.deleted_at === null));
+	const oczekujacePolicies = $derived(clientPolicies.filter(p => polisaOczekujaca(p, dzisPolisy)));
+	const biezacePolicies = $derived(clientPolicies.filter(p => polisaNiezakonczona(p, dzisPolisy)));
+	const archivedPolicies = $derived(clientPolicies.filter(p => !polisaNiezakonczona(p, dzisPolisy) && p.deleted_at === null));
 	const kolumnyPolis = {
 		nr: (p: Policy) => p.nr_polisy,
 		tu: (p: Policy) => p.crm_insurers?.skrot || p.crm_insurers?.nazwa,
@@ -188,7 +196,7 @@
 	};
 	const sortAktywne = new Sortowanie<Policy>(kolumnyPolis, { klucz: 'nr' }, 'klient-polisy-aktywne');
 	const sortArchiwum = new Sortowanie<Policy>(kolumnyPolis, { klucz: 'nr' }, 'klient-polisy-archiwum');
-	const aktywneWiersze = $derived(sortAktywne.sortuj(activePolicies));
+	const aktywneWiersze = $derived(sortAktywne.sortuj(biezacePolicies));
 	const archiwumWiersze = $derived(sortArchiwum.sortuj(archivedPolicies));
 
 	const sortGwarancje = new Sortowanie<Policy>({
@@ -914,9 +922,10 @@
 	const aktywneWlasne = $derived(ownPolicies.filter(p => polisaAktywna(p, dzis)));
 	const skladkaAktywnych = $derived(aktywneWlasne.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0));
 	const prowizjaAktywnych = $derived(aktywneWlasne.reduce((s, p) => s + Number(p.prowizja_przypisana ?? 0), 0));
+	// Termin odnowienia wyznacza też polisa oczekująca (wznowienie na kolejny okres) — poprzedniczka ma już następczynię.
 	const najblizszeOdnowienie = $derived(
-		aktywneWlasne
-			.filter(p => p.data_do && !renewedPolicyIds.has(p.id))
+		ownPolicies
+			.filter(p => polisaNiezakonczona(p, dzis) && p.data_do && !renewedPolicyIds.has(p.id))
 			.sort((a, b) => a.data_do.localeCompare(b.data_do))[0] ?? null
 	);
 	const rodzajeAktywnych = $derived([...new Set(activePolicies.map(p => nazwaRodzaju(p.rodzaj)).filter(Boolean))].join(', '));
@@ -925,7 +934,7 @@
 	/** Status polisy do chipów (Przegląd i zakładka Polisy) — reguły wspólne z listą Polis. */
 	const statusPolisy = (p: Policy) => statusPolisyWspolny(p, { dzis, odnowione: renewedPolicyIds, zZaleglaRata: polisyZZaleglaRata });
 	const aktywneNaPrzeglad = $derived(
-		[...activePolicies].sort((a, b) => (a.data_do ?? '9999').localeCompare(b.data_do ?? '9999')).slice(0, 5)
+		[...biezacePolicies].sort((a, b) => (a.data_do ?? '9999').localeCompare(b.data_do ?? '9999')).slice(0, 5)
 	);
 	const otwarteZadania = $derived(
 		clientTasks
@@ -1226,12 +1235,12 @@
 
 	<!-- Podsumowanie -->
 	<section aria-label="Podsumowanie klienta" class="grid grid-cols-2 lg:grid-cols-4 bg-white border border-line rounded-xl overflow-hidden mb-4">
-		<button onclick={() => (activeTab = 'polisy')} class="text-left px-4 py-3.5 flex flex-col gap-0.5 border-r border-b lg:border-b-0 border-line-soft hover:bg-bg">
+		<button onclick={() => (activeTab = 'polisy')} class="text-left px-4 py-3.5 flex flex-col gap-0.5 border-r border-b lg:border-b-0 border-line-soft hover:bg-bg" title="Polisy, których okres ubezpieczenia obejmuje dzisiejszy dzień. Polisa wystawiona na okres, który się jeszcze nie zaczął, jest oczekująca.">
 			<span class="text-xs text-ink-3">Aktywne polisy</span>
 			<span class="text-xl font-semibold tabular-nums text-ink">{activePolicies.length} <span class="text-[13px] font-normal text-ink-3">z {clientPolicies.length}</span></span>
-			<span class="text-xs text-ink-2 truncate">{rodzajeAktywnych || 'brak aktywnych polis'}</span>
+			<span class="text-xs text-ink-2 truncate">{rodzajeAktywnych || 'brak aktywnych polis'}{#if oczekujacePolicies.length}{` · ${odmiana(oczekujacePolicies.length, 'oczekująca', 'oczekujące', 'oczekujących')}`}{/if}</span>
 		</button>
-		<button onclick={() => (dashModal = 'skladki')} class="text-left px-4 py-3.5 flex flex-col gap-0.5 border-b lg:border-b-0 lg:border-r border-line-soft hover:bg-bg" title="Suma składek przypisanych aktywnych polis, w których klient jest ubezpieczającym">
+		<button onclick={() => (dashModal = 'skladki')} class="text-left px-4 py-3.5 flex flex-col gap-0.5 border-b lg:border-b-0 lg:border-r border-line-soft hover:bg-bg" title="Suma składek przypisanych polis aktywnych dziś, w których klient jest ubezpieczającym. Składka polisy oczekującej na początek okresu nie jest jeszcze należna.">
 			<span class="text-xs text-ink-3">Składka aktywnych polis</span>
 			<span class="text-xl font-semibold tabular-nums text-ink whitespace-nowrap">{fmtPln(skladkaAktywnych)} zł</span>
 			<span class="text-xs text-ink-2 tabular-nums">prowizja {fmtPln(prowizjaAktywnych)} zł</span>
@@ -1287,7 +1296,7 @@
 				<!-- Aktywne polisy -->
 				<section aria-labelledby="przeglad-polisy" class="bg-white border border-line rounded-xl overflow-hidden">
 					<div class="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-line-soft">
-						<h2 id="przeglad-polisy" class="text-[15px] font-semibold text-ink">Aktywne polisy</h2>
+						<h2 id="przeglad-polisy" class="text-[15px] font-semibold text-ink">{oczekujacePolicies.length ? 'Aktywne i oczekujące polisy' : 'Aktywne polisy'}</h2>
 						{#if hasGrupowe}
 							<button onclick={() => (dashModal = 'grupowe')} class="ml-2 inline-flex items-center gap-1 h-6 px-2 rounded-full bg-surface-2 text-xs font-semibold text-ink-2 hover:bg-line-soft"><Users size={12} /> grupowe {grupowePolicies.length}</button>
 						{/if}
@@ -1295,7 +1304,7 @@
 					</div>
 					{#if aktywneNaPrzeglad.length === 0}
 						<div class="px-4 py-8 text-center">
-							<p class="text-sm text-ink-3">Klient nie ma aktywnych polis.</p>
+							<p class="text-sm text-ink-3">Klient nie ma aktywnych ani oczekujących polis.</p>
 							<a href="/policies/new?klient={clientId}" class="mt-2 inline-block text-[13px] font-semibold text-accent-text hover:underline">Dodaj polisę →</a>
 						</div>
 					{:else}
@@ -1372,7 +1381,7 @@
 
 			<aside class="flex-[1_1_300px] min-w-0 flex flex-col gap-4">
 				<!-- Sprzedaż -->
-				{#if lead || zgloszeniaKlienta.length || maileKampanii.length || activePolicies.length === 0}
+				{#if lead || zgloszeniaKlienta.length || maileKampanii.length || biezacePolicies.length === 0}
 					<section aria-labelledby="przeglad-sprzedaz" class="bg-white border border-line rounded-xl px-4 py-3.5">
 						<div class="flex items-center gap-2 mb-2">
 							<h2 id="przeglad-sprzedaz" class="text-[15px] font-semibold text-ink">Sprzedaż</h2>
@@ -1553,7 +1562,7 @@
 							</td>
 						</tr>
 					{:else}
-						<tr><td colspan="7" class="px-4 py-8 text-center text-ink-3">Brak aktywnych polis</td></tr>
+						<tr><td colspan="7" class="px-4 py-8 text-center text-ink-3">Brak aktywnych i oczekujących polis</td></tr>
 					{/each}
 				</tbody>
 			</table>
@@ -1783,7 +1792,7 @@
 			<div class="px-4 py-3.5 border-b sm:border-b-0 sm:border-r border-line-soft">
 				<p class="text-xs text-ink-3">Składka przypisana</p>
 				<p class="text-xl font-semibold tabular-nums text-ink">{fmtPln(totalPrzyp)} zł</p>
-				<p class="text-xs text-ink-2">polisy, w których klient jest ubezpieczającym</p>
+				<p class="text-xs text-ink-2">polisy, w których klient jest ubezpieczającym{#if oczekujaceWlasne.length}{`; bez ${odmiana(oczekujaceWlasne.length, 'polisy oczekującej', 'polis oczekujących', 'polis oczekujących')} na początek okresu (${fmtPln(skladkaOczekujacych)} zł)`}{/if}</p>
 			</div>
 			<div class="px-4 py-3.5 border-b sm:border-b-0 sm:border-r border-line-soft">
 				<p class="text-xs text-ink-3">Składka zainkasowana</p>
@@ -2395,7 +2404,7 @@
 			<tbody>
 				{#each skladkiWiersze as p}
 					<tr class="border-t border-line-soft">
-						<td class="py-2"><a href="/policies/{p.id}" class="text-blue-700 hover:underline">{p.nr_polisy}</a></td>
+						<td class="py-2"><a href="/policies/{p.id}" class="text-blue-700 hover:underline">{p.nr_polisy}</a>{#if polisaOczekujaca(p, dzisPolisy)} <span class="ml-1 px-1.5 rounded-full bg-accent-soft text-accent-text text-[11px] font-semibold whitespace-nowrap" title="Okres ubezpieczenia jeszcze się nie zaczął — składka nie wchodzi do sum powyżej">oczekująca od {fmtDzien(p.data_od)}</span>{/if}</td>
 						<td class="py-2 text-right font-medium">{fmtPln(p.skladka_przypisana)}</td>
 					</tr>
 				{/each}
@@ -2408,7 +2417,7 @@
 	{#snippet footer()}<button onclick={() => dashModal = null} class="px-4 py-2 text-sm border border-line rounded-lg text-slate-600 hover:bg-slate-50">Zamknij</button>{/snippet}
 	<div class="space-y-2">
 		{#each grupowePolicies as p}
-			{@const st = policyStatus(p.data_do)}
+			{@const st = policyStatus(p.data_do, p.zakonczona_od, p.data_od)}
 			<div class="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
 				<div>
 					<a href="/policies/{p.id}" class="font-medium text-blue-700 hover:underline">{p.nr_polisy}</a>
@@ -2416,7 +2425,7 @@
 				</div>
 				<div class="text-right">
 					<p class="font-medium text-sm">{fmtPln(p.skladka_przypisana)}</p>
-					<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+					<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : st.badge === 'badge-info' ? 'info' : 'success'}>{st.label}</Badge>
 				</div>
 			</div>
 		{/each}

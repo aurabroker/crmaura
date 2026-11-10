@@ -591,7 +591,7 @@
 	const portfel = $derived.by(() => {
 		const rok = String(thisYear);
 		const umowy = appState.policies.filter((p) => p.typ_umowy !== 'generalna');
-		const aktywne = umowy.filter((p) => p.data_od <= today && polisaAktywna(p, today)).length;
+		const aktywne = umowy.filter((p) => polisaAktywna(p, today)).length;
 		const wRoku = umowy.filter((p) => p.data_od?.startsWith(rok));
 		const przypis = wRoku.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0);
 		const prowizja = wRoku.reduce((s, p) => s + Number(p.prowizja_przypisana ?? 0), 0);

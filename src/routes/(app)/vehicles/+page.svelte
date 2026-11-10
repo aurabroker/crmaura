@@ -46,7 +46,7 @@
 	}
 
 	function aktywnaPolisa(vehicleId: string) {
-		return polisyPojazdu(vehicleId).find((p) => p.data_od <= today && polisaAktywna(p, today)) ?? null;
+		return polisyPojazdu(vehicleId).find((p) => polisaAktywna(p, today)) ?? null;
 	}
 
 	const pojazdy = $derived(
@@ -99,7 +99,7 @@
 
 	// Sortowanie historii polis rozwiniętego pojazdu (rozwinięty jest zawsze jeden).
 	// Domyślnie jak dotąd: najnowsze (data_od) pierwsze.
-	const czynnaPolisa = (p: Policy) => p.data_od <= today && polisaAktywna(p, today);
+	const czynnaPolisa = (p: Policy) => polisaAktywna(p, today);
 	const sortHistorii = new Sortowanie<Policy>({
 		nr: (p) => p.nr_polisy,
 		od: (p) => p.data_od,

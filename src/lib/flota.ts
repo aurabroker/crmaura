@@ -2,7 +2,7 @@
 // bez pojazdu — wspólne dla zakładki Flota / Pojazdy na karcie klienta i listy Pojazdy.
 import type { Policy, Vehicle } from '$lib/types/database';
 import { dateDiffDays, fmtDzien, odmiana } from '$lib/utils';
-import { koniecOchrony, polisaAktywna } from '$lib/statusPolisy';
+import { koniecOchrony, polisaAktywna, polisaOczekujaca } from '$lib/statusPolisy';
 
 /** Tyle dni przed końcem ochrony pojazd pokazuje się jako „kończy się” (jak kolejka odnowień na pulpicie). */
 export const DNI_OSTRZEZENIA_FLOTY = 30;
@@ -69,9 +69,9 @@ const dzien = (iso: string) => fmtDzien(iso.slice(0, 10), true);
 
 export function ochronaPojazdu<T extends PolisaPojazdu>(pojazdId: string, policies: T[], dzis: string): OchronaPojazdu<T> {
 	const wszystkie = polisyPojazdu(pojazdId, policies);
-	const czynne = wszystkie.filter((p) => (p.data_od ?? '') <= dzis && polisaAktywna(p, dzis));
+	const czynne = wszystkie.filter((p) => polisaAktywna(p, dzis));
 	const przyszle = wszystkie
-		.filter((p) => (p.data_od ?? '') > dzis && polisaAktywna(p, dzis))
+		.filter((p) => polisaOczekujaca(p, dzis))
 		.sort((a, b) => (a.data_od ?? '').localeCompare(b.data_od ?? ''));
 	const nastepna = przyszle[0] ?? null;
 	const ostatnia = wszystkie[0] ?? null;

@@ -114,7 +114,8 @@
 	const wygasleBonds = $derived(filteredBonds.filter(bondWygasl));
 
 	const kpiCount = $derived(filteredBonds.length);
-	const kpiActive = $derived(filteredBonds.filter((b) => policyStatus(b.bond_data_do).label === 'Aktywna').length);
+	// Aktywna: okres gwarancji obejmuje dziś (początek dziś albo wcześniej, koniec dziś albo później).
+	const kpiActive = $derived(filteredBonds.filter((b) => !bondWygasl(b) && (!b.bond_data_od || b.bond_data_od <= dzis)).length);
 	const kpiSuma = $derived(filteredBonds.reduce((s, b) => s + Number(b.bond_suma ?? 0), 0));
 	const kpiSkladka = $derived(filteredBonds.reduce((s, b) => s + (skladkaOf(b) ?? 0), 0));
 	const totalLimit = $derived(limitViews.reduce((s, v) => s + Number(v.bond_limit ?? 0), 0));
@@ -130,7 +131,7 @@
 				wiersze: filteredBonds.map((b) => [
 					b.bond_nr, bondRodzajLabel[b.bond_rodzaj] ?? b.bond_rodzaj, tenantName(b), b.bond_kontrakt, b.bond_inwestor, b.bond_beneficjent,
 					b.bond_insurers?.bond_nazwa ?? '', b.bond_insurers?.bond_ul_nr ?? '', b.bond_data_od, b.bond_data_do, b.bond_suma,
-					b.bond_stawka, skladkaOf(b), bondWygasl(b) ? 'wygasła' : policyStatus(b.bond_data_do).label
+					b.bond_stawka, skladkaOf(b), bondWygasl(b) ? 'wygasła' : policyStatus(b.bond_data_do, null, b.bond_data_od).label
 				])
 			},
 			{
@@ -375,7 +376,7 @@
 	</div>
 	{/if}
 	{#snippet wierszBond(b: Bond, wygasla: boolean)}
-					{@const st = policyStatus(b.bond_data_do)}
+					{@const st = policyStatus(b.bond_data_do, null, b.bond_data_od)}
 					{@const tp = pctElapsed(b.bond_data_od, b.bond_data_do)}
 					<tr use:ctxMenu={{ items: () => bondMenu(b), title: b.bond_nr }}
 						data-testid={wygasla ? 'bond-wygasly' : 'bond'}
@@ -402,7 +403,7 @@
 							</div>
 						</td>
 						<td class="px-4 py-2.5">
-							<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : 'success'}>{st.label}</Badge>
+							<Badge variant={st.badge === 'badge-error' ? 'error' : st.badge === 'badge-warning' ? 'warning' : st.badge === 'badge-info' ? 'info' : 'success'}>{st.label}</Badge>
 						</td>
 						<td class="px-4 py-2.5 whitespace-nowrap">
 							{#if b.crm_policy_id}

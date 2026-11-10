@@ -3,6 +3,7 @@
 	import { sb } from '$lib/supabase';
 	import { portalState } from '$lib/stores/portal.svelte';
 	import { fmtPln, opisPrzedmiotu, policyStatus } from '$lib/utils';
+	import { polisaAktywna } from '$lib/statusPolisy';
 	import { rozmiar } from '$lib/plikiPolis';
 	import { FileText, CreditCard, AlertTriangle, Car, Download } from 'lucide-svelte';
 
@@ -61,7 +62,8 @@
 		return p.status === 'Opłacona' || !!p.data_oplacenia;
 	}
 
-	const aktywne = $derived(policies.filter((p) => policyStatus(p.data_do, (p as { zakonczona_od?: string | null }).zakonczona_od).label === 'Aktywna').length);
+	// Aktywna: okres ubezpieczenia obejmuje dziś — jak w CRM ($lib/statusPolisy). Polisa na przyszły okres jest „Oczekująca”.
+	const aktywne = $derived(policies.filter((p) => polisaAktywna({ data_od: p.data_od, data_do: p.data_do, zakonczona_od: (p as { zakonczona_od?: string | null }).zakonczona_od ?? null }, today)).length);
 	const zalegle = $derived(payments.filter((p) => !isPaid(p) && p.data_platnosci < today));
 	const zalegleSuma = $derived(zalegle.reduce((s, p) => s + Number(p.kwota ?? 0), 0));
 
@@ -127,7 +129,7 @@
 	{:else}
 		<div class="space-y-3">
 			{#each policies as p}
-				{@const st = policyStatus(p.data_do, (p as { zakonczona_od?: string | null }).zakonczona_od)}
+				{@const st = policyStatus(p.data_do, (p as { zakonczona_od?: string | null }).zakonczona_od, p.data_od)}
 				<div class="bg-white border border-line rounded-xl px-5 py-4 shadow-sm flex flex-wrap items-center gap-x-6 gap-y-2">
 					<div class="min-w-[160px]">
 						<div class="text-xs text-slate-400 uppercase tracking-wide">{p.rodzaj ?? '—'}</div>
