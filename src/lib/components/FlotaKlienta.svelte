@@ -237,7 +237,7 @@
 											</thead>
 											<tbody>
 												{#each historia as p (p.id)}
-													{@const czynna = (p.data_od ?? '') <= dzis && polisaAktywna(p, dzis)}
+													{@const czynna = polisaAktywna(p, dzis)}
 													<tr class="border-t border-line-soft">
 														<td class="px-3 py-2 whitespace-nowrap"><a href="/policies/{p.id}" class="font-medium text-accent-text hover:underline">{p.nr_polisy}</a> <Kopiuj tekst={p.nr_polisy} opis="nr polisy" /></td>
 														<td class="px-3 py-2 text-ink-2">{nazwaRodzaju(p.rodzaj)}</td>

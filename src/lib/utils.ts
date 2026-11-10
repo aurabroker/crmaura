@@ -63,15 +63,20 @@ export function ugPodtypCls(podtyp: string): string {
 	return ugPodtypColor[podtyp] ?? 'bg-slate-100 text-slate-700';
 }
 
-/** Prosty status z dat (portal klienta, pojazdy, gwarancje). zakonczonaOd = pierwszy dzień bez ochrony po decyzji o zakończeniu. */
+/**
+ * Prosty status z dat (portal klienta, pojazdy, gwarancje). zakonczonaOd = pierwszy dzień bez ochrony po decyzji o zakończeniu;
+ * dateOd = początek okresu — przed nim polisa jest „Oczekująca” (jeszcze nie chroni), jak w $lib/statusPolisy.
+ */
 export const policyStatus = (
 	dateDo: string,
-	zakonczonaOd?: string | null
+	zakonczonaOd?: string | null,
+	dateOd?: string | null
 ): { label: string; color: string; badge: string } => {
 	const today = todayStr();
 	if (zakonczonaOd && zakonczonaOd <= today) return { label: 'Zakończona', color: 'text-red-600', badge: 'badge-error' };
 	const days = dateDiffDays(today, dateDo);
 	if (days < 0) return { label: 'Zakończona', color: 'text-red-600', badge: 'badge-error' };
+	if (dateOd && dateOd > today) return { label: 'Oczekująca', color: 'text-sky-600', badge: 'badge-info' };
 	if (zakonczonaOd) return { label: 'Do zakończenia', color: 'text-amber-500', badge: 'badge-warning' };
 	if (days <= 30) return { label: 'Wygasa', color: 'text-amber-500', badge: 'badge-warning' };
 	return { label: 'Aktywna', color: 'text-emerald-600', badge: 'badge-success' };

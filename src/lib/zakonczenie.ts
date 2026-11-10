@@ -5,7 +5,7 @@ import { appState } from '$lib/stores/app.svelte';
 import { ROZLICZONE } from '$lib/platnosci';
 import { czyAktywny, wywolajApi } from '$lib/components/renewal/crmRenewals';
 import { logAudit } from '$lib/utils/audit';
-import { koniecOchrony, nieOdnawiana, plusDni, polisaAktywna, type TrybZakonczenia } from '$lib/statusPolisy';
+import { koniecOchrony, nieOdnawiana, plusDni, polisaNiezakonczona, type TrybZakonczenia } from '$lib/statusPolisy';
 import type { Client, Policy, PolicyPayment } from '$lib/types/database';
 
 export type OpcjeZakonczenia = {
@@ -93,9 +93,9 @@ export async function cofnijZakonczenie(p: Policy): Promise<string> {
 	return '';
 }
 
-/** Aktywne polisy klienta (ubezpieczający), bez umów generalnych, bez zakończonych już decyzją — do zakończenia razem z klientem. */
+/** Polisy klienta (ubezpieczający), których ochrona się nie skończyła — aktywne i oczekujące na początek okresu — bez umów generalnych, bez zakończonych już decyzją: do zakończenia razem z klientem. */
 export const polisyDoZakonczenia = (policies: Policy[], klientId: string, dzis: string) =>
-	policies.filter((p) => p.klient_id === klientId && !p.deleted_at && p.typ_umowy !== 'generalna' && !nieOdnawiana(p) && polisaAktywna(p, dzis) && !!koniecOchrony(p));
+	policies.filter((p) => p.klient_id === klientId && !p.deleted_at && p.typ_umowy !== 'generalna' && !nieOdnawiana(p) && polisaNiezakonczona(p, dzis) && !!koniecOchrony(p));
 
 export type OpcjeNieaktywnosci = {
 	powod: string;

@@ -17,7 +17,7 @@
 		ChevronDown, ChevronLeft, ChevronRight, X, Upload, FileStack, FileText
 	} from 'lucide-svelte';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy, polisaAktywna, polisaWygasla, statusPolisy } from '$lib/statusPolisy';
+	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy, polisaAktywna, polisaNiezakonczona, polisaOczekujaca, polisaWygasla, statusPolisy } from '$lib/statusPolisy';
 	import ZakonczPolise from '$lib/components/ZakonczPolise.svelte';
 	import { page } from '$app/stores';
 	import { onMount, untrack } from 'svelte';
@@ -92,19 +92,21 @@
 	const opiekunKlienta = $derived(new Map(appState.clients.map(c => [c.id, c.opiekun_id])));
 
 	// „Wygasłe bez decyzji” — po końcu okresu, bez odnowienia i bez decyzji „zakończ”; „Zakończone” — zakończone decyzją
-	// albo odnowione (poprzedniczki). Aktywność liczy się z końca ochrony (data_do albo wcześniejsze zakończenie od dnia).
-	type Segment = 'wszystkie' | 'aktywne' | 'wygasaja' | 'zalegle' | 'wygasle' | 'zakonczone';
+	// albo odnowione (poprzedniczki). „Aktywne” — okres ubezpieczenia obejmuje dziś (początek dziś albo wcześniej, koniec
+	// ochrony z data_do albo wcześniejszego zakończenia od dnia); „Oczekujące” — wystawione na okres, który się nie zaczął.
+	type Segment = 'wszystkie' | 'aktywne' | 'oczekujace' | 'wygasaja' | 'zalegle' | 'wygasle' | 'zakonczone';
 	let segment = $state<Segment>('wszystkie');
 	const aktywna = (p: Policy) => polisaAktywna(p, dzis);
 	function wSegmencie(p: Policy, s: Segment): boolean {
 		if (s === 'wszystkie') return true;
 		if (s === 'aktywne') return aktywna(p);
+		if (s === 'oczekujace') return polisaOczekujaca(p, dzis);
 		if (s === 'wygasaja') return aktywna(p) && !!p.data_do && dateDiffDays(dzis, p.data_do) <= 30 && !odnowione.has(p.id) && !nieOdnawiana(p);
 		if (s === 'zalegle') return zZaleglaRata.has(p.id);
 		if (s === 'wygasle') return polisaWygasla(p, dzis) && !odnowione.has(p.id);
-		return !aktywna(p) && (nieOdnawiana(p) || odnowione.has(p.id));
+		return !polisaNiezakonczona(p, dzis) && (nieOdnawiana(p) || odnowione.has(p.id));
 	}
-	const SEGMENTY: [Segment, string][] = [['wszystkie', 'Wszystkie'], ['aktywne', 'Aktywne'], ['wygasaja', 'Wygasają w 30 dni'], ['zalegle', 'Z ratą po terminie'], ['wygasle', 'Wygasłe bez decyzji'], ['zakonczone', 'Zakończone']];
+	const SEGMENTY: [Segment, string][] = [['wszystkie', 'Wszystkie'], ['aktywne', 'Aktywne'], ['oczekujace', 'Oczekujące'], ['wygasaja', 'Wygasają w 30 dni'], ['zalegle', 'Z ratą po terminie'], ['wygasle', 'Wygasłe bez decyzji'], ['zakonczone', 'Zakończone']];
 
 	// Okno „Zakończ polisę” (menu prawego przycisku).
 	let zakonczTarget = $state<Policy | null>(null);

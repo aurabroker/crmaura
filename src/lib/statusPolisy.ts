@@ -4,8 +4,11 @@
 //   Wygasła      — data_do minęła, a nikt nie podjął decyzji (odnowić? zakończyć?) — wymaga działania,
 //   Zakończona   — decyzja zapadła (wypowiedzenie od dnia albo brak odnowienia na koniec okresu) i dzień zakończenia minął,
 //   Do zakończenia — decyzja zapadła, ochrona jeszcze trwa (polisa nie trafia do odnowień).
-import type { Client, Policy } from '$lib/types/database';
-import { dateDiffDays, fmtDzien } from '$lib/utils';
+//
+// Początek ochrony liczy się tak samo: polisa wystawiona na okres, który się jeszcze nie zaczął, jest „Oczekująca” —
+// nie jest aktywna, a jej składka nie wchodzi do składki aktywnych polis (polisaAktywna / polisaOczekujaca).
+import type { Client, Policy } from './types/database.ts';
+import { dateDiffDays, fmtDzien } from './utils.ts';
 
 export type KluczStatusu = 'wznowiona' | 'zalegla' | 'oczekujaca' | 'zakonczona' | 'wygasla' | 'do_zakonczenia' | 'wygasa' | 'aktywna';
 export type StatusPolisy = { klucz: KluczStatusu; tekst: string; cls: string };
@@ -50,11 +53,22 @@ export function koniecOchrony(p: PolisaKoniec): string | null {
 	return p.data_do ?? null;
 }
 
-/** Polisa chroni dziś (koniec ochrony dziś albo później, bezterminowa też). */
-export function polisaAktywna(p: PolisaKoniec, dzis: string): boolean {
+type PolisaOkres = PolisaKoniec & Pick<Policy, 'data_od'>;
+
+/** Ochrona się jeszcze nie skończyła: polisa trwa albo dopiero się zacznie (bezterminowa też). */
+export function polisaNiezakonczona(p: PolisaKoniec, dzis: string): boolean {
 	const k = koniecOchrony(p);
 	return !k || k >= dzis;
 }
+
+/** Okres ubezpieczenia już się zaczął (brak daty początku = zaczął się). */
+const okresZaczety = (p: Pick<Policy, 'data_od'>, dzis: string) => !p.data_od || p.data_od <= dzis;
+
+/** Polisa aktywna: okres ubezpieczenia obejmuje dziś — zaczął się i ochrona się nie skończyła. */
+export const polisaAktywna = (p: PolisaOkres, dzis: string): boolean => okresZaczety(p, dzis) && polisaNiezakonczona(p, dzis);
+
+/** Polisa wystawiona na okres, który się jeszcze nie zaczął: nie chroni, składka nie jest jeszcze należna. */
+export const polisaOczekujaca = (p: PolisaOkres, dzis: string): boolean => !okresZaczety(p, dzis) && polisaNiezakonczona(p, dzis);
 
 /** Zakończona decyzją i dzień zakończenia już minął. */
 export const polisaZakonczona = (p: PolisaKoniec, dzis: string) => !!p.zakonczona_od && p.zakonczona_od <= dzis;
@@ -73,8 +87,9 @@ export function statusPolisy(
 ): StatusPolisy {
 	if (ctx.odnowione.has(p.id)) return { klucz: 'wznowiona', tekst: 'Wznowiona', cls: 'bg-surface-2 text-ink-2' };
 	if (ctx.zZaleglaRata?.has(p.id)) return { klucz: 'zalegla', tekst: 'Rata po terminie', cls: 'bg-danger-soft text-danger' };
-	if (p.renewal_of && p.data_od > ctx.dzis) return { klucz: 'oczekujaca', tekst: 'Oczekująca', cls: 'bg-accent-soft text-accent-text' };
 	if (polisaZakonczona(p, ctx.dzis)) return { klucz: 'zakonczona', tekst: 'Zakończona', cls: 'bg-surface-2 text-ink-2' };
+	// Każda polisa z początkiem ochrony w przyszłości (wznowienie i nowa) — jeszcze nie jest aktywna.
+	if (p.data_od > ctx.dzis) return { klucz: 'oczekujaca', tekst: `Oczekująca od ${fmtDzien(p.data_od)}`, cls: 'bg-accent-soft text-accent-text' };
 	if (polisaWygasla(p, ctx.dzis)) return { klucz: 'wygasla', tekst: 'Wygasła', cls: 'bg-warn-soft text-warn' };
 	if (p.zakonczona_od) return { klucz: 'do_zakonczenia', tekst: `Do zakończenia ${fmtDzien(p.zakonczona_od)}`, cls: 'bg-surface-2 text-ink-2' };
 	if (p.data_do && dateDiffDays(ctx.dzis, p.data_do) <= 30) return { klucz: 'wygasa', tekst: 'Wygasa', cls: 'bg-warn-soft text-warn' };
