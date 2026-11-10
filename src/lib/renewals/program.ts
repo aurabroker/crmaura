@@ -99,6 +99,8 @@ export const ZABIEGI_ANKIETA = [
 	'Zabiegi z użyciem nici PDO, PLLA i PLA/CL',
 	'Zabiegi z użyciem toksyny botulinowej'
 ] as const;
+// Podstawa obecnego brzmienia listy — drukowana w stopce czystego formularza ankiety. Nowy aneks = nowa lista i ten opis.
+export const ZABIEGI_ANKIETA_PODSTAWA = 'Aneks nr 5 z 06.11.2026 r.';
 
 // Brzmienie sprzed Aneksu nr 5: trzy pozycje miały węższy opis. Wnioski złożone wcześniej zachowują dawne nazwy
 // (dziennik, PDF-y); wniosek wypełniany w chwili zmiany (szkic, otwarta karta) przechodzi na nowe.

@@ -7,6 +7,9 @@
 // Dokument programu wdrażany razem z aplikacją (np. listy zabiegów po aneksie) ma źródło w zasobach
 // statycznych: zrodlo „/dokumenty/…” (katalog static/). Nowa wersja = nowy plik i nowa ścieżka w zrodlo —
 // kopia w kubełku zrobiona z poprzedniego źródła odświeża się sama przy pierwszym żądaniu.
+// Dokument tworzony przez aplikację (czysty formularz ankiety) ma źródło „generowany:…” — treść podaje trasa /media.
+
+import { OSWIADCZENIE_ANKIETY, PROGRAM_NR, ZABIEGI_ANKIETA, ZABIEGI_ANKIETA_PODSTAWA } from '../renewals/program.ts';
 
 type PlikPubliczny = {
 	zrodlo: string | null;
@@ -22,6 +25,16 @@ const GR_ZDJECIA = 'https://us-ms.gr-cdn.com/getresponse-VnDsp/photos';
 const GR_PLIKI = 'https://us-wbe-img2.gr-cdn.com/user/fbd8f5a9-6595-4640-bd21-ab95d01fa5ca';
 // Dokumenty programu wdrażane z aplikacją (zasoby statyczne: static/dokumenty/beautypolisa).
 const DOK_BEAUTY = '/dokumenty/beautypolisa';
+// Czysty formularz ankiety oceny ryzyka rysuje generator ankiety (pdfAnkietaPusta w renewalDocs) — te same nazwy
+// zabiegów co we wniosku. Źródło zawiera skrót treści zależnej od programu, więc zmiana listy zabiegów (aneks)
+// sama odświeża kopię w kubełku. Zmiana samego układu formularza = kolejny numer po „u”.
+export const GENEROWANA_ANKIETA = 'generowany:ankieta-oceny-ryzyka';
+const skrot = (tekst: string) => {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < tekst.length; i++) h = Math.imul(h ^ tekst.charCodeAt(i), 0x01000193);
+	return (h >>> 0).toString(16).padStart(8, '0');
+};
+const ZRODLO_ANKIETY = `${GENEROWANA_ANKIETA}/u1-${skrot([PROGRAM_NR, ZABIEGI_ANKIETA_PODSTAWA, OSWIADCZENIE_ANKIETY, ...ZABIEGI_ANKIETA].join('|'))}`;
 const PNG = 'image/png';
 const JPG = 'image/jpeg';
 const PDF = 'application/pdf';
@@ -39,7 +52,7 @@ export const PLIKI_PUBLICZNE: Record<string, PlikPubliczny> = {
 	'beautypolisa/lista-zabiegow-kosmetyczne-fryzjerskie.pdf': { zrodlo: `${DOK_BEAUTY}/lista-zabiegow-nr-1-kosmetyczne-fryzjerskie-aneks-5.pdf`, typ: PDF, nazwa: 'Lista zabiegów - kosmetyczne, fryzjerskie.pdf', opis: 'Lista zabiegów nr 1 – kosmetyczne, fryzjerskie (Aneks nr 5)', program: BEAUTY },
 	'beautypolisa/lista-zabiegow-kosmetologiczne-tatuaze.pdf': { zrodlo: `${DOK_BEAUTY}/lista-zabiegow-nr-2-kosmetyczne-kosmetologiczne-aneks-5.pdf`, typ: PDF, nazwa: 'Lista zabiegów - kosmetyczne, kosmetologiczne, tatuaże.pdf', opis: 'Lista zabiegów nr 2 – kosmetyczne, kosmetologiczne, tatuaże (Aneks nr 5)', program: BEAUTY },
 	'beautypolisa/lista-zabiegow-podologiczne.pdf': { zrodlo: `${GR_PLIKI}/c507c6c6-b126-4098-a3f6-630164e0f74c.pdf`, typ: PDF, nazwa: 'Lista zabiegów - podologiczne.pdf', opis: 'Lista zabiegów – podologiczne', program: BEAUTY },
-	'beautypolisa/ankieta-oceny-ryzyka.pdf': { zrodlo: `${GR_PLIKI}/91e7a9d4-4357-4e29-9cc9-2386092033ce.pdf`, typ: PDF, nazwa: 'Ankieta oceny ryzyka.pdf', opis: 'Ankieta oceny ryzyka', program: BEAUTY },
+	'beautypolisa/ankieta-oceny-ryzyka.pdf': { zrodlo: ZRODLO_ANKIETY, typ: PDF, nazwa: 'Ankieta oceny ryzyka.pdf', opis: `Ankieta oceny ryzyka – formularz do wypełnienia (lista zabiegów: ${ZABIEGI_ANKIETA_PODSTAWA})`, program: BEAUTY },
 	'beautypolisa/informacja-o-dystrybutorze-aura-expert.pdf': { zrodlo: `${GR_PLIKI}/e8560860-e79c-409e-8ce6-ed85ab666017.pdf`, typ: PDF, nazwa: 'Informacja o dystrybutorze Aura Expert.pdf', opis: 'Z001 – Informacja o dystrybutorze (Aura Expert)', program: BEAUTY },
 	'beautypolisa/informacja-rodo-aura-expert.pdf': { zrodlo: `${GR_PLIKI}/3a250c30-f6ee-4fd1-aa01-c2845aa42c41.pdf`, typ: PDF, nazwa: 'Informacja RODO Aura Expert.pdf', opis: 'Z002 – Informacja RODO (Aura Expert)', program: BEAUTY },
 	// Dokumenty linkowane w mailu z wystawioną polisą (szablon Resend „beauty-polisa-wystawiona”)
@@ -68,7 +81,7 @@ export function zgodnyTyp(b: Uint8Array, typ: string): boolean {
 	return false;
 }
 
-/** Pobranie źródła pliku: adres http(s) albo ścieżka zasobu statycznego aplikacji („/dokumenty/…” — podaje ją trasa /media). */
+/** Pobranie źródła pliku: adres http(s), ścieżka zasobu statycznego („/dokumenty/…”) albo dokument generowany („generowany:…”) — dwa ostatnie podaje trasa /media. */
 export type PobierzZrodlo = (zrodlo: string) => Promise<Response>;
 
 async function zeZrodla(opis: PlikPubliczny, pobierz: PobierzZrodlo): Promise<ArrayBuffer | null> {

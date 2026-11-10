@@ -24,6 +24,7 @@ import {
 	SUMY,
 	UBEZPIECZYCIEL,
 	ZABIEGI_ANKIETA,
+	ZABIEGI_ANKIETA_PODSTAWA,
 	formatSuma,
 	formatZl,
 	kategoriaZRodzajow,
@@ -844,14 +845,34 @@ const CZERWIEN_ERGO: [number, number, number] = [176, 18, 38];
 // 1. informacje ogólne, 2. zabiegi (wszystkie pozycje z kwadratem — zaznaczone te z wniosku), 3. osoby,
 // oświadczenie i miejsce na podpis. Starsze ankiety nie mają NIP, REGON ani innych zabiegów — „—”.
 export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: string | null; ua: string | null }): Promise<Uint8Array> {
-	const a = r.ankieta;
-	if (!a) throw new Error('Wniosek nie ma ankiety.');
+	if (!r.ankieta) throw new Error('Wniosek nie ma ankiety.');
+	// Bez IP klienta: ankieta idzie do ubezpieczyciela, a IP zostaje w PDF wniosku i w dzienniku CRM.
+	return rysujAnkiete(event, r, r.ankieta, `Ankieta do wniosku ${r.id} · wypełniona elektronicznie ${dataGodzina(r.zlozono_at)}`, false);
+}
+
+const ANKIETA_PUSTA: Ankieta = { ubezpieczajacy: '', ubezpieczony: '', data_rozpoczecia: '', liczba_zatrudnionych: '', nip: '', regon: '', szkodowosc: '', inne_zabiegi: '', jak_dlugo: '', zgoda_klientow: 'tak', osoby: [], oswiadczenie: false };
+// Wiersze na osoby w czystym formularzu (we wniosku z CRM jest ich tyle, ile zgłosił klient).
+const OSOBY_W_PUSTEJ_ANKIECIE = 4;
+
+/**
+ * Czysty formularz ankiety do wypełnienia ręcznie — publiczny plik /media/beautypolisa/ankieta-oceny-ryzyka.pdf.
+ * Ten sam układ i ta sama lista zabiegów co ankieta dołączana do wniosku, więc po aneksie oba dokumenty zmieniają się razem.
+ */
+export async function pdfAnkietaPusta(event: PdfEvent): Promise<Uint8Array> {
+	const stopka = `Ankieta do Programu nr ${PROGRAM_NR} · formularz do wypełnienia · lista zabiegów: ${ZABIEGI_ANKIETA_PODSTAWA}`;
+	return rysujAnkiete(event, { program: null, wniosek: null, zalaczniki: [] }, ANKIETA_PUSTA, stopka, true);
+}
+
+async function rysujAnkiete(event: PdfEvent, r: Pick<RenewalRow, 'program' | 'wniosek' | 'zalaczniki'>, a: Ankieta, stopka: string, pusta: boolean): Promise<Uint8Array> {
 	const { doc, autoTable, font } = await newServerPdf(event);
 	const L = 14;
 	const SZER = 182;
 	const DOL = 297 - 16; // poniżej — stopka strony
 	const lastY = () => (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY;
-	const wartosc = (v: string | null | undefined) => (v?.trim() ? v.trim() : '—');
+	// W czystym formularzu pola zostają puste (miejsce na wpis), w ankiecie z wniosku brak danych to „—”.
+	const wartosc = (v: string | null | undefined) => (v?.trim() ? v.trim() : pusta ? '' : '—');
+	// Wysokość pola na wpis odręczny (tylko czysty formularz).
+	const naWpis = (mm: number) => (pusta ? { minCellHeight: mm } : {});
 	// Siatka jak w formularzu; wiersz nie dzieli się między strony, dolny margines zostawia miejsce na stopkę.
 	const tabela = (o: Parameters<typeof autoTable>[1]) =>
 		autoTable(doc, {
@@ -861,11 +882,12 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 			...o,
 			styles: { font, fontSize: 9, cellPadding: 2, overflow: 'linebreak', valign: 'middle', textColor: 20, lineColor: [110, 110, 110], lineWidth: 0.2, ...o.styles }
 		});
-	const punkt = (tekst: string, y: number) => {
+	// zapas: ile miejsca pod nagłówkiem musi zostać na stronie, żeby nagłówek nie został sam na dole.
+	const punkt = (tekst: string, y: number, zapas = 20) => {
 		doc.setFont(font, 'bold');
 		doc.setFontSize(11);
 		const linie: string[] = doc.splitTextToSize(tekst, SZER);
-		if (y + linie.length * 5 + 20 > DOL) {
+		if (y + linie.length * 5 + zapas > DOL) {
 			doc.addPage();
 			y = 20;
 		}
@@ -906,7 +928,7 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 		body: [
 			['Ubezpieczający:', naCalosc(wartosc(a.ubezpieczajacy))],
 			['Ubezpieczony:', naCalosc(wartosc(a.ubezpieczony))],
-			['Data rozpoczęcia działalności:', naCalosc(data(a.data_rozpoczecia))],
+			['Data rozpoczęcia działalności:', naCalosc(pusta ? '' : data(a.data_rozpoczecia))],
 			[
 				'Liczba zatrudnionych osób:',
 				wartosc(a.liczba_zatrudnionych),
@@ -917,9 +939,10 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 			],
 			[
 				'Szkodowość OC z okresu ostatnich 3 lat tj. wypłacone odszkodowania, zgłoszone roszczenia, okoliczności, z których mogą powstać roszczenia w przyszłości:',
-				naCalosc(wartosc(a.szkodowosc))
+				{ ...naCalosc(wartosc(a.szkodowosc)), styles: naWpis(24) }
 			]
 		],
+		bodyStyles: naWpis(10),
 		columnStyles: { 0: { cellWidth: 58 }, 1: { cellWidth: 26 }, 2: { cellWidth: 14 }, 3: { cellWidth: 34 }, 4: { cellWidth: 17 }, 5: { cellWidth: 33 } }
 	});
 	y = lastY() + 8;
@@ -935,7 +958,7 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 		body: [
 			[{ content: 'Prosimy o zaznaczenie zabiegów, które są wykonywane w gabinecie Ubezpieczonego:', colSpan: 2, styles: { fontStyle: 'bold', fontSize: 9, halign: 'left' } }],
 			...ZABIEGI_ANKIETA.map((z, i) => [zaznaczone[i] ? 'X' : '', z]),
-			[inne ? 'X' : '', { content: `Inny – prosimy opisać:${inne ? `\n${inne}` : ''}`, styles: { minCellHeight: inne ? 0 : 14, valign: 'top' } }]
+			[inne ? 'X' : '', { content: `Inny – prosimy opisać:${inne ? `\n${inne}` : ''}`, styles: { minCellHeight: inne ? 0 : pusta ? 22 : 14, valign: 'top' } }]
 		],
 		columnStyles: { 0: { cellWidth: 10, halign: 'center', fontStyle: 'bold', fontSize: 8 }, 1: { cellWidth: 172 } },
 		// Kwadrat do zaznaczenia w pierwszej kolumnie (pierwszy wiersz to polecenie).
@@ -958,26 +981,30 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 	tabela({
 		startY: y,
 		body: [
-			['Prosimy o podanie jak długo w/w zabiegi są wykonywane w gabinecie', wartosc(a.jak_dlugo)],
+			['Prosimy o podanie jak długo w/w zabiegi są wykonywane w gabinecie', { content: wartosc(a.jak_dlugo), styles: naWpis(12) }],
 			[
 				'Czy przed wykonaniem zabiegów o których mowa w p. 2 klienci otrzymują i podpisują formularz zgody na zabieg',
-				a.zgoda_klientow === 'tak' ? 'TAK' : a.zgoda_klientow === 'nie' ? 'NIE' : '—'
+				pusta ? { content: 'TAK   /   NIE\n(niepotrzebne skreślić)', styles: { halign: 'center' } } : a.zgoda_klientow === 'tak' ? 'TAK' : a.zgoda_klientow === 'nie' ? 'NIE' : '—'
 			],
-			['Prosimy o załączenie stosowanych w gabinecie wzorów formularzy zgody na zabieg.', zgody.length ? zgody.map((z) => z.nazwa).join('\n') : 'nie dołączono']
+			pusta
+				? [{ content: 'Prosimy o załączenie stosowanych w gabinecie wzorów formularzy zgody na zabieg.', colSpan: 2 }]
+				: ['Prosimy o załączenie stosowanych w gabinecie wzorów formularzy zgody na zabieg.', zgody.length ? zgody.map((z) => z.nazwa).join('\n') : 'nie dołączono']
 		],
 		columnStyles: { 0: { cellWidth: 100, fontStyle: 'bold' }, 1: { cellWidth: 82 } }
 	});
 	y = lastY() + 8;
 
 	// 3. Osoby wykonujące zabiegi i ich dokumenty (skany dyplomu i certyfikatów są załącznikami ankiety).
-	y = punkt('3. Prosimy o podanie danych osób wykonujących w/w zabiegi w gabinecie wraz z podaniem:', y);
+	// Pod nagłówkiem musi się zmieścić głowa tabeli i pierwszy wiersz — inaczej punkt 3 zaczyna nową stronę.
+	y = punkt('3. Prosimy o podanie danych osób wykonujących w/w zabiegi w gabinecie wraz z podaniem:', y, pusta ? 44 : 34);
 	const wykonawcy = r.wniosek?.zmiany?.wykonawcy ?? [];
 	const skany = (imie: string) => {
 		const w = wykonawcy.find((x) => x.imie_nazwisko.trim() === imie.trim());
 		const pliki = w ? (r.zalaczniki ?? []).filter((z) => z.osoba === w.id && (z.typ === 'dyplom' || z.typ === 'certyfikat')) : [];
 		return `Skany dołączone do ankiety: ${pliki.length ? pliki.map((z) => `${opisZalacznika(z)} — ${z.nazwa}`).join('; ') : 'brak'}`;
 	};
-	const osoby = a.osoby?.length ? a.osoby : [{ imie_nazwisko: '', kwalifikacje: '', doswiadczenie: '' }];
+	const pustaOsoba = { imie_nazwisko: '', kwalifikacje: '', doswiadczenie: '' };
+	const osoby = pusta ? Array.from({ length: OSOBY_W_PUSTEJ_ANKIECIE }, () => pustaOsoba) : a.osoby?.length ? a.osoby : [pustaOsoba];
 	tabela({
 		startY: y,
 		head: [[
@@ -986,10 +1013,14 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 				'przedmiotu/czasu trwania, nazwy instytucji organizującej studia/kurs/szkolenie*)',
 			'Doświadczenie (jak długo dana osoba wykonuje w/w zabiegi)'
 		]],
-		body: osoby.flatMap((o) => [
-			[wartosc(o.imie_nazwisko), wartosc(o.kwalifikacje), wartosc(o.doswiadczenie)],
-			[{ content: skany(o.imie_nazwisko), colSpan: 3, styles: { fontSize: 7.5, fontStyle: 'normal', textColor: 70, fillColor: [247, 247, 247] } }]
-		]),
+		// Czysty formularz: same wiersze na wpis; w ankiecie z wniosku pod każdą osobą lista dołączonych skanów.
+		body: pusta
+			? osoby.map(() => ['', '', ''])
+			: osoby.flatMap((o) => [
+					[wartosc(o.imie_nazwisko), wartosc(o.kwalifikacje), wartosc(o.doswiadczenie)],
+					[{ content: skany(o.imie_nazwisko), colSpan: 3, styles: { fontSize: 7.5, fontStyle: 'normal', textColor: 70, fillColor: [247, 247, 247] } }]
+				]),
+		bodyStyles: naWpis(20),
 		headStyles: { fillColor: [238, 238, 238], textColor: 20, fontStyle: 'bold', fontSize: 8.5, valign: 'top' },
 		columnStyles: { 0: { cellWidth: 42, fontStyle: 'bold' }, 1: { cellWidth: 90 }, 2: { cellWidth: 50 } }
 	});
@@ -1022,8 +1053,6 @@ export async function pdfAnkieta(event: PdfEvent, r: RenewalRow, _kto: { ip: str
 	doc.text('Miejscowość, data, czytelny podpis Ubezpieczonego', L, y + 4.5);
 	doc.setTextColor(0);
 
-	// Bez IP klienta: ankieta idzie do ubezpieczyciela, a IP zostaje w PDF wniosku i w dzienniku CRM.
-	const stopka = `Ankieta do wniosku ${r.id} · wypełniona elektronicznie ${dataGodzina(r.zlozono_at)}`;
 	const strony = doc.getNumberOfPages();
 	for (let i = 1; i <= strony; i++) {
 		doc.setPage(i);
