@@ -2,7 +2,7 @@ import { sb } from '$lib/supabase';
 import { ADRES_TESTOWY } from '$lib/renewals/staffApi';
 import type { CrmTask, Policy, RenewalEvent, WniosekOdnowienia } from '$lib/types/database';
 import { dateDiffDays } from '$lib/utils';
-import { OPEN_LINK_TTL, signedStorageUrl } from '$lib/utils/storageLink';
+import { OPEN_LINK_TTL, downloadStoredFile, signedStorageUrl } from '$lib/utils/storageLink';
 
 // Wspólne dla karty polisy i listy odnowień w CRM: rozpoznanie certyfikatu z programu OC beauty,
 // stany wniosku i wywołania /api/renewals (kontrakt: $lib/renewals/staffApi).
@@ -349,5 +349,17 @@ export async function otworzPdfApk(id: string): Promise<string> {
 	} catch (e) {
 		okno?.close();
 		return `Nie udało się otworzyć PDF APK. ${(e as Error)?.message ?? ''}`.trim();
+	}
+}
+
+// „Pobierz” dla PDF APK: jak otworzPdfApk (serwer tworzy brakujący plik), ale plik trafia na dysk. Zwraca '' albo treść błędu.
+export async function pobierzPdfApk(id: string, nazwa: string): Promise<string> {
+	const w = await wywolajApi<{ path: string }>('POST', '/api/renewals/pdf-apk', { id });
+	try {
+		if (!w.ok) throw new Error(w.message);
+		await downloadStoredFile(BUCKET_ODNOWIEN, w.data.path, nazwa);
+		return '';
+	} catch (e) {
+		return `Nie udało się pobrać PDF APK. ${(e as Error)?.message ?? ''}`.trim();
 	}
 }

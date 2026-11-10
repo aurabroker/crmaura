@@ -1,5 +1,6 @@
 import { sb } from '$lib/supabase';
 import { ctxToast } from '$lib/stores/ctxmenu.svelte';
+import { nazwaPliku, zapiszBlob } from '$lib/pobieranie';
 
 // Pliki z prywatnych bucketów (PDF APK, zestawienia prowizyjne) otwieramy przez podpisany link,
 // tworzony w chwili kliknięcia. W bazie trzymamy ścieżkę pliku w buckecie; starsze wiersze mają
@@ -50,6 +51,16 @@ export async function openStoredFile(bucket: string, stored: string | null | und
 		win?.close();
 		throw e;
 	}
+}
+
+// „Pobierz”: plik z prywatnego bucketu zapisany na dysk pod podaną nazwą (bez nazwy — pod nazwą z magazynu).
+// Treść idzie z sesją użytkownika, więc obowiązują te same uprawnienia co przy otwieraniu.
+export async function downloadStoredFile(bucket: string, stored: string | null | undefined, nazwa?: string | null): Promise<void> {
+	const path = storagePath(bucket, stored);
+	if (!path) throw new Error('Nieprawidłowy adres pliku');
+	const { data, error } = await sb.storage.from(bucket).download(path);
+	if (error || !data) throw error ?? new Error('Nie udało się pobrać pliku');
+	zapiszBlob(data, nazwaPliku(nazwa, path));
 }
 
 // Link do przekazania dalej (np. klientowi) — ważny SHARE_LINK_TTL. ClipboardItem z obietnicą

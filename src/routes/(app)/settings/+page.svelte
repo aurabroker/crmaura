@@ -15,8 +15,9 @@
 	import { logAudit } from '$lib/utils/audit';
 	import { Search, Pencil, Plus, Car, User, Shield, Trash2, FileText, Settings, Users, ScrollText, Landmark, Upload, Bell } from 'lucide-svelte';
 	import { fmtPln, assignedPolicyFor } from '$lib/utils';
-	import { openStoredFile } from '$lib/utils/storageLink';
-	import { magazynDostepny, otworzPlikNoty, wyslijPlikNoty } from '$lib/plikiPolis';
+	import { downloadStoredFile, openStoredFile } from '$lib/utils/storageLink';
+	import { magazynDostepny, otworzPlikNoty, pobierzPlikNoty, wyslijPlikNoty } from '$lib/plikiPolis';
+	import PobierzPlik from '$lib/components/PobierzPlik.svelte';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
@@ -80,6 +81,8 @@
 		notyLoading = false;
 	}
 
+	// „Pobierz”: plik zestawienia na dysk pod zapisaną nazwą (starsze — z bucketu, pod numerem noty).
+	const pobierzNote = (n: Nota) => (n.plik_klucz ? pobierzPlikNoty(n.id, n.plik_nazwa ?? null) : downloadStoredFile('settlement-files', n.file_url, `Nota ${n.numer_noty ?? ''}`.trim()));
 	async function openNotaFile(n: Nota) {
 		try {
 			// Nowe pliki w magazynie R2, starsze w buckecie Supabase settlement-files.
@@ -697,7 +700,13 @@
 						<td class="px-5 py-3 text-center">{n.pozycji_count ?? '—'}</td>
 						<td class="px-5 py-3">
 							{#if n.plik_klucz || n.file_url}
-								<button onclick={() => openNotaFile(n)} title={n.plik_nazwa ?? undefined} class="flex items-center gap-1 text-blue-600 hover:underline text-xs"><FileText size={13} /> Pobierz</button>
+								<span class="flex items-center gap-3">
+									<!-- PDF otwiera się w nowej karcie; arkusza i CSV przeglądarka nie pokaże, więc zostaje samo „Pobierz”. -->
+									{#if !n.plik_klucz || n.plik_typ === 'application/pdf'}
+										<button onclick={() => openNotaFile(n)} title={n.plik_nazwa ?? undefined} class="flex items-center gap-1 text-blue-600 hover:underline text-xs"><FileText size={13} /> Otwórz</button>
+									{/if}
+									<PobierzPlik rozmiar={13} class="flex items-center gap-1 text-blue-600 hover:underline text-xs disabled:opacity-60" nazwa={n.plik_nazwa ?? `nota ${n.numer_noty ?? ''}`} pobierz={() => pobierzNote(n)} />
+								</span>
 							{:else if r2Dostepny}
 								<label class="inline-flex items-center gap-1 whitespace-nowrap text-xs font-semibold text-accent-text hover:underline cursor-pointer {wysylanaNota === n.id ? 'opacity-60 pointer-events-none' : ''}">
 									<Upload size={13} /> {wysylanaNota === n.id ? 'Wysyłanie…' : 'Dodaj plik'}

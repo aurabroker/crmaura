@@ -12,8 +12,9 @@
 		FILTRY_STANU, OKRESY, STAN_RATY_ETYKIETA, pasujeStan, podsumujRaty, prowizjaOczekiwana, statusPoRozliczeniu,
 		wOkresie, wierszeRozliczen, zakresOkresu, zaokr, type FiltrStanu, type Okres, type WierszRaty
 	} from '$lib/rozliczenia';
-	import { otworzPlikNoty } from '$lib/plikiPolis';
-	import { openStoredFile } from '$lib/utils/storageLink';
+	import { otworzPlikNoty, pobierzPlikNoty } from '$lib/plikiPolis';
+	import { downloadStoredFile, openStoredFile } from '$lib/utils/storageLink';
+	import PobierzPlik from '$lib/components/PobierzPlik.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -48,6 +49,8 @@
 			.order('data_importu', { ascending: false });
 		noty = (data ?? []) as NotaSkrot[];
 	}
+	// „Pobierz”: plik noty na dysk pod zapisaną nazwą (starsze noty z bucketu — pod numerem noty).
+	const pobierzNote = (n: NotaSkrot) => (n.plik_klucz ? pobierzPlikNoty(n.id, n.plik_nazwa) : downloadStoredFile('settlement-files', n.file_url, `Nota ${n.numer_noty}`));
 	async function otworzNote(n: NotaSkrot) {
 		try {
 			if (n.plik_klucz) await otworzPlikNoty(n.id, n.plik_nazwa, n.plik_typ);
@@ -400,6 +403,7 @@
 										{#if nota}
 											{#if nota.plik_klucz || nota.file_url}
 												<button type="button" onclick={() => otworzNote(nota)} class="inline-flex items-center gap-1 text-accent-text hover:underline"><FileText size={11} /> {nota.numer_noty}</button>
+												<PobierzPlik ikona rozmiar={11} class="inline-flex items-center align-middle ml-1 text-accent-text hover:text-ink disabled:opacity-60" nazwa={`nota ${nota.numer_noty}`} pobierz={() => pobierzNote(nota)} onblad={(t) => (toast = { tekst: t, blad: true })} />
 											{:else}
 												nota {nota.numer_noty}
 											{/if}

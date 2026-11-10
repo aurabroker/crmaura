@@ -1,13 +1,14 @@
 <script lang="ts">
-	// Dokumenty polisy (PDF w Cloudflare R2): lista, otwieranie, dodawanie i usuwanie.
+	// Dokumenty polisy (PDF w Cloudflare R2): lista, otwieranie, pobieranie, dodawanie i usuwanie.
 	import { appState, isAdmin } from '$lib/stores/app.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
 	import { ctxToast } from '$lib/stores/ctxmenu.svelte';
 	import { fmtDzien } from '$lib/utils';
 	import {
-		RODZAJ_PLIKU, magazynDostepny, otworzPlikPolisy, rozmiar, usunPlikPolisy, wczytajPlikiPolis, wyslijPdfPolisy, type PlikPolisy
+		RODZAJ_PLIKU, magazynDostepny, otworzPlikPolisy, pobierzPlikPolisy, rozmiar, usunPlikPolisy, wczytajPlikiPolis, wyslijPdfPolisy, type PlikPolisy
 	} from '$lib/plikiPolis';
 	import { FileText, Upload, Trash2, ExternalLink } from 'lucide-svelte';
+	import PobierzPlik from './PobierzPlik.svelte';
 
 	// onzmiana: lista plików po wczytaniu i każdej zmianie (karta polisy pokazuje wtedy np. „Wyślij polisę klientowi”).
 	let { polisaId, onzmiana }: { polisaId: string; onzmiana?: (pliki: PlikPolisy[]) => void } = $props();
@@ -105,6 +106,7 @@
 						</span>
 						<span class="ml-auto flex items-center">
 							<button onclick={() => otworz(p)} title="Otwórz" aria-label="Otwórz {p.nazwa}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-ink hover:bg-surface-2"><ExternalLink size={15} /></button>
+							<PobierzPlik ikona rozmiar={15} nazwa={p.nazwa} pobierz={() => pobierzPlikPolisy(p.id, p.nazwa)} onblad={(t) => (blad = t)} />
 							{#if dostepny}
 								<button onclick={() => usun(p)} title="Usuń" aria-label="Usuń {p.nazwa}" class="w-8 h-8 flex items-center justify-center rounded-lg text-ink-3 hover:text-danger hover:bg-danger-soft"><Trash2 size={15} /></button>
 							{/if}

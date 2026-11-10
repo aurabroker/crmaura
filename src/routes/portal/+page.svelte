@@ -4,8 +4,10 @@
 	import { portalState } from '$lib/stores/portal.svelte';
 	import { fmtPln, opisPrzedmiotu, policyStatus } from '$lib/utils';
 	import { polisaAktywna } from '$lib/statusPolisy';
+	import { nazwaPliku, pobierzZAdresu } from '$lib/pobieranie';
+	import PobierzPlik from '$lib/components/PobierzPlik.svelte';
 	import { rozmiar } from '$lib/plikiPolis';
-	import { FileText, CreditCard, AlertTriangle, Car, Download } from 'lucide-svelte';
+	import { FileText, CreditCard, AlertTriangle, Car } from 'lucide-svelte';
 
 	// Dokumenty polis (PDF z magazynu biura) — lista i pobieranie przez serwer z tokenem sesji klienta.
 	type Dokument = { id: string; polisa_id: string; rodzaj: string; nazwa: string; rozmiar: number; created_at: string };
@@ -29,6 +31,8 @@
 			// bez dokumentów — reszta panelu działa
 		}
 	});
+	// „Pobierz”: dokument zapisany na dysk pod swoją nazwą.
+	const pobierzDokument = async (d: Dokument) => pobierzZAdresu(`/api/portal/pliki/${d.id}`, nazwaPliku(d.nazwa, '.pdf', 'dokument'), await naglowki());
 	// Kartę otwieramy od razu w obsłudze kliknięcia (po await przeglądarka zablokowałaby okno).
 	async function otworzDokument(d: Dokument) {
 		bladDokumentu = '';
@@ -148,9 +152,12 @@
 					{#if dokumentyPolisy.get(p.id)?.length}
 						<div class="basis-full flex flex-wrap gap-2 pt-3 mt-1 border-t border-line-soft">
 							{#each dokumentyPolisy.get(p.id) ?? [] as d (d.id)}
-								<button onclick={() => otworzDokument(d)} title={d.nazwa} class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-[13px] font-medium text-accent-text hover:bg-slate-50">
-									<Download size={14} /> {RODZAJ_DOKUMENTU[d.rodzaj] ?? 'Dokument'} <span class="font-normal text-slate-400">· PDF, {rozmiar(d.rozmiar)}</span>
-								</button>
+								<span class="inline-flex">
+									<button onclick={() => otworzDokument(d)} title="Otwórz: {d.nazwa}" class="inline-flex items-center gap-1.5 h-8 px-3 rounded-l-lg border border-line text-[13px] font-medium text-accent-text hover:bg-slate-50">
+										<FileText size={14} /> {RODZAJ_DOKUMENTU[d.rodzaj] ?? 'Dokument'} <span class="font-normal text-slate-400">· PDF, {rozmiar(d.rozmiar)}</span>
+									</button>
+									<PobierzPlik rozmiar={14} class="inline-flex items-center gap-1.5 h-8 px-3 -ml-px rounded-r-lg border border-line text-[13px] font-medium text-accent-text hover:bg-slate-50 disabled:opacity-60" nazwa={d.nazwa} pobierz={() => pobierzDokument(d)} onblad={(t) => (bladDokumentu = t)} />
+								</span>
 							{/each}
 						</div>
 					{/if}

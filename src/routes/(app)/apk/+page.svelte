@@ -13,12 +13,14 @@
 	import { kol, type Arkusz } from '$lib/eksport';
 	import { STATUS_ODNOWIENIA_ETYKIETA, etykietaDecyzji } from '$lib/renewals/staffApi';
 	import CrmRenewalBadge from '$lib/components/renewal/CrmRenewalBadge.svelte';
-	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, DNI_KONCA_WKROTCE, adresWniosku, dniDoKoncaOchrony, etapWniosku, koniecOchronyWkrotce, otworzPdfApk, podsumujWnioski, polisyKlientow, rangaWniosku, sortujWnioski, wniosekDoWystawienia, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wniosekZamkniety, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
+	import { BUCKET_ODNOWIEN, CYKL_DNI_WSTECZ, DNI_KONCA_WKROTCE, adresWniosku, dniDoKoncaOchrony, etapWniosku, koniecOchronyWkrotce, otworzPdfApk, pobierzPdfApk, podsumujWnioski, polisyKlientow, rangaWniosku, sortujWnioski, wniosekDoWystawienia, wniosekNowy, wniosekTestowy, wniosekZalatwiony, wniosekZamkniety, wnioskiZalatwioneZadaniem, type EtapWniosku } from '$lib/components/renewal/crmRenewals';
 	import { dateDiffDays, fmtDzien, fmtTermin, odmiana, todayStr } from '$lib/utils';
 	import { Plus, Copy, Check, ExternalLink, Search, ClipboardList, Download, User, Eye, FileText, X } from 'lucide-svelte';
 	import { saveApkPdf } from '$lib/utils/apkPdf';
 	import { apkTokenLink, apkOpenLink, newApkToken } from '$lib/utils/apkLink';
-	import { openStoredFile, copyStoredFileLink } from '$lib/utils/storageLink';
+	import { openStoredFile, copyStoredFileLink, downloadStoredFile } from '$lib/utils/storageLink';
+	import { bezUkosnikow } from '$lib/pobieranie';
+	import PobierzPlik from '$lib/components/PobierzPlik.svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
 	import { ctxCopy, type CtxItem } from '$lib/stores/ctxmenu.svelte';
@@ -92,6 +94,19 @@
 		}
 	}
 	const maPdfApk = (w: WniosekOdnowienia) => !!w.apk_at && !w.apk_odmowa;
+	// „Pobierz”: PDF trafia na dysk pod nazwą z numerem certyfikatu (pierwsza polisa — z nazwą klienta).
+	const nazwaPdfWn = (rodzaj: 'APK' | 'Wniosek', w: WniosekOdnowienia) => `${rodzaj} ${bezUkosnikow(w.nr_polisy ?? nazwaKlienta(w))}.pdf`;
+	const pobierzApkWniosku = async (w: WniosekOdnowienia) => { bladWn = await pobierzPdfApk(w.id, nazwaPdfWn('APK', w)); };
+	async function pobierzWniosek(w: WniosekOdnowienia) {
+		bladWn = '';
+		try {
+			await downloadStoredFile(BUCKET_ODNOWIEN, w.pdf_path, nazwaPdfWn('Wniosek', w));
+		} catch (e) {
+			bladWn = 'Nie udało się pobrać PDF wniosku: ' + ((e as { message?: string })?.message ?? String(e));
+		}
+	}
+	// Ikona „Pobierz” doklejona do przycisku otwierania.
+	const pobierzObokCls = 'inline-flex items-center -ml-px px-1.5 py-1 text-xs border border-line rounded-r-lg text-slate-600 hover:bg-slate-50 disabled:opacity-50';
 	// Ważność linku: tylko dla aktywnych, jeszcze niezłożonych wniosków.
 	const waznosc = (w: WniosekOdnowienia) => {
 		const e = etap(w);
@@ -107,7 +122,9 @@
 			{ label: 'Karta klienta', icon: User, onSelect: () => goto(`/clients/${w.klient_id}`) },
 			{ separator: true },
 			{ label: 'Otwórz PDF APK', icon: FileText, disabled: !maPdfApk(w), onSelect: () => pdfApkWniosku(w) },
-			{ label: 'Otwórz PDF wniosku', icon: Download, disabled: !w.pdf_path, onSelect: () => pdfWniosku(w) },
+			{ label: 'Pobierz PDF APK', icon: Download, disabled: !maPdfApk(w), onSelect: () => pobierzApkWniosku(w) },
+			{ label: 'Otwórz PDF wniosku', icon: FileText, disabled: !w.pdf_path, onSelect: () => pdfWniosku(w) },
+			{ label: 'Pobierz PDF wniosku', icon: Download, disabled: !w.pdf_path, onSelect: () => pobierzWniosek(w) },
 			{ separator: true },
 			{ label: 'Kopiuj nr certyfikatu', icon: Copy, disabled: !w.nr_polisy, onSelect: () => ctxCopy(w.nr_polisy ?? '', 'nr certyfikatu') }
 		];
@@ -136,6 +153,14 @@
 			await openStoredFile('apk-pdfs', f.pdf_url);
 		} catch (e) {
 			pdfError = 'Nie udało się otworzyć PDF: ' + ((e as { message?: string })?.message ?? String(e));
+		}
+	}
+	async function pobierzZapisanyPdf(f: ApkForm) {
+		pdfError = '';
+		try {
+			await downloadStoredFile('apk-pdfs', f.pdf_url, `APK_${bezUkosnikow(f.ref_number)}_${f.form_date}.pdf`);
+		} catch (e) {
+			pdfError = 'Nie udało się pobrać PDF: ' + ((e as { message?: string })?.message ?? String(e));
 		}
 	}
 
@@ -261,9 +286,15 @@
 			},
 			{
 				label: 'Otwórz zapisany PDF',
-				icon: Download,
+				icon: ExternalLink,
 				disabled: !f.pdf_url,
 				onSelect: () => openPdf(f)
+			},
+			{
+				label: 'Pobierz zapisany PDF',
+				icon: Download,
+				disabled: !f.pdf_url,
+				onSelect: () => pobierzZapisanyPdf(f)
 			},
 			{ separator: true },
 			{
@@ -555,14 +586,20 @@
 										<Eye size={12} /> {wniosekNowy(w) ? 'Klient' : 'Polisa'}
 									</a>
 									{#if maPdfApk(w)}
-										<button onclick={() => pdfApkWniosku(w)} class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-lg text-slate-600 hover:bg-slate-50" title="PDF analizy potrzeb">
-											<FileText size={12} /> APK
-										</button>
+										<span class="inline-flex">
+											<button onclick={() => pdfApkWniosku(w)} class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-l-lg text-slate-600 hover:bg-slate-50" title="Otwórz PDF analizy potrzeb">
+												<FileText size={12} /> APK
+											</button>
+											<PobierzPlik ikona class={pobierzObokCls} nazwa="PDF analizy potrzeb" pobierz={() => pobierzApkWniosku(w)} />
+										</span>
 									{/if}
 									{#if w.pdf_path}
-										<button onclick={() => pdfWniosku(w)} class="text-blue-500 hover:text-blue-700 flex items-center" title="PDF wniosku">
-											<Download size={12} />
-										</button>
+										<span class="inline-flex">
+											<button onclick={() => pdfWniosku(w)} class="flex items-center gap-1 px-2 py-1 text-xs border border-line rounded-l-lg text-slate-600 hover:bg-slate-50" title="Otwórz PDF wniosku">
+												<FileText size={12} /> Wniosek
+											</button>
+											<PobierzPlik ikona class={pobierzObokCls} nazwa="PDF wniosku" pobierz={() => pobierzWniosek(w)} />
+										</span>
 									{/if}
 								</div>
 							</td>
@@ -667,10 +704,11 @@
 										<Download size={12} /> {pdfSaving === f.id ? '...' : 'PDF'}
 									</button>
 									{#if f.pdf_url}
-										<button onclick={() => openPdf(f)} title="Ostatni zapisany PDF"
+										<button onclick={() => openPdf(f)} title="Otwórz ostatni zapisany PDF" aria-label="Otwórz ostatni zapisany PDF"
 											class="text-blue-500 hover:text-blue-700 flex items-center">
-											<Download size={12} />
+											<ExternalLink size={12} />
 										</button>
+										<PobierzPlik ikona class="text-blue-500 hover:text-blue-700 flex items-center disabled:opacity-60" nazwa="ostatni zapisany PDF APK" pobierz={() => pobierzZapisanyPdf(f)} />
 									{/if}
 								</div>
 							</td>
