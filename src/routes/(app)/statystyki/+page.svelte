@@ -7,7 +7,7 @@
 	import { appState, isBroker } from '$lib/stores/app.svelte';
 	import { odmiana, todayStr } from '$lib/utils';
 	import { ugBezRozliczania, ROZLICZONE } from '$lib/platnosci';
-	import { nazwaRodzaju } from '$lib/statusPolisy';
+	import { nazwaRodzaju, polisaAktywna } from '$lib/statusPolisy';
 	import type { Policy } from '$lib/types/database';
 	import Kolumny from '$lib/components/wykresy/Kolumny.svelte';
 	import EksportExcel from '$lib/components/EksportExcel.svelte';
@@ -172,6 +172,27 @@
 		return [...wgTu.slice(0, 7), { id: '_reszta', nazwa: `Pozostałe (${reszta.length})`, przypis: reszta.reduce((s, t) => s + t.przypis, 0), prowizja: reszta.reduce((s, t) => s + t.prowizja, 0), polisy: reszta.reduce((s, t) => s + t.polisy, 0), klienci: new Set<string>() }];
 	});
 	const tuMaks = $derived(Math.max(1, ...tuWidoczne.map((t) => t.przypis)));
+	// Towarzystwa z polisami aktywnymi dziś, ale bez przypisu w okresie (przypis liczy się w miesiącu początku polisy,
+	// np. polisa roczna od grudnia poprzedniego roku nie wchodzi do „Od początku roku”) — żeby TU nie znikało bez słowa.
+	const tuBezPrzypisu = $derived.by(() => {
+		const wOkresieTu = new Set(polisy.map((p) => p.tu_id));
+		const m = new Map<string, { id: string; nazwa: string; polisy: number; od: string }>();
+		for (const p of wFiltrach) {
+			if (!p.tu_id || wOkresieTu.has(p.tu_id) || !polisaAktywna(p, dzis)) continue;
+			const t = m.get(p.tu_id) ?? { id: p.tu_id, nazwa: nazwaTuWg.get(p.tu_id) ?? '—', polisy: 0, od: p.data_od };
+			t.polisy++;
+			if (p.data_od < t.od) t.od = p.data_od;
+			m.set(p.tu_id, t);
+		}
+		return [...m.values()].sort((a, b) => a.nazwa.localeCompare(b.nazwa, 'pl'));
+	});
+	// Najkrótszy okres z listy, który obejmuje początek tych polis — do przycisku „Pokaż …”.
+	const okresDlaBezPrzypisu = $derived.by((): PresetOkresu | null => {
+		if (!tuBezPrzypisu.length) return null;
+		const od = tuBezPrzypisu.reduce((m, t) => (t.od < m ? t.od : m), tuBezPrzypisu[0].od);
+		const kandydat = (['12m', 'wszystko'] as PresetOkresu[]).find((p) => p !== preset && okresZPresetu(p, dzis, najstarsza).od <= od);
+		return kandydat ?? null;
+	});
 	const tuWniosek = $derived.by(() => {
 		if (!wgTu.length || !sumy.przypis) return '';
 		const top = wgTu[0];
@@ -660,6 +681,15 @@
 				{/each}
 			</ul>
 			{#if tuWniosek}<p class="text-[13px] text-ink-2 border-t border-line-soft pt-3">{tuWniosek}</p>{/if}
+		{/if}
+		{#if tuBezPrzypisu.length}
+			<p class="text-xs text-ink-3 border-t border-line-soft pt-3" data-testid="tu-bez-przypisu">
+				Bez przypisu w tym okresie: {tuBezPrzypisu.map((t) => `${t.nazwa} (${odmiana(t.polisy, 'aktywna polisa', 'aktywne polisy', 'aktywnych polis')} od ${dzien(t.od)})`).join(', ')}.
+				Przypis liczy się w miesiącu początku polisy.
+				{#if okresDlaBezPrzypisu}
+					<button type="button" onclick={() => (preset = okresDlaBezPrzypisu!)} class="font-semibold text-accent-text hover:underline">Pokaż: {PRESETY.find((p) => p[0] === okresDlaBezPrzypisu)?.[1]}</button>
+				{/if}
+			</p>
 		{/if}
 	</section>
 
