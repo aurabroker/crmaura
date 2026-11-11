@@ -4,7 +4,7 @@
 	import { appState } from '$lib/stores/app.svelte';
 	import { dateDiffDays, odmiana, todayStr } from '$lib/utils';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
-	import { nazwaRodzaju, nieOdnawiana, odnowionePolisy } from '$lib/statusPolisy';
+	import { nazwaRodzaju, nieOdnawiana, odnowionePolisy, polisaAktywna } from '$lib/statusPolisy';
 	import type { Policy } from '$lib/types/database';
 	import Kolumny from '$lib/components/wykresy/Kolumny.svelte';
 	import EksportExcel from '$lib/components/EksportExcel.svelte';
@@ -50,6 +50,17 @@
 	// Domyślnie 3 największe (według przypisu w okresie); wybór zapamiętany osobno dla każdego wymiaru.
 	// Bez limitu pozycji: można porównać wszystkie towarzystwa, rodzaje albo opiekunów z polisami w okresie —
 	// tabele dostają wtedy stałą szerokość kolumn i przewijają się w poziomie, a nazwy wskaźników zostają na miejscu.
+	// Pozycje z polisami aktywnymi dziś, ale bez polis rozpoczętych w okresie — nie da się ich porównać w tym okresie,
+	// więc pod wyborem jest informacja zamiast cichego braku na liście „Dodaj”.
+	const bezPolisWOkresie = $derived.by(() => {
+		if (wymiar === 'okres') return [] as string[];
+		const out = new Set<string>();
+		for (const p of polisyLiczone) {
+			const k = klucz(p, wymiar);
+			if (k && !grupy.has(k) && polisaAktywna(p, dzis)) out.add(k);
+		}
+		return [...out].sort((a, b) => nazwa(a, wymiar).localeCompare(nazwa(b, wymiar), 'pl'));
+	});
 	const DOMYSLNIE = 3;
 	const encje = $derived((wybrane[wymiar] ?? dostepne.slice(0, DOMYSLNIE)).filter((k) => dostepne.includes(k)));
 	const wybraneDomyslne = $derived(encje.length === Math.min(DOMYSLNIE, dostepne.length) && encje.every((k, i) => k === dostepne[i]));
@@ -291,6 +302,11 @@
 		</div>
 	{/if}
 </div>
+{#if bezPolisWOkresie.length}
+	<p class="-mt-2 mb-4 px-1 text-xs text-ink-3" data-testid="por-bez-polis">
+		Bez polis rozpoczętych w tym okresie (porównanie liczy przypis w miesiącu początku polisy): {bezPolisWOkresie.map((k) => nazwa(k, wymiar)).join(', ')}. Wybierz dłuższy okres, żeby je dodać.
+	</p>
+{/if}
 
 {#if wymiar !== 'okres'}
 	{#if encje.length === 0}
