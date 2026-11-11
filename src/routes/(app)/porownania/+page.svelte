@@ -1,6 +1,7 @@
 <script lang="ts">
 	// Porównania: towarzystwa, opiekunowie (opiekun klienta) i rodzaje obok siebie albo dwa okresy.
-	// Dane firmy z appState; polisy według daty początku ochrony, bez umów generalnych (ramek).
+	// Dane firmy z appState, bez umów generalnych (ramek). Składka na dwa sposoby ($lib/inkaso): inkaso — wpłacone raty
+	// według dnia wpłaty, przypis — cała składka polisy w miesiącu początku ochrony; nowe polisy według początku ochrony.
 	import { appState } from '$lib/stores/app.svelte';
 	import { dateDiffDays, odmiana, todayStr } from '$lib/utils';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
@@ -10,9 +11,13 @@
 	import EksportExcel from '$lib/components/EksportExcel.svelte';
 	import { kol, type Arkusz } from '$lib/eksport';
 	import {
-		KOLOR, PRESETY, dzien, grupuj, liczba, liczonaPolisa, miesiacKrotko, miesiacPelny, miesiecznie, okresZPresetu,
-		podzialki, etykietaOsi, proc, rokWczesniej, sumuj, wOkresie, zl, zlKrotko, zmiana, type Okres, type PresetOkresu
+		KOLOR, PRESETY, dzien, liczba, liczonaPolisa, miesiace, miesiacKrotko, miesiacPelny, okresZPresetu,
+		podzialki, etykietaOsi, proc, rokWczesniej, zl, zlKrotko, zmiana, type Okres, type PresetOkresu
 	} from '$lib/analityka';
+	import {
+		OPIS_PODSTAWY, PODSTAWY, grupujPozycje, miesiecznieSkladki, pozycjeInkasa, pozycjePrzypisu, pozycjeWOkresie, sumujPozycje, zeroSkladki,
+		type Podstawa
+	} from '$lib/inkaso';
 	import { ArrowDownRight, ArrowUpRight, Award, AlertTriangle, X, Plus, FileChartColumn, ChartColumn } from 'lucide-svelte';
 
 	const dzis = todayStr();
@@ -23,11 +28,16 @@
 	let wybrane = $state<Record<string, string[] | undefined>>({});
 	let wspolnaSkala = $state(true);
 	let widok = $state<'wykres' | 'tabela'>('wykres');
+	// Podstawa składki na wykresach miesięcznych i w porównaniu okresów (macierz pokazuje obie).
+	let podstawa = $state<Podstawa>('inkaso');
 
 	const polisyLiczone = $derived(appState.policies.filter(liczonaPolisa));
 	const najstarsza = $derived(polisyLiczone.reduce<string | null>((m, p) => (p.data_od && (!m || p.data_od < m) ? p.data_od : m), null));
 	const okres = $derived(okresZPresetu(preset, dzis, najstarsza));
-	const wOkr = $derived(polisyLiczone.filter((p) => wOkresie(p.data_od, okres)));
+	const pozInkaso = $derived(pozycjeInkasa(polisyLiczone, appState.payments));
+	const pozPrzypis = $derived(pozycjePrzypisu(polisyLiczone));
+	const inkOkr = $derived(pozycjeWOkresie(pozInkaso, okres));
+	const przOkr = $derived(pozycjeWOkresie(pozPrzypis, okres));
 	const opiekunKlienta = $derived(new Map(appState.clients.map((c) => [c.id, c.opiekun_id])));
 	const nazwaTuWg = $derived(new Map(appState.insurers.map((i) => [i.id, i.skrot || i.nazwa])));
 	const opiekunWg = $derived(new Map(appState.brokers.map((b) => [b.id, b.imie_nazwisko || b.email])));
@@ -45,19 +55,26 @@
 		return k === '-' ? 'Bez opiekuna' : opiekunWg.get(k) ?? '—';
 	}
 
-	const grupy = $derived(wymiar === 'okres' ? new Map() : grupuj(wOkr, (p) => klucz(p, wymiar)));
-	const dostepne = $derived([...grupy.entries()].sort((a, b) => b[1].przypis - a[1].przypis).map(([k]) => k as string));
-	// Domyślnie 3 największe (według przypisu w okresie); wybór zapamiętany osobno dla każdego wymiaru.
+	// Pozycje z wpłatą albo z nową polisą w okresie, od największego inkasa (potem przypisu).
+	const grupyInk = $derived(wymiar === 'okres' ? new Map<string, ReturnType<typeof sumujPozycje>>() : grupujPozycje(inkOkr, (p) => klucz(p, wymiar)));
+	const grupyPrz = $derived(wymiar === 'okres' ? new Map<string, ReturnType<typeof sumujPozycje>>() : grupujPozycje(przOkr, (p) => klucz(p, wymiar)));
+	const dostepne = $derived(
+		[...new Set([...grupyInk.keys(), ...grupyPrz.keys()])].sort(
+			(a, b) => (grupyInk.get(b)?.skladka ?? 0) - (grupyInk.get(a)?.skladka ?? 0) || (grupyPrz.get(b)?.skladka ?? 0) - (grupyPrz.get(a)?.skladka ?? 0)
+		)
+	);
+	const dostepneZbior = $derived(new Set(dostepne));
+	// Domyślnie 3 największe (według inkasa w okresie); wybór zapamiętany osobno dla każdego wymiaru.
 	// Bez limitu pozycji: można porównać wszystkie towarzystwa, rodzaje albo opiekunów z polisami w okresie —
 	// tabele dostają wtedy stałą szerokość kolumn i przewijają się w poziomie, a nazwy wskaźników zostają na miejscu.
-	// Pozycje z polisami aktywnymi dziś, ale bez polis rozpoczętych w okresie — nie da się ich porównać w tym okresie,
+	// Pozycje z polisami aktywnymi dziś, ale bez wpłat i bez nowych polis w okresie — nie da się ich porównać w tym okresie,
 	// więc pod wyborem jest informacja zamiast cichego braku na liście „Dodaj”.
 	const bezPolisWOkresie = $derived.by(() => {
 		if (wymiar === 'okres') return [] as string[];
 		const out = new Set<string>();
 		for (const p of polisyLiczone) {
 			const k = klucz(p, wymiar);
-			if (k && !grupy.has(k) && polisaAktywna(p, dzis)) out.add(k);
+			if (k && !dostepneZbior.has(k) && polisaAktywna(p, dzis)) out.add(k);
 		}
 		return [...out].sort((a, b) => nazwa(a, wymiar).localeCompare(nazwa(b, wymiar), 'pl'));
 	});
@@ -79,17 +96,25 @@
 	// ── Macierz wskaźników ──
 	const ugBez = $derived(ugBezRozliczania(appState.policies));
 	const odnowione = $derived(odnowionePolisy(appState.policies));
-	const sumaPrzypisu = $derived(sumuj(wOkr).przypis);
-	type Kolumna = { k: string; nazwa: string; przypis: number; prowizja: number; stawka: number; polisy: number; srednia: number; klienci: number; zaleglosc: number; ratZaleglych: number; odnowienia60: number };
+	const sumaInkasa = $derived(sumujPozycje(inkOkr).skladka);
+	const sumaPrzypisu = $derived(sumujPozycje(przOkr).skladka);
+	type Kolumna = {
+		k: string; nazwa: string; inkaso: number; prowizjaInk: number; wplaty: number; przypis: number; prowizja: number; stawka: number; polisy: number;
+		srednia: number; klienci: number; zaleglosc: number; ratZaleglych: number; odnowienia60: number;
+	};
 	function kolumnaEncji(k: string): Kolumna {
-			const s = grupy.get(k)!;
+			const a = grupyInk.get(k) ?? zeroSkladki();
+			const s = grupyPrz.get(k) ?? zeroSkladki();
 			const polisyEncji = polisyLiczone.filter((p) => klucz(p, wymiar) === k);
 			const ids = new Set(polisyEncji.map((p) => p.id));
 			const zalegle = appState.payments.filter((r) => ids.has(r.polisa_id) && !ROZLICZONE.includes(r.status) && poTerminie(r, dzis, ugBez));
+			const klienci = new Set([...inkOkr, ...przOkr].filter((x) => klucz(x.p, wymiar) === k && x.p.klient_id).map((x) => x.p.klient_id));
 			return {
 				k, nazwa: nazwa(k, wymiar),
-				przypis: s.przypis, prowizja: s.prowizja, stawka: s.przypis ? (s.prowizja / s.przypis) * 100 : 0,
-				polisy: s.polisy, srednia: s.polisy ? s.przypis / s.polisy : 0, klienci: s.klienci.size,
+				inkaso: a.skladka, prowizjaInk: a.prowizja, wplaty: a.pozycji,
+				przypis: s.skladka, prowizja: s.prowizja,
+				stawka: s.skladka ? (s.prowizja / s.skladka) * 100 : a.skladka ? (a.prowizja / a.skladka) * 100 : 0,
+				polisy: s.polisy, srednia: s.polisy ? s.skladka / s.polisy : 0, klienci: klienci.size,
 				zaleglosc: zalegle.reduce((a, r) => a + Number(r.kwota ?? 0), 0), ratZaleglych: zalegle.length,
 				odnowienia60: polisyEncji.filter((p) => p.data_do && p.data_do >= dzis && dateDiffDays(dzis, p.data_do) <= 60 && !odnowione.has(p.id) && !nieOdnawiana(p)).length
 			};
@@ -97,12 +122,14 @@
 	const kolumnyMacierzy = $derived<Kolumna[]>(encje.map(kolumnaEncji));
 	type Wiersz = { etykieta: string; podpowiedz: string; wartosc: (c: Kolumna) => number; fmt: (c: Kolumna) => string; pod?: (c: Kolumna) => string; lepiej: 'wiecej' | 'mniej' | null };
 	const WIERSZE: Wiersz[] = [
-		{ etykieta: 'Przypis składki', podpowiedz: 'w okresie', wartosc: (c) => c.przypis, fmt: (c) => zl(c.przypis), pod: (c) => `${proc(sumaPrzypisu ? (c.przypis / sumaPrzypisu) * 100 : 0)} całości`, lepiej: 'wiecej' },
-		{ etykieta: 'Prowizja przypisana', podpowiedz: 'w okresie', wartosc: (c) => c.prowizja, fmt: (c) => zl(c.prowizja), lepiej: 'wiecej' },
-		{ etykieta: 'Efektywna stawka', podpowiedz: 'prowizja / przypis', wartosc: (c) => c.stawka, fmt: (c) => proc(c.stawka), lepiej: 'wiecej' },
+		{ etykieta: 'Inkaso składki', podpowiedz: 'wpłacone raty w okresie', wartosc: (c) => c.inkaso, fmt: (c) => zl(c.inkaso), pod: (c) => `${proc(sumaInkasa ? (c.inkaso / sumaInkasa) * 100 : 0)} całości · ${odmiana(c.wplaty, 'wpłata', 'wpłaty', 'wpłat')}`, lepiej: 'wiecej' },
+		{ etykieta: 'Prowizja od inkasa', podpowiedz: 'część prowizji z wpłaconych rat', wartosc: (c) => c.prowizjaInk, fmt: (c) => zl(c.prowizjaInk), lepiej: 'wiecej' },
+		{ etykieta: 'Przypis składki', podpowiedz: 'polisy z początkiem w okresie', wartosc: (c) => c.przypis, fmt: (c) => zl(c.przypis), pod: (c) => `${proc(sumaPrzypisu ? (c.przypis / sumaPrzypisu) * 100 : 0)} całości`, lepiej: 'wiecej' },
+		{ etykieta: 'Prowizja przypisana', podpowiedz: 'polisy z początkiem w okresie', wartosc: (c) => c.prowizja, fmt: (c) => zl(c.prowizja), lepiej: 'wiecej' },
+		{ etykieta: 'Efektywna stawka', podpowiedz: 'prowizja / składka', wartosc: (c) => c.stawka, fmt: (c) => proc(c.stawka), lepiej: 'wiecej' },
 		{ etykieta: 'Nowe polisy', podpowiedz: 'w okresie', wartosc: (c) => c.polisy, fmt: (c) => liczba(c.polisy), lepiej: 'wiecej' },
-		{ etykieta: 'Średnia składka', podpowiedz: 'przypis / polisy', wartosc: (c) => c.srednia, fmt: (c) => zl(c.srednia), lepiej: null },
-		{ etykieta: 'Klienci', podpowiedz: 'z polisą w okresie', wartosc: (c) => c.klienci, fmt: (c) => liczba(c.klienci), lepiej: 'wiecej' },
+		{ etykieta: 'Średnia składka', podpowiedz: 'przypis / nowe polisy', wartosc: (c) => c.srednia, fmt: (c) => zl(c.srednia), lepiej: null },
+		{ etykieta: 'Klienci', podpowiedz: 'z wpłatą albo nową polisą w okresie', wartosc: (c) => c.klienci, fmt: (c) => liczba(c.klienci), lepiej: 'wiecej' },
 		{ etykieta: 'Należności po terminie', podpowiedz: 'stan na dziś, wszystkie polisy', wartosc: (c) => c.zaleglosc, fmt: (c) => zl(c.zaleglosc), pod: (c) => odmiana(c.ratZaleglych, 'rata', 'raty', 'rat'), lepiej: 'mniej' },
 		{ etykieta: 'Odnowienia w 60 dni', podpowiedz: 'polisy kończące się, bez następczyni', wartosc: (c) => c.odnowienia60, fmt: (c) => liczba(c.odnowienia60), lepiej: null }
 	];
@@ -117,9 +144,11 @@
 		const c = kolumnyMacierzy;
 		if (c.length < 2) return [] as string[];
 		const out: string[] = [];
-		const lider = [...c].sort((a, b) => b.przypis - a.przypis)[0];
-		if (lider.przypis > 0) out.push(`${lider.nazwa} ma największy przypis: ${zl(lider.przypis)} (${proc(sumaPrzypisu ? (lider.przypis / sumaPrzypisu) * 100 : 0)} całego okresu).`);
-		const zeStawka = c.filter((x) => x.przypis > 0).sort((a, b) => b.stawka - a.stawka);
+		const lider = [...c].sort((a, b) => b.inkaso - a.inkaso)[0];
+		if (lider.inkaso > 0) out.push(`${lider.nazwa} ma największe inkaso: ${zl(lider.inkaso)} (${proc(sumaInkasa ? (lider.inkaso / sumaInkasa) * 100 : 0)} całego okresu).`);
+		const liderP = [...c].sort((a, b) => b.przypis - a.przypis)[0];
+		if (liderP.przypis > 0 && liderP.k !== lider.k) out.push(`Największy przypis ma ${liderP.nazwa}: ${zl(liderP.przypis)} (${proc(sumaPrzypisu ? (liderP.przypis / sumaPrzypisu) * 100 : 0)}).`);
+		const zeStawka = c.filter((x) => x.przypis > 0 || x.inkaso > 0).sort((a, b) => b.stawka - a.stawka);
 		if (zeStawka.length >= 2 && zeStawka[0].stawka - zeStawka[zeStawka.length - 1].stawka >= 1) {
 			out.push(`Stawka prowizji: od ${proc(zeStawka[zeStawka.length - 1].stawka)} (${zeStawka[zeStawka.length - 1].nazwa}) do ${proc(zeStawka[0].stawka)} (${zeStawka[0].nazwa}).`);
 		}
@@ -130,14 +159,16 @@
 
 	// ── Małe wykresy miesięczne ──
 	const kilkaLat = $derived(okres.od.slice(0, 4) !== okres.do.slice(0, 4));
+	const pozOkr = $derived(podstawa === 'inkaso' ? inkOkr : przOkr);
+	const NAZWA = $derived(OPIS_PODSTAWY[podstawa]);
 	const seriaMies = $derived(
 		encje.map((k) => ({
 			k,
 			nazwa: nazwa(k, wymiar),
-			mies: miesiecznie(wOkr.filter((p) => klucz(p, wymiar) === k), okres)
+			mies: miesiecznieSkladki(pozOkr.filter((x) => klucz(x.p, wymiar) === k), miesiace(okres))
 		}))
 	);
-	const goraWspolna = $derived(Math.max(0, ...seriaMies.flatMap((s) => s.mies.map((m) => m.s.przypis))));
+	const goraWspolna = $derived(Math.max(0, ...seriaMies.flatMap((s) => s.mies.map((m) => m.s.skladka))));
 
 	// ── Okresy ──
 	type Para = 'kwartal' | 'miesiac' | 'rok';
@@ -170,62 +201,78 @@
 		};
 	});
 	const rokDostepny = $derived(!!najstarsza && najstarsza <= `${Number(dzis.slice(0, 4)) - 1}-01-01`);
-	const sA = $derived(sumuj(polisyLiczone.filter((p) => wOkresie(p.data_od, okresyPary.a))));
-	const sB = $derived(sumuj(polisyLiczone.filter((p) => wOkresie(p.data_od, okresyPary.b))));
+	// Okresy: obie podstawy w kafelkach, towarzystwa według wybranej podstawy.
+	const inkA = $derived(sumujPozycje(pozycjeWOkresie(pozInkaso, okresyPary.a)));
+	const inkB = $derived(sumujPozycje(pozycjeWOkresie(pozInkaso, okresyPary.b)));
+	const sA = $derived(sumujPozycje(pozycjeWOkresie(pozPrzypis, okresyPary.a)));
+	const sB = $derived(sumujPozycje(pozycjeWOkresie(pozPrzypis, okresyPary.b)));
 	const kpiOkresow = $derived([
-		{ etykieta: 'Przypis składki', teraz: zl(sB.przypis), wczesniej: zl(sA.przypis), d: zmiana(sB.przypis, sA.przypis) },
+		{ etykieta: 'Inkaso składki', teraz: zl(inkB.skladka), wczesniej: zl(inkA.skladka), d: zmiana(inkB.skladka, inkA.skladka) },
+		{ etykieta: 'Prowizja od inkasa', teraz: zl(inkB.prowizja), wczesniej: zl(inkA.prowizja), d: zmiana(inkB.prowizja, inkA.prowizja) },
+		{ etykieta: 'Przypis składki', teraz: zl(sB.skladka), wczesniej: zl(sA.skladka), d: zmiana(sB.skladka, sA.skladka) },
 		{ etykieta: 'Prowizja przypisana', teraz: zl(sB.prowizja), wczesniej: zl(sA.prowizja), d: zmiana(sB.prowizja, sA.prowizja) },
 		{ etykieta: 'Nowe polisy', teraz: liczba(sB.polisy), wczesniej: liczba(sA.polisy), d: zmiana(sB.polisy, sA.polisy) },
-		{ etykieta: 'Efektywna stawka', teraz: proc(sB.przypis ? (sB.prowizja / sB.przypis) * 100 : 0), wczesniej: proc(sA.przypis ? (sA.prowizja / sA.przypis) * 100 : 0), d: null }
+		{ etykieta: 'Efektywna stawka', teraz: proc(sB.skladka ? (sB.prowizja / sB.skladka) * 100 : 0), wczesniej: proc(sA.skladka ? (sA.prowizja / sA.skladka) * 100 : 0), d: null }
 	]);
 	const tuOkresow = $derived.by(() => {
-		const ga = grupuj(polisyLiczone.filter((p) => wOkresie(p.data_od, okresyPary.a)), (p) => p.tu_id);
-		const gb = grupuj(polisyLiczone.filter((p) => wOkresie(p.data_od, okresyPary.b)), (p) => p.tu_id);
+		const baza = podstawa === 'inkaso' ? pozInkaso : pozPrzypis;
+		const ga = grupujPozycje(pozycjeWOkresie(baza, okresyPary.a), (p) => p.tu_id);
+		const gb = grupujPozycje(pozycjeWOkresie(baza, okresyPary.b), (p) => p.tu_id);
 		const klucze = [...new Set([...ga.keys(), ...gb.keys()])];
 		return klucze
-			.map((k) => ({ k, nazwa: nazwaTuWg.get(k) ?? '—', a: ga.get(k)?.przypis ?? 0, b: gb.get(k)?.przypis ?? 0 }))
+			.map((k) => ({ k, nazwa: nazwaTuWg.get(k) ?? '—', a: ga.get(k)?.skladka ?? 0, b: gb.get(k)?.skladka ?? 0 }))
 			.sort((x, y) => Math.max(y.a, y.b) - Math.max(x.a, x.b))
 			.slice(0, 10);
 	});
-	// Eksport do Excela: macierz wskaźników dla wszystkich pozycji wymiaru (nie tylko wybranych na ekranie) z przypisem
-	// miesiąc po miesiącu, a w widoku „Okresy” — dwa okresy obok siebie i towarzystwa w obu okresach.
+	// Eksport do Excela: macierz wskaźników dla wszystkich pozycji wymiaru (nie tylko wybranych na ekranie) z inkasem
+	// i przypisem miesiąc po miesiącu, a w widoku „Okresy” — dwa okresy obok siebie i towarzystwa w obu okresach.
 	function arkuszePorownan(): Arkusz[] {
 		if (wymiar === 'okres') {
 			const { a, b } = okresyPary;
 			const zm = (x: number, y: number) => { const d = zmiana(x, y); return d == null ? null : Math.round(d * 10) / 10; };
+			const tu = (baza: typeof pozInkaso, o: Okres) => grupujPozycje(pozycjeWOkresie(baza, o), (p) => p.tu_id);
+			const [ia, ib, pa, pb] = [tu(pozInkaso, a), tu(pozInkaso, b), tu(pozPrzypis, a), tu(pozPrzypis, b)];
+			const klucze = [...new Set([...ia.keys(), ...ib.keys(), ...pa.keys(), ...pb.keys()])].sort((x, y) => (ib.get(y)?.skladka ?? 0) - (ib.get(x)?.skladka ?? 0));
 			return [
 				{
 					nazwa: 'Okresy',
 					kolumny: ['Wskaźnik', a.etykieta, b.etykieta, kol.proc('Zmiana %')],
 					wiersze: [
-						['Przypis składki', sA.przypis, sB.przypis, zm(sB.przypis, sA.przypis)],
+						['Inkaso składki', inkA.skladka, inkB.skladka, zm(inkB.skladka, inkA.skladka)],
+						['Prowizja od inkasa', inkA.prowizja, inkB.prowizja, zm(inkB.prowizja, inkA.prowizja)],
+						['Przypis składki', sA.skladka, sB.skladka, zm(sB.skladka, sA.skladka)],
 						['Prowizja przypisana', sA.prowizja, sB.prowizja, zm(sB.prowizja, sA.prowizja)],
 						['Nowe polisy', sA.polisy, sB.polisy, zm(sB.polisy, sA.polisy)],
-						['Efektywna stawka %', sA.przypis ? (sA.prowizja / sA.przypis) * 100 : 0, sB.przypis ? (sB.prowizja / sB.przypis) * 100 : 0, null]
+						['Efektywna stawka %', sA.skladka ? (sA.prowizja / sA.skladka) * 100 : 0, sB.skladka ? (sB.prowizja / sB.skladka) * 100 : 0, null]
 					]
 				},
 				{
 					nazwa: 'Towarzystwa w okresach',
-					kolumny: ['Towarzystwo', kol.zl(`Przypis: ${a.etykieta}`), kol.zl(`Przypis: ${b.etykieta}`), kol.proc('Zmiana %')],
-					wiersze: tuOkresow.map((t) => [t.nazwa, t.a, t.b, zm(t.b, t.a)])
+					kolumny: ['Towarzystwo', kol.zl(`Inkaso: ${a.etykieta}`), kol.zl(`Inkaso: ${b.etykieta}`), kol.proc('Zmiana inkasa %'),
+						kol.zl(`Przypis: ${a.etykieta}`), kol.zl(`Przypis: ${b.etykieta}`), kol.proc('Zmiana przypisu %')],
+					wiersze: klucze.map((k) => {
+						const [x1, x2, y1, y2] = [ia, ib, pa, pb].map((g) => g.get(k)?.skladka ?? 0);
+						return [nazwaTuWg.get(k) ?? '—', x1, x2, zm(x2, x1), y1, y2, zm(y2, y1)];
+					})
 				}
 			];
 		}
 		const etykietaWymiaru = WYMIARY.find((w) => w[0] === wymiar)?.[1] ?? 'Pozycja';
 		const wszystkie = dostepne.map(kolumnaEncji);
+		const mies = miesiace(okres);
+		const miesiecznieWg = (lista: typeof inkOkr) => mies.map((ym) => [ym, ...dostepne.map((k) => lista.filter((x) => klucz(x.p, wymiar) === k && x.data.startsWith(ym)).reduce((a, x) => a + x.kwota, 0))]);
 		return [
 			{
 				nazwa: `Porównanie ${okres.etykieta}`,
-				kolumny: [etykietaWymiaru, kol.zl('Przypis składki'), kol.proc('Udział w przypisie %'), kol.zl('Prowizja przypisana'), kol.proc('Efektywna stawka %'), kol.liczba('Nowe polisy'),
+				kolumny: [etykietaWymiaru, kol.zl('Inkaso składki'), kol.proc('Udział w inkasie %'), kol.zl('Prowizja od inkasa'), kol.liczba('Wpłaty'),
+					kol.zl('Przypis składki'), kol.proc('Udział w przypisie %'), kol.zl('Prowizja przypisana'), kol.proc('Efektywna stawka %'), kol.liczba('Nowe polisy'),
 					kol.zl('Średnia składka'), kol.liczba('Klienci'), kol.zl('Należności po terminie'), kol.liczba('Raty po terminie'), kol.liczba('Odnowienia w 60 dni')],
-				wiersze: wszystkie.map((c) => [c.nazwa, c.przypis, sumaPrzypisu ? (c.przypis / sumaPrzypisu) * 100 : 0, c.prowizja, c.stawka, c.polisy, c.srednia, c.klienci,
+				wiersze: wszystkie.map((c) => [c.nazwa, c.inkaso, sumaInkasa ? (c.inkaso / sumaInkasa) * 100 : 0, Math.round(c.prowizjaInk * 100) / 100, c.wplaty,
+					c.przypis, sumaPrzypisu ? (c.przypis / sumaPrzypisu) * 100 : 0, c.prowizja, c.stawka, c.polisy, c.srednia, c.klienci,
 					c.zaleglosc, c.ratZaleglych, c.odnowienia60])
 			},
-			{
-				nazwa: 'Przypis miesięcznie',
-				kolumny: ['Miesiąc', ...wszystkie.map((c) => kol.zl(c.nazwa))],
-				wiersze: miesiecznie(wOkr, okres).map(({ ym }) => [ym, ...dostepne.map((k) => wOkr.filter((p) => klucz(p, wymiar) === k && p.data_od?.startsWith(ym)).reduce((x, p) => x + Number(p.skladka_przypisana ?? 0), 0))])
-			}
+			{ nazwa: 'Inkaso miesięcznie', kolumny: ['Miesiąc', ...wszystkie.map((c) => kol.zl(c.nazwa))], wiersze: miesiecznieWg(inkOkr) },
+			{ nazwa: 'Przypis miesięcznie', kolumny: ['Miesiąc', ...wszystkie.map((c) => kol.zl(c.nazwa))], wiersze: miesiecznieWg(przOkr) }
 		];
 	}
 	const skalaOkresow = $derived(podzialki(Math.max(0, ...tuOkresow.flatMap((t) => [t.a, t.b]))));
@@ -233,6 +280,14 @@
 </script>
 
 <svelte:head><title>Porównania — AuraCRM</title></svelte:head>
+
+{#snippet przelacznikPodstawy(klasa: string)}
+	<div role="group" aria-label="Składka liczona jako" class="{klasa} flex p-0.5 rounded-lg bg-surface-2 border border-line-soft" data-testid="por-podstawa">
+		{#each PODSTAWY as [k, l]}
+			<button aria-pressed={podstawa === k} onclick={() => (podstawa = k)} title="{OPIS_PODSTAWY[k].skladka}: {OPIS_PODSTAWY[k].zasada}" class="h-7 px-3 rounded-md text-[13px] {podstawa === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
+		{/each}
+	</div>
+{/snippet}
 
 <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
 	<div>
@@ -276,7 +331,7 @@
 				<button type="button" onclick={dodajWszystkie} class="h-8 px-2 rounded-lg text-[13px] font-semibold text-accent-text hover:bg-surface-2" data-testid="por-wszystkie">Wszystkie ({dostepne.length})</button>
 			{/if}
 			{#if !wybraneDomyslne && dostepne.length > DOMYSLNIE}
-				<button type="button" onclick={przywrocDomyslne} class="h-8 px-2 rounded-lg text-[13px] font-medium text-ink-2 hover:bg-surface-2" title="Wróć do {DOMYSLNIE} pozycji z największym przypisem w okresie">{DOMYSLNIE} największe</button>
+				<button type="button" onclick={przywrocDomyslne} class="h-8 px-2 rounded-lg text-[13px] font-medium text-ink-2 hover:bg-surface-2" title="Wróć do {DOMYSLNIE} pozycji z największym inkasem w okresie">{DOMYSLNIE} największe</button>
 			{/if}
 		</div>
 		<label class="sm:ml-auto relative inline-flex items-center h-8 rounded-lg border border-line bg-white text-[13px] font-medium text-ink focus-within:ring-2 focus-within:ring-accent/40">
@@ -304,7 +359,7 @@
 </div>
 {#if bezPolisWOkresie.length}
 	<p class="-mt-2 mb-4 px-1 text-xs text-ink-3" data-testid="por-bez-polis">
-		Bez polis rozpoczętych w tym okresie (porównanie liczy przypis w miesiącu początku polisy): {bezPolisWOkresie.map((k) => nazwa(k, wymiar)).join(', ')}. Wybierz dłuższy okres, żeby je dodać.
+		Bez wpłat i bez nowych polis w tym okresie: {bezPolisWOkresie.map((k) => nazwa(k, wymiar)).join(', ')}. Wybierz dłuższy okres, żeby je dodać.
 	</p>
 {/if}
 
@@ -332,7 +387,7 @@
 							{#each kolumnyMacierzy as c (c.k)}
 								<th class="px-4 py-2.5 font-semibold">
 									<span class="block text-ink">{c.nazwa}</span>
-									<span class="block text-xs font-normal text-ink-3">{odmiana(c.polisy, 'polisa', 'polisy', 'polis')}</span>
+									<span class="block text-xs font-normal text-ink-3">{odmiana(c.wplaty, 'wpłata', 'wpłaty', 'wpłat')} · {odmiana(c.polisy, 'nowa polisa', 'nowe polisy', 'nowych polis')}</span>
 								</th>
 							{/each}
 						</tr>
@@ -381,10 +436,11 @@
 		<section aria-labelledby="por-miesiace" class="bg-white border border-line rounded-xl px-4 pt-4 pb-3.5 flex flex-col gap-3.5">
 			<div class="flex flex-wrap items-center gap-3">
 				<div class="flex flex-col">
-					<h2 id="por-miesiace" class="text-[15px] font-semibold text-ink">Przypis miesięcznie — obok siebie</h2>
+					<h2 id="por-miesiace" class="text-[15px] font-semibold text-ink">{podstawa === 'inkaso' ? 'Inkaso' : 'Przypis'} miesięcznie — obok siebie</h2>
 					<span class="text-xs text-ink-3">{wspolnaSkala ? 'wspólna skala — wysokości porównywalne między wykresami' : 'własna skala każdego wykresu — widać rytm, nie wielkość'}</span>
 				</div>
-				<div role="group" aria-label="Skala" class="sm:ml-auto flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
+				{@render przelacznikPodstawy('sm:ml-auto')}
+				<div role="group" aria-label="Skala" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
 					<button aria-pressed={wspolnaSkala} onclick={() => (wspolnaSkala = true)} class="h-7 px-3 rounded-md text-[13px] {wspolnaSkala ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">Wspólna</button>
 					<button aria-pressed={!wspolnaSkala} onclick={() => (wspolnaSkala = false)} class="h-7 px-3 rounded-md text-[13px] {!wspolnaSkala ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">Własna</button>
 				</div>
@@ -397,22 +453,22 @@
 			{#if widok === 'wykres'}
 				<div class="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))]">
 					{#each seriaMies as s (s.k)}
-						{@const razem = s.mies.reduce((a, m) => a + m.s.przypis, 0)}
+						{@const razem = s.mies.reduce((a, m) => a + m.s.skladka, 0)}
 						<div class="flex flex-col gap-2 min-w-0">
 							<div class="flex items-baseline justify-between gap-2">
 								<span class="text-[13px] font-semibold text-ink truncate">{s.nazwa}</span>
 								<span class="text-xs text-ink-2 tabular-nums whitespace-nowrap">{zlKrotko(razem)}</span>
 							</div>
 							<Kolumny
-								opis="Przypis miesięcznie: {s.nazwa}"
+								opis="{NAZWA.skladka} miesięcznie: {s.nazwa}"
 								wysokosc={150}
 								gora={wspolnaSkala ? goraWspolna : undefined}
 								dane={s.mies.map(({ ym, s: m }) => ({
 									klucz: ym,
 									etykieta: miesiacKrotko(ym, kilkaLat).slice(0, kilkaLat ? 6 : 3),
 									pelna: miesiacPelny(ym),
-									wartosc: m.przypis,
-									dodatek: odmiana(m.polisy, 'polisa', 'polisy', 'polis'),
+									wartosc: m.skladka,
+									dodatek: podstawa === 'inkaso' ? odmiana(m.pozycji, 'wpłata', 'wpłaty', 'wpłat') : odmiana(m.polisy, 'polisa', 'polisy', 'polis'),
 									jasna: ym === dzis.slice(0, 7) && okres.do === dzis
 								}))}
 							/>
@@ -432,7 +488,7 @@
 							{#each seriaMies[0]?.mies ?? [] as m, i (m.ym)}
 								<tr class="border-t border-line-soft">
 									<td class="sticky left-0 z-[1] bg-white px-3 py-1.5 whitespace-nowrap shadow-[1px_0_0_var(--color-line-soft)]">{miesiacPelny(m.ym)}</td>
-									{#each seriaMies as s (s.k)}<td class="px-3 py-1.5 text-right tabular-nums">{zl(s.mies[i].s.przypis)}</td>{/each}
+									{#each seriaMies as s (s.k)}<td class="px-3 py-1.5 text-right tabular-nums">{zl(s.mies[i].s.skladka)}</td>{/each}
 								</tr>
 							{/each}
 						</tbody>
@@ -463,9 +519,10 @@
 	<section aria-labelledby="por-okresy" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
 		<div class="flex flex-wrap items-start gap-2">
 			<div class="flex-1 min-w-[220px]">
-				<h2 id="por-okresy" class="text-[15px] font-semibold text-ink">Przypis według towarzystw</h2>
-				<span class="text-xs text-ink-3">towarzystwa z przypisem w którymkolwiek z dwóch okresów · ten sam odcinek czasu</span>
+				<h2 id="por-okresy" class="text-[15px] font-semibold text-ink">{podstawa === 'inkaso' ? 'Inkaso' : 'Przypis'} według towarzystw</h2>
+				<span class="text-xs text-ink-3">towarzystwa z {podstawa === 'inkaso' ? 'wpłatami' : 'przypisem'} w którymkolwiek z dwóch okresów · ten sam odcinek czasu</span>
 			</div>
+			{@render przelacznikPodstawy('')}
 			<span class="flex gap-3 text-xs text-ink-2">
 				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: {KOLOR.seriaJasna}"></span>{okresyPary.a.etykieta}</span>
 				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: {KOLOR.seria}"></span>{okresyPary.b.etykieta}</span>
@@ -506,8 +563,8 @@
 				{/each}
 			</ul>
 			<div class="flex flex-wrap justify-between gap-2 border-t border-line-soft pt-3 text-[13px] text-ink-2">
-				<span>Razem: {zl(sA.przypis)} → <span class="font-semibold text-ink">{zl(sB.przypis)}</span></span>
-				<span>{odmiana(sA.polisy, 'polisa', 'polisy', 'polis')} → {odmiana(sB.polisy, 'polisa', 'polisy', 'polis')}</span>
+				<span>Razem: {zl(podstawa === 'inkaso' ? inkA.skladka : sA.skladka)} → <span class="font-semibold text-ink">{zl(podstawa === 'inkaso' ? inkB.skladka : sB.skladka)}</span></span>
+				<span>{podstawa === 'inkaso' ? `${odmiana(inkA.pozycji, 'wpłata', 'wpłaty', 'wpłat')} → ${odmiana(inkB.pozycji, 'wpłata', 'wpłaty', 'wpłat')}` : `${odmiana(sA.polisy, 'polisa', 'polisy', 'polis')} → ${odmiana(sB.polisy, 'polisa', 'polisy', 'polis')}`}</span>
 			</div>
 		{/if}
 	</section>
