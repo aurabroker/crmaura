@@ -86,6 +86,34 @@ test('certyfikat OC: numer, okres, zawarcie, strony, składka, rata, konto, prog
 	assert.equal(e.dodatkowe['Franszyza'], '300,00 PLN dla szkód w mieniu');
 });
 
+test('certyfikat OC wystawiony w dniu początku ochrony: okres z godzinami, klauzula z limitem w kolumnie LIMIT', () => {
+	const zGodzinami = naglowek.map(
+		([y, ...fr]) => [y, ...fr.map(([x, t]) => [x, t === '07.11.2026 - 06.11.2027' ? '14.11.2026 23:55 - 13.11.2027 24:00' : t] as Fragment)] as [number, ...Fragment[]]
+	);
+	// Stopka ze składką 742 zł (650 zł kosmetologia 100.000 + 92 zł ochrona prawna) i klauzulą z limitem.
+	const zLimitem = stopka.map(([y, ...fr]) =>
+		y === 595.8
+			? ([595.8, [85, '2. Klauzula Ochrony Prawnej'], [441, '100000']] as [number, ...Fragment[]])
+			: ([y, ...fr.map(([x, t]) => [x, t.replace('21.11.2026 / 1 562,50', '28.11.2026 / 742,00').replace('1 562,50', '742,00')] as Fragment)] as [number, ...Fragment[]])
+	);
+	const e = parse(
+		new PdfDoc(
+			linie(1, [...zGodzinami, [632.2, [74, 'GABINETY KOSMETOLOGICZNE'], [343, 'M30 - 13'], [425, '100 000,00'], [456, 'zł'], [502, '742,00'], [522, 'zł']], ...zLimitem]),
+			1,
+			595
+		)
+	);
+	assert.equal(e.data_od, '2026-11-14');
+	assert.equal(e.data_do, '2027-11-13');
+	assert.equal(e.dodatkowe['Okres ubezpieczenia'], '14.11.2026 23:55 - 13.11.2027 24:00');
+	assert.equal(e.suma_gwarancyjna, 100000);
+	assert.equal(e.skladka, 742);
+	assert.deepEqual(e.raty, [{ data: '2026-11-28', kwota: 742 }]);
+	assert.equal(bezNbsp(e.dodatkowe['Klauzule dodatkowe']), 'Klauzula Ochrony Prawnej — limit: 100 000 zł');
+	// Okres bez godzin nie trafia do parametrów.
+	assert.equal(parse(doc).dodatkowe['Okres ubezpieczenia'], undefined);
+});
+
 test('tabela ryzyk: wiersz w jednej linii, kilka pozycji i nazwa w dwóch liniach bez składki w pierwszej', () => {
 	const jedna = new PdfDoc(
 		linie(1, [...naglowek, [639.7, [74, 'GABINETY KOSMETOLOGICZNE'], [343, 'M30 - 13'], [425, '200 000,00'], [456, 'zł'], [497, '790,00'], [522, 'zł']], ...stopka]),

@@ -11,7 +11,7 @@ import type { ExtractedPolicy, RiskItem } from '../types.ts';
 import { emptyExtraction } from '../types.ts';
 import type { PdfDoc } from '../pdfDoc.ts';
 import { collapse, grab, grabAll, toAmount, toDate } from '../parse.ts';
-import { SEKCJA_RYZYK, tabelaRyzyk } from './ergo-tabelaRyzyk.ts';
+import { OKRES_CERTYFIKATU, SEKCJA_RYZYK, tabelaRyzyk } from './ergo-tabelaRyzyk.ts';
 
 const X_PRAWA_KOLUMNA = 330;
 const RYZYKO_NNW = /NAST[ĘE]PSTW NIESZCZ[ĘE][ŚS]LIWYCH WYPADK[ÓO]W/i;
@@ -35,9 +35,12 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	const text = doc.text;
 
 	out.nr_polisy = grab(text, /POLISA\/POLICY:\s*([A-Z0-9/-]+)/i);
-	const okres = text.match(/Period of insurance\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})/i);
+	const okres = text.match(OKRES_CERTYFIKATU);
 	out.data_od = toDate(okres?.[1]);
 	out.data_do = toDate(okres?.[2]);
+	// Certyfikat wystawiony w dniu początku ochrony ma okres z godzinami — zostają w parametrach.
+	const zGodzinami = okres && /\d{1,2}:\d{2}/.test(okres[0]) ? collapse(okres[0].replace(/^Period of insurance\s*/i, '')) : null;
+	if (zGodzinami) out.dodatkowe['Okres ubezpieczenia'] = zGodzinami;
 	// Stopka podpisu: „data wystawienia / data zawarcia”.
 	out.data_zawarcia = toDate(
 		grab(text, /(\d{2}\.\d{2}\.\d{4})\s*\/\s*(\d{2}\.\d{2}\.\d{4})\s*\n\s*Podpis Ubezpieczaj/i, 2)

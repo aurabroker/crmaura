@@ -8,9 +8,11 @@ import type { ExtractedPolicy } from '../types.ts';
 import { emptyExtraction } from '../types.ts';
 import type { PdfDoc } from '../pdfDoc.ts';
 import { collapse, grab, grabAll, toAmount, toDate } from '../parse.ts';
-import { tabelaRyzyk } from './ergo-tabelaRyzyk.ts';
+import { OKRES_CERTYFIKATU, tabelaRyzyk } from './ergo-tabelaRyzyk.ts';
 
 const X_PRAWA_KOLUMNA = 330;
+/** Kolumna LIMIT w sekcjach zakresu i klauzul (nagłówek „LIMIT” przy x≈445). */
+const X_LIMIT = 400;
 
 export function detect(doc: PdfDoc): string | null {
 	if (!/ERGO Hestia/i.test(doc.text))
@@ -32,12 +34,14 @@ export function parse(doc: PdfDoc): ExtractedPolicy {
 	const text = doc.text;
 
 	out.nr_polisy = grab(text, /POLISA\/POLICY:\s*([A-Z0-9/-]+)/i);
-	out.data_od = toDate(
-		grab(text, /Period of insurance\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})/, 1)
-	);
-	out.data_do = toDate(
-		grab(text, /Period of insurance\s*(\d{2}\.\d{2}\.\d{4})\s*-\s*(\d{2}\.\d{2}\.\d{4})/, 2)
-	);
+	// Okres bywa z godzinami („14.11.2026 23:55 - 13.11.2027 24:00” — certyfikat wystawiony w dniu początku
+	// ochrony); do CRM idą same daty.
+	const okres = text.match(OKRES_CERTYFIKATU);
+	out.data_od = toDate(okres?.[1]);
+	out.data_do = toDate(okres?.[2]);
+	// Godziny zostają w parametrach (jak w polisie indywidualnej) — ochrona nie zaczyna się o północy.
+	const zGodzinami = okres && /\d{1,2}:\d{2}/.test(okres[0]) ? collapse(okres[0].replace(/^Period of insurance\s*/i, '')) : null;
+	if (zGodzinami) out.dodatkowe['Okres ubezpieczenia'] = zGodzinami;
 	// Stopka podpisu: "data wystawienia / data zawarcia".
 	out.data_zawarcia = toDate(
 		grab(text, /(\d{2}\.\d{2}\.\d{4})\s*\/\s*(\d{2}\.\d{2}\.\d{4})\s*\n\s*Podpis Ubezpieczaj/i, 2)
@@ -128,7 +132,8 @@ function parseStrony(doc: PdfDoc, out: ExtractedPolicy) {
 /**
  * Sekcja „KLAUZULE DODATKOWE / ADDITIONAL CLAUSES”: numerowane pozycje do franszyzy albo składki. Nie każda
  * zaczyna się od „Klauzula” — np. „1. Liczba zatrudnionych od 6 do 8 przy SG 300.000,00 zł” (dopłata
- * za 6–8 osób z programu beauty). Linia bez numeru to dalszy ciąg poprzedniej.
+ * za 6–8 osób z programu beauty). Wartość z kolumny LIMIT („2. Klauzula Ochrony Prawnej | 100000”) idzie
+ * jako „— limit: 100 000 zł”. Linia bez numeru to dalszy ciąg poprzedniej.
  */
 function parseKlauzule(doc: PdfDoc): string[] {
 	const start = doc.lines.findIndex((l) => /^KLAUZULE DODATKOWE/i.test(l.text));
@@ -136,9 +141,19 @@ function parseKlauzule(doc: PdfDoc): string[] {
 	const out: string[] = [];
 	for (const l of doc.lines.slice(start + 1)) {
 		if (/^(Franszyza|SKŁADKA\s*\/\s*PREMIUM|INFORMACJE DODATKOWE|PŁATNOŚĆ)/i.test(l.text)) break;
-		const m = l.text.match(/^\d+\.\s*(.+)$/);
-		if (m) out.push(m[1].trim());
-		else if (out.length) out[out.length - 1] = `${out[out.length - 1]} ${l.text}`.trim();
+		const nazwa = collapse(l.words.filter((w) => w.x < X_LIMIT).map((w) => w.text).join(' ')) ?? '';
+		const limit = formatLimit(collapse(l.words.filter((w) => w.x >= X_LIMIT).map((w) => w.text).join(' ')));
+		const m = nazwa.match(/^\d+\.\s*(.+)$/);
+		if (m) out.push(limit ? `${m[1].trim()} — limit: ${limit}` : m[1].trim());
+		else if (nazwa && out.length) out[out.length - 1] = `${out[out.length - 1]} ${nazwa}`.trim();
 	}
 	return out;
+}
+
+/** Limit z kolumny: kwota („100000”, „100 000,00 zł”) jako „100 000 zł”, inny tekst bez zmian, „null” z PDF-a to brak. */
+function formatLimit(raw: string | null): string | null {
+	if (!raw || /^null$/i.test(raw)) return null;
+	if (!/^[\d\s.,]+(?:\s*zł)?$/i.test(raw)) return raw;
+	const kwota = toAmount(raw);
+	return kwota == null ? raw : `${kwota.toLocaleString('pl-PL')} zł`;
 }

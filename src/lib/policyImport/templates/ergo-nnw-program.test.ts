@@ -117,6 +117,15 @@ test('certyfikat NNW: ryzyko z symbolem i sumą oraz klauzula z limitem jako poz
 	);
 });
 
+test('certyfikat NNW z okresem z godzinami: same daty do CRM, godziny w parametrach', () => {
+	const zGodzinami = strona1.map((w) => (w.text === '05.11.2026 - 04.11.2027' ? { ...w, text: '05.11.2026 00:00 - 04.11.2027 24:00' } : w));
+	const e = parse(new PdfDoc(zGodzinami, 1, 595));
+	assert.equal(e.data_od, '2026-11-05');
+	assert.equal(e.data_do, '2027-11-04');
+	assert.equal(e.dodatkowe['Okres ubezpieczenia'], '05.11.2026 00:00 - 04.11.2027 24:00');
+	assert.equal(parse(doc).dodatkowe['Okres ubezpieczenia'], undefined);
+});
+
 test('certyfikat NNW bez klauzuli HIV/WZW: cała składka zostaje przy NNW', () => {
 	// Ten sam certyfikat bez sekcji klauzul (wiersze 581.4, 574.5 i 567.6) i ze składką podstawową 150 zł.
 	const bezKlauzuli = strona1

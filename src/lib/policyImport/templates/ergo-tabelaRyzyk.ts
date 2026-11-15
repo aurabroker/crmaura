@@ -11,6 +11,12 @@ import type { RiskItem } from '../types.ts';
 import { collapse, toAmount } from '../parse.ts';
 
 export const SEKCJA_RYZYK = 'UBEZPIECZONE RYZYKA';
+/**
+ * Okres ubezpieczenia certyfikatu: „Period of insurance 07.11.2026 - 06.11.2027”, a przy certyfikacie
+ * wystawionym w dniu początku ochrony — z godzinami: „14.11.2026 23:55 - 13.11.2027 24:00”.
+ * Grupy: 1 = data od, 2 = data do (godziny pomijamy — CRM trzyma same daty).
+ */
+export const OKRES_CERTYFIKATU = /Period of insurance\s*(\d{2}\.\d{2}\.\d{4})(?:\s+\d{1,2}:\d{2})?\s*-\s*(\d{2}\.\d{2}\.\d{4})(?:\s+\d{1,2}:\d{2})?/i;
 const SYMBOL = /^[A-Z]\d{2}\s*-\s*\d+$/;
 /** Lewe krawędzie kolumn (pt) z certyfikatów 2025–2026 — używane, gdy w tabeli nie ma nagłówka. */
 const KOLUMNY = { symbol: 338, suma: 388, skladka: 492 };
