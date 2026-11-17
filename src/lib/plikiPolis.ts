@@ -150,9 +150,13 @@ export type KontekstMailaPolisy = {
 	/** zUmowy — OWU z Umowy Generalnej polisy. */
 	pliki: { id: string; nazwa: string; rozmiar: number; rodzaj: PlikPolisy['rodzaj']; zUmowy?: boolean }[];
 	domyslne: { do: string[]; powitanie: string; termin_platnosci: string | null; pliki: string[] };
+	/** Limity załączników: razem MB (z plikami z dysku) i najwyżej tyle plików z dysku. */
+	limity?: { razem_mb: number; z_dysku: number };
 	wyslane: { wyslano_at: string; adres: string; dostawa: string | null }[];
 };
-export type ZadanieMailaPolisy = { do: string[]; powitanie: string; termin_platnosci: string; pliki: string[] };
+/** Plik dodany z dysku w oknie wysyłki: w podglądzie bez treści, przy wysyłce z treścią w base64. */
+export type PlikZDysku = { nazwa: string; rozmiar: number; dane?: string };
+export type ZadanieMailaPolisy = { do: string[]; powitanie: string; termin_platnosci: string; pliki: string[]; z_dysku?: PlikZDysku[] };
 export type PodgladMailaPolisy = { temat: string; html: string; od: string; odpowiedz: string | null; zalaczniki: { nazwa: string; rozmiar: number }[] };
 
 export async function kontekstMailaPolisy(polisaId: string): Promise<KontekstMailaPolisy> {

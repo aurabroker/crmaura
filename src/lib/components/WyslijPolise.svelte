@@ -1,7 +1,8 @@
 <script lang="ts">
 	// „Wyślij polisę klientowi” z karty polisy: polisa z programu — treść z szablonu Resend programu (Beauty Polisa);
 	// każda inna — ogólny szablon „polisa-wystawiona” z Resend firmy albo wbudowana treść CRM. Dane polisy
-	// podstawia serwer, w załącznikach PDF polisy i OWU z magazynu. Przed wysyłką podgląd dokładnie tego, co dostanie klient.
+	// podstawia serwer, w załącznikach PDF polisy i OWU z magazynu oraz pliki dodane z dysku (idą tylko w mailu, nie zapisują
+	// się w dokumentach polisy). Przed wysyłką podgląd dokładnie tego, co dostanie klient.
 	import { untrack } from 'svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import { askConfirm } from '$lib/stores/confirm.svelte';
@@ -9,9 +10,9 @@
 	import { fmtDzien } from '$lib/utils';
 	import {
 		RODZAJ_PLIKU, kontekstMailaPolisy, podgladMailaPolisy, rozmiar, wyslijMailPolisy,
-		type KontekstMailaPolisy, type PodgladMailaPolisy
+		type KontekstMailaPolisy, type PodgladMailaPolisy, type PlikZDysku
 	} from '$lib/plikiPolis';
-	import { AlertTriangle, Eye, Paperclip, Send } from 'lucide-svelte';
+	import { AlertTriangle, Eye, Paperclip, Send, Upload, X } from 'lucide-svelte';
 
 	let { open, polisaId, onclose, onwyslano }: { open: boolean; polisaId: string; onclose: () => void; onwyslano: () => void } = $props();
 
@@ -24,6 +25,52 @@
 	let pliki = $state(new Set<string>());
 	let podglad = $state<PodgladMailaPolisy | null>(null);
 	let pracuje = $state<'' | 'podglad' | 'wysylka'>('');
+	// Pliki z dysku (np. ankieta, potwierdzenie, zdjęcie) — dozwolone typy i limity jak na serwerze ($lib/server/zalacznikiZDysku).
+	const ROZSZERZENIA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx', 'odt', 'ods', 'txt', 'csv'];
+	const AKCEPTUJ = ROZSZERZENIA.map((r) => `.${r}`).join(',');
+	let zDysku = $state<{ id: number; plik: File }[]>([]);
+	let bladZDysku = $state('');
+	let licznikPlikow = 0;
+	const limitMb = $derived(ktx?.limity?.razem_mb ?? 20);
+	const limitZDysku = $derived(ktx?.limity?.z_dysku ?? 5);
+	const rozmiarWybranych = $derived(
+		(ktx?.pliki ?? []).filter((f) => pliki.has(f.id)).reduce((s, f) => s + f.rozmiar, 0) + zDysku.reduce((s, d) => s + d.plik.size, 0)
+	);
+
+	function dodajZDysku(e: Event) {
+		const pole = e.currentTarget as HTMLInputElement;
+		const nowe = [...(pole.files ?? [])];
+		pole.value = '';
+		bladZDysku = '';
+		let suma = rozmiarWybranych;
+		const dodane: { id: number; plik: File }[] = [];
+		for (const plik of nowe) {
+			const ext = /\.([A-Za-z0-9]{1,5})$/.exec(plik.name)?.[1]?.toLowerCase() ?? '';
+			if (zDysku.length + dodane.length >= limitZDysku) { bladZDysku = `Najwyżej ${limitZDysku} pliki z dysku.`; break; }
+			if (!ROZSZERZENIA.includes(ext)) { bladZDysku = `„${plik.name}”: niedozwolony typ pliku — dozwolone PDF, JPG, PNG, DOC, DOCX, XLS, XLSX, ODT, ODS, TXT, CSV.`; continue; }
+			if (!plik.size) { bladZDysku = `„${plik.name}” jest pusty.`; continue; }
+			if (suma + plik.size > limitMb * 1024 * 1024) { bladZDysku = `„${plik.name}” się nie zmieści — załączniki razem najwyżej ${limitMb} MB.`; continue; }
+			suma += plik.size;
+			dodane.push({ id: ++licznikPlikow, plik });
+		}
+		if (dodane.length) {
+			zDysku = [...zDysku, ...dodane];
+			podglad = null;
+		}
+	}
+	function usunZDysku(id: number) {
+		zDysku = zDysku.filter((d) => d.id !== id);
+		bladZDysku = '';
+		podglad = null;
+	}
+	function base64Pliku(f: File): Promise<string> {
+		return new Promise((ok, nie) => {
+			const r = new FileReader();
+			r.onload = () => ok(String(r.result).replace(/^data:[^,]*,/, ''));
+			r.onerror = () => nie(new Error(`Nie udało się odczytać pliku „${f.name}”.`));
+			r.readAsDataURL(f);
+		});
+	}
 
 	async function wczytaj(id: string) {
 		wczytywanie = true;
@@ -37,6 +84,8 @@
 			powitanie = k.domyslne.powitanie;
 			termin = k.domyslne.termin_platnosci ?? '';
 			pliki = new Set(k.domyslne.pliki);
+			zDysku = [];
+			bladZDysku = '';
 		} catch (e) {
 			ktx = null;
 			blad = (e as Error).message;
@@ -48,10 +97,12 @@
 		if (open) untrack(() => void wczytaj(polisaId));
 	});
 
-	const zadanie = () => ({ do: [...wybrani], powitanie, termin_platnosci: termin, pliki: [...pliki] });
+	// Podgląd dostaje tylko nazwy i rozmiary plików z dysku, wysyłka — także ich treść.
+	const meta = (): PlikZDysku[] => zDysku.map((d) => ({ nazwa: d.plik.name, rozmiar: d.plik.size }));
+	const zadanie = (z: PlikZDysku[] = meta()) => ({ do: [...wybrani], powitanie, termin_platnosci: termin, pliki: [...pliki], z_dysku: z });
 	// Polisa bez informacji o płatnościach (np. Leadenhall): mail bez składki i terminu, więc termin nie jest potrzebny.
 	const bezPlatnosci = $derived(!!ktx?.bez_info_platnosci);
-	const gotowe = $derived(!!ktx && wybrani.size > 0 && powitanie.trim().length > 0 && (bezPlatnosci || /^\d{4}-\d{2}-\d{2}$/.test(termin)) && pliki.size > 0 && !pracuje);
+	const gotowe = $derived(!!ktx && wybrani.size > 0 && powitanie.trim().length > 0 && (bezPlatnosci || /^\d{4}-\d{2}-\d{2}$/.test(termin)) && (pliki.size > 0 || zDysku.length > 0) && !pracuje);
 
 	function przelacz(zbior: Set<string>, v: string): Set<string> {
 		const n = new Set(zbior);
@@ -87,7 +138,8 @@
 		pracuje = 'wysylka';
 		blad = '';
 		try {
-			const w = await wyslijMailPolisy(polisaId, zadanie());
+			const zTrescia = await Promise.all(zDysku.map(async (d) => ({ nazwa: d.plik.name, rozmiar: d.plik.size, dane: await base64Pliku(d.plik) })));
+			const w = await wyslijMailPolisy(polisaId, zadanie(zTrescia));
 			ctxToast(`Wysłano polisę: ${w.adresy.join(', ')}`);
 			onwyslano();
 			onclose();
@@ -167,9 +219,9 @@
 			</p>
 
 			<fieldset>
-				<legend class="flex items-center gap-1.5 text-[13px] font-semibold text-ink mb-1.5"><Paperclip size={14} /> Załącznik</legend>
+				<legend class="flex items-center gap-1.5 text-[13px] font-semibold text-ink mb-1.5"><Paperclip size={14} /> Załączniki</legend>
 				{#if ktx.pliki.length === 0}
-					<p class="text-[13px] text-ink-3">Polisa nie ma zapisanego PDF — dodaj go w sekcji „Dokumenty”.</p>
+					<p class="text-[13px] text-ink-3">Polisa nie ma zapisanego PDF — dodaj go w sekcji „Dokumenty” albo dołącz plik z dysku poniżej.</p>
 				{:else}
 					<div class="flex flex-col gap-1">
 						{#each ktx.pliki as f (f.id)}
@@ -181,6 +233,27 @@
 						{/each}
 					</div>
 				{/if}
+				{#if zDysku.length}
+					<div class="flex flex-col gap-1 mt-1" data-testid="mail-pliki-z-dysku">
+						{#each zDysku as d (d.id)}
+							<div class="flex items-center gap-2 min-w-0">
+								<Paperclip size={14} class="text-ink-3 shrink-0" />
+								<span class="text-ink truncate">{d.plik.name}</span>
+								<span class="text-xs text-ink-3 whitespace-nowrap">z dysku · {rozmiar(d.plik.size)}</span>
+								<button type="button" onclick={() => usunZDysku(d.id)} aria-label="Usuń z maila: {d.plik.name}" title="Usuń z maila" class="ml-auto shrink-0 w-7 h-7 flex items-center justify-center rounded-lg text-ink-3 hover:text-danger hover:bg-danger-soft"><X size={14} /></button>
+							</div>
+						{/each}
+					</div>
+				{/if}
+				<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+					<label class="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-line text-[13px] font-medium text-ink-2 hover:bg-surface-2 cursor-pointer focus-within:ring-2 focus-within:ring-accent/40 {zDysku.length >= limitZDysku ? 'opacity-50 pointer-events-none' : ''}">
+						<Upload size={14} /> Dodaj plik z dysku
+						<input type="file" multiple accept={AKCEPTUJ} onchange={dodajZDysku} class="sr-only" data-testid="mail-plik-z-dysku" />
+					</label>
+					<span class="text-xs text-ink-3">razem {rozmiar(rozmiarWybranych)} z {limitMb} MB</span>
+				</div>
+				{#if bladZDysku}<p class="text-xs text-danger mt-1">{bladZDysku}</p>{/if}
+				<p class="text-xs text-ink-3 mt-1">Plik z dysku (PDF, zdjęcie, dokument) idzie tylko w tym mailu — nie zapisuje się w dokumentach polisy. Najwyżej {limitZDysku} pliki.</p>
 				{#if ktx.ogolny}
 					<p class="text-xs text-ink-3 mt-1.5">OWU dołączasz jako załącznik — z tej polisy albo z jej Umowy Generalnej (najwyżej 3 pliki, razem do 20 MB). Jeśli OWU nie ma na liście, dodaj je w sekcji „Dokumenty” jako plik typu OWU.</p>
 				{:else}
@@ -191,7 +264,7 @@
 			{#if podglad}
 				<div class="border-t border-line-soft pt-3 flex flex-col gap-2">
 					<p class="text-[13px]"><span class="text-ink-3">Temat:</span> <strong class="text-ink">{podglad.temat}</strong></p>
-					<p class="text-xs text-ink-3">Od: {podglad.od}{podglad.odpowiedz ? ` · odpowiedzi na ${podglad.odpowiedz}` : ''} · załącznik: {podglad.zalaczniki.map((z) => z.nazwa).join(', ')}</p>
+					<p class="text-xs text-ink-3">Od: {podglad.od}{podglad.odpowiedz ? ` · odpowiedzi na ${podglad.odpowiedz}` : ''} · {podglad.zalaczniki.length === 1 ? 'załącznik' : 'załączniki'}: {podglad.zalaczniki.map((z) => z.nazwa).join(', ')}</p>
 					<iframe title="Podgląd maila" sandbox="" srcdoc={podglad.html} class="w-full h-[440px] border border-line rounded-lg bg-white"></iframe>
 				</div>
 			{:else}

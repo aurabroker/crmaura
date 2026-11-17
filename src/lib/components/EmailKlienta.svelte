@@ -66,7 +66,8 @@
 	let zalaczniki = $state<Set<string>>(new Set());
 	let pliki = $state<PlikPolisy[]>([]);
 	let magazyn = $state(false);
-	let ustawienia = $state<{ gotowe: boolean; nadawca: string | null; odpowiedzi: string | null } | null>(null);
+	// podpis — podpis firmy w e-mailach do klientów (np. „Zespół Beauty❤️Polisa”) zamiast imienia i nazwiska.
+	let ustawienia = $state<{ gotowe: boolean; nadawca: string | null; odpowiedzi: string | null; podpis?: string | null } | null>(null);
 	let wysylanie = $state(false);
 	let blad = $state('');
 
@@ -86,6 +87,7 @@
 			zalaczniki = new Set();
 			autoPdf = null;
 			przelicz();
+			const wygenerowana = tresc;
 			void (async () => {
 				const [u, lista, ok] = await Promise.all([
 					fetch('/api/email/ustawienia', { headers: await naglowki() }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
@@ -95,7 +97,9 @@
 				ustawienia = u;
 				pliki = lista;
 				magazyn = ok;
-				if (szablon === 'potwierdzenie') { zaznaczPdfPolisy(); przelicz(); }
+				if (szablon === 'potwierdzenie') zaznaczPdfPolisy();
+				// Podpis firmy przychodzi z serwera — przelicz treść, jeśli doradca jeszcze jej nie zmienił.
+				if (szablon === 'potwierdzenie' || (u?.podpis && tresc === wygenerowana)) przelicz();
 			})();
 		});
 		byloOtwarte = open;
@@ -123,7 +127,9 @@
 			polisa,
 			raty: appState.payments.filter((r) => r.polisa_id === polisaId),
 			zalacznikPolisy: pliki.some((f) => f.polisa_id === polisaId && zalaczniki.has(f.id)),
-			nadawca: { imie: prof?.imie_nazwisko ?? null, stanowisko: prof?.stanowisko ?? null, telefon: prof?.telefon ?? null, firma: appState.tenantNazwa },
+			nadawca: ustawienia?.podpis
+				? { imie: ustawienia.podpis, stanowisko: null, telefon: null, firma: '' }
+				: { imie: prof?.imie_nazwisko ?? null, stanowisko: prof?.stanowisko ?? null, telefon: prof?.telefon ?? null, firma: appState.tenantNazwa },
 			dzis
 		});
 		temat = t.temat;

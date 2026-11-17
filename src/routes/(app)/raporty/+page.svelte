@@ -30,19 +30,19 @@
 	};
 	const SZABLONY = $derived<{ grupa: string; pozycje: { id: Id; nazwa: string; krotko: string; widoczny: boolean }[] }[]>([
 		{ grupa: 'Obowiązkowe', pozycje: [
-			{ id: 'knf', nazwa: 'Sprawozdanie roczne dla KNF', krotko: 'Przypis, wynagrodzenie i liczba umów według grup', widoczny: isAdmin(appState.profile) && isBroker() },
+			{ id: 'knf', nazwa: 'Sprawozdanie roczne dla KNF', krotko: 'Składka przypisana, wynagrodzenie i liczba umów według grup', widoczny: isAdmin(appState.profile) && isBroker() },
 			{ id: 'apk', nazwa: 'Rejestr analiz potrzeb (APK)', krotko: 'Formularze APK w okresie i ich status', widoczny: true }
 		] },
 		{ grupa: 'Finanse', pozycje: [
 			{ id: 'nal', nazwa: 'Należności i zaległości', krotko: 'Raty po terminie według towarzystw i wieku', widoczny: true },
-			{ id: 'prow', nazwa: 'Prowizje według towarzystw', krotko: 'Przypis, prowizja i stawka efektywna', widoczny: true }
+			{ id: 'prow', nazwa: 'Prowizje według towarzystw', krotko: 'Składka przypisana, prowizja i stawka efektywna', widoczny: true }
 		] },
 		{ grupa: 'Sprzedaż', pozycje: [
-			{ id: 'agent', nazwa: 'Sprzedaż według agentów', krotko: 'Polisy, przypis i prowizja agenta / sprzedawcy', widoczny: true }
+			{ id: 'agent', nazwa: 'Sprzedaż według agentów', krotko: 'Polisy, składka przypisana i prowizja agenta / sprzedawcy', widoczny: true }
 		] },
 		{ grupa: 'Portfel', pozycje: [
 			{ id: 'odn', nazwa: 'Odnowienia', krotko: 'Polisy kończące się w najbliższych dniach', widoczny: true },
-			{ id: 'rodz', nazwa: 'Portfel według rodzaju', krotko: 'Polisy, przypis i prowizja według rodzaju', widoczny: true }
+			{ id: 'rodz', nazwa: 'Portfel według rodzaju', krotko: 'Polisy, składka przypisana i prowizja według rodzaju', widoczny: true }
 		] }
 	]);
 	const widoczneSzablony = $derived(SZABLONY.map((g) => ({ ...g, pozycje: g.pozycje.filter((p) => p.widoczny) })).filter((g) => g.pozycje.length));
@@ -115,22 +115,22 @@
 			zeroweStawki ? { ok: false, tekst: `${odmiana(zeroweStawki, 'polisa ma', 'polisy mają', 'polis ma')} stawkę prowizji 0%`, szczegol: 'prowizja przypisana tych polis jest zerowa — sprawdź stawki', akcja: { tekst: 'Polisy', href: '/policies' } } : { ok: true, tekst: 'Każda polisa ze składką ma stawkę prowizji' },
 			{ ok: true, tekst: 'Każda polisa ma towarzystwo', szczegol: `${liczba(wOkr.length)} z ${liczba(wOkr.length)}` }
 		];
-		if (ugZero) kontrole.push({ ok: true, tekst: `${odmiana(ugZero, 'umowa generalna ma', 'umowy generalne mają', 'umów generalnych ma')} przypis 0 zł`, szczegol: 'to normalne — przypis jest na polisach podpiętych pod umowę i to one są w zestawieniu' });
+		if (ugZero) kontrole.push({ ok: true, tekst: `${odmiana(ugZero, 'umowa generalna ma', 'umowy generalne mają', 'umów generalnych ma')} składkę przypisaną 0 zł`, szczegol: 'to normalne — składka jest przypisana do polis podpiętych pod umowę i to one są w zestawieniu' });
 		return {
 			nazwa: 'Prowizje według towarzystw',
 			opis: `Prowizja przypisana z polis z początkiem ochrony w okresie (${okres.etykieta.split(' · ')[1]}), według towarzystw — do uzgodnienia z notami prowizyjnymi.`,
 			okres: true,
 			kontrole,
 			sumy: [
-				{ etykieta: 'Przypis składki', wartosc: zl(s.przypis), notka: odmiana(s.polisy, 'polisa', 'polisy', 'polis') },
+				{ etykieta: 'Składka przypisana', wartosc: zl(s.przypis), notka: odmiana(s.polisy, 'polisa', 'polisy', 'polis') },
 				{ etykieta: 'Prowizja przypisana', wartosc: zl(s.prowizja), notka: `stawka efektywna ${proc(s.przypis ? (s.prowizja / s.przypis) * 100 : 0)}` },
 				...(najw ? [{ etykieta: 'Najwyższa stawka', wartosc: proc((najw.prowizja / najw.przypis) * 100), notka: najw.nazwa }] : [])
 			],
-			kolumny: [{ t: 'Towarzystwo' }, { t: 'Polisy', prawa: true }, { t: 'Przypis', prawa: true }, { t: 'Prowizja', prawa: true }, { t: 'Stawka', prawa: true }],
+			kolumny: [{ t: 'Towarzystwo' }, { t: 'Polisy', prawa: true }, { t: 'Składka przypisana', prawa: true }, { t: 'Prowizja', prawa: true }, { t: 'Stawka', prawa: true }],
 			wiersze: g.map((x) => [x.nazwa, liczba(x.polisy), zl(x.przypis), zl(x.prowizja), proc(x.przypis ? (x.prowizja / x.przypis) * 100 : 0)]),
 			razem: ['Razem', liczba(s.polisy), zl(s.przypis), zl(s.prowizja), proc(s.przypis ? (s.prowizja / s.przypis) * 100 : 0)],
 			eksport: {
-				naglowek: ['Towarzystwo', 'Polisy', 'Przypis', 'Prowizja', 'Stawka %'],
+				naglowek: ['Towarzystwo', 'Polisy', 'Składka przypisana', 'Prowizja', 'Stawka %'],
 				wiersze: [...g.map((x) => [x.nazwa, x.polisy, kwota(x.przypis), kwota(x.prowizja), x.przypis ? kwota((x.prowizja / x.przypis) * 100) : 0]), ['Razem', s.polisy, kwota(s.przypis), kwota(s.prowizja), s.przypis ? kwota((s.prowizja / s.przypis) * 100) : 0]]
 			},
 			pusty: wOkr.length ? undefined : { tytul: 'Brak polis w okresie', tekst: 'Wybierz dłuższy okres.' }
@@ -174,19 +174,19 @@
 		const g = [...grupuj(wOkr, (p) => p.rodzaj)].map(([r, x]) => ({ r, ...x })).sort((a, b) => b.przypis - a.przypis);
 		return {
 			nazwa: 'Portfel według rodzaju',
-			opis: `Polisy z początkiem ochrony w okresie (${okres.etykieta.split(' · ')[1]}) według rodzaju ubezpieczenia — liczba, przypis, prowizja i udział w przypisie.`,
+			opis: `Polisy z początkiem ochrony w okresie (${okres.etykieta.split(' · ')[1]}) według rodzaju ubezpieczenia — liczba, składka przypisana, prowizja i udział w składce przypisanej.`,
 			okres: true,
 			kontrole: [{ ok: true, tekst: 'Każda polisa ma rodzaj', szczegol: `${liczba(wOkr.length)} z ${liczba(wOkr.length)}` }],
 			sumy: [
 				{ etykieta: 'Polisy', wartosc: liczba(s.polisy), notka: odmiana(g.length, 'rodzaj', 'rodzaje', 'rodzajów') },
-				{ etykieta: 'Przypis składki', wartosc: zl(s.przypis) },
+				{ etykieta: 'Składka przypisana', wartosc: zl(s.przypis) },
 				{ etykieta: 'Prowizja przypisana', wartosc: zl(s.prowizja) }
 			],
-			kolumny: [{ t: 'Rodzaj' }, { t: 'Polisy', prawa: true }, { t: 'Klienci', prawa: true }, { t: 'Przypis', prawa: true }, { t: 'Prowizja', prawa: true }, { t: 'Udział w przypisie', prawa: true }],
+			kolumny: [{ t: 'Rodzaj' }, { t: 'Polisy', prawa: true }, { t: 'Klienci', prawa: true }, { t: 'Składka przypisana', prawa: true }, { t: 'Prowizja', prawa: true }, { t: 'Udział w składce przypisanej', prawa: true }],
 			wiersze: g.map((x) => [nazwaRodzaju(x.r), liczba(x.polisy), liczba(x.klienci.size), zl(x.przypis), zl(x.prowizja), proc(s.przypis ? (x.przypis / s.przypis) * 100 : 0)]),
 			razem: ['Razem', liczba(s.polisy), liczba(new Set(wOkr.map((p) => p.klient_id)).size), zl(s.przypis), zl(s.prowizja), '100%'],
 			eksport: {
-				naglowek: ['Rodzaj', 'Polisy', 'Klienci', 'Przypis', 'Prowizja', 'Udział w przypisie %'],
+				naglowek: ['Rodzaj', 'Polisy', 'Klienci', 'Składka przypisana', 'Prowizja', 'Udział w składce przypisanej %'],
 				wiersze: g.map((x) => [nazwaRodzaju(x.r), x.polisy, x.klienci.size, kwota(x.przypis), kwota(x.prowizja), s.przypis ? kwota((x.przypis / s.przypis) * 100) : 0])
 			},
 			pusty: wOkr.length ? undefined : { tytul: 'Brak polis w okresie', tekst: 'Wybierz dłuższy okres.' }
@@ -292,7 +292,7 @@
 				kontrole,
 				sumy: [
 					{ etykieta: 'Polisy', wartosc: liczba(polisyUdz.size), notka: odmiana(new Set(lista.map((u) => u.p.klient_id)).size, 'klient', 'klientów', 'klientów') },
-					{ etykieta: 'Przypis składki', wartosc: zl(przypisRazem) },
+					{ etykieta: 'Składka przypisana', wartosc: zl(przypisRazem) },
 					{ etykieta: 'Prowizja agenta', wartosc: zl(prowAgRazem), notka: 'przypisana' },
 					{ etykieta: 'W tym zainkasowana', wartosc: zl(zainkRazem), notka: prowAgRazem ? proc((zainkRazem / prowAgRazem) * 100, 0) : '' }
 				],
@@ -323,21 +323,21 @@
 		const najlepszy = wiersze[0];
 		return {
 			nazwa: 'Sprzedaż według agentów',
-			opis: `Polisy z początkiem ochrony w okresie (${okresTxt}) według agentów z podziału prowizji${rolaTxt}. Przypis i prowizja polis liczone w całości u każdego agenta polisy; prowizja agenta = prowizja polisy × jego udział. Wybierz agenta, żeby zobaczyć jego polisy.`,
+			opis: `Polisy z początkiem ochrony w okresie (${okresTxt}) według agentów z podziału prowizji${rolaTxt}. Składka przypisana i prowizja polis liczone w całości u każdego agenta polisy; prowizja agenta = prowizja polisy × jego udział. Wybierz agenta, żeby zobaczyć jego polisy.`,
 			okres: true,
 			agent: true,
 			kontrole,
 			sumy: [
 				{ etykieta: 'Agenci', wartosc: liczba(wiersze.filter((w) => w.nazwa !== 'Bez agenta').length), notka: odmiana(polisyUdz.size, 'polisa', 'polisy', 'polis') },
-				{ etykieta: 'Przypis składki', wartosc: zl(przypisRazem) },
+				{ etykieta: 'Składka przypisana', wartosc: zl(przypisRazem) },
 				{ etykieta: 'Prowizja agentów', wartosc: zl(prowAgRazem), notka: `w tym zainkasowana ${zl(zainkRazem)}` },
 				...(najlepszy ? [{ etykieta: 'Najwyższa prowizja', wartosc: zl(najlepszy.prow), notka: najlepszy.nazwa }] : [])
 			],
-			kolumny: [{ t: 'Agent' }, { t: 'Rola' }, { t: 'Polisy', prawa: true }, { t: 'Klienci', prawa: true }, { t: 'Przypis', prawa: true }, { t: 'Prowizja polis', prawa: true }, { t: 'Prowizja agenta', prawa: true }, { t: 'Zainkasowana', prawa: true }],
+			kolumny: [{ t: 'Agent' }, { t: 'Rola' }, { t: 'Polisy', prawa: true }, { t: 'Klienci', prawa: true }, { t: 'Składka przypisana', prawa: true }, { t: 'Prowizja polis', prawa: true }, { t: 'Prowizja agenta', prawa: true }, { t: 'Zainkasowana', prawa: true }],
 			wiersze: wiersze.map((w) => [w.nazwa, [...w.role].join(', '), liczba(w.polisy.size), liczba(w.klienci.size), zl(w.przypis), zl(w.prowPolis), zl(w.prow), zl(w.zaink)]),
 			razem: ['Razem', '', liczba(polisyUdz.size), liczba(new Set(udzialy.map((u) => u.p.klient_id)).size), zl(przypisRazem), zl([...polisyUdz.values()].reduce((a, p) => a + Number(p.prowizja_przypisana ?? 0), 0)), zl(prowAgRazem), zl(zainkRazem)],
 			eksport: {
-				naglowek: ['Agent', 'Role', 'Polisy', 'Klienci', 'Przypis', 'Prowizja polis', 'Prowizja agenta', 'Prowizja agenta zainkasowana'],
+				naglowek: ['Agent', 'Role', 'Polisy', 'Klienci', 'Składka przypisana', 'Prowizja polis', 'Prowizja agenta', 'Prowizja agenta zainkasowana'],
 				wiersze: wiersze.map((w) => [w.nazwa, [...w.role].join(', '), w.polisy.size, w.klienci.size, kwota(w.przypis), kwota(w.prowPolis), kwota(w.prow), kwota(w.zaink)])
 			},
 			pusty: udzialy.length ? undefined : { tytul: 'Brak polis w okresie', tekst: 'Wybierz dłuższy okres albo inną rolę.' }
@@ -348,7 +348,7 @@
 		const rok = Number(dzis.slice(0, 4)) - 1;
 		return {
 			nazwa: 'Sprawozdanie roczne dla KNF',
-			opis: `Dane do rocznego sprawozdania brokera (za ${rok} składane do 31 marca ${rok + 1}): liczba umów, przypis i wynagrodzenie według grup ubezpieczeń. Zestawienie z mapowaniem rodzajów na grupy KNF jest na osobnym ekranie.`,
+			opis: `Dane do rocznego sprawozdania brokera (za ${rok} składane do 31 marca ${rok + 1}): liczba umów, składka przypisana i wynagrodzenie według grup ubezpieczeń. Zestawienie z mapowaniem rodzajów na grupy KNF jest na osobnym ekranie.`,
 			kontrole: [],
 			sumy: [],
 			link: { tekst: 'Otwórz sprawozdanie KNF', href: '/knf-report' }
