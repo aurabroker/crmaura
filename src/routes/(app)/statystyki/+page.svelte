@@ -1,8 +1,9 @@
 <script lang="ts">
 	// Statystyki portfela — wszystko liczone z danych firmy już wczytanych do aplikacji.
-	// Składka na dwa sposoby ($lib/inkaso): inkaso — wpłacone raty według dnia wpłaty (domyślnie, klient płaci co miesiąc),
-	// przypis — cała składka polisy w miesiącu początku ochrony. Nowe polisy według daty początku ochrony;
-	// umowy generalne pomijane (składka jest na polisach pod nimi).
+	// Składka na dwa sposoby ($lib/inkaso): składka zainkasowana — opłacone raty w miesiącu terminu płatności (główna
+	// miara, klient płaci co miesiąc), składka przypisana — cała składka polisy w miesiącu początku ochrony (przełącznik
+	// nad wykresem). Towarzystwa i rodzaje — zawsze według składki zainkasowanej. Nowe polisy według daty początku
+	// ochrony; umowy generalne pomijane (składka jest na polisach pod nimi).
 	// Odnowienia (postęp, skuteczność, utracona składka) — według daty końca ochrony, obliczenia w $lib/odnowieniaStat.
 	import { onMount, type Snippet } from 'svelte';
 	import { sb } from '$lib/supabase';
@@ -60,7 +61,7 @@
 	const polisy = $derived(bezNajwiekszych && moznaUkryc ? wOkresieWszystkie.filter((p) => !najwieksze.includes(p)) : wOkresieWszystkie);
 	const sumy = $derived(sumuj(polisy));
 
-	// ── Składka według podstawy: inkaso (wpłacone raty, dzień wpłaty) albo przypis (polisa, dzień początku) ──
+	// ── Składka zainkasowana (opłacone raty, termin raty) albo przypisana (polisa, dzień początku) ──
 	// Pozycje z całej historii dla polis z filtrów; „Bez 2 największych” pomija te same 2 polisy (i ich raty).
 	const pominiete = $derived(new Set(bezNajwiekszych && moznaUkryc ? najwieksze.map((p) => p.id) : []));
 	const polisyBazy = $derived(wFiltrach.filter((p) => !pominiete.has(p.id)));
@@ -72,8 +73,9 @@
 	const inkasoOkres = $derived(sumujPozycje(pozycjeWOkresie(pozInkaso, okres)));
 	const przypisOkres = $derived(sumujPozycje(pozycjeWOkresie(pozPrzypis, okres)));
 	const NAZWA = $derived(OPIS_PODSTAWY[podstawa]);
-	// „inkasa / inkasie” albo „przypisu / przypisie” w zdaniach.
-	const SLOWO = $derived(podstawa === 'inkaso' ? { d: 'inkasa', m: 'inkasie' } : { d: 'przypisu', m: 'przypisie' });
+	// Towarzystwa, rodzaje i kafel prowizji — zawsze według składki zainkasowanej.
+	const ZAINK = OPIS_PODSTAWY.inkaso;
+	const pozInkasoOkres = $derived(pozycjeWOkresie(pozInkaso, okres));
 	const ileFiltrow = $derived([fTu, fRodzaj, fOpiekun].filter(Boolean).length);
 
 	const towarzystwa = $derived(appState.insurers.filter((i) => polisyLiczone.some((p) => p.tu_id === i.id)).sort((a, b) => (a.skrot || a.nazwa).localeCompare(b.skrot || b.nazwa, 'pl')));
@@ -90,7 +92,7 @@
 		const rok = (lista: Pozycja[], teraz: number) => zmiana(teraz, sumujPozycje(pozycjeWOkresie(lista, wczesniej)).skladka);
 		return { dostepne: true as const, inkaso: rok(pozInkaso, inkasoOkres.skladka), przypis: rok(pozPrzypis, przypisOkres.skladka), tekst: 'rok do roku' };
 	});
-	const stawka = $derived(skl.skladka ? (skl.prowizja / skl.skladka) * 100 : 0);
+	const stawka = $derived(inkasoOkres.skladka ? (inkasoOkres.prowizja / inkasoOkres.skladka) * 100 : 0);
 	const medianaSkladki = $derived(mediana(polisy.map((p) => Number(p.skladka_przypisana ?? 0))));
 	const koncentracja = $derived.by(() => {
 		const total = posortowaneWgSkladki.reduce((s, p) => s + Number(p.skladka_przypisana ?? 0), 0);
@@ -125,8 +127,8 @@
 		const top = [...w].sort((a, b) => Number(b.skladka_przypisana ?? 0) - Number(a.skladka_przypisana ?? 0)).slice(0, 2);
 		return w.filter((p) => !top.includes(p));
 	});
-	// Rok wcześniej: przypis — polisy tamtego okresu (przy „Bez 2 największych” bez 2 największych tamtego roku),
-	// inkaso — wpłaty tamtego okresu z tych samych polis co bieżące.
+	// Rok wcześniej: składka przypisana — polisy tamtego okresu (przy „Bez 2 największych” bez 2 największych tamtego
+	// roku), zainkasowana — opłacone raty z terminem w tamtym okresie, z tych samych polis co bieżące.
 	const pozRw = $derived(podstawa === 'inkaso' ? pozycjeWOkresie(pozInkaso, okresRw) : pozycjePrzypisu(polisyRw));
 	const miesieczneRw = $derived(new Map(miesiecznieSkladki(pozRw, miesiace(okresRw)).map(({ ym, s }) => [ym, s])));
 	const rwMiesiaca = (ym: string) => {
@@ -158,7 +160,7 @@
 				etykieta: miesiacKrotko(ym, kilkaLat),
 				pelna: `${miesiacPelny(ym)}${wToku ? ` (do ${doDnia})` : ''}`,
 				wartosc: s[miara],
-				dodatek: miara === 'polisy' ? `${NAZWA.skladka.toLowerCase()} ${zl(s.skladka)}` : podstawa === 'inkaso' ? `${odmiana(s.pozycji, 'wpłata', 'wpłaty', 'wpłat')} · ${odmiana(s.polisy, 'polisa', 'polisy', 'polis')}` : odmiana(s.polisy, 'polisa', 'polisy', 'polis'),
+				dodatek: miara === 'polisy' ? `${NAZWA.skladka.toLowerCase()} ${zl(s.skladka)}` : podstawa === 'inkaso' ? `${odmiana(s.pozycji, 'opłacona rata', 'opłacone raty', 'opłaconych rat')} · ${odmiana(s.polisy, 'polisa', 'polisy', 'polis')}` : odmiana(s.polisy, 'polisa', 'polisy', 'polis'),
 				jasna: wToku,
 				...(rw !== undefined
 					? wToku && rwBiezacyDoDnia
@@ -182,14 +184,14 @@
 			return `Bez 2 największych polis (${zl(ukryte)}) widać rytm reszty portfela.`;
 		}
 		if (koncentracja && koncentracja.dwie >= 40 && miara !== 'polisy') {
-			return `2 największe polisy to ${proc(koncentracja.dwie)} przypisu — zaznacz „Bez 2 największych polis”, żeby zobaczyć resztę okresu.`;
+			return `2 największe polisy to ${proc(koncentracja.dwie)} składki przypisanej okresu — zaznacz „Bez 2 największych polis”, żeby zobaczyć resztę okresu.`;
 		}
 		return '';
 	});
 
-	// ── Towarzystwa ──
+	// ── Towarzystwa (składka zainkasowana) ──
 	const wgTu = $derived(
-		[...grupujPozycje(pozOkres, (p) => p.tu_id)].map(([id, s]) => ({ id, nazwa: nazwaTuWg.get(id) ?? '—', ...s })).sort((a, b) => b.skladka - a.skladka)
+		[...grupujPozycje(pozInkasoOkres, (p) => p.tu_id)].map(([id, s]) => ({ id, nazwa: nazwaTuWg.get(id) ?? '—', ...s })).sort((a, b) => b.skladka - a.skladka)
 	);
 	const tuWidoczne = $derived.by(() => {
 		if (wgTu.length <= 8) return wgTu;
@@ -197,10 +199,9 @@
 		return [...wgTu.slice(0, 7), { id: '_reszta', nazwa: `Pozostałe (${reszta.length})`, skladka: reszta.reduce((s, t) => s + t.skladka, 0), prowizja: reszta.reduce((s, t) => s + t.prowizja, 0), polisy: reszta.reduce((s, t) => s + t.polisy, 0), klienci: 0, pozycji: reszta.reduce((s, t) => s + t.pozycji, 0) }];
 	});
 	const tuMaks = $derived(Math.max(1, ...tuWidoczne.map((t) => t.skladka)));
-	// Towarzystwa z polisami aktywnymi dziś, ale bez składki w okresie — żeby TU nie znikało bez słowa. Przy przypisie
-	// to np. polisa roczna od grudnia poprzedniego roku („Od początku roku” jej nie obejmuje), przy inkasie — brak wpłat.
-	const tuBezPrzypisu = $derived.by(() => {
-		const wOkresieTu = new Set(pozOkres.map((x) => x.p.tu_id));
+	// Towarzystwa z polisami aktywnymi dziś, ale bez opłaconej raty z terminem w okresie — żeby TU nie znikało bez słowa.
+	const tuBezWplat = $derived.by(() => {
+		const wOkresieTu = new Set(pozInkasoOkres.map((x) => x.p.tu_id));
 		const m = new Map<string, { id: string; nazwa: string; polisy: number; od: string }>();
 		for (const p of wFiltrach) {
 			if (!p.tu_id || wOkresieTu.has(p.tu_id) || !polisaAktywna(p, dzis)) continue;
@@ -211,27 +212,20 @@
 		}
 		return [...m.values()].sort((a, b) => a.nazwa.localeCompare(b.nazwa, 'pl'));
 	});
-	// Przy przypisie: najkrótszy okres z listy, który obejmuje początek tych polis — do przycisku „Pokaż …”.
-	const okresDlaBezPrzypisu = $derived.by((): PresetOkresu | null => {
-		if (!tuBezPrzypisu.length || podstawa !== 'przypis') return null;
-		const od = tuBezPrzypisu.reduce((m, t) => (t.od < m ? t.od : m), tuBezPrzypisu[0].od);
-		const kandydat = (['12m', 'wszystko'] as PresetOkresu[]).find((p) => p !== preset && okresZPresetu(p, dzis, najstarsza).od <= od);
-		return kandydat ?? null;
-	});
 	const tuWniosek = $derived.by(() => {
-		if (!wgTu.length || !skl.skladka) return '';
+		if (!wgTu.length || !inkasoOkres.skladka) return '';
 		const top = wgTu[0];
 		const zeStawka = wgTu.filter((t) => t.skladka > 0);
 		const naj = [...zeStawka].sort((a, b) => b.prowizja / b.skladka - a.prowizja / a.skladka)[0];
-		return `${top.nazwa} to ${proc((top.skladka / skl.skladka) * 100)} ${SLOWO.d} (${odmiana(top.polisy, 'polisa', 'polisy', 'polis')}).` +
+		return `${top.nazwa} to ${proc((top.skladka / inkasoOkres.skladka) * 100)} ${ZAINK.d} (${odmiana(top.polisy, 'polisa', 'polisy', 'polis')}).` +
 			(naj && zeStawka.length > 1 ? ` Najwyższa stawka prowizji: ${naj.nazwa} — ${proc((naj.prowizja / naj.skladka) * 100)}.` : '');
 	});
 
-	// Eksport do Excela: polisy z okresu i filtrów, wpłaty rat z okresu oraz zestawienia (miesiące, towarzystwa, rodzaje,
-	// opiekunowie) z obiema podstawami składki — inkasem i przypisem — i postęp odnowień wg miesiąca końca ochrony.
+	// Eksport do Excela: polisy z okresu i filtrów, opłacone raty z terminem w okresie oraz zestawienia (miesiące,
+	// towarzystwa, rodzaje, opiekunowie) ze składką zainkasowaną i przypisaną, i postęp odnowień wg miesiąca końca ochrony.
 	function arkuszeStatystyk(): Arkusz[] {
 		const opiekunPolisy = (p: Policy) => opiekunWg.get(opiekunKlienta.get(p.klient_id) ?? '') ?? 'bez opiekuna';
-		const inkOkres = pozycjeWOkresie(pozInkaso, okres);
+		const inkOkres = pozInkasoOkres;
 		const przOkres = pozycjeWOkresie(pozPrzypis, okres);
 		const zestawienie = (nazwa: string, naglowek: string, klucz: (p: Policy) => string | null | undefined, etykieta: (k: string) => string = (k) => k): Arkusz => {
 			const ink = grupujPozycje(inkOkres, klucz);
@@ -239,8 +233,8 @@
 			const klucze = [...new Set([...ink.keys(), ...prz.keys()])].sort((a, b) => (ink.get(b)?.skladka ?? 0) - (ink.get(a)?.skladka ?? 0));
 			return {
 				nazwa,
-				kolumny: [naglowek, kol.zl('Inkaso składki'), kol.proc('Udział w inkasie %'), kol.zl('Prowizja od inkasa'), kol.liczba('Polisy z wpłatą'),
-					kol.zl('Przypis składki'), kol.proc('Udział w przypisie %'), kol.zl('Prowizja przypisana'), kol.liczba('Nowe polisy'), kol.proc('Stawka prowizji %')],
+				kolumny: [naglowek, kol.zl('Składka zainkasowana'), kol.proc('Udział w składce zainkasowanej %'), kol.zl('Prowizja od składki zainkasowanej'), kol.liczba('Polisy z opłaconą ratą'),
+					kol.zl('Składka przypisana'), kol.proc('Udział w składce przypisanej %'), kol.zl('Prowizja przypisana'), kol.liczba('Nowe polisy'), kol.proc('Stawka prowizji %')],
 				wiersze: klucze.map((k) => {
 					const a = ink.get(k) ?? zeroSkladki();
 					const b = prz.get(k) ?? zeroSkladki();
@@ -260,14 +254,14 @@
 					p.skladka_przypisana, p.prowizja_przypisana, p.prowizja_pct, opiekunPolisy(p)])
 			},
 			{
-				nazwa: 'Wpłaty w okresie',
-				kolumny: [kol.data('Dzień wpłaty'), kol.tekst('Nr polisy'), 'Klient', 'Towarzystwo', 'Rodzaj', kol.zl('Kwota'), kol.zl('Prowizja od inkasa'), 'Opiekun'],
-				wiersze: [...inkOkres].sort((a, b) => a.data.localeCompare(b.data)).map((x) => [x.data, x.p.nr_polisy, x.p.crm_clients?.nazwa, nazwaTuWg.get(x.p.tu_id ?? '') ?? '',
+				nazwa: 'Opłacone raty w okresie',
+				kolumny: [kol.data('Termin raty'), kol.data('Data opłacenia'), kol.tekst('Nr polisy'), 'Klient', 'Towarzystwo', 'Rodzaj', kol.zl('Kwota'), kol.zl('Prowizja od składki zainkasowanej'), 'Opiekun'],
+				wiersze: [...inkOkres].sort((a, b) => a.data.localeCompare(b.data)).map((x) => [x.data, x.oplacona ?? '', x.p.nr_polisy, x.p.crm_clients?.nazwa, nazwaTuWg.get(x.p.tu_id ?? '') ?? '',
 					nazwaRodzaju(x.p.rodzaj), x.kwota, Math.round(x.prowizja * 100) / 100, opiekunPolisy(x.p)])
 			},
 			{
 				nazwa: 'Miesięcznie',
-				kolumny: ['Miesiąc', kol.zl('Inkaso składki'), kol.zl('Prowizja od inkasa'), kol.liczba('Wpłaty'), kol.zl('Przypis składki'), kol.zl('Prowizja przypisana'), kol.liczba('Nowe polisy')],
+				kolumny: ['Miesiąc', kol.zl('Składka zainkasowana'), kol.zl('Prowizja od składki zainkasowanej'), kol.liczba('Opłacone raty'), kol.zl('Składka przypisana'), kol.zl('Prowizja przypisana'), kol.liczba('Nowe polisy')],
 				wiersze: miesInk.map(({ ym, s: a }, i) => [ym, a.skladka, Math.round(a.prowizja * 100) / 100, a.pozycji, miesPrz[i].s.skladka, miesPrz[i].s.prowizja, miesPrz[i].s.polisy])
 			},
 			zestawienie('Wg towarzystw', 'Towarzystwo', (p) => p.tu_id, (id) => nazwaTuWg.get(id) ?? '—'),
@@ -283,10 +277,10 @@
 		];
 	}
 
-	// ── Rodzaje: udział w liczbie polis a udział w składce (inkasie albo przypisie) ──
+	// ── Rodzaje: udział w liczbie polis a udział w składce zainkasowanej ──
 	const wgRodzaju = $derived(
-		[...grupujPozycje(pozOkres, (p) => p.rodzaj)]
-			.map(([r, s]) => ({ r, a: skl.polisy ? (s.polisy / skl.polisy) * 100 : 0, b: skl.skladka ? (s.skladka / skl.skladka) * 100 : 0, n: s.polisy }))
+		[...grupujPozycje(pozInkasoOkres, (p) => p.rodzaj)]
+			.map(([r, s]) => ({ r, a: inkasoOkres.polisy ? (s.polisy / inkasoOkres.polisy) * 100 : 0, b: inkasoOkres.skladka ? (s.skladka / inkasoOkres.skladka) * 100 : 0, n: s.polisy }))
 			.sort((x, y) => y.b - x.b)
 			.slice(0, 8)
 	);
@@ -295,8 +289,8 @@
 		if (wgRodzaju.length < 2) return '';
 		const roznica = [...wgRodzaju].sort((x, y) => Math.abs(y.b - y.a) - Math.abs(x.b - x.a))[0];
 		const liczny = [...wgRodzaju].sort((x, y) => y.a - x.a)[0];
-		return `${nazwaRodzaju(liczny.r)} to ${proc(liczny.a)} polis i ${proc(liczny.b)} ${SLOWO.d}.` +
-			(roznica.r !== liczny.r ? ` ${nazwaRodzaju(roznica.r)} — ${proc(roznica.a)} polis i ${proc(roznica.b)} ${SLOWO.d}.` : '');
+		return `${nazwaRodzaju(liczny.r)} to ${proc(liczny.a)} polis i ${proc(liczny.b)} ${ZAINK.d}.` +
+			(roznica.r !== liczny.r ? ` ${nazwaRodzaju(roznica.r)} — ${proc(roznica.a)} polis i ${proc(roznica.b)} ${ZAINK.d}.` : '');
 	});
 
 	// ── Odnowienia: postęp miesiąc po miesiącu, skuteczność, terminowość, rozbicia, utracona składka ──
@@ -332,7 +326,7 @@
 	const lejekWn = $derived(lejekWnioskow(appState.wnioskiOdnowien, okno6, new Set(nast.keys()), polisyKlientow(appState.policies), wnioskiZalatwioneZadaniem(appState.tasks)));
 	const ETAPY_WN: [keyof typeof lejekWn, string][] = [['wyslane', 'Wysłane'], ['otwarte', 'Otwarte'], ['apk', 'APK wypełniona'], ['zlozone', 'Złożone'], ['wystawione', 'Polisa wystawiona']];
 
-	// Przypis w wybranym okresie: nowa sprzedaż a odnowienia (polisy z renewal_of), te same filtry i „Bez 2 największych”.
+	// Składka przypisana w wybranym okresie: nowa sprzedaż a odnowienia (polisy z renewal_of), te same filtry i „Bez 2 największych”.
 	const zrodla = $derived(przypisWgZrodla(polisy, okres));
 	const zrodlaMaks = $derived(Math.max(1, ...zrodla.miesiace.map((m) => m.nowa.skladka + m.odnowienie.skladka)));
 	const udzialOdnowien = $derived(zrodla.nowa.skladka + zrodla.odnowienie.skladka ? (zrodla.odnowienie.skladka / (zrodla.nowa.skladka + zrodla.odnowienie.skladka)) * 100 : null);
@@ -368,7 +362,7 @@
 		const wszystkichRat = appState.payments.length;
 		const oplaconych = appState.payments.filter((r) => ROZLICZONE.includes(r.status)).length;
 		if (wszystkichRat >= 10 && oplaconych / wszystkichRat < 0.1) {
-			out.push({ co: 'Inkaso składki', dlaczego: `${liczba(oplaconych)} z ${liczba(wszystkichRat)} rat oznaczono jako opłacone — kwota „po terminie” jest najpewniej zawyżona.`, akcja: 'Płatności', href: '/payments' });
+			out.push({ co: 'Składka zainkasowana', dlaczego: `${liczba(oplaconych)} z ${liczba(wszystkichRat)} rat oznaczono jako opłacone — kwota „po terminie” jest najpewniej zawyżona.`, akcja: 'Płatności', href: '/payments' });
 		}
 		if (isBroker() && appState.claims.length === 0) {
 			out.push({ co: 'Szkodowość', dlaczego: 'W systemie nie ma zarejestrowanej żadnej szkody.', akcja: 'Szkody', href: '/claims' });
@@ -391,7 +385,7 @@
 <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
 	<div>
 		<h1 class="text-2xl font-semibold text-ink">Statystyki portfela</h1>
-		<p class="text-sm text-ink-3 mt-0.5">Inkaso według dnia wpłaty raty · przypis i nowe polisy według początku ochrony · stan na {dzien(dzis)}</p>
+		<p class="text-sm text-ink-3 mt-0.5">Składka zainkasowana — opłacone raty w miesiącu terminu płatności · składka przypisana i nowe polisy — według początku ochrony · stan na {dzien(dzis)}</p>
 	</div>
 	<div class="flex flex-wrap gap-2">
 		<EksportExcel plik="statystyki" zakladka="Statystyki" ile={polisy.length} arkusze={arkuszeStatystyk} />
@@ -433,11 +427,6 @@
 			{#each PRESETY as [id, label]}<option value={id}>{label}</option>{/each}
 		</select>
 	</label>
-	<div role="group" aria-label="Składka liczona jako" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft" data-testid="st-podstawa">
-		{#each PODSTAWY as [k, l]}
-			<button aria-pressed={podstawa === k} onclick={() => (podstawa = k)} title="{OPIS_PODSTAWY[k].skladka}: {OPIS_PODSTAWY[k].zasada}" class="h-7 px-3 rounded-md text-[13px] {podstawa === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
-		{/each}
-	</div>
 	{@render filtr('Towarzystwo', fTu ? `TU: ${nazwaTuWg.get(fTu) ?? '—'}` : null, () => (fTu = ''), opcjeTu, fTu, (v) => (fTu = v))}
 	{@render filtr('Rodzaj', fRodzaj ? `Rodzaj: ${nazwaRodzaju(fRodzaj)}` : null, () => (fRodzaj = ''), opcjeRodzaj, fRodzaj, (v) => (fRodzaj = v))}
 	{@render filtr('Opiekun', fOpiekun ? (fOpiekun === '-' ? 'Klient bez opiekuna' : `Opiekun: ${opiekunWg.get(fOpiekun) ?? '—'}`) : null, () => (fOpiekun = ''), opcjeOpiekun, fOpiekun, (v) => (fOpiekun = v))}
@@ -464,22 +453,22 @@
 	{/if}
 {/snippet}
 <section aria-label="Wskaźniki" class="grid grid-cols-[repeat(auto-fit,minmax(min(180px,100%),1fr))] gap-3 mb-4">
-	<button type="button" onclick={() => (podstawa = 'inkaso')} aria-pressed={podstawa === 'inkaso'} data-testid="kafel-inkaso" title="Wpłacone raty według dnia wpłaty — klient płaci co miesiąc, więc składka rozkłada się na miesiące. Kliknij, żeby wykres i zestawienia liczyły inkaso." class="text-left px-4 py-3.5 rounded-xl bg-white border flex flex-col gap-1 hover:border-accent {podstawa === 'inkaso' ? 'border-accent ring-1 ring-accent/30' : 'border-line'}">
-		<span class="text-[13px] text-ink-2">Inkaso składki</span>
+	<button type="button" onclick={() => (podstawa = 'inkaso')} aria-pressed={podstawa === 'inkaso'} data-testid="kafel-inkaso" title="Opłacone raty w miesiącu terminu płatności — klient płaci co miesiąc, więc składka rozkłada się na miesiące. Kliknij, żeby wykres miesięczny liczył składkę zainkasowaną." class="text-left px-4 py-3.5 rounded-xl bg-white border flex flex-col gap-1 hover:border-accent {podstawa === 'inkaso' ? 'border-accent ring-1 ring-accent/30' : 'border-line'}">
+		<span class="text-[13px] text-ink-2">Składka zainkasowana</span>
 		<span class="text-[26px] leading-8 font-semibold text-ink">{zl(inkasoOkres.skladka)}</span>
 		{@render zmianaRr(rr.dostepne ? rr.inkaso : null)}
-		<span class="text-xs text-ink-3">{odmiana(inkasoOkres.pozycji, 'wpłacona rata', 'wpłacone raty', 'wpłaconych rat')} · {odmiana(inkasoOkres.polisy, 'polisa', 'polisy', 'polis')}</span>
+		<span class="text-xs text-ink-3">{odmiana(inkasoOkres.pozycji, 'opłacona rata', 'opłacone raty', 'opłaconych rat')} z terminem w okresie · {odmiana(inkasoOkres.polisy, 'polisa', 'polisy', 'polis')}</span>
 	</button>
-	<button type="button" onclick={() => (podstawa = 'przypis')} aria-pressed={podstawa === 'przypis'} data-testid="kafel-przypis" title="Cała składka polisy w miesiącu początku ochrony. Kliknij, żeby wykres i zestawienia liczyły przypis." class="text-left px-4 py-3.5 rounded-xl bg-white border flex flex-col gap-1 hover:border-accent {podstawa === 'przypis' ? 'border-accent ring-1 ring-accent/30' : 'border-line'}">
-		<span class="text-[13px] text-ink-2">Przypis składki</span>
+	<button type="button" onclick={() => (podstawa = 'przypis')} aria-pressed={podstawa === 'przypis'} data-testid="kafel-przypis" title="Cała składka polisy w miesiącu początku ochrony. Kliknij, żeby wykres miesięczny liczył składkę przypisaną." class="text-left px-4 py-3.5 rounded-xl bg-white border flex flex-col gap-1 hover:border-accent {podstawa === 'przypis' ? 'border-accent ring-1 ring-accent/30' : 'border-line'}">
+		<span class="text-[13px] text-ink-2">Składka przypisana</span>
 		<span class="text-[26px] leading-8 font-semibold text-ink">{zl(przypisOkres.skladka)}</span>
 		{@render zmianaRr(rr.dostepne ? rr.przypis : null)}
 		<span class="text-xs text-ink-3">polisy z początkiem ochrony w okresie</span>
 	</button>
 	<div class="px-4 py-3.5 rounded-xl bg-white border border-line flex flex-col gap-1">
-		<span class="text-[13px] text-ink-2">{NAZWA.prowizja}</span>
-		<span class="text-[26px] leading-8 font-semibold text-ink">{zl(skl.prowizja)}</span>
-		<span class="text-xs text-ink-3">efektywna stawka {proc(stawka)}{podstawa === 'inkaso' ? ` · przypisana ${zl(przypisOkres.prowizja)}` : ` · od inkasa ${zl(inkasoOkres.prowizja)}`}</span>
+		<span class="text-[13px] text-ink-2">{ZAINK.prowizja}</span>
+		<span class="text-[26px] leading-8 font-semibold text-ink">{zl(inkasoOkres.prowizja)}</span>
+		<span class="text-xs text-ink-3">efektywna stawka {proc(stawka)} · prowizja przypisana {zl(przypisOkres.prowizja)}</span>
 	</div>
 	<div class="px-4 py-3.5 rounded-xl bg-white border border-line flex flex-col gap-1">
 		<span class="text-[13px] text-ink-2">Nowe polisy</span>
@@ -487,7 +476,7 @@
 		<span class="text-xs text-ink-3">{sumy.polisy ? `mediana składki ${zl(medianaSkladki)}` : 'brak polis w okresie'}</span>
 	</div>
 	<div class="px-4 py-3.5 rounded-xl bg-white border border-line flex flex-col gap-1">
-		<span class="text-[13px] text-ink-2">Koncentracja przypisu</span>
+		<span class="text-[13px] text-ink-2">Koncentracja składki przypisanej</span>
 		<span class="text-[26px] leading-8 font-semibold text-ink">{koncentracja ? proc(koncentracja.dwie, 0) : '—'}</span>
 		<span class="flex items-start gap-1.5 text-xs text-ink-3">
 			{#if koncentracja}
@@ -649,10 +638,16 @@
 	<div class="flex flex-wrap items-center gap-3">
 		<div class="flex flex-col">
 			<h2 id="st-miesiace" class="text-[15px] font-semibold text-ink">{TYTUL[miara]}</h2>
-			<span class="text-xs text-ink-3">{okres.etykieta.split(' · ')[1]} · razem {sumaWykresu}</span>
+			<span class="text-xs text-ink-3">{okres.etykieta.split(' · ')[1]} · {NAZWA.zasada} · razem {sumaWykresu}</span>
 		</div>
-		<div role="group" aria-label="Miara" class="sm:ml-auto flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
-			{#each [['skladka', podstawa === 'inkaso' ? 'Inkaso' : 'Przypis'], ['prowizja', 'Prowizja'], ['polisy', 'Liczba polis']] as [k, l]}
+		<div role="group" aria-label="Składka" class="sm:ml-auto flex items-center p-0.5 rounded-lg bg-surface-2 border border-line-soft" data-testid="st-podstawa">
+			<span class="pl-2 pr-1 text-xs text-ink-3">Składka</span>
+			{#each PODSTAWY as [k, l]}
+				<button aria-pressed={podstawa === k} onclick={() => (podstawa = k)} title="{OPIS_PODSTAWY[k].skladka}: {OPIS_PODSTAWY[k].zasada}" class="h-7 px-3 rounded-md text-[13px] {podstawa === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
+			{/each}
+		</div>
+		<div role="group" aria-label="Miara" class="flex p-0.5 rounded-lg bg-surface-2 border border-line-soft">
+			{#each [['skladka', 'Składka'], ['prowizja', 'Prowizja'], ['polisy', 'Liczba polis']] as [k, l]}
 				<button aria-pressed={miara === k} onclick={() => (miara = k as typeof miara)} class="h-7 px-3 rounded-md text-[13px] {miara === k ? 'bg-white text-ink font-semibold shadow-sm' : 'text-ink-2 font-medium'}">{l}</button>
 			{/each}
 		</div>
@@ -684,7 +679,7 @@
 						<th class="px-3 py-2 font-semibold text-right">{NAZWA.prowizja}</th>
 						<th class="px-3 py-2 font-semibold text-right">{NAZWA.polisy}</th>
 						{#if porownujRok}
-							<th class="px-3 py-2 font-semibold text-right">{miara === 'skladka' ? (podstawa === 'inkaso' ? 'Inkaso' : 'Przypis') : miara === 'prowizja' ? 'Prowizja' : 'Polisy'} rok wcześniej</th>
+							<th class="px-3 py-2 font-semibold text-right">{miara === 'skladka' ? NAZWA.skladka : miara === 'prowizja' ? 'Prowizja' : 'Polisy'} rok wcześniej</th>
 							<th class="px-3 py-2 font-semibold text-right">Zmiana r/r</th>
 						{/if}
 					</tr>
@@ -721,19 +716,19 @@
 	<!-- Towarzystwa -->
 	<section aria-labelledby="st-tu" class="bg-white border border-line rounded-xl p-4 flex flex-col gap-3">
 		<div>
-			<h2 id="st-tu" class="text-[15px] font-semibold text-ink">{podstawa === 'inkaso' ? 'Inkaso' : 'Przypis'} według towarzystw</h2>
-			<span class="text-xs text-ink-3">udział w {SLOWO.m} · {podstawa === 'inkaso' ? 'polisy z wpłatą' : 'liczba polis'} · efektywna stawka prowizji</span>
+			<h2 id="st-tu" class="text-[15px] font-semibold text-ink">Składka zainkasowana według towarzystw</h2>
+			<span class="text-xs text-ink-3">{ZAINK.zasada} · udział w {ZAINK.m} · polisy z opłaconą ratą · efektywna stawka prowizji</span>
 		</div>
 		{#if tuWidoczne.length === 0}
-			<p class="py-6 text-center text-sm text-ink-3">Brak polis w okresie.</p>
+			<p class="py-6 text-center text-sm text-ink-3">Brak opłaconych rat z terminem w okresie.</p>
 		{:else}
-			<ul class="flex flex-col gap-2.5">
+			<ul class="flex flex-col gap-2.5" data-testid="st-tu-lista">
 				{#each tuWidoczne as t (t.id)}
 					<li class="grid grid-cols-[minmax(0,110px)_minmax(0,1fr)] sm:grid-cols-[130px_minmax(0,1fr)_120px] items-center gap-x-3 gap-y-0.5 text-[13px]" title="{t.nazwa}: {zl(t.skladka)}, prowizja {zl(t.prowizja)}">
 						<span class="truncate text-ink">{t.nazwa}</span>
 						<span class="flex items-center gap-2 min-w-0">
 							<span class="h-3 rounded-r" style="width: max(2px, calc((100% - 96px) * {t.skladka / tuMaks})); background: {t.id === '_reszta' ? KOLOR.neutralny : KOLOR.seria}"></span>
-							<span class="text-ink tabular-nums whitespace-nowrap">{zl(t.skladka)} <span class="text-ink-3">· {proc(skl.skladka ? (t.skladka / skl.skladka) * 100 : 0)}</span></span>
+							<span class="text-ink tabular-nums whitespace-nowrap">{zl(t.skladka)} <span class="text-ink-3">· {proc(inkasoOkres.skladka ? (t.skladka / inkasoOkres.skladka) * 100 : 0)}</span></span>
 						</span>
 						<span class="col-start-2 sm:col-start-auto text-xs text-ink-3 tabular-nums sm:text-right whitespace-nowrap">{odmiana(t.polisy, 'polisa', 'polisy', 'polis')} · {proc(t.skladka ? (t.prowizja / t.skladka) * 100 : 0)}</span>
 					</li>
@@ -741,13 +736,10 @@
 			</ul>
 			{#if tuWniosek}<p class="text-[13px] text-ink-2 border-t border-line-soft pt-3">{tuWniosek}</p>{/if}
 		{/if}
-		{#if tuBezPrzypisu.length}
-			<p class="text-xs text-ink-3 border-t border-line-soft pt-3" data-testid="tu-bez-przypisu">
-				{podstawa === 'inkaso' ? 'Bez wpłat w tym okresie' : 'Bez przypisu w tym okresie'}: {tuBezPrzypisu.map((t) => `${t.nazwa} (${odmiana(t.polisy, 'aktywna polisa', 'aktywne polisy', 'aktywnych polis')} od ${dzien(t.od)})`).join(', ')}.
-				{podstawa === 'inkaso' ? 'Żadna rata tych polis nie jest oznaczona jako opłacona w tym okresie.' : 'Przypis liczy się w miesiącu początku polisy.'}
-				{#if okresDlaBezPrzypisu}
-					<button type="button" onclick={() => (preset = okresDlaBezPrzypisu!)} class="font-semibold text-accent-text hover:underline">Pokaż: {PRESETY.find((p) => p[0] === okresDlaBezPrzypisu)?.[1]}</button>
-				{/if}
+		{#if tuBezWplat.length}
+			<p class="text-xs text-ink-3 border-t border-line-soft pt-3" data-testid="tu-bez-wplat">
+				Bez opłaconych rat w tym okresie: {tuBezWplat.map((t) => `${t.nazwa} (${odmiana(t.polisy, 'aktywna polisa', 'aktywne polisy', 'aktywnych polis')} od ${dzien(t.od)})`).join(', ')}.
+				Żadna rata tych polis z terminem w tym okresie nie jest oznaczona w Płatnościach jako opłacona.
 			</p>
 		{/if}
 	</section>
@@ -757,21 +749,21 @@
 		<div class="flex flex-wrap items-start gap-2">
 			<div class="flex-1 min-w-[200px]">
 				<h2 id="st-rodzaje" class="text-[15px] font-semibold text-ink">Liczba polis a wartość — według rodzaju</h2>
-				<span class="text-xs text-ink-3">udział w liczbie polis i w {SLOWO.m}, skala 0–{skalaRodzajow}%</span>
+				<span class="text-xs text-ink-3">udział w liczbie polis z opłaconą ratą i w {ZAINK.m}, skala 0–{skalaRodzajow}%</span>
 			</div>
 			<span class="flex gap-3 text-xs text-ink-2">
 				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: {KOLOR.seria2}"></span>polisy</span>
-				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: {KOLOR.seria}"></span>{podstawa === 'inkaso' ? 'inkaso' : 'przypis'}</span>
+				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full" style="background: {KOLOR.seria}"></span>składka zainkasowana</span>
 			</span>
 		</div>
 		{#if wgRodzaju.length === 0}
-			<p class="py-6 text-center text-sm text-ink-3">Brak polis w okresie.</p>
+			<p class="py-6 text-center text-sm text-ink-3">Brak opłaconych rat z terminem w okresie.</p>
 		{:else}
 			<ul class="flex flex-col gap-2.5">
 				{#each wgRodzaju as r (r.r)}
 					{@const a = (r.a / skalaRodzajow) * 100}
 					{@const b = (r.b / skalaRodzajow) * 100}
-					<li class="grid grid-cols-[minmax(0,110px)_minmax(0,1fr)] sm:grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-[13px]" title="{nazwaRodzaju(r.r)}: {proc(r.a)} polis, {proc(r.b)} {SLOWO.d}">
+					<li class="grid grid-cols-[minmax(0,110px)_minmax(0,1fr)] sm:grid-cols-[120px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-0.5 text-[13px]" title="{nazwaRodzaju(r.r)}: {proc(r.a)} polis, {proc(r.b)} {ZAINK.d}">
 						<span class="truncate text-ink">{nazwaRodzaju(r.r)}</span>
 						<span aria-hidden="true" class="relative h-3">
 							<span class="absolute inset-x-0 top-1/2 h-px" style="background: {KOLOR.siatka}"></span>
@@ -779,7 +771,7 @@
 							<span class="absolute top-1/2 w-2.5 h-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white" style="left: {a}%; background: {KOLOR.seria2}"></span>
 							<span class="absolute top-1/2 w-2.5 h-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white" style="left: {b}%; background: {KOLOR.seria}"></span>
 						</span>
-						<span class="col-start-2 sm:col-start-auto text-xs text-ink-3 tabular-nums sm:text-right whitespace-nowrap">{proc(r.a)} polis · <span class="text-ink">{proc(r.b)} {SLOWO.d}</span></span>
+						<span class="col-start-2 sm:col-start-auto text-xs text-ink-3 tabular-nums sm:text-right whitespace-nowrap">{proc(r.a)} polis · <span class="text-ink">{proc(r.b)} {ZAINK.d}</span></span>
 					</li>
 				{/each}
 			</ul>
@@ -836,7 +828,7 @@
 		<div class="flex flex-wrap items-start gap-2">
 			<div class="flex-1 min-w-[200px]">
 				<h2 id="st-zrodla" class="text-[15px] font-semibold text-ink">Nowa sprzedaż a odnowienia</h2>
-				<span class="text-xs text-ink-3">przypis według miesiąca początku ochrony · {okres.etykieta.split(' · ')[1]}</span>
+				<span class="text-xs text-ink-3">składka przypisana według miesiąca początku ochrony · {okres.etykieta.split(' · ')[1]}</span>
 			</div>
 			<span class="flex gap-3 text-xs text-ink-2">
 				<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm" style="background: {KOLOR.seria}"></span>nowa sprzedaż</span>
@@ -862,7 +854,7 @@
 				{/each}
 			</ul>
 			<p class="text-[13px] text-ink-2 border-t border-line-soft pt-3">
-				Odnowienia to {proc(udzialOdnowien ?? 0, 0)} przypisu okresu ({zl(zrodla.odnowienie.skladka)}, {odmiana(zrodla.odnowienie.polisy, 'polisa', 'polisy', 'polis')}), nowa sprzedaż {zl(zrodla.nowa.skladka)} ({odmiana(zrodla.nowa.polisy, 'polisa', 'polisy', 'polis')}). Odnowienie = polisa wskazująca poprzedniczkę; te same filtry co wyżej.
+				Odnowienia to {proc(udzialOdnowien ?? 0, 0)} składki przypisanej okresu ({zl(zrodla.odnowienie.skladka)}, {odmiana(zrodla.odnowienie.polisy, 'polisa', 'polisy', 'polis')}), nowa sprzedaż {zl(zrodla.nowa.skladka)} ({odmiana(zrodla.nowa.polisy, 'polisa', 'polisy', 'polis')}). Odnowienie = polisa wskazująca poprzedniczkę; te same filtry co wyżej.
 			</p>
 		{/if}
 	</section>

@@ -20,6 +20,8 @@ export type TenantPatch = {
 	resend_webhook_secret?: string | null;
 	smsapi_token?: string | null;
 	sms_nadawca?: string | null;
+	email_nazwa_nadawcy?: string | null;
+	email_podpis?: string | null;
 };
 
 // Token OAuth SMSAPI (Panel SMSAPI → Ustawienia API → Tokeny API): ciąg znaków bez spacji.
@@ -37,7 +39,7 @@ const EMAIL_FROM_RE = /^(?:[^<>\r\n"@]{1,100} <[^\s@<>"]+@[a-z0-9-]+(?:\.[a-z0-9
 // Waliduje ciało PATCH /api/saas-admin/tenants. Zwraca identyfikator firmy i czyste pola do zapisu.
 export function parseTenantPatch(body: unknown): { tenantId: string; patch: TenantPatch } {
 	if (!body || typeof body !== 'object') throw error(400, { message: 'Nieprawidłowe dane.' });
-	const { tenant_id, features, resend_api_key, email_from, resend_webhook_secret, smsapi_token, sms_nadawca } = body as Record<string, unknown>;
+	const { tenant_id, features, resend_api_key, email_from, resend_webhook_secret, smsapi_token, sms_nadawca, email_nazwa_nadawcy, email_podpis } = body as Record<string, unknown>;
 
 	if (typeof tenant_id !== 'string' || !UUID.test(tenant_id)) {
 		throw error(400, { message: 'Nieprawidłowy identyfikator firmy.' });
@@ -109,6 +111,22 @@ export function parseTenantPatch(body: unknown): { tenantId: string; patch: Tena
 			throw error(400, { message: 'Nieprawidłowe pole nadawcy — do 11 znaków (litery, cyfry, spacja, kropka, myślnik), zarejestrowane w SMSAPI.' });
 		}
 	}
+
+	// Nazwa nadawcy i podpis w e-mailach do klientów (np. „Beauty❤️Polisa / Płatności”, „Zespół Beauty❤️Polisa”):
+	// zwykły tekst w jednej linii, bez znaków psujących nagłówek „From”.
+	const tekstMaila = (v: unknown, pole: 'email_nazwa_nadawcy' | 'email_podpis', maks: number, etykieta: string) => {
+		if (v === undefined) return;
+		if (v === null || (typeof v === 'string' && !v.trim())) {
+			patch[pole] = null;
+			return;
+		}
+		if (typeof v !== 'string' || v.trim().length > maks || /["<>\r\n\\]/.test(v)) {
+			throw error(400, { message: `Nieprawidłowa ${etykieta} — jedna linia, do ${maks} znaków, bez cudzysłowów i znaków < >.` });
+		}
+		patch[pole] = v.trim();
+	};
+	tekstMaila(email_nazwa_nadawcy, 'email_nazwa_nadawcy', 80, 'nazwa nadawcy');
+	tekstMaila(email_podpis, 'email_podpis', 120, 'treść podpisu');
 
 	if (Object.keys(patch).length === 0) throw error(400, { message: 'Brak zmian do zapisania.' });
 	return { tenantId: tenant_id, patch };

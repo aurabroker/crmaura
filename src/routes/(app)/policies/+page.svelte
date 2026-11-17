@@ -14,11 +14,12 @@
 	import { kol, type Arkusz } from '$lib/eksport';
 	import {
 		Search, Pencil, FilePlus2, Eye, ExternalLink, Copy, User, AlertTriangle, Trash2, Plus,
-		ChevronDown, ChevronLeft, ChevronRight, X, Upload, FileStack, FileText
+		ChevronDown, ChevronLeft, ChevronRight, X, Upload, FileStack, FileText, CalendarRange
 	} from 'lucide-svelte';
 	import { ROZLICZONE, poTerminie, ugBezRozliczania } from '$lib/platnosci';
 	import { nazwaRodzaju, nazwaTu, nieOdnawiana, odnowionePolisy, polisaAktywna, polisaNiezakonczona, polisaOczekujaca, polisaWygasla, statusPolisy } from '$lib/statusPolisy';
 	import ZakonczPolise from '$lib/components/ZakonczPolise.svelte';
+	import { ETYKIETA_POLA, GOTOWE_OKRESY, POLA_OKRESU, opisZakresu, polisaWOkresie, rozpoznajOkres, zakresOkresu, type GotowyOkres, type PoleOkresu } from '$lib/okresPolis';
 	import { page } from '$app/stores';
 	import { onMount, untrack } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -116,8 +117,24 @@
 	let fTu = $state('');
 	let fRodzaj = $state('');
 	let fOpiekun = $state('');
-	const ileFiltrow = $derived([fTypUmowy, fTu, fRodzaj, fOpiekun].filter(Boolean).length);
-	function wyczyscFiltry() { fTypUmowy = ''; fTu = ''; fRodzaj = ''; fOpiekun = ''; search = ''; }
+	// Okres: która data polisy (początek / koniec ochrony, ochrona w okresie, data zawarcia) i zakres dat ($lib/okresPolis).
+	let fPole = $state<PoleOkresu>('od');
+	let fOkresOd = $state('');
+	let fOkresDo = $state('');
+	let okresOtwarty = $state(false);
+	const zakresOkr = $derived({ od: fOkresOd, do: fOkresDo });
+	const okresAktywny = $derived(!!(fOkresOd || fOkresDo));
+	const gotowyOkres = $derived(rozpoznajOkres(zakresOkr, dzis));
+	function ustawOkres(o: GotowyOkres) { ({ od: fOkresOd, do: fOkresDo } = zakresOkresu(o, dzis)); }
+	function wyczyscOkres() { fOkresOd = ''; fOkresDo = ''; }
+	const PODPOWIEDZ_POLA: Record<PoleOkresu, string> = {
+		od: 'Polisy, których okres ubezpieczenia zaczyna się w wybranym okresie — nowe i odnowione.',
+		do: 'Polisy, których okres ubezpieczenia kończy się w wybranym okresie — np. do odnowienia.',
+		ochrona: 'Polisy, które chroniły choć jeden dzień w wybranym okresie (z wcześniejszym zakończeniem).',
+		zawarcia: 'Polisy zawarte w wybranym okresie (data zawarcia z polisy).'
+	};
+	const ileFiltrow = $derived([fTypUmowy, fTu, fRodzaj, fOpiekun, okresAktywny].filter(Boolean).length);
+	function wyczyscFiltry() { fTypUmowy = ''; fTu = ''; fRodzaj = ''; fOpiekun = ''; search = ''; wyczyscOkres(); }
 
 	// Najpierw typ z menu, potem segmenty liczone na tym zbiorze. „Umowy generalne” — tylko umowy generalne;
 	// „Polisy” — bez umów generalnych (mają własną zakładkę), polisy podpięte pod UG zostają.
@@ -141,6 +158,7 @@
 			if (fTu && p.tu_id !== fTu) return false;
 			if (fRodzaj && p.rodzaj !== fRodzaj) return false;
 			if (fOpiekun && (fOpiekun === '-' ? !!opiekunKlienta.get(p.klient_id) : opiekunKlienta.get(p.klient_id) !== fOpiekun)) return false;
+			if (okresAktywny && !polisaWOkresie(p, fPole, zakresOkr)) return false;
 			return !q ||
 				p.nr_polisy.toLowerCase().includes(q) ||
 				(p.crm_clients?.nazwa ?? '').toLowerCase().includes(q) ||
@@ -167,7 +185,7 @@
 	let strona = $state(0);
 	const stron = $derived(Math.max(1, Math.ceil(wiersze.length / NA_STRONE)));
 	$effect(() => {
-		void segment; void search; void fTypUmowy; void fTu; void fRodzaj; void fOpiekun; void filterTyp; void sort.klucz; void sort.kierunek;
+		void segment; void search; void fTypUmowy; void fTu; void fRodzaj; void fOpiekun; void fPole; void fOkresOd; void fOkresDo; void filterTyp; void sort.klucz; void sort.kierunek;
 		strona = 0;
 	});
 	const naStronie = $derived(wiersze.slice(strona * NA_STRONE, (strona + 1) * NA_STRONE));
@@ -445,7 +463,10 @@
 </script>
 
 <svelte:head><title>{lockedTyp && filterTyp === 'generalna' ? 'Umowy generalne' : 'Polisy'} — AuraCRM</title></svelte:head>
-<svelte:window onclick={() => (nowaMenu = false)} />
+<svelte:window
+	onclick={(e) => { nowaMenu = false; if (!(e.target as Element | null)?.closest?.('[data-okres]')) okresOtwarty = false; }}
+	onkeydown={(e) => { if (e.key === 'Escape') okresOtwarty = false; }}
+/>
 
 <div class="flex flex-wrap items-end justify-between gap-3 mb-4">
 	<div>
@@ -564,6 +585,47 @@
 	{@render filtr('Towarzystwo', fTu ? `TU: ${towarzystwa.find(t => t.id === fTu)?.skrot || towarzystwa.find(t => t.id === fTu)?.nazwa || '—'}` : null, () => (fTu = ''), opcjeTu, fTu, (v) => (fTu = v))}
 	{@render filtr('Rodzaj', fRodzaj ? `Rodzaj: ${nazwaRodzaju(fRodzaj)}` : null, () => (fRodzaj = ''), opcjeRodzaj, fRodzaj, (v) => (fRodzaj = v))}
 	{@render filtr('Opiekun', fOpiekun ? (fOpiekun === '-' ? 'Klient bez opiekuna' : `Opiekun: ${opiekunWg.get(fOpiekun) ?? '—'}`) : null, () => (fOpiekun = ''), opcjeOpiekun, fOpiekun, (v) => (fOpiekun = v))}
+	<!-- Okres: data polisy + zakres (gotowe okresy albo własne daty) -->
+	<div class="relative" data-okres>
+		<span class="relative inline-flex items-center h-9 rounded-lg text-[13px] font-medium focus-within:ring-2 focus-within:ring-accent/40 {okresAktywny ? 'border border-line bg-white text-ink pr-7' : 'border border-dashed border-[#C4CAD4] text-ink-2 hover:bg-white'}">
+			<button onclick={() => (okresOtwarty = !okresOtwarty)} aria-expanded={okresOtwarty} aria-haspopup="dialog" data-testid="filtr-okres" class="h-full flex items-center gap-1.5 px-2.5 max-w-[340px] whitespace-nowrap">
+				<CalendarRange size={14} class="shrink-0 text-ink-3" />
+				<span class="truncate">{okresAktywny ? `${ETYKIETA_POLA[fPole]}: ${opisZakresu(zakresOkr, dzis)}` : 'Okres'}</span>
+			</button>
+			{#if okresAktywny}
+				<button onclick={wyczyscOkres} aria-label="Usuń filtr: okres" class="absolute right-1 z-10 w-6 h-6 flex items-center justify-center rounded text-ink-3 hover:bg-surface-2"><X size={12} /></button>
+			{/if}
+		</span>
+		{#if okresOtwarty}
+			<div role="dialog" aria-label="Filtr okresu" data-testid="okno-okres" class="absolute left-0 top-full mt-1 z-50 w-[340px] max-w-[calc(100vw-32px)] bg-white border border-line rounded-xl shadow-xl p-3">
+				<p class="text-xs font-semibold text-ink-2 mb-1.5">Data polisy</p>
+				<div class="grid grid-cols-2 gap-1 mb-1.5">
+					{#each POLA_OKRESU as [id, etykieta]}
+						<button onclick={() => (fPole = id)} aria-pressed={fPole === id} class="h-8 px-2 rounded-lg text-[13px] {fPole === id ? 'bg-accent-soft text-accent-text font-semibold ring-1 ring-accent/30' : 'text-ink-2 hover:bg-surface-2'}">{etykieta}</button>
+					{/each}
+				</div>
+				<p class="text-xs text-ink-3 mb-3">{PODPOWIEDZ_POLA[fPole]}</p>
+				<p class="text-xs font-semibold text-ink-2 mb-1.5">Okres</p>
+				<div class="flex flex-wrap gap-1 mb-3">
+					{#each GOTOWE_OKRESY as [o, etykieta]}
+						<button onclick={() => ustawOkres(o)} aria-pressed={gotowyOkres === o} class="h-7 px-2 rounded-full border text-xs {gotowyOkres === o ? 'border-accent bg-accent-soft text-accent-text font-semibold' : 'border-line text-ink-2 hover:bg-surface-2'}">{etykieta}</button>
+					{/each}
+				</div>
+				<div class="grid grid-cols-2 gap-2">
+					<label class="text-xs text-ink-2">Od
+						<input type="date" bind:value={fOkresOd} max={fOkresDo || undefined} data-testid="okres-od" class="mt-1 w-full h-8 border border-line rounded-lg px-2 text-[13px] text-ink" />
+					</label>
+					<label class="text-xs text-ink-2">Do
+						<input type="date" bind:value={fOkresDo} min={fOkresOd || undefined} data-testid="okres-do" class="mt-1 w-full h-8 border border-line rounded-lg px-2 text-[13px] text-ink" />
+					</label>
+				</div>
+				<div class="mt-3 flex items-center justify-between">
+					<button onclick={wyczyscOkres} disabled={!okresAktywny} class="h-8 px-2 text-[13px] font-semibold text-accent-text hover:underline disabled:opacity-40 disabled:no-underline">Wyczyść okres</button>
+					<button onclick={() => (okresOtwarty = false)} class="h-8 px-3 rounded-lg bg-accent text-white text-[13px] font-semibold hover:bg-accent-hover">Gotowe · {odmiana(widoczne.length, 'polisa', 'polisy', 'polis')}</button>
+				</div>
+			</div>
+		{/if}
+	</div>
 	{#if ileFiltrow > 0}
 		<button onclick={wyczyscFiltry} class="h-9 px-2 text-[13px] font-semibold text-accent-text hover:underline">Wyczyść</button>
 	{/if}
@@ -684,7 +746,7 @@
 
 	<div class="flex flex-wrap items-center gap-3 px-4 py-2.5 border-t border-line-soft text-[13px] text-ink-2">
 		<span class="w-full sm:w-auto sm:flex-1 min-w-0 tabular-nums">
-			{odmiana(widoczne.length, 'polisa', 'polisy', 'polis')} · składka <span class="font-semibold text-ink">{fmtPln(sumy.skladka)} zł</span> · prowizja <span class="font-semibold text-ink">{fmtPln(sumy.prowizja)} zł</span>
+			{odmiana(widoczne.length, 'polisa', 'polisy', 'polis')} · składka przypisana <span class="font-semibold text-ink">{fmtPln(sumy.skladka)} zł</span> · prowizja <span class="font-semibold text-ink">{fmtPln(sumy.prowizja)} zł</span>
 		</span>
 		<span class="tabular-nums">{zakres}</span>
 		<span class="flex gap-1">

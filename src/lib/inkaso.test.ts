@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dzienWplaty, grupujPozycje, miesiecznieSkladki, pozycjeInkasa, pozycjePrzypisu, pozycjeWOkresie, sumujPozycje } from './inkaso.ts';
+import { dzienRaty, grupujPozycje, miesiecznieSkladki, pozycjeInkasa, pozycjePrzypisu, pozycjeWOkresie, sumujPozycje } from './inkaso.ts';
 
 // Polisa grupowa na życie jak w zgłoszeniu: 4380 zł rocznie, od 1.12.2025, 12 rat po 365 zł, prowizja 25%.
 const grupowa = { id: 'g', klient_id: 'k1', data_od: '2025-12-01', skladka_przypisana: 4380, prowizja_przypisana: 1095, tu_id: 'ergo-zycie' };
@@ -17,20 +17,20 @@ const raty = [
 ] as never[];
 const ROK_2026 = { od: '2026-01-01', do: '2026-11-11' };
 
-test('inkaso: opłacone raty w dniu wpłaty, bez rat nieopłaconych i rat spoza listy polis', () => {
+test('składka zainkasowana: opłacone raty w dniu terminu, bez rat nieopłaconych i rat spoza listy polis', () => {
 	const ink = pozycjeInkasa([grupowa, oc] as never[], raty);
 	assert.equal(ink.length, 11);
 	const w2026 = sumujPozycje(pozycjeWOkresie(ink, ROK_2026));
-	// 9 wpłat grupowej w 2026 (sty–wrz; grudniowa wpadła w 2025) + OC.
+	// 9 opłaconych rat grupowej z terminem w 2026 (sty–wrz; grudniowa w 2025) + OC.
 	assert.equal(w2026.skladka, 9 * 365 + 650);
 	assert.equal(w2026.polisy, 2);
 	assert.equal(w2026.klienci, 2);
 	assert.equal(w2026.pozycji, 10);
-	// Prowizja od inkasa proporcjonalna do raty: 25% z 365 zł i 20% z 650 zł.
+	// Prowizja od składki zainkasowanej proporcjonalna do raty: 25% z 365 zł i 20% z 650 zł.
 	assert.equal(Math.round(w2026.prowizja * 100) / 100, 9 * 91.25 + 130);
 });
 
-test('przypis: cała składka w dniu początku — polisa od grudnia 2025 nie wchodzi do 2026, w inkasie jest', () => {
+test('składka przypisana: cała składka w dniu początku — polisa od grudnia 2025 nie wchodzi do 2026, w zainkasowanej jest', () => {
 	const prz = sumujPozycje(pozycjeWOkresie(pozycjePrzypisu([grupowa, oc] as never[]), ROK_2026));
 	assert.equal(prz.skladka, 650);
 	assert.equal(prz.polisy, 1);
@@ -39,12 +39,18 @@ test('przypis: cała składka w dniu początku — polisa od grudnia 2025 nie wc
 	assert.equal(tu.get('ergo-zycie')?.polisy, 1);
 });
 
-test('miesięcznie: każda wpłata w swoim miesiącu, rata bez daty opłacenia w miesiącu terminu', () => {
+test('miesięcznie: każda opłacona rata w miesiącu swojego terminu, nie w dniu rozliczenia', () => {
 	const mies = miesiecznieSkladki(pozycjeInkasa([grupowa, oc] as never[], raty), ['2026-01', '2026-02', '2026-03', '2026-10', '2026-11']);
 	const wg = Object.fromEntries(mies.map(({ ym, s }) => [ym, s.skladka]));
 	assert.deepEqual(wg, { '2026-01': 365, '2026-02': 365, '2026-03': 365 + 650, '2026-10': 0, '2026-11': 0 });
-	assert.equal(dzienWplaty({ data_oplacenia: null, data_platnosci: '2026-03-24' }), '2026-03-24');
-	assert.equal(dzienWplaty({ data_oplacenia: '2026-03-20T10:00:00Z', data_platnosci: '2026-03-24' }), '2026-03-20');
+	assert.equal(dzienRaty({ data_oplacenia: null, data_platnosci: '2026-03-24' }), '2026-03-24');
+	assert.equal(dzienRaty({ data_oplacenia: '2026-03-20T10:00:00Z', data_platnosci: '2026-03-24' }), '2026-03-24');
+	assert.equal(dzienRaty({ data_oplacenia: '2026-03-20', data_platnosci: '' }), '2026-03-20');
+	// Raty z kilku miesięcy rozliczone hurtem notą prowizyjną 9 października — każda zostaje w miesiącu swojego terminu.
+	const hurtem = ['2026-06-15', '2026-07-15', '2026-08-15'].map((d) => ({ polisa_id: 'o', status: 'Opłacona', kwota: 100, data_platnosci: d, data_oplacenia: '2026-10-09' }));
+	const m2 = miesiecznieSkladki(pozycjeInkasa([oc] as never[], hurtem as never[]), ['2026-06', '2026-07', '2026-08', '2026-10']);
+	assert.deepEqual(m2.map(({ s }) => s.skladka), [100, 100, 100, 0]);
+	assert.equal(pozycjeInkasa([oc] as never[], hurtem as never[])[0].oplacona, '2026-10-09');
 });
 
 test('polisa bez składki: prowizja od inkasa 0 zamiast dzielenia przez zero', () => {

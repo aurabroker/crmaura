@@ -5,10 +5,13 @@
 // polisy i dołącza z magazynu R2 PDF polisy oraz OWU (z polisy albo jej Umowy Generalnej). Adresaci tylko
 // spośród adresów klienta i jego osób kontaktowych (jak e-mail z Panelu 360°). Każda wysyłka trafia do
 // historii (crm_client_emails, rodzaj „polisa” — status dostarczenia z webhooka Resend) i audytu.
+// Nazwa nadawcy i podpis z ustawień firmy (np. „Beauty❤️Polisa / Płatności”, „Zespół Beauty❤️Polisa”), a bez nich
+// nazwa firmy i imię i nazwisko osoby wysyłającej. Do maila można dołączyć pliki z dysku ($lib/server/zalacznikiZDysku).
 import { error } from '@sveltejs/kit';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { EMAIL_RE, base64, bezAdresow, esc, wyslijEmail, type Wiadomosc, type WynikWysylki, type Zalacznik } from './mail';
-import { LIMIT_NA_GODZINE, adresNadawcy, ustawieniaWysylki } from './emailKlienta';
+import { LIMIT_NA_GODZINE, adresNadawcy, nazwaNadawcy, ustawieniaWysylki, zKropka } from './emailKlienta';
+import { MAKS_Z_DYSKU, sprawdzZDysku } from './zalacznikiZDysku';
 import type { ProfilFirmy } from './pliki';
 import { nazwaRodzaju } from '$lib/statusPolisy';
 import type { PolicyImportData } from '$lib/types/database';
@@ -94,8 +97,9 @@ export function wypelnijSzablon(tekst: string, zmienne: Record<string, string>, 
  * OKRES_DO, SKLADKA, TERMIN_PLATNOSCI, KLIENT, DORADCA, FIRMA, OWU).
  * bezPlatnosci: polisa „Nie wysyłaj klientowi informacji o płatnościach” (np. Leadenhall — składka w CRM bez opłat
  * dystrybucyjnych, klient płaci brutto): bez wierszy „Składka” i „Termin płatności” i bez prośby o opłacenie.
+ * podpisZespolu: firma ma własny podpis (np. „Zespół Beauty❤️Polisa”) — bez nazwy firmy pod podpisem.
  */
-export function szablonWbudowany(bezPlatnosci = false): SzablonResend {
+export function szablonWbudowany(bezPlatnosci = false, podpisZespolu = false): SzablonResend {
 	const p = (t: string) => `<p style="margin:0 0 14px">${t}</p>`;
 	const w = (etykieta: string, wartosc: string) =>
 		`<tr><td style="padding:4px 12px 4px 0;color:#5E6A7E;white-space:nowrap">${etykieta}</td><td style="padding:4px 0;font-weight:600">${wartosc}</td></tr>`;
@@ -109,8 +113,9 @@ export function szablonWbudowany(bezPlatnosci = false): SzablonResend {
 		`</table>` +
 		p(bezPlatnosci ? 'Prosimy o sprawdzenie danych na polisie.{{{OWU_ZDANIE}}}' : 'Prosimy o sprawdzenie danych na polisie i opłacenie składki w terminie.{{{OWU_ZDANIE}}}') +
 		p('W razie pytań jesteśmy do dyspozycji.') +
-		p('Z poważaniem,<br>{{{DORADCA}}}<br>{{{FIRMA}}}') +
-		`<p style="margin:24px 0 0;font-size:12px;color:#5E6A7E">Wiadomość wysłana z systemu obsługi klientów {{{FIRMA}}}.</p></div>`;
+		// Podpis z ustawień firmy (np. „Zespół Beauty❤️Polisa”) stoi sam; imię i nazwisko osoby — z nazwą firmy pod spodem.
+		p(podpisZespolu ? 'Z poważaniem,<br>{{{DORADCA}}}' : 'Z poważaniem,<br>{{{DORADCA}}}<br>{{{FIRMA}}}') +
+		`<p style="margin:24px 0 0;font-size:12px;color:#5E6A7E">Wiadomość wysłana z systemu obsługi klientów {{{FIRMA_KONIEC}}}</p></div>`;
 	return { subject: 'Polisa nr {{{NR_POLISY}}} — {{{RODZAJ}}}, {{{TU}}}', html, text: null, from: null, reply_to: null, status: 'published', variables: [] };
 }
 
@@ -270,14 +275,19 @@ export async function kontekstMailaPolisy(admin: SupabaseClient, profil: ProfilF
 		adresy: w.adresy,
 		pliki: w.pliki.map((p) => ({ id: p.id, nazwa: p.nazwa, rozmiar: Number(p.rozmiar), rodzaj: p.rodzaj, zUmowy: !!p.polisa_id && p.polisa_id !== w.polisa.id })),
 		domyslne: { do: w.adresy.slice(0, 1).map((a) => a.adres), powitanie: w.powitanie, termin_platnosci: bezPlatnosci ? null : w.termin, pliki: domyslneZalaczniki(w.pliki, w.polisa.id) },
+		/** Limity załączników: razem MB i najwyżej tyle plików z dysku. */
+		limity: { razem_mb: MAKS_ZALACZNIKOW_MB, z_dysku: MAKS_Z_DYSKU },
 		wyslane: w.wyslane
 	};
 }
 
-export type ZadanieMailaPolisy = { do?: unknown; powitanie?: unknown; termin_platnosci?: unknown; pliki?: unknown; podglad?: unknown };
+export type ZadanieMailaPolisy = { do?: unknown; powitanie?: unknown; termin_platnosci?: unknown; pliki?: unknown; z_dysku?: unknown; podglad?: unknown };
 
-/** terminWymagany: false przy polisie „bez informacji o płatnościach” — mail idzie bez terminu płatności. */
-export function sprawdzZadanie(body: ZadanieMailaPolisy, { terminWymagany = true }: { terminWymagany?: boolean } = {}) {
+/**
+ * terminWymagany: false przy polisie „bez informacji o płatnościach” — mail idzie bez terminu płatności.
+ * zDysku: liczba plików dodanych z dysku — wystarczą zamiast PDF z dokumentów polisy.
+ */
+export function sprawdzZadanie(body: ZadanieMailaPolisy, { terminWymagany = true, zDysku = 0 }: { terminWymagany?: boolean; zDysku?: number } = {}) {
 	const lista = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x ?? '').trim()).filter(Boolean) : []);
 	const adresy = [...new Set(lista(body.do).map((a) => a.toLowerCase()))];
 	const powitanie = String(body.powitanie ?? '').replace(/[\r\n]+/g, ' ').trim().replace(/[,;:\s]+$/, '');
@@ -289,7 +299,7 @@ export function sprawdzZadanie(body: ZadanieMailaPolisy, { terminWymagany = true
 	if (!powitanie) throw error(400, 'Wpisz powitanie (np. „Szanowna Pani Anno”).');
 	if (powitanie.length > 120) throw error(400, 'Powitanie jest za długie (najwyżej 120 znaków).');
 	if (terminWymagany && (!ISO.test(termin) || Number.isNaN(Date.parse(termin)))) throw error(400, 'Podaj termin płatności składki.');
-	if (!pliki.length) throw error(400, 'Zaznacz PDF polisy do załączenia.');
+	if (!pliki.length && !zDysku) throw error(400, 'Zaznacz PDF polisy do załączenia albo dodaj plik z dysku.');
 	if (pliki.length > MAKS_ZALACZNIKOW || pliki.some((id) => !UUID.test(id))) throw error(400, `Najwyżej ${MAKS_ZALACZNIKOW} załączniki.`);
 	return { adresy, powitanie, termin: terminWymagany ? termin : '', pliki, podglad: body.podglad === true };
 }
@@ -305,13 +315,15 @@ export async function mailPolisy(
 ) {
 	const w = await wczytaj(admin, profil, polisaId);
 	const bezPlatnosci = !!w.polisa.bez_info_platnosci;
-	const z = sprawdzZadanie(body, { terminWymagany: !bezPlatnosci });
+	// Pliki z dysku: w podglądzie nazwa i rozmiar, przy wysyłce także treść (sprawdzana z rozszerzeniem).
+	const zDysku = sprawdzZDysku(body.z_dysku, body.podglad !== true);
+	const z = sprawdzZadanie(body, { terminWymagany: !bezPlatnosci, zDysku: zDysku.length });
 	const dozwolone = new Set(w.adresy.map((a) => a.adres));
 	if (z.adresy.some((a) => !dozwolone.has(a))) throw error(400, 'Adresat musi być adresem klienta albo jego osoby kontaktowej — dopisz go najpierw w danych klienta.');
 	const pliki = z.pliki.map((id) => w.pliki.find((p) => p.id === id));
 	if (pliki.some((p) => !p)) throw error(400, 'Załącznik nie należy do tej polisy.');
 	const wybrane = pliki as Plik[];
-	const suma = wybrane.reduce((s, p) => s + Number(p.rozmiar), 0);
+	const suma = wybrane.reduce((s, p) => s + Number(p.rozmiar), 0) + zDysku.reduce((s, p) => s + p.rozmiar, 0);
 	if (suma > MAKS_ZALACZNIKOW_MB * 1024 * 1024) throw error(413, `Załączniki są za duże (razem najwyżej ${MAKS_ZALACZNIKOW_MB} MB).`);
 
 	const ust = await ustawieniaWysylki(admin, profil.tenant_id);
@@ -319,7 +331,7 @@ export async function mailPolisy(
 	// Program: szablon programu musi być w Resend. Poza programem: ogólny szablon firmy, a bez niego wbudowana treść.
 	// Polisa bez informacji o płatnościach: zawsze wbudowana treść bez składki i terminu (szablon z Resend mógłby je mieć).
 	const zResend = bezPlatnosci ? null : await pobierzSzablon(ust.klucz, w.szablon, o.f, w.ogolny);
-	const t = zResend ?? szablonWbudowany(bezPlatnosci);
+	const t = zResend ?? szablonWbudowany(bezPlatnosci, !!ust.podpis);
 	const nazwaSzablonu = zResend ? w.szablon : SZABLON_WBUDOWANY;
 
 	const owu = wybrane.filter((p) => p.rodzaj === 'owu').map((p) => p.nazwa);
@@ -338,34 +350,49 @@ export async function mailPolisy(
 		SKLADKA: bezPlatnosci ? '' : kwotaSlownie(w.polisa.skladka_przypisana),
 		OWU: owu.join(', '),
 		OWU_ZDANIE: owu.length ? ' Załączamy też Ogólne Warunki Ubezpieczenia (OWU).' : '',
-		DORADCA: profil.imie_nazwisko ?? '',
+		// Podpis: z ustawień firmy (np. „Zespół Beauty❤️Polisa”), a bez nich imię i nazwisko osoby wysyłającej.
+		DORADCA: ust.podpis ?? profil.imie_nazwisko ?? '',
+		PODPIS: ust.podpis ?? profil.imie_nazwisko ?? '',
 		FIRMA: ust.firma,
+		FIRMA_KONIEC: zKropka(ust.firma),
 		...zmienneProgramu(w.program, w.polisa)
 	};
 	const zastepcze = Object.fromEntries((t.variables ?? []).map((v) => [v.key, v.fallback_value == null ? '' : String(v.fallback_value)]));
 	const html = wypelnijSzablon(t.html ?? '', zmienne, true, zastepcze);
 	const text = t.text ? wypelnijSzablon(t.text, zmienne, false, zastepcze) : htmlNaTekst(html);
 	const temat = wypelnijSzablon(t.subject || `[POLISA {{{NR_POLISY}}}] Twoja polisa`, zmienne, false, zastepcze).replace(/[\r\n]+/g, ' ').trim().slice(0, 200);
-	const od = (t.from && adresNadawcy(t.from) ? t.from : null) ?? (ust.adres ? `"${ust.firma.replace(/["<>\r\n\\]/g, '')}" <${ust.adres}>` : null);
-	if (!od) throw error(400, 'Brak adresu nadawcy — ustaw „From” w szablonie Resend albo adres nadawcy firmy w SAAS Admin.');
+	// Adres: z „From” szablonu Resend albo adres nadawcy firmy. Nazwa: z ustawień firmy (np. „Beauty❤️Polisa / Płatności”),
+	// a bez niej — z szablonu albo nazwa firmy.
+	const adresSzablonu = t.from ? adresNadawcy(t.from) : null;
+	const adresOd = adresSzablonu ?? ust.adres;
+	if (!adresOd) throw error(400, 'Brak adresu nadawcy — ustaw „From” w szablonie Resend albo adres nadawcy firmy w SAAS Admin.');
+	const od = ust.nazwaNadawcy
+		? `"${nazwaNadawcy(null, null, ust.nazwaNadawcy)}" <${adresOd}>`
+		: adresSzablonu
+			? (t.from as string)
+			: `"${nazwaNadawcy(null, ust.firma)}" <${adresOd}>`;
 	const zSzablonu = (Array.isArray(t.reply_to) ? t.reply_to : t.reply_to ? [t.reply_to] : []).map((a) => adresNadawcy(a)).filter((a): a is string => !!a);
 	const doradca = profil.email && EMAIL_RE.test(profil.email) && !/\.invalid$/i.test(profil.email) ? profil.email : null;
 	const odpowiedz = zSzablonu[0] ?? doradca ?? undefined;
-	const nazwy = wybrane.map((p) => p.nazwa);
+	const nazwy = [...wybrane.map((p) => p.nazwa), ...zDysku.map((p) => p.nazwa)];
 
-	if (z.podglad) return { podglad: true as const, temat, html, od, odpowiedz: odpowiedz ?? null, zalaczniki: wybrane.map((p) => ({ nazwa: p.nazwa, rozmiar: Number(p.rozmiar) })) };
+	if (z.podglad) {
+		const zalaczniki = [...wybrane.map((p) => ({ nazwa: p.nazwa, rozmiar: Number(p.rozmiar) })), ...zDysku.map((p) => ({ nazwa: p.nazwa, rozmiar: p.rozmiar }))];
+		return { podglad: true as const, temat, html, od, odpowiedz: odpowiedz ?? null, zalaczniki };
+	}
 
-	if (!kubelek) throw error(503, 'Magazyn plików nie jest skonfigurowany — nie da się dołączyć PDF polisy.');
+	if (!kubelek && wybrane.length) throw error(503, 'Magazyn plików nie jest skonfigurowany — nie da się dołączyć PDF polisy.');
 	const godzineTemu = new Date(Date.now() - 3600_000).toISOString();
 	const { count } = await admin.from('crm_client_emails').select('id', { count: 'exact', head: true }).eq('autor_id', profil.id).gte('wyslano_at', godzineTemu);
 	if ((count ?? 0) >= LIMIT_NA_GODZINE) throw error(429, `Limit ${LIMIT_NA_GODZINE} e-maili na godzinę — spróbuj za chwilę.`);
 
 	const zalaczniki: Zalacznik[] = [];
 	for (const p of wybrane) {
-		const obiekt = await kubelek.get(p.klucz);
+		const obiekt = await kubelek!.get(p.klucz);
 		if (!obiekt) throw error(410, `Plik „${p.nazwa}” zniknął z magazynu.`);
 		zalaczniki.push({ filename: p.nazwa, content: base64(await obiekt.arrayBuffer()), content_type: 'application/pdf' });
 	}
+	for (const p of zDysku) zalaczniki.push({ filename: p.nazwa, content: base64(p.dane!), content_type: p.typ });
 
 	const wynik = await (o.wyslij ?? wyslijEmail)(ust.klucz, { from: od, to: z.adresy, replyTo: odpowiedz, subject: temat, html, text, attachments: zalaczniki });
 	if (!wynik.ok) throw error(502, `Dostawca e-maili odrzucił wiadomość: ${bezAdresow(wynik.blad)}`);
@@ -392,7 +419,7 @@ export async function mailPolisy(
 		entity_type: 'policy',
 		entity_id: w.polisa.id,
 		entity_label: w.polisa.nr_polisy,
-		details: { szablon: nazwaSzablonu, adresatow: z.adresy.length, zalaczniki: nazwy, termin_platnosci: z.termin }
+		details: { szablon: nazwaSzablonu, adresatow: z.adresy.length, zalaczniki: nazwy, z_dysku: zDysku.length, termin_platnosci: z.termin }
 	});
 	return { podglad: false as const, id: wynik.id, adresy: z.adresy };
 }

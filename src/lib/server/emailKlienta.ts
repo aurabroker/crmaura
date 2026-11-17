@@ -1,5 +1,7 @@
 // E-mail do klienta wysłany ręcznie z Panelu 360°. Wychodzi kluczem Resend firmy z adresu firmy
-// (crm_tenants.email_from), w imieniu doradcy; odpowiedzi trafiają do doradcy (Reply-To).
+// (crm_tenants.email_from), w imieniu doradcy; odpowiedzi trafiają do doradcy (Reply-To). Firma może mieć
+// własną nazwę nadawcy maili do klientów (crm_tenants.email_nazwa_nadawcy, np. „Beauty❤️Polisa / Płatności”)
+// — wtedy klient nie widzi w polu „Od” imienia i nazwiska osoby, która wysyła.
 // Adresaci tylko spośród adresów klienta i jego osób kontaktowych — CRM nie jest bramką do wysyłki
 // na dowolne adresy. Załączniki: PDF polis klienta z magazynu R2. Każda wysyłka trafia do historii
 // (crm_client_emails, rodzaj „recznie”) i dziennika audytu.
@@ -22,13 +24,21 @@ export function adresNadawcy(emailFrom: string | null | undefined): string | nul
 	return EMAIL_RE.test(adres) ? adres : null;
 }
 
-/** Nazwa wyświetlana nadawcy bez znaków, które psują nagłówek. */
-export function nazwaNadawcy(osoba: string | null | undefined, firma: string | null | undefined): string {
+/**
+ * Nazwa wyświetlana nadawcy bez znaków, które psują nagłówek. `ustawiona` — nazwa nadawcy maili do klientów
+ * z ustawień firmy (np. „Beauty❤️Polisa / Płatności”); bez niej „osoba | firma”.
+ */
+export function nazwaNadawcy(osoba: string | null | undefined, firma: string | null | undefined, ustawiona?: string | null): string {
 	const czysc = (s: string | null | undefined) => String(s ?? '').replace(/["<>\r\n\\]/g, '').trim();
+	const u = czysc(ustawiona);
+	if (u) return u.slice(0, 120);
 	const o = czysc(osoba);
 	const f = czysc(firma);
 	return (o && f ? `${o} | ${f}` : o || f || 'CRM').slice(0, 120);
 }
+
+/** Nazwa na końcu zdania bez podwójnej kropki („… Aura Expert sp. z o.o.” zamiast „sp. z o.o..”). */
+export const zKropka = (t: string): string => (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`);
 
 /** Treść z formularza (zwykły tekst) → prosty HTML: akapity po pustej linii, <br> w akapicie. */
 export function trescHtml(tresc: string, firma: string): string {
@@ -38,7 +48,7 @@ export function trescHtml(tresc: string, firma: string): string {
 		.map((a) => `<p style="margin:0 0 14px">${esc(a).replace(/\n/g, '<br>')}</p>`)
 		.join('');
 	return `<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#121826;max-width:640px">${akapity}` +
-		`<p style="margin:24px 0 0;font-size:12px;color:#5E6A7E">Wiadomość wysłana z systemu obsługi klientów ${esc(firma)}.</p></div>`;
+		`<p style="margin:24px 0 0;font-size:12px;color:#5E6A7E">Wiadomość wysłana z systemu obsługi klientów ${esc(zKropka(firma))}</p></div>`;
 }
 
 type Klient = { id: string; nazwa: string; email: string | null };
@@ -63,10 +73,19 @@ export function sprawdzZadanie(body: ZadanieEmaila) {
 }
 
 export async function ustawieniaWysylki(admin: SupabaseClient, tenantId: string) {
-	const { data } = await admin.from('crm_tenants').select('nazwa, resend_api_key, email_from').eq('id', tenantId).maybeSingle();
-	const t = data as { nazwa: string; resend_api_key: string | null; email_from: string | null } | null;
+	const { data } = await admin.from('crm_tenants').select('nazwa, resend_api_key, email_from, email_nazwa_nadawcy, email_podpis').eq('id', tenantId).maybeSingle();
+	const t = data as { nazwa: string; resend_api_key: string | null; email_from: string | null; email_nazwa_nadawcy?: string | null; email_podpis?: string | null } | null;
 	const adres = adresNadawcy(t?.email_from);
-	return { firma: t?.nazwa ?? '', klucz: t?.resend_api_key ?? null, adres, gotowe: !!(t?.resend_api_key && adres) };
+	return {
+		firma: t?.nazwa ?? '',
+		klucz: t?.resend_api_key ?? null,
+		adres,
+		gotowe: !!(t?.resend_api_key && adres),
+		/** Nazwa nadawcy maili do klientów (puste = osoba / firma). */
+		nazwaNadawcy: t?.email_nazwa_nadawcy?.trim() || null,
+		/** Podpis w mailach z polisą zamiast imienia i nazwiska (puste = osoba wysyłająca). */
+		podpis: t?.email_podpis?.trim() || null
+	};
 }
 
 export async function wyslijEmailKlienta(
@@ -133,7 +152,7 @@ export async function wyslijEmailKlienta(
 
 	const odpowiedzi = profil.email && EMAIL_RE.test(profil.email) && !/\.invalid$/i.test(profil.email) ? profil.email : undefined;
 	const wynik = await wyslij(ust.klucz, {
-		from: `"${nazwaNadawcy(profil.imie_nazwisko, ust.firma)}" <${ust.adres}>`,
+		from: `"${nazwaNadawcy(profil.imie_nazwisko, ust.firma, ust.nazwaNadawcy)}" <${ust.adres}>`,
 		to: z.adresy,
 		replyTo: odpowiedzi,
 		subject: z.temat,

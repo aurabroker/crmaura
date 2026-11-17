@@ -71,6 +71,8 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		resend_key_hint: keyHint(data.resend_api_key),
 		webhook_secret_hint: keyHint(data.resend_webhook_secret),
 		email_from: data.email_from ?? null,
+		email_nazwa_nadawcy: data.email_nazwa_nadawcy ?? null,
+		email_podpis: data.email_podpis ?? null,
 		smsapi_token_hint: keyHint(data.smsapi_token),
 		sms_nadawca: data.sms_nadawca ?? null
 	});

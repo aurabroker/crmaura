@@ -16,3 +16,15 @@ test('SMSAPI: token i pole nadawcy', () => {
 	odrzuca({ tenant_id: ID, sms_nadawca: 'Za długi nadawca' });
 	odrzuca({ tenant_id: ID, sms_nadawca: 'Zażółć' });
 });
+
+test('Nazwa nadawcy i podpis w mailach do klientów', () => {
+	assert.deepEqual(parseTenantPatch({ tenant_id: ID, email_nazwa_nadawcy: ' Beauty❤️Polisa / Płatności ', email_podpis: 'Zespół Beauty❤️Polisa' }).patch, {
+		email_nazwa_nadawcy: 'Beauty❤️Polisa / Płatności',
+		email_podpis: 'Zespół Beauty❤️Polisa'
+	});
+	assert.deepEqual(parseTenantPatch({ tenant_id: ID, email_nazwa_nadawcy: '', email_podpis: null }).patch, { email_nazwa_nadawcy: null, email_podpis: null });
+	odrzuca({ tenant_id: ID, email_nazwa_nadawcy: 'Aura "Expert"' });
+	odrzuca({ tenant_id: ID, email_nazwa_nadawcy: 'Aura <x@y.pl>' });
+	odrzuca({ tenant_id: ID, email_podpis: 'Linia 1\nLinia 2' });
+	odrzuca({ tenant_id: ID, email_nazwa_nadawcy: 'x'.repeat(81) });
+});
