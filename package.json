@@ -1,7 +1,7 @@
 {
 	"name": "crmaura",
 	"private": true,
-	"version": "1.98.0",
+	"version": "1.98.1",
 	"type": "module",
 	"scripts": {
 		"dev": "vite dev",
@@ -11,7 +11,8 @@
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"test": "node --experimental-strip-types --no-warnings --test \"src/lib/**/*.test.ts\""
+		"test": "node --experimental-strip-types --no-warnings --test \"src/lib/**/*.test.ts\"",
+		"test:apk-sql": "node scripts/test-apk-tokeny-sql.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^7.0.1",

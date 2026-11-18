@@ -13,10 +13,13 @@ type TokenRow = { token?: string; status: string; expires_at?: string | null };
 type FormWithTokens = { apk_tokens?: TokenRow[] | null };
 
 // Token otwiera klientowi formularz APK z jego danymi, więc musi być nie do odgadnięcia:
-// 12 znaków A–Z0–9 z kryptograficznego generatora (bez przesunięcia rozkładu).
+// 26 znaków A–Z0–9 z kryptograficznego generatora (bez przesunięcia rozkładu) = ok. 134 bity.
+// Baza od 13.11.2026 przyjmie nowy token dopiero od 22 znaków
+// (supabase/pending/20261113000002_apk_tokeny_min_dlugosc.sql); stare 12-znakowe linki
+// działają do wygaśnięcia.
 const TOKEN_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
-export function newApkToken(length = 12): string {
+export function newApkToken(length = 26): string {
 	const out: string[] = [];
 	const buf = new Uint8Array(32);
 	while (out.length < length) {
@@ -32,9 +35,11 @@ export function apkTokenLink(token: string): string {
 	return `${APK_FORM_URL}?token=${encodeURIComponent(token)}`;
 }
 
+// Ta sama reguła co w bazie (get_apk_by_token): żywy jest tylko token 'pending' z datą
+// ważności w przyszłości. Brak daty = wygasły.
 function isLive(t: TokenRow): boolean {
-	if (!t.token || t.status === 'used') return false;
-	return !t.expires_at || new Date(t.expires_at) > new Date();
+	if (!t.token || t.status !== 'pending') return false;
+	return !!t.expires_at && new Date(t.expires_at) > new Date();
 }
 
 // Link do otwarcia formularza istnieje tylko dla tokenu, który nie jest użyty ani wygasły.

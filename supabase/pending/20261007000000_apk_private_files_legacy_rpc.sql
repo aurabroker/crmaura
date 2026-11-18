@@ -14,6 +14,8 @@ update storage.buckets set public = false where id = 'apk-pdfs';
 -- 2) apk_form_by_token to poprzedniczka get_apk_by_token. Formularz /form używa wyłącznie
 --    get_apk_by_token i submit_apk; w pg_stat_statements brak wywołań tej funkcji przez
 --    anon/authenticated. Funkcja zostaje (do ewentualnego przywrócenia), bez prawa wywołania z API.
+--    13.11.2026: zrobione już migracją 20261116170120_apk_tokeny_utwardzenie (funkcja przepisana,
+--    EXECUTE tylko service_role); poniższy REVOKE jest powtórzeniem bez skutków.
 revoke execute on function public.apk_form_by_token(text) from public, anon, authenticated;
 
 -- Weryfikacja (oczekiwane: public = false; oba has_function_privilege = false):

@@ -12,13 +12,15 @@
 		args: Record<string, unknown>
 	) => Promise<{ data: unknown; error: { message: string } | null }>;
 
-	// Wiersz zwracany przez funkcję get_apk_by_token.
+	// Wiersz zwracany przez funkcję get_apk_by_token (migracja 20261113000001_apk_tokeny_utwardzenie).
+	// token_status to stan efektywny: 'pending' | 'used' | 'expired' (także po dacie albo bez daty).
+	// client_name, doradcy i form_data przychodzą tylko dla aktywnego linku; inaczej null.
 	type ApkTokenRow = {
 		token_status: string;
 		expires_at: string | null;
 		token_advisor_name: string | null;
 		form_status: string;
-		client_name: string;
+		client_name: string | null;
 		form_advisor_name: string | null;
 		form_data: Record<string, unknown> | null;
 		tenant_nazwa: string | null;
@@ -63,13 +65,18 @@
 		const row = (Array.isArray(data) ? data[0] : data) as ApkTokenRow | null | undefined;
 
 		if (error || !row) { status = 'invalid'; return; }
+		tenantNazwa = row.tenant_nazwa ?? '';
 		if (row.token_status === 'used') { status = 'used'; return; }
-		if (row.expires_at && new Date(row.expires_at) < new Date()) { status = 'expired'; return; }
+		// Link bez daty ważności traktujemy jak wygasły — tak samo robi baza.
+		if (row.token_status === 'expired' || !row.expires_at || new Date(row.expires_at) <= new Date()) {
+			status = 'expired'; return;
+		}
 		if (row.form_status === 'submitted') { status = 'submitted'; return; }
+		// Formularz zarchiwizowany (albo inny stan, dla którego baza nie oddała danych) — link nieważny.
+		if (row.form_status !== 'draft' || row.client_name == null) { status = 'invalid'; return; }
 
 		clientName = row.client_name;
 		advisorName = row.token_advisor_name || row.form_advisor_name || '';
-		tenantNazwa = row.tenant_nazwa ?? '';
 
 		// Restore draft if exists
 		const fd = (row.form_data ?? {}) as Record<string, unknown>;
