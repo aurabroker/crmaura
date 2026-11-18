@@ -1,9 +1,9 @@
 # 🔐 SECURITY HANDOFF — domknięcie audytu (punkty 1–3)
 
 > **2026-11-13 — linki APK z tokenem (przegląd z 12.11.2026).**
-> Migracja `supabase/migrations/20261113000001_apk_tokeny_utwardzenie.sql` — **czeka na zastosowanie**
-> (MCP wstrzymał ją do potwierdzenia: `DROP FUNCTION` i funkcja z `UPDATE`; wklej w SQL Editor albo zatwierdź).
-> Kolejność: baza, potem CRM z tej gałęzi; strona `/form` w obu wersjach działa z obiema wersjami funkcji.
+> Migracja `supabase/migrations/20261116170120_apk_tokeny_utwardzenie.sql` — **ZASTOSOWANA na produkcji 16.11.2026**
+> (przez MCP po zatwierdzeniu przez właściciela; `supabase/tests/apk_tokeny.sql` na produkcji: 38/38, dane testowe
+> wycofane). Strona `/form` w obu wersjach działa z nową funkcją; CRM z tej gałęzi można wdrożyć w dowolnej chwili.
 > - `get_apk_by_token`: brak daty / status `expired` = wygasły; `client_name`, doradcy i `form_data` tylko dla
 >   aktywnego linku (`pending`, data w przyszłości, formularz `draft`); bez `token_id`/`form_id`/`tenant_id`.
 > - `submit_apk`: brak daty = `expired`, zarchiwizowany formularz = `invalid`, blokada wiersza tokenu.
