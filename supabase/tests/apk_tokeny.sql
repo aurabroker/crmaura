@@ -122,8 +122,8 @@ begin
     perform pg_temp.sprawdz(false, 'apk_tokens: token nadany przez bazę ma >= 22 znaki base64url (brak domyślnej wartości)');
   end;
 
-  -- Wymóg długości nowych tokenów (supabase/pending/20261113000002_apk_tokeny_min_dlugosc.sql):
-  -- sprawdzany tylko, gdy wyzwalacz już jest w bazie.
+  -- Wymóg długości nowych tokenów (supabase/migrations/20261119095352_apk_tokeny_min_dlugosc.sql):
+  -- sprawdzany tylko, gdy wyzwalacz już jest w bazie (na produkcji od 19.11.2026).
   if exists (select 1 from pg_trigger where tgrelid = 'public.apk_tokens'::regclass
              and tgname = 'apk_tokens_min_dlugosc_trg') then
     begin

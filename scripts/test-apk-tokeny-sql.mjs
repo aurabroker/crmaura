@@ -105,11 +105,12 @@ try {
 	};
 
 	let zielono = przebieg('po migracji');
-	// Druga faza: wymóg długości nowych tokenów z supabase/pending (do zastosowania po wdrożeniu CRM).
+	// Druga faza: wymóg długości nowych tokenów (migracja 20261119095352, na produkcji od 19.11.2026).
+	// Pierwsza faza zostaje: pokazuje, że funkcje działają także bez wyzwalacza.
 	if (!process.env.APK_MIGRACJA) {
-		r = psql(wczytaj('supabase/pending/20261113000002_apk_tokeny_min_dlugosc.sql'));
-		if (r.status !== 0) throw new Error(`pending/20261113000002:\n${r.stderr}`);
-		zielono = przebieg('po migracji + pending/20261113000002 (min. długość tokenu)') && zielono;
+		r = psql(wczytaj('supabase/migrations/20261119095352_apk_tokeny_min_dlugosc.sql'));
+		if (r.status !== 0) throw new Error(`20261119095352_apk_tokeny_min_dlugosc:\n${r.stderr}`);
+		zielono = przebieg('po migracji + 20261119095352 (min. długość tokenu)') && zielono;
 	}
 	if (zielono) wyjscie = 0;
 } catch (e) {
