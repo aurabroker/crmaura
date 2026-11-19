@@ -10,7 +10,11 @@
 > - `apk_form_by_token`: nieużywana (kod, logi API 7 dni, `pg_stat_statements`) — wąski wynik, te same
 >   warunki, EXECUTE tylko `service_role`.
 > - `apk_tokens`: `expires_at` NOT NULL + najwyżej 90 dni, domyślny token 24 znaki base64url; CRM generuje
->   26 znaków. Wymóg ≥ 22 znaków dla nowych tokenów: `supabase/pending/20261113000002_…` (po wdrożeniu CRM).
+>   26 znaków (v1.98.1, #105, wdrożony 18.11.2026). Wymóg ≥ 22 znaków dla nowych tokenów:
+>   `supabase/migrations/20261119095352_apk_tokeny_min_dlugosc.sql` — **ZASTOSOWANA 19.11.2026** (wyzwalacz
+>   tylko na INSERT; stare 12-znakowe linki działają do wygaśnięcia, najpóźniej 90 dni). Testy na produkcji:
+>   40/40. Po wygaśnięciu ostatniego krótkiego tokenu wyzwalacz można zamienić na zwykły
+>   `CHECK (length(token) >= 22)`.
 > - Testy: `npm run test:apk-sql` (lokalny Postgres) oraz `supabase/tests/apk_tokeny.sql` — ten sam plik
 >   na produkcji jako jedno zapytanie; kończy się wyjątkiem `TESTY_WYNIK …`, który wycofuje wszystko.
 > - Poza zakresem, do decyzji: kubełek `apk-pdfs` jest nadal **publiczny** (pending `20261007000000_…`).

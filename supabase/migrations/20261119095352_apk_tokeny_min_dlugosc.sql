@@ -1,12 +1,16 @@
 -- ============================================================
 -- APK: nowe tokeny linków muszą mieć co najmniej 22 znaki (>= 128 bitów).
--- STATUS: PRZYGOTOWANA, NIE ZASTOSOWANA.
+-- STATUS: ZASTOSOWANA na produkcji 19.11.2026 (MCP apply_migration, wersja 20261119095352;
+-- treść funkcji md5 9c948fa64a301bff31a261f10d4f880d = ten plik). supabase/tests/apk_tokeny.sql
+-- na produkcji: 40/40 (z dwoma przypadkami wyzwalacza), dane testowe wycofane.
 --
--- KOLEJNOŚĆ: najpierw wdrożyć CRM, w którym newApkToken (src/lib/utils/apkLink.ts)
--- generuje 26 znaków (gałąź claude/serene-hypatia-zp187x). Zastosowana wcześniej —
--- CRM z 12-znakowym tokenem nie utworzy nowego linku APK (błąd przy zapisie).
--- Sprawdzenie po wdrożeniu: select max(created_at) from apk_tokens where length(token) < 22;
--- nie może rosnąć po dacie wdrożenia CRM.
+-- KOLEJNOŚĆ (dotrzymana): najpierw CRM v1.98.1 (#105, wdrożony 18.11.2026 19:24 UTC),
+-- w którym newApkToken (src/lib/utils/apkLink.ts) generuje 26 znaków; oba miejsca
+-- tworzące link (apk/+page.svelte, clients/[id]/+page.svelte) go używają, żadna funkcja
+-- w bazie nie wstawia do apk_tokens. Zastosowana wcześniej — CRM z 12-znakowym tokenem
+-- nie utworzyłby nowego linku APK (błąd przy zapisie). Przed zastosowaniem:
+-- select max(created_at) from apk_tokens where length(token) < 22; → 2026-10-09,
+-- zero krótkich tokenów po wdrożeniu CRM.
 --
 -- Dlaczego wyzwalacz, a nie CHECK … NOT VALID: ograniczenie NOT VALID i tak sprawdza
 -- każdy UPDATE, a submit_apk przy wysyłce aktualizuje wiersz tokenu (status 'used').

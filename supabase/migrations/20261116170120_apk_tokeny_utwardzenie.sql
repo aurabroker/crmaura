@@ -22,8 +22,8 @@
 --    zapisu bez tokenu: 18 bajtów z gen_random_bytes = 24 znaki base64url (144 bity).
 --    CRM generuje własny token (newApkToken, od tej zmiany 26 znaków A–Z0–9 ≈ 134 bity).
 --    Istniejące tokeny (12 znaków) działają do wygaśnięcia. Wymóg minimalnej długości
---    dla NOWYCH tokenów jest w supabase/pending/20261113000002_apk_tokeny_min_dlugosc.sql —
---    do zastosowania po wdrożeniu CRM z 26-znakowym newApkToken.
+--    dla NOWYCH tokenów jest w supabase/migrations/20261119095352_apk_tokeny_min_dlugosc.sql
+--    (zastosowana 19.11.2026, po wdrożeniu CRM z 26-znakowym newApkToken).
 --
 -- Migracja jest idempotentna (drop/create funkcji, „if not exists” przy ograniczeniach).
 -- Testy: node scripts/test-apk-tokeny-sql.mjs (lokalnie) i supabase/tests/apk_tokeny.sql
