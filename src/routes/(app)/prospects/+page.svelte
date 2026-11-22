@@ -9,7 +9,7 @@
 	import { kol, type Arkusz } from '$lib/eksport';
 	import {
 		Search, Pencil, UserPlus, ExternalLink, ChevronUp, ChevronDown, LayoutGrid, List, Eye, CircleDot, Copy,
-		Mail, Phone, X, UserRound, MousePointerClick, MailOpen, MailX, Repeat
+		Mail, Phone, X, UserRound, MousePointerClick, MailOpen, MailX, Repeat, Send
 	} from 'lucide-svelte';
 	import { goto } from '$app/navigation';
 	import { ctxMenu } from '$lib/actions/ctxMenu';
@@ -22,6 +22,7 @@
 		nazwaKampanii, posortujZainteresowania, type PodsumowanieMaili
 	} from '$lib/sprzedaz';
 	import type { Prospect } from '$lib/types/database';
+	import { GRUPY_WNIOSKU, grupaWniosku, ostatnieWnioskiKlientow, stanWniosku, type GrupaWniosku, type SmsWniosku, type StanWniosku } from '$lib/wniosekLeada';
 
 	// Lista korzysta ze wspólnego cache w appState — powrót z karty leada jest natychmiastowy.
 	const prospects = $derived(appState.prospects);
@@ -32,6 +33,7 @@
 	let fZaint = $state('');
 	let fMaile = $state('');
 	let fZgloszenia = $state('');
+	let fWniosek = $state<'' | GrupaWniosku>('');
 	let view = $state<'tabela' | 'kanban'>('tabela');
 	let limit = $state(100);
 	let showModal = $state(false);
@@ -64,6 +66,23 @@
 	const mailKlienta = (p: Prospect) => (p.klient_id ? maile.get(p.klient_id) : undefined);
 	const dataZgloszenia = (p: Prospect) => p.ostatnie_zgloszenie_at ?? p.data_zgloszenia ?? null;
 
+	// APK i wniosek o pierwszą polisę OC beauty: ostatni wniosek klienta leada (z listy wniosków w appState) i SMS-y
+	// z linkiem wysłane z CRM — przy leadzie widać, czy klient dostał wniosek i co z nim zrobił ($lib/wniosekLeada).
+	let smsyWnioskow = $state<SmsWniosku[]>([]);
+	const wnioskiKlientow = $derived(ostatnieWnioskiKlientow(appState.wnioskiOdnowien));
+	const stanyWnioskow = $derived(new Map([...wnioskiKlientow].map(([k, w]) => [k, stanWniosku(w, smsyWnioskow)])));
+	const stanLeada = (p: Prospect): StanWniosku | null => (p.klient_id ? stanyWnioskow.get(p.klient_id) ?? null : null);
+	const maWnioski = $derived(wnioskiKlientow.size > 0);
+	const ETYKIETA_GRUPY: Record<string, string> = Object.fromEntries(GRUPY_WNIOSKU);
+	async function loadSmsy() {
+		const { data } = await sb.from('crm_renewal_events').select('renewal_id, at, szczegoly').eq('zdarzenie', 'sms').order('at').limit(2000);
+		smsyWnioskow = ((data ?? []) as { renewal_id: string; at: string; szczegoly: Record<string, unknown> | null }[]).map((e) => ({
+			renewal_id: e.renewal_id,
+			at: e.at,
+			numer: typeof e.szczegoly?.numer === 'string' ? e.szczegoly.numer : null
+		}));
+	}
+
 	function getZatrudnienie(p: Prospect): number | null {
 		if (p.zatrudnienie != null) return p.zatrudnienie;
 		if (!p.notatki) return null;
@@ -71,7 +90,7 @@
 		return m ? parseInt(m[1].trim()) : null;
 	}
 
-	type SortCol = 'nazwa' | 'zainteresowania' | 'maile' | 'status' | 'zgloszenie' | 'created_at';
+	type SortCol = 'nazwa' | 'zainteresowania' | 'maile' | 'wniosek' | 'status' | 'zgloszenie' | 'created_at';
 	let sortCol = $state<SortCol>('created_at');
 	let sortAsc = $state(false);
 	function toggleSort(col: SortCol) {
@@ -104,6 +123,7 @@
 			if (fZaint && !(p.zainteresowania ?? []).includes(fZaint)) return false;
 			if (fZgloszenia === 'ponowne' && (p.liczba_zgloszen ?? 0) < 2) return false;
 			if (fZgloszenia === 'formularz' && !dataZgloszenia(p)) return false;
+			if (fWniosek && grupaWniosku(stanLeada(p)) !== fWniosek) return false;
 			if (fMaile) {
 				const m = mailKlienta(p);
 				if (fMaile === 'klik' && !m?.klikniete) return false;
@@ -132,6 +152,7 @@
 				case 'nazwa': return nazwaLeada(p).toLowerCase();
 				case 'zainteresowania': return posortujZainteresowania(p.zainteresowania).join(',') || '~';
 				case 'maile': { const m = mailKlienta(p); return m ? m.klikniete * 10000 + m.otwarte * 100 + m.maile : -1; }
+				case 'wniosek': { const st = stanLeada(p); return st ? `${{ zlozony: 6, rezygnacja: 5, apk: 4, otwarty: 3, wyslany: 2, wygasl: 1, link: 0, anulowany: 0 }[st.klucz]}${st.dzien ?? ''}` : ''; }
 				case 'status': return statusOrder[p.status] ?? 99;
 				case 'zgloszenie': return dataZgloszenia(p) ?? '';
 				default: return p.created_at ?? '';
@@ -152,12 +173,15 @@
 		return {
 			nazwa: 'Leady',
 			kolumny: ['Nazwa', kol.tekst('NIP'), 'E-mail', 'Telefon', 'Adres', 'Branża', kol.liczba('Zatrudnienie'), 'Etap', 'Zainteresowania', 'Źródło',
-				kol.data('Zgłoszenie'), kol.liczba('Liczba zgłoszeń'), kol.liczba('Maile kampanii'), kol.liczba('Otwarte'), kol.liczba('Kliknięte'), 'Opiekun', kol.data('Dodano'), 'Notatki'],
+				kol.data('Zgłoszenie'), kol.liczba('Liczba zgłoszeń'), kol.liczba('Maile kampanii'), kol.liczba('Otwarte'), kol.liczba('Kliknięte'),
+				'Wniosek OC (APK i wniosek)', kol.data('Wniosek wysłany'), 'Opiekun', kol.data('Dodano'), 'Notatki'],
 			wiersze: lista.map((p) => {
 				const m = mailKlienta(p);
+				const st = stanLeada(p);
 				return [nazwaLeada(p), nipLeada(p), emailLeada(p), telefonLeada(p), p.adres, p.branza, getZatrudnienie(p), ETYKIETA_ETAPU[p.status] ?? p.status,
 					posortujZainteresowania(p.zainteresowania).map((z) => ETYKIETA_ZAINTERESOWANIA[z] ?? z).join(', '), p.zrodlo ? (ZRODLO_LEADA[p.zrodlo] ?? p.zrodlo) : '',
-					dataZgloszenia(p), p.liczba_zgloszen ?? null, m?.maile ?? null, m?.otwarte ?? null, m?.klikniete ?? null, p.crm_profiles?.imie_nazwisko ?? '',
+					dataZgloszenia(p), p.liczba_zgloszen ?? null, m?.maile ?? null, m?.otwarte ?? null, m?.klikniete ?? null,
+					st ? st.etykieta : '', st?.wyslanoAt ? st.wyslanoAt.slice(0, 10) : null, p.crm_profiles?.imie_nazwisko ?? '',
 					p.created_at ?? null, p.notatki];
 			})
 		};
@@ -169,8 +193,8 @@
 	const maMaile = $derived(maile.size > 0);
 	const maBranze = $derived(prospects.some((p) => p.branza || getZatrudnienie(p) != null));
 
-	const ileFiltrow = $derived([fZaint, fMaile, fZgloszenia, letterFilter].filter(Boolean).length);
-	function wyczyscFiltry() { fZaint = ''; fMaile = ''; fZgloszenia = ''; letterFilter = ''; search = ''; }
+	const ileFiltrow = $derived([fZaint, fMaile, fZgloszenia, fWniosek, letterFilter].filter(Boolean).length);
+	function wyczyscFiltry() { fZaint = ''; fMaile = ''; fZgloszenia = ''; fWniosek = ''; letterFilter = ''; search = ''; }
 
 	// ---- KANBAN ----
 	const KANBAN_COLS = [
@@ -274,6 +298,7 @@
 				if (typeof f.fZaint === 'string') fZaint = f.fZaint;
 				if (typeof f.fMaile === 'string') fMaile = f.fMaile;
 				if (typeof f.fZgloszenia === 'string') fZgloszenia = f.fZgloszenia;
+				if (GRUPY_WNIOSKU.some(([k]) => k === f.fWniosek)) fWniosek = f.fWniosek;
 				if (typeof f.sortCol === 'string') sortCol = f.sortCol as SortCol;
 				if (typeof f.sortAsc === 'boolean') sortAsc = f.sortAsc;
 				if (f.view === 'tabela' || f.view === 'kanban') view = f.view;
@@ -282,15 +307,16 @@
 		stateRestored = true;
 		void loadProspects(appState.prospectsLoaded);
 		void loadMaile();
+		void loadSmsy();
 	});
 	$effect(() => {
 		if (!stateRestored) return;
-		const snapshot = JSON.stringify({ search, statusFilter, letterFilter, fZaint, fMaile, fZgloszenia, sortCol, sortAsc, view });
+		const snapshot = JSON.stringify({ search, statusFilter, letterFilter, fZaint, fMaile, fZgloszenia, fWniosek, sortCol, sortAsc, view });
 		try { sessionStorage.setItem(FILTERS_KEY, snapshot); } catch { /* ignore */ }
 	});
 	// Zmiana filtrów wraca do pierwszej strony listy.
 	$effect(() => {
-		void [search, statusFilter, letterFilter, fZaint, fMaile, fZgloszenia, sortCol, sortAsc];
+		void [search, statusFilter, letterFilter, fZaint, fMaile, fZgloszenia, fWniosek, sortCol, sortAsc];
 		limit = 100;
 	});
 
@@ -415,6 +441,15 @@
 	{/each}
 {/snippet}
 
+{#snippet chipWniosku(p: Prospect)}
+	{@const st = stanLeada(p)}
+	{#if st && st.klucz !== 'anulowany'}
+		<span class="inline-flex items-center gap-1 h-5 leading-5 px-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap {st.cls}" title="APK i wniosek o pierwszą polisę: {st.etykieta}{st.wyslanoAt ? ` · wysłano ${fmtDzien(st.wyslanoAt.slice(0, 10), true)}` : ''}" data-testid="wniosek-chip"><Send size={11} aria-hidden="true" /> {st.chip}</span>
+	{:else}
+		<span class="text-ink-3" title="Klient nie dostał APK i wniosku o pierwszą polisę">nie wysłano</span>
+	{/if}
+{/snippet}
+
 {#snippet stanMaili(p: Prospect)}
 	{@const m = mailKlienta(p)}
 	{#if m}
@@ -495,6 +530,10 @@
 		<option value="odbite">Adres odbity</option>
 		<option value="brak">Bez maili kampanii</option>
 	{/snippet}
+	{#snippet opcjeWniosek()}
+		<option value="">Dowolny stan wniosku</option>
+		{#each GRUPY_WNIOSKU as [k, l]}<option value={k}>Wniosek OC: {l}</option>{/each}
+	{/snippet}
 	{#snippet opcjeZgl()}
 		<option value="">Dowolne</option>
 		<option value="ponowne">Ponowne zgłoszenia</option>
@@ -505,6 +544,9 @@
 	{/if}
 	{#if maMaile}
 		{@render filtr('Maile kampanii', fMaile ? ({ klik: 'Kliknęli link', otw: 'Otworzyli maila', odbite: 'Adres odbity', brak: 'Bez maili' } as Record<string, string>)[fMaile] : null, () => (fMaile = ''), opcjeMaile, fMaile, (v) => (fMaile = v))}
+	{/if}
+	{#if maWnioski}
+		{@render filtr('Wniosek OC', fWniosek ? `Wniosek OC: ${ETYKIETA_GRUPY[fWniosek]}` : null, () => (fWniosek = ''), opcjeWniosek, fWniosek, (v) => (fWniosek = v as typeof fWniosek))}
 	{/if}
 	{@render filtr('Zgłoszenia', fZgloszenia ? (fZgloszenia === 'ponowne' ? 'Ponowne zgłoszenia' : 'Z formularza') : null, () => (fZgloszenia = ''), opcjeZgl, fZgloszenia, (v) => (fZgloszenia = v))}
 	<label class="inline-flex items-center h-9 rounded-lg text-[13px] font-medium {letterFilter ? 'border border-line bg-white text-ink' : 'border border-dashed border-[#C4CAD4] text-ink-2'}">
@@ -544,6 +586,7 @@
 						</div>
 						<p class="mt-1 text-xs text-ink-3">{[nipLeada(p) ? `NIP ${nipLeada(p)}` : null, p.przychod, dataZgloszenia(p) ? `zgłoszenie ${fmtDzien(dataZgloszenia(p)!.slice(0, 10), true)}` : null].filter(Boolean).join(' · ')}</p>
 						{#if mailKlienta(p)}<p class="mt-0.5 text-xs">{@render stanMaili(p)}</p>{/if}
+						{#if maWnioski && stanLeada(p)}<p class="mt-1 text-xs">{@render chipWniosku(p)}</p>{/if}
 						{#if telefonLeada(p)}<a href="tel:{telefonLeada(p)}" class="mt-1 inline-block text-[13px] text-accent-text">{telefonLeada(p)}</a>{/if}
 					</li>
 				{/each}
@@ -568,6 +611,7 @@
 							{@render th('nazwa', 'Firma', 'pl-4')}
 							{#if maZainteresowania}{@render th('zainteresowania', 'Zainteresowanie', 'w-[190px]')}{/if}
 							{#if maMaile}{@render th('maile', 'Maile kampanii', 'w-[220px]')}{/if}
+							{#if maWnioski}{@render th('wniosek', 'Wniosek OC', 'w-[150px]')}{/if}
 							{#if maBranze}<th class="px-3 py-2.5 font-semibold w-[170px]">Branża</th>{/if}
 							<th class="px-3 py-2.5 font-semibold w-[190px]">Kontakt</th>
 							{@render th('status', 'Etap', 'w-[130px]')}
@@ -592,6 +636,7 @@
 									<td class="px-3 py-2.5"><span class="flex flex-wrap gap-1">{@render chipy(p.zainteresowania)}</span>{#if !(p.zainteresowania ?? []).length}<span class="text-ink-3">—</span>{/if}</td>
 								{/if}
 								{#if maMaile}<td class="px-3 py-2.5 text-xs">{@render stanMaili(p)}</td>{/if}
+								{#if maWnioski}<td class="px-3 py-2.5 text-xs">{@render chipWniosku(p)}</td>{/if}
 								{#if maBranze}
 									<td class="px-3 py-2.5 text-xs text-ink-2 max-w-[170px]">
 										<span class="block truncate">{p.branza ?? '—'}</span>
@@ -656,6 +701,7 @@
 								{#if (p.liczba_zgloszen ?? 0) >= 2}<span class="h-5 leading-5 px-1.5 rounded-full bg-warn-soft text-warn text-[11px] font-semibold">{p.liczba_zgloszen}× zgłoszenie</span>{/if}
 							</div>
 							{#if mailKlienta(p)}<div class="mt-1.5 text-xs">{@render stanMaili(p)}</div>{/if}
+							{#if maWnioski && stanLeada(p)}<div class="mt-1.5 text-xs">{@render chipWniosku(p)}</div>{/if}
 							{#if telefonLeada(p)}<div class="mt-1 text-xs text-ink-2 truncate">{telefonLeada(p)}</div>{/if}
 						</div>
 					{/each}
