@@ -170,7 +170,46 @@ export async function wyslijZaproszenie(
 	await zapiszZdarzenie(admin, r, o.przypomnienie ? 'przypomnienie' : 'wyslanie', null, { przez: o.kto ?? 'automat', ...(test ? { test: adres } : {}) });
 	// Link do wniosku nie trafia do historii — to jedyne uprawnienie klienta do formularza.
 	await zapiszEmailKlienta(admin, r, adres, temat, m.tekst.replace(link, '[link do wniosku]'), wynik.id);
+	if (!o.przypomnienie) await wyslanieWLeadzie(admin, r, { kanal: 'email', adres, przez: o.kto, test });
 	return { ...wynik, adres, test };
+}
+
+// Lead klienta (Sprzedaż): otwarty (nowy / w kontakcie / oferta wysłana) — najnowszy, a bez otwartego — najstarszy.
+async function leadKlienta(admin: SupabaseClient, r: Pick<RenewalRow, 'klient_id' | 'tenant_id'>): Promise<{ id: string; status: string } | null> {
+	const { data } = await admin.from('crm_prospects').select('id, status, created_at').eq('klient_id', r.klient_id).eq('tenant_id', r.tenant_id).order('created_at', { ascending: false }).limit(20);
+	const leady = (data ?? []) as { id: string; status: string }[];
+	return leady.find((l) => ['nowy', 'w_kontakcie', 'oferta_wyslana'].includes(l.status)) ?? leady.at(-1) ?? null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Pierwsza polisa wysłana klientowi z CRM (e-mail albo SMS przez SMSAPI) — skądkolwiek (karta leada, karta klienta,
+// asystent): wpis w aktywności leada i etap „nowy” → „w kontakcie”, żeby na liście leadów było widać, że klient
+// dostał wniosek. Wniosek testowy (adres testowy) — tylko wpis z dopiskiem TEST. Błąd nie przerywa wysyłki (dziennik).
+export async function wyslanieWLeadzie(
+	admin: SupabaseClient,
+	r: Pick<RenewalRow, 'id' | 'tenant_id' | 'klient_id' | 'rodzaj'>,
+	o: { kanal: 'email' | 'sms'; adres?: string | null; przez?: string | null; test?: boolean }
+) {
+	if (r.rodzaj !== 'nowa') return;
+	try {
+		const lead = await leadKlienta(admin, r);
+		if (!lead) return;
+		const gdzie = o.adres ? ` (${o.adres})` : '';
+		const tresc =
+			(o.test ? 'TEST — na adres testowy: ' : '') +
+			(o.kanal === 'email'
+				? `Wysłano klientowi e-mailem link do APK i wniosku o pierwszą polisę OC${gdzie}.`
+				: `Wysłano klientowi SMS (SMSAPI) z linkiem do APK i wniosku o pierwszą polisę OC${gdzie}.`);
+		const autor = o.przez && UUID.test(o.przez) ? o.przez : null;
+		await admin.from('crm_prospect_activities').insert({ tenant_id: r.tenant_id, prospect_id: lead.id, author_id: autor, typ: 'notatka', tresc });
+		if (!o.test && lead.status === 'nowy') {
+			await admin.from('crm_prospects').update({ status: 'w_kontakcie', status_zmieniony_at: new Date().toISOString() }).eq('id', lead.id).eq('status', 'nowy');
+		}
+	} catch (e) {
+		console.error('renewals: lead po wysyłce:', (e as Error)?.message ?? e);
+		await zapiszZdarzenie(admin, r, 'blad_leada', null, { blad: String((e as Error)?.message ?? e).slice(0, 300) });
+	}
 }
 
 // Ostrzeżenie o końcu ochrony bez odnowienia: 'ostatni_dzien' (czerwony e-mail z linkiem do wniosku, ważnym
@@ -325,7 +364,7 @@ export async function poZlozeniu(event: PdfEvent, admin: SupabaseClient, r: Rene
 // Rezygnacja — tylko notatka; etap zostaje decyzją doradcy. Błędy nie przerywają niczego (dziennik).
 async function odnotujWLeadzie(admin: SupabaseClient, r: RenewalRow) {
 	try {
-		const { data: lead } = await admin.from('crm_prospects').select('id, status').eq('klient_id', r.klient_id).eq('tenant_id', r.tenant_id).order('created_at').limit(1).maybeSingle();
+		const lead = await leadKlienta(admin, r);
 		if (!lead) return;
 		const n = r.wniosek?.nowa;
 		const tresc =

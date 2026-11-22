@@ -2,6 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth';
 import { czyTest, krotkiLinkDla, linkDla, originKlienta, smsFirmy, zapiszZdarzenie, type RenewalRow } from '$lib/server/renewals';
 import { wyslijSms } from '$lib/server/sms';
+import { wyslanieWLeadzie } from '$lib/server/renewalFlow';
 import { numerSms, trescSms } from '$lib/renewals/sms';
 import type { SmsWyslany } from '$lib/renewals/staffApi';
 import type { RequestHandler } from './$types';
@@ -53,6 +54,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		throw error(w.status === 401 || w.status === 402 ? 400 : 502, { message: w.blad });
 	}
 	await zapiszZdarzenie(admin, r, 'sms', null, { numer, przez: user.id, id: w.id, punkty: w.punkty });
+	// Pierwsza polisa: SMS zapisuje się w leadzie klienta (wpis i etap „w kontakcie”), jak wysyłka e-mailem.
+	await wyslanieWLeadzie(admin, r, { kanal: 'sms', adres: numer, przez: user.id });
 	const odp: SmsWyslany = { ok: true, numer };
 	return json(odp);
 };
