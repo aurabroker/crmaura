@@ -22,6 +22,7 @@ import {
 } from '$lib/renewals/program';
 import type { MigawkaZgod } from '$lib/renewals/zgody';
 import { losowyKod } from '$lib/renewals/sms';
+import { adresLinkow } from '$lib/adresCrm';
 
 // Odnowienia polis OC beauty — logika serwera wspólna dla trasy klienta (/api/odnowienie/[klucz]),
 // panelu CRM (/api/renewals) i zadania dziennego (/api/cron/renewals). Wszystko działa kluczem
@@ -116,6 +117,28 @@ export async function sprawdzKlucz(klucz: string): Promise<string | null> {
 // dostaje adres portal.beautypolisa.eu — ten sam w e-mailu z automatu, z karty CRM i w SMS-ie.
 export const PORTAL = 'https://portal.beautypolisa.eu';
 export const originKlienta = (url: URL): string => (url.hostname.endsWith('.pages.dev') ? PORTAL : url.origin);
+
+/**
+ * Baza linków dla klientów firmy: adres CRM firmy (crm_tenants.adres_crm, np. https://crm2.auraconsulting.pl),
+ * a bez niego — originKlienta. Link nie zależy od adresu, pod którym pracownik się zalogował.
+ */
+export async function originFirmy(admin: SupabaseClient, tenantId: string, url: URL): Promise<string> {
+	const { data } = await admin.from('crm_tenants').select('adres_crm').eq('id', tenantId).maybeSingle();
+	return adresLinkow((data as { adres_crm?: string | null } | null)?.adres_crm, url);
+}
+
+/** Jak originFirmy, z pamięcią na czas jednego żądania (zadanie dzienne przechodzi przez wnioski wielu firm). */
+export function originyFirm(admin: SupabaseClient, url: URL): (tenantId: string) => Promise<string> {
+	const m = new Map<string, Promise<string>>();
+	return (tenantId) => {
+		let o = m.get(tenantId);
+		if (!o) {
+			o = originFirmy(admin, tenantId, url);
+			m.set(tenantId, o);
+		}
+		return o;
+	};
+}
 
 export function bazaLinku(origin: string): string {
 	return (env.RENEWAL_LINK_BASE || origin).replace(/\/$/, '');

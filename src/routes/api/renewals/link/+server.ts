@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth';
-import { krotkiLinkDla, linkDla, originKlienta, smsDostepny } from '$lib/server/renewals';
+import { krotkiLinkDla, linkDla, originFirmy, smsDostepny } from '$lib/server/renewals';
 import type { LinkWniosku } from '$lib/renewals/staffApi';
 import type { RequestHandler } from './$types';
 
@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	if (!data || !['utworzony', 'wyslany', 'otwarty', 'apk'].includes(data.status) || Date.parse(data.wazny_do) < Date.now()) {
 		throw error(404, { message: 'Ten wniosek nie jest już aktywny — utwórz nowy.' });
 	}
-	const origin = originKlienta(url);
+	const origin = await originFirmy(admin, profile.tenant_id, url);
 	const odp: LinkWniosku = {
 		id: data.id,
 		link: await linkDla(data.id, origin),

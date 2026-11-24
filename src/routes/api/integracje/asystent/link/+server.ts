@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { getAdminClient } from '$lib/server/auth';
 import { linkWnioskuAsystenta, tenantZKluczaAsystenta } from '$lib/server/wniosekAsystenta';
-import { originLinkow } from '$lib/renewals/wniosekAsystenta';
+import { originFirmy } from '$lib/server/renewals';
 import type { RequestHandler } from './$types';
 
 // Link do wniosku online dla przycisku „Wypełnij wniosek online” w mailu HUB: worker konsultacja-agent
@@ -28,7 +28,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	if (typeof klientId !== 'string' || !UUID.test(klientId)) throw error(400, 'Nieprawidłowy klient_id');
 
 	try {
-		return json(await linkWnioskuAsystenta(admin, tenant, klientId, originLinkow(url)));
+		return json(await linkWnioskuAsystenta(admin, tenant, klientId, await originFirmy(admin, tenant, url)));
 	} catch (e) {
 		console.error('Link do wniosku z maila:', (e as Error)?.message ?? e);
 		throw error(500, 'Nie udało się przygotować wniosku');

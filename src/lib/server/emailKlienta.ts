@@ -73,8 +73,8 @@ export function sprawdzZadanie(body: ZadanieEmaila) {
 }
 
 export async function ustawieniaWysylki(admin: SupabaseClient, tenantId: string) {
-	const { data } = await admin.from('crm_tenants').select('nazwa, resend_api_key, email_from, email_nazwa_nadawcy, email_podpis').eq('id', tenantId).maybeSingle();
-	const t = data as { nazwa: string; resend_api_key: string | null; email_from: string | null; email_nazwa_nadawcy?: string | null; email_podpis?: string | null } | null;
+	const { data } = await admin.from('crm_tenants').select('nazwa, resend_api_key, email_from, email_nazwa_nadawcy, email_podpis, adres_crm').eq('id', tenantId).maybeSingle();
+	const t = data as { nazwa: string; resend_api_key: string | null; email_from: string | null; email_nazwa_nadawcy?: string | null; email_podpis?: string | null; adres_crm?: string | null } | null;
 	const adres = adresNadawcy(t?.email_from);
 	return {
 		firma: t?.nazwa ?? '',
@@ -84,7 +84,9 @@ export async function ustawieniaWysylki(admin: SupabaseClient, tenantId: string)
 		/** Nazwa nadawcy maili do klientów (puste = osoba / firma). */
 		nazwaNadawcy: t?.email_nazwa_nadawcy?.trim() || null,
 		/** Podpis w mailach z polisą zamiast imienia i nazwiska (puste = osoba wysyłająca). */
-		podpis: t?.email_podpis?.trim() || null
+		podpis: t?.email_podpis?.trim() || null,
+		/** Adres CRM firmy (np. https://crm2.auraconsulting.pl) do linków w mailach; puste = adres żądania. */
+		adresCrm: t?.adres_crm?.trim() || null
 	};
 }
 

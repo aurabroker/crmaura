@@ -7,7 +7,7 @@
 	import RegonLookup from '$lib/components/RegonLookup.svelte';
 
 	// Klucz Resend nie trafia do przeglądarki — serwer zwraca tylko jego końcówkę (resend_key_hint).
-	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null; webhook_secret_hint?: string | null; email_from?: string | null; email_nazwa_nadawcy?: string | null; email_podpis?: string | null; smsapi_token_hint?: string | null; sms_nadawca?: string | null };
+	type Tenant = { id: string; nazwa: string; created_at: string; features?: Record<string, boolean>; resend_key_hint?: string | null; webhook_secret_hint?: string | null; email_from?: string | null; email_nazwa_nadawcy?: string | null; email_podpis?: string | null; adres_crm?: string | null; smsapi_token_hint?: string | null; sms_nadawca?: string | null };
 	type ProfileRow = { id: string; email: string; imie_nazwisko: string | null; rola: string; tenant_id: string };
 
 	const OPTIONAL_FEATURES: { key: string; label: string }[] = [
@@ -29,7 +29,7 @@
 		return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` };
 	}
 
-	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null; email_nazwa_nadawcy?: string | null; email_podpis?: string | null; resend_webhook_secret?: string | null; smsapi_token?: string | null; sms_nadawca?: string | null }) {
+	async function patchTenant(tenantId: string, patch: { features?: Record<string, boolean>; resend_api_key?: string | null; email_from?: string | null; email_nazwa_nadawcy?: string | null; email_podpis?: string | null; adres_crm?: string | null; resend_webhook_secret?: string | null; smsapi_token?: string | null; sms_nadawca?: string | null }) {
 		try {
 			const res = await fetch('/api/saas-admin/tenants', {
 				method: 'PATCH', headers: await authHeaders(),
@@ -45,6 +45,7 @@
 				email_from: (d.email_from ?? null) as string | null,
 				email_nazwa_nadawcy: (d.email_nazwa_nadawcy ?? null) as string | null,
 				email_podpis: (d.email_podpis ?? null) as string | null,
+				adres_crm: (d.adres_crm ?? null) as string | null,
 				smsapi_token_hint: (d.smsapi_token_hint ?? null) as string | null,
 				sms_nadawca: (d.sms_nadawca ?? null) as string | null
 			};
@@ -225,6 +226,20 @@
 		if (!r.ok) { markaError = r.message; return; }
 		applyToTenant(tenant.id, { email_nazwa_nadawcy: r.email_nazwa_nadawcy, email_podpis: r.email_podpis });
 		editingMarka = null;
+	}
+
+	// Adres CRM firmy do linków wysyłanych klientom (formularz APK, wnioski, SMS) i w podsumowaniach.
+	let editingAdres = $state<string | null>(null);
+	let adresInput = $state('');
+	let savingAdres = $state(false);
+	let adresError = $state('');
+	async function saveAdres(tenant: Tenant) {
+		savingAdres = true; adresError = '';
+		const r = await patchTenant(tenant.id, { adres_crm: adresInput.trim() || null });
+		savingAdres = false;
+		if (!r.ok) { adresError = r.message; return; }
+		applyToTenant(tenant.id, { adres_crm: r.adres_crm });
+		editingAdres = null;
 	}
 
 	// Webhook Resend (status dostarczenia e-maili): adres do wklejenia w Resend i sekret podpisu z Resend.
@@ -557,6 +572,25 @@
 							<span>Od: <strong class="font-medium text-slate-800">{st.email_nazwa_nadawcy ?? '— nazwa firmy / osoba wysyłająca —'}</strong></span>
 							<span>Podpis: <strong class="font-medium text-slate-800">{st.email_podpis ?? '— osoba wysyłająca —'}</strong></span>
 							<button onclick={() => { editingMarka = st.id; nazwaNadawcyInput = st.email_nazwa_nadawcy ?? ''; podpisInput = st.email_podpis ?? ''; markaError = ''; }} class="text-xs text-blue-600 hover:underline">Zmień</button>
+						</div>
+					{/if}
+				</div>
+
+				<!-- Adres CRM firmy w linkach dla klientów -->
+				<div class="mb-5 border-t border-line-soft pt-4" data-testid="saas-adres-crm">
+					<p class="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1">Adres CRM w linkach dla klientów</p>
+					<p class="text-xs text-slate-500 mb-3">Domena firmy, na którą prowadzą linki wysyłane klientom (formularz APK, wniosek o polisę, krótki link w SMS-ie) i linki w codziennych podsumowaniach — niezależnie od adresu, pod którym pracownik się zalogował. Domena musi być podpięta do CRM w Cloudflare (i dopisana do Turnstile). Puste — portal Beauty Polisa.</p>
+					{#if editingAdres === st.id}
+						<div class="flex flex-wrap gap-2">
+							<input bind:value={adresInput} placeholder="np. crm2.auraconsulting.pl" class="flex-1 min-w-[220px] border border-line rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+							<button onclick={() => saveAdres(st)} disabled={savingAdres} class="px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">{savingAdres ? '…' : 'Zapisz'}</button>
+							<button onclick={() => { editingAdres = null; adresError = ''; }} class="px-3 py-2 text-sm border border-line text-slate-600 rounded-lg hover:bg-slate-100">Anuluj</button>
+						</div>
+						{#if adresError}<p class="mt-2 text-sm text-red-600">{adresError}</p>{/if}
+					{:else}
+						<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+							<span>Linki: <strong class="font-medium text-slate-800">{st.adres_crm ?? '— portal Beauty Polisa —'}</strong></span>
+							<button onclick={() => { editingAdres = st.id; adresInput = st.adres_crm ?? ''; adresError = ''; }} class="text-xs text-blue-600 hover:underline">Zmień</button>
 						</div>
 					{/if}
 				</div>

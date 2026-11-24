@@ -408,7 +408,8 @@ export async function wyslijPodsumowanie(
 	const dzis = dataWarszawa(teraz);
 	const od = poczatekOkresu(s, teraz);
 	const dane = await zbierzDane(admin, s.tenant_id, s.profile_id, s.sekcje ?? {}, od, dzis);
-	const t = tresc(dane, { firma: ust.firma, imie: profil.imie_nazwisko, crm: o.crm, dataPl: dzien(dzis) });
+	// Linki do CRM na adres firmy (np. crm2.auraconsulting.pl), a bez niego — adres z wywołania.
+	const t = tresc(dane, { firma: ust.firma, imie: profil.imie_nazwisko, crm: ust.adresCrm ?? o.crm, dataPl: dzien(dzis) });
 	if (t.pusto && s.pomin_puste && !o.wymus) {
 		await zapisz({ ostatnio_wyslano_at: teraz.toISOString(), ostatni_blad: null });
 		return { ok: true, wyslano: false, temat: t.temat, pusto: true };

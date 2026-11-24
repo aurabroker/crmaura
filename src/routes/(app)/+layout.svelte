@@ -48,10 +48,11 @@
 
 		appState.profile = profile as typeof appState.profile;
 
-		const { data: tenant } = await sb.from('crm_tenants').select('typ, nazwa, features').eq('id', profile.tenant_id).single();
+		const { data: tenant } = await sb.from('crm_tenants').select('typ, nazwa, features, adres_crm').eq('id', profile.tenant_id).single();
 		appState.tenantTyp = (tenant?.typ as typeof appState.tenantTyp) ?? 'broker';
 		appState.tenantNazwa = tenant?.nazwa ?? '';
 		appState.tenantFeatures = (tenant?.features as Record<string, boolean>) ?? {};
+		appState.tenantAdres = ((tenant as { adres_crm?: string | null } | null)?.adres_crm ?? null) || null;
 
 		// Dashboard prefs
 		const { data: prefs } = await sb.from('crm_dashboard_prefs').select('widgets').eq('user_id', user.id).single();

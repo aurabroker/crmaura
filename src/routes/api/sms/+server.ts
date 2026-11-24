@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { requireAuth } from '$lib/server/auth';
-import { czyTest, krotkiLinkDla, linkDla, originKlienta, smsFirmy, zapiszZdarzenie, type RenewalRow } from '$lib/server/renewals';
+import { czyTest, krotkiLinkDla, linkDla, originFirmy, smsFirmy, zapiszZdarzenie, type RenewalRow } from '$lib/server/renewals';
 import { wyslijSms } from '$lib/server/sms';
 import { wyslanieWLeadzie } from '$lib/server/renewalFlow';
 import { numerSms, trescSms } from '$lib/renewals/sms';
@@ -45,7 +45,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		.limit(1);
 	if (ostatnie?.length) throw error(429, { message: 'SMS do tego wniosku wysłano przed chwilą — odczekaj minutę.' });
 
-	const origin = originKlienta(url);
+	const origin = await originFirmy(admin, profile.tenant_id, url);
 	const link = (await krotkiLinkDla(admin, r, origin)) ?? (await linkDla(r.id, origin));
 	const tresc = trescSms(link, { nowa: r.rodzaj === 'nowa', waznyDo: r.wazny_do });
 	const w = await wyslijSms(firma.token, { numer, tresc, nadawca: firma.nadawca });
