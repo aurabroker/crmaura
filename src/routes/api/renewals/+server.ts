@@ -5,7 +5,7 @@ import {
 	klientDoWniosku,
 	krotkiLinkDla,
 	linkDla,
-	originKlienta,
+	originFirmy,
 	smsDostepny,
 	polisaProgramu,
 	trybTestowy,
@@ -48,7 +48,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		if (tryb === 'email' && !klient.email) throw bezEmaila();
 		r = await utworzNowyWniosek(admin, klient, { zastap: body.zastap === true, utworzyl: user.id });
 	}
-	const origin = originKlienta(url);
+	const origin = await originFirmy(admin, profile.tenant_id, url);
 	const link = await linkDla(r.id, origin);
 	const krotki_link = await krotkiLinkDla(admin, r, origin);
 	const sms = await smsDostepny(admin, r);

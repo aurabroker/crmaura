@@ -73,6 +73,7 @@ export const PATCH: RequestHandler = async ({ request }) => {
 		email_from: data.email_from ?? null,
 		email_nazwa_nadawcy: data.email_nazwa_nadawcy ?? null,
 		email_podpis: data.email_podpis ?? null,
+		adres_crm: data.adres_crm ?? null,
 		smsapi_token_hint: keyHint(data.smsapi_token),
 		sms_nadawca: data.sms_nadawca ?? null
 	});

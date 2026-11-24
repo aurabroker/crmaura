@@ -22,6 +22,8 @@ export const appState = $state({
 	tenantTyp: 'broker' as 'broker' | 'agent',
 	tenantNazwa: '' as string,
 	tenantFeatures: {} as Record<string, boolean>,
+	/** Adres CRM firmy do linków dla klientów (crm_tenants.adres_crm, np. https://crm2.auraconsulting.pl); null = domyślny. */
+	tenantAdres: null as string | null,
 	tasks: [] as CrmTask[],
 	loading: false,
 	apkForms: [] as ApkForm[],

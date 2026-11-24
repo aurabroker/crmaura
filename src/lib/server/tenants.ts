@@ -1,5 +1,6 @@
 import { error } from '@sveltejs/kit';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizujAdresCrm } from '../adresCrm.ts';
 
 export type NewTenantInput = {
 	nazwa_firmy?: string;
@@ -21,6 +22,7 @@ export type TenantPatch = {
 	smsapi_token?: string | null;
 	sms_nadawca?: string | null;
 	email_nazwa_nadawcy?: string | null;
+	adres_crm?: string | null;
 	email_podpis?: string | null;
 };
 
@@ -39,7 +41,7 @@ const EMAIL_FROM_RE = /^(?:[^<>\r\n"@]{1,100} <[^\s@<>"]+@[a-z0-9-]+(?:\.[a-z0-9
 // Waliduje ciało PATCH /api/saas-admin/tenants. Zwraca identyfikator firmy i czyste pola do zapisu.
 export function parseTenantPatch(body: unknown): { tenantId: string; patch: TenantPatch } {
 	if (!body || typeof body !== 'object') throw error(400, { message: 'Nieprawidłowe dane.' });
-	const { tenant_id, features, resend_api_key, email_from, resend_webhook_secret, smsapi_token, sms_nadawca, email_nazwa_nadawcy, email_podpis } = body as Record<string, unknown>;
+	const { tenant_id, features, resend_api_key, email_from, resend_webhook_secret, smsapi_token, sms_nadawca, email_nazwa_nadawcy, email_podpis, adres_crm } = body as Record<string, unknown>;
 
 	if (typeof tenant_id !== 'string' || !UUID.test(tenant_id)) {
 		throw error(400, { message: 'Nieprawidłowy identyfikator firmy.' });
@@ -127,6 +129,15 @@ export function parseTenantPatch(body: unknown): { tenantId: string; patch: Tena
 	};
 	tekstMaila(email_nazwa_nadawcy, 'email_nazwa_nadawcy', 80, 'nazwa nadawcy');
 	tekstMaila(email_podpis, 'email_podpis', 120, 'treść podpisu');
+
+	// Adres CRM firmy do linków dla klientów (np. https://crm2.auraconsulting.pl): sama domena, https.
+	if (adres_crm !== undefined) {
+		try {
+			patch.adres_crm = normalizujAdresCrm(adres_crm);
+		} catch (e) {
+			throw error(400, { message: (e as Error).message });
+		}
+	}
 
 	if (Object.keys(patch).length === 0) throw error(400, { message: 'Brak zmian do zapisania.' });
 	return { tenantId: tenant_id, patch };

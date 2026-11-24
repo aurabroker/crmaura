@@ -28,3 +28,10 @@ test('Nazwa nadawcy i podpis w mailach do klientów', () => {
 	odrzuca({ tenant_id: ID, email_podpis: 'Linia 1\nLinia 2' });
 	odrzuca({ tenant_id: ID, email_nazwa_nadawcy: 'x'.repeat(81) });
 });
+
+test('Adres CRM w linkach dla klientów', () => {
+	assert.deepEqual(parseTenantPatch({ tenant_id: ID, adres_crm: 'crm2.auraconsulting.pl/' }).patch, { adres_crm: 'https://crm2.auraconsulting.pl' });
+	assert.deepEqual(parseTenantPatch({ tenant_id: ID, adres_crm: '' }).patch, { adres_crm: null });
+	odrzuca({ tenant_id: ID, adres_crm: 'http://crm2.auraconsulting.pl' });
+	odrzuca({ tenant_id: ID, adres_crm: 'localhost' });
+});

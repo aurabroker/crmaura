@@ -1,8 +1,14 @@
-// Publiczny formularz APK to trasa /form tej aplikacji (portal.beautypolisa.eu).
+// Publiczny formularz APK to trasa /form tej aplikacji: na adresie CRM firmy (crm_tenants.adres_crm, np.
+// https://crm2.auraconsulting.pl), a bez niego na portalu Beauty Polisa (portal.beautypolisa.eu).
 // Adres można nadpisać zmienną VITE_APK_FORM_URL, np. na środowisku testowym.
+import { appState } from '$lib/stores/app.svelte';
+import { PORTAL_BEAUTY } from '$lib/adresCrm';
+
 const fromEnv = (import.meta.env.VITE_APK_FORM_URL as string | undefined)?.trim().replace(/\/$/, '');
 
-export const APK_FORM_URL: string = fromEnv || 'https://portal.beautypolisa.eu/form';
+/** Adres formularza APK dla firmy zalogowanego pracownika. */
+export const adresFormularzaApk = (adresFirmy: string | null = appState.tenantAdres): string =>
+	fromEnv || `${(adresFirmy || PORTAL_BEAUTY).replace(/\/+$/, '')}/form`;
 
 // Zapytanie o formularze APK razem z kartą klienta i tokenami. Jedno miejsce, bo każde
 // odświeżenie listy, które pominie tokeny, odbiera przyciskom „Otwórz” i „Link” podstawę.
@@ -32,7 +38,7 @@ export function newApkToken(length = 26): string {
 }
 
 export function apkTokenLink(token: string): string {
-	return `${APK_FORM_URL}?token=${encodeURIComponent(token)}`;
+	return `${adresFormularzaApk()}?token=${encodeURIComponent(token)}`;
 }
 
 // Ta sama reguła co w bazie (get_apk_by_token): żywy jest tylko token 'pending' z datą

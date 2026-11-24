@@ -1,7 +1,7 @@
 import { error, json } from '@sveltejs/kit';
 import { getAdminClient } from '$lib/server/auth';
 import { tenantZKluczaAsystenta, wyslijWniosekAsystenta } from '$lib/server/wniosekAsystenta';
-import { originLinkow } from '$lib/renewals/wniosekAsystenta';
+import { originFirmy } from '$lib/server/renewals';
 import type { RequestHandler } from './$types';
 
 // Asystent AI (worker konsultacja-agent) prosi o wysłanie klientowi linku do wniosku online: pierwsza polisa
@@ -28,7 +28,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	if (typeof klientId !== 'string' || !UUID.test(klientId)) throw error(400, 'Nieprawidłowy klient_id');
 
 	try {
-		return json(await wyslijWniosekAsystenta(admin, tenant, klientId, originLinkow(url)));
+		return json(await wyslijWniosekAsystenta(admin, tenant, klientId, await originFirmy(admin, tenant, url)));
 	} catch (e) {
 		console.error('Wniosek asystenta AI:', (e as Error)?.message ?? e);
 		throw error(500, 'Nie udało się wysłać wniosku');

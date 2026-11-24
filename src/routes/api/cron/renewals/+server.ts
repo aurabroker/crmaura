@@ -4,7 +4,7 @@ import {
 	DNI_DO_PRZYPOMNIENIA,
 	DNI_PRZED_KONCEM,
 	dzisWarszawa,
-	originKlienta,
+	originyFirm,
 	anulujNieaktualny,
 	bezKontynuacji,
 	podzielWnioski,
@@ -40,8 +40,8 @@ export const POST: RequestHandler = async ({ request, url }) => {
 	if (zgoda !== true) return new Response('zły nagłówek x-cron-token', { status: 401 });
 
 	// pg_cron woła adres *.pages.dev (domena portalu ma ochronę przed botami, która zatrzymuje żądania z bazy) —
-	// linki w e-mailach mają jednak prowadzić na portal.
-	const origin = originKlienta(url);
+	// linki w e-mailach prowadzą na adres CRM firmy (crm_tenants.adres_crm), a bez niego na portal.
+	const originDla = originyFirm(admin, url);
 	const wynik = { wygaszone: 0, zaproszenia: 0, przypomnienia: 0, ostatniDzien: 0, wygasla: 0, pominiete: 0, usunietePliki: 0, bledy: [] as string[] };
 	const teraz = new Date().toISOString();
 
@@ -100,7 +100,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 		for (const r of (niewyslane ?? []) as RenewalRow[]) {
 			if (wyslane >= MAKS_ZAPROSZEN) break;
 			if (await anulujNieaktualny(admin, r)) continue;
-			const w = await wyslijZaproszenie(admin, r, origin);
+			const w = await wyslijZaproszenie(admin, r, await originDla(r.tenant_id));
 			if (w.ok) {
 				wynik.zaproszenia++;
 				wyslane++;
@@ -127,7 +127,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 					continue;
 				}
 				const r = await utworzOdnowienie(admin, p, { utworzyl: null, zastap: tylkoTestowe.has(c.id) });
-				const w = await wyslijZaproszenie(admin, r, origin);
+				const w = await wyslijZaproszenie(admin, r, await originDla(r.tenant_id));
 				if (w.ok) {
 					wynik.zaproszenia++;
 					wyslane++;
@@ -168,7 +168,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			.select('id')
 			.maybeSingle();
 		if (!zajete) continue;
-		const w = await wyslijZaproszenie(admin, r, origin, { przypomnienie: true });
+		const w = await wyslijZaproszenie(admin, r, await originDla(r.tenant_id), { przypomnienie: true });
 		if (w.ok) wynik.przypomnienia++;
 		else {
 			// Nieudana wysyłka zwalnia wniosek — następne uruchomienie spróbuje ponownie.
@@ -190,7 +190,7 @@ export const POST: RequestHandler = async ({ request, url }) => {
 			.select('id')
 			.maybeSingle();
 		if (!zajete) return;
-		const w = await wyslijOstrzezenie(admin, r, origin, rodzaj);
+		const w = await wyslijOstrzezenie(admin, r, await originDla(r.tenant_id), rodzaj);
 		if (w.ok) {
 			if (rodzaj === 'ostatni_dzien') wynik.ostatniDzien++;
 			else wynik.wygasla++;
