@@ -257,7 +257,7 @@ w przeglądarce (pdf.js) — nie opuszcza komputera brokera.
 |-------------|---------|-------|
 | WARTA | Ekstrabiznes Plus | sekcje ryzyk, składki sekcyjne, wiele lokalizacji |
 | ERGO Hestia | OC zawodowe — certyfikat z programu | układ „POLISA/POLICY”, certyfikat pod Programem Ubezpieczenia; okres także z godzinami („14.11.2026 23:55 - 13.11.2027 24:00” przy certyfikacie wystawionym w dniu początku ochrony — do CRM idą daty, godziny zostają w parametrach); tabela ryzyk czytana po kolumnach (długa nazwa zakresu łamie wiersz — symbol i suma lądują linię niżej); klauzule z sekcji „KLAUZULE DODATKOWE” także bez słowa „Klauzula” (dopłata za 6–8 osób), limit z kolumny LIMIT jako „— limit: 100 000 zł” |
-| ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk (bez elementów stałych programu — patrz niżej), lista ubezpieczonych i włączone zabiegi w parametrach; po numerze programu podpinana pod Umowę Generalną |
+| ERGO Hestia | OC zawodowe — polisa indywidualna | układ „Polisa nr …” (po ocenie ryzyka, np. OC beauty z zabiegami spoza listy); klauzule z limitami i sublimity jako pozycje ryzyk (bez elementów stałych programu — patrz niżej), lista ubezpieczonych i włączone zabiegi w parametrach; raty z „Termin płatności i kwota raty” albo „Terminy płatności i kwoty rat” (kilka rat); po numerze programu podpinana pod Umowę Generalną |
 | UNIQA | Flota / Komunikacja | dwa układy: „Auto & Przestrzeń" i nowy z wykazem pojazdów |
 | ERGO Hestia | NNW — certyfikat z programu (Biznes & Podróż) | układ „POLISA/POLICY” jak OC zawodowe; ubezpieczona osoba (bez NIP) zostaje w parametrach; klauzula HIV/WZW z limitem „zgodnie z Programem” jako pozycja ryzyk; **dokument nie drukuje numeru programu**, więc umowa generalna jest dobierana po podtypie `nnw` i towarzystwie (operator może zmienić) |
 | ERGO Hestia | Flota / Komunikacja — certyfikaty z umowy generalnej (Cumulus) | **plik wielocertyfikatowy**: jedna strona = jeden certyfikat (pojazd) z własnym numerem `…/KOM/A000004`, składką, ryzykami (OC/AC/KR/NNW z sumami i parametrami AC) i harmonogramem; każdy certyfikat to osobna polisa komunikacyjna pod Umową Generalną `…/KOM/A`; z certyfikatu idzie pełne zaszeregowanie pojazdu (rodzaj rejestrowy → kalkulacyjny wg ładowności, liczba miejsc, pierwsza rejestracja, wykorzystanie) |
@@ -327,7 +327,13 @@ duplikaty).
   zatrudnionych od 6 do 8”), zakres z rodzaju działalności, początek ochrony,
   NIP i adres firmy. Każda różnica to osobne ostrzeżenie (import nie jest
   blokowany), zgodność — jedna informacja z listą sprawdzonych elementów
-  (`src/lib/policyImport/wniosek.ts`).
+  (`src/lib/policyImport/wniosek.ts`). Zakres porównywany jest tylko
+  z certyfikatem z programu (drukuje nazwę kategorii taryfy); polisa
+  indywidualna ma ogólne „Ubezpieczenie OC z tytułu wykonywania czynności
+  zawodowych” i zakresu nie porównujemy. Przesunięcie początku ochrony do
+  30 dni (polisa wystawiona po wniosku) to nie ostrzeżenie — dopiero powyżej.
+  Zabiegi z ankiety przy polisie indywidualnej zestawiane są z „Działalnością
+  przyjętą do ubezpieczenia”.
 - **Raty a składka.** Gdy suma odczytanych rat różni się od składki,
   podgląd pokazuje ostrzeżenie (zwykle ucięty harmonogram) — import nie jest
   blokowany.

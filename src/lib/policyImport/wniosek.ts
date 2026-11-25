@@ -20,7 +20,10 @@ export const WNIOSEK_KOLUMNY = 'id, rodzaj, status, decyzja, polisa_id, klient_i
 type PolisaSkrot = Pick<Policy, 'klient_id' | 'deleted_at' | 'typ_umowy' | 'created_at' | 'renewal_of'>;
 
 const dataKropki = (iso: string | null | undefined) => (iso ? iso.slice(0, 10).split('-').reverse().join('.') : '');
+const dniMiedzy = (a: string, b: string) => Math.round((Date.parse(a.slice(0, 10)) - Date.parse(b.slice(0, 10))) / 86_400_000);
 const norm = (s: string | null | undefined) => (s ?? '').toUpperCase().replace(/\s*,\s*/g, ', ').replace(/\s+/g, ' ').trim();
+/** Polisa wystawiona kilka dni po wniosku to normalna kolej rzeczy — o przesunięciu początku ochrony ostrzegamy dopiero powyżej tylu dni. */
+export const MAKS_PRZESUNIECIE_OCHRONY_DNI = 30;
 const OCHRONA_PRAWNA = /ochron\w*\s+prawn/i;
 const OSOBY_6_8 = /od\s*6\s*do\s*8/i;
 
@@ -71,8 +74,8 @@ export function porownajZWnioskiem(e: ExtractedPolicy, w: WniosekDoPorownania): 
 		else zgodne.push(`składka ${formatZl(skladkaOczekiwana)}`);
 	}
 
-	// Ochrona prawna: zaznaczona we wniosku albo już w składce obecnego certyfikatu; na polisie — klauzula.
-	const opOczekiwana = !!z?.ochrona_prawna || (!nowa && ochronaPrawnaWSkladce(w.skladka, w.suma));
+	// Ochrona prawna: zaznaczona we wniosku, wskazana w APK albo już w składce obecnego certyfikatu; na polisie — klauzula.
+	const opOczekiwana = !!z?.ochrona_prawna || apk?.ochrona_prawna === 'tak' || (!nowa && ochronaPrawnaWSkladce(w.skladka, w.suma));
 	const opNaPolisie = OCHRONA_PRAWNA.test(tekstPolisy);
 	if (e.ryzyka.length || e.dodatkowe['Klauzule dodatkowe']) {
 		if (opOczekiwana && !opNaPolisie) roznice.push('we wniosku ochrona prawna, na polisie nie ma klauzuli ochrony prawnej');
@@ -91,21 +94,26 @@ export function porownajZWnioskiem(e: ExtractedPolicy, w: WniosekDoPorownania): 
 		else zgodne.push(nazwaOsob);
 	}
 
-	// Rodzaj działalności → kategoria taryfy; certyfikat drukuje jej nazwę jako zakres ubezpieczenia.
+	// Rodzaj działalności → kategoria taryfy; certyfikat z programu drukuje jej nazwę jako zakres ubezpieczenia
+	// („GABINETY KOSMETOLOGICZNE”). Polisa indywidualna (po ocenie ryzyka) ma w tym miejscu ogólne
+	// „Ubezpieczenie OC z tytułu wykonywania czynności zawodowych” — wtedy nie ma czego porównywać.
 	const rodzaje = z?.zmiana_dzialalnosci && z.rodzaje.length ? z.rodzaje : apk?.rodzaje.length ? apk.rodzaje : (z?.rodzaje ?? []);
 	const kategoria = kategoriaZRodzajow(rodzaje);
 	const zakresPolisy = e.ryzyka[0]?.przedmiot.replace(/\s*\([A-Z]\d{2}\s*-\s*\d+\)\s*$/, '') ?? null;
-	if (kategoria && zakresPolisy) {
+	const kategoriaPolisy = zakresPolisy ? ((Object.keys(KATEGORIE) as (keyof typeof KATEGORIE)[]).find((k) => norm(KATEGORIE[k].nazwa) === norm(zakresPolisy)) ?? null) : null;
+	if (kategoria && zakresPolisy && (kategoriaPolisy || /^GABINET/i.test(zakresPolisy))) {
 		const oczekiwany = KATEGORIE[kategoria].nazwa;
-		if (norm(zakresPolisy) !== norm(oczekiwany)) roznice.push(`zakres na polisie „${zakresPolisy}”, z wniosku wynika „${oczekiwany}”`);
+		if (kategoriaPolisy !== kategoria) roznice.push(`zakres na polisie „${zakresPolisy}”, z wniosku wynika „${oczekiwany}”`);
 		else zgodne.push(`zakres „${oczekiwany}”`);
 	}
 
 	// Początek ochrony: data z wniosku o pierwszą polisę albo dzień po końcu odnawianego certyfikatu.
+	// Przesunięcie o kilka dni (polisa wystawiona po wniosku) jest zwykłe — ostrzeżenie dopiero powyżej 30 dni.
 	const odOczekiwana = w.wniosek?.nowa?.ochrona_od ?? (!nowa && w.okres_do ? przesunDate(w.okres_do.slice(0, 10), 1) : null);
 	if (odOczekiwana && e.data_od) {
-		if (e.data_od !== odOczekiwana) roznice.push(`początek ochrony na polisie ${dataKropki(e.data_od)}, we wniosku ${dataKropki(odOczekiwana)}`);
-		else zgodne.push(`ochrona od ${dataKropki(odOczekiwana)}`);
+		const dni = Math.abs(dniMiedzy(e.data_od, odOczekiwana));
+		if (dni > MAKS_PRZESUNIECIE_OCHRONY_DNI) roznice.push(`początek ochrony na polisie ${dataKropki(e.data_od)}, we wniosku ${dataKropki(odOczekiwana)}`);
+		else zgodne.push(dni ? `ochrona od ${dataKropki(e.data_od)} (we wniosku od ${dataKropki(odOczekiwana)})` : `ochrona od ${dataKropki(odOczekiwana)}`);
 	}
 
 	// Dane firmy z wniosku o pierwszą polisę (albo nowy adres przy odnowieniu) a dane na certyfikacie.
@@ -123,10 +131,16 @@ export function porownajZWnioskiem(e: ExtractedPolicy, w: WniosekDoPorownania): 
 	const out: Issue[] = roznice.length
 		? roznice.map((r) => ({ level: 'warn', text: `Niezgodność z wnioskiem (${czego}${kiedy}): ${r}.` }))
 		: [{ level: 'info', text: `Polisa zgodna ze złożonym wnioskiem (${czego}${kiedy})${zgodne.length ? `: ${zgodne.join(', ')}` : ''}.` }];
-	if (z?.zabiegi_ankieta?.length)
+	// Zabiegi z ankiety: polisa indywidualna (po ocenie ryzyka) wymienia włączone zabiegi w „Działalności przyjętej
+	// do ubezpieczenia”; certyfikat z programu ich nie drukuje.
+	if (z?.zabiegi_ankieta?.length) {
+		const dzialalnosc = e.dodatkowe['Działalność przyjęta do ubezpieczenia'];
 		out.push({
 			level: 'info',
-			text: `Wniosek zgłasza zabiegi wymagające ankiety (${z.zabiegi_ankieta.join('; ')}) — certyfikat z programu ich nie wymienia, sprawdź potwierdzenie Hestii.`
+			text: dzialalnosc
+				? `Wniosek zgłasza zabiegi wymagające ankiety (${z.zabiegi_ankieta.join('; ')}) — sprawdź, czy polisa włącza je w „Działalności przyjętej do ubezpieczenia”: ${dzialalnosc}`
+				: `Wniosek zgłasza zabiegi wymagające ankiety (${z.zabiegi_ankieta.join('; ')}) — certyfikat z programu ich nie wymienia, sprawdź potwierdzenie Hestii.`
 		});
+	}
 	return out;
 }

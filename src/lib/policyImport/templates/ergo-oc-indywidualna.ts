@@ -4,10 +4,11 @@
 // kolumnie; wartość wielowierszowa ciągnie się w tej kolumnie aż do następnej etykiety.
 // Polisa powołuje się na Program Ubezpieczenia — mapper wiąże ją po numerze z Umową Generalną.
 
-import type { ExtractedPolicy, Installment, RiskItem } from '../types';
-import { emptyExtraction } from '../types';
-import type { Line, PdfDoc } from '../pdfDoc';
-import { collapse, digits, grab, toAmount, toDate } from '../parse';
+// Importy względne z rozszerzeniem, żeby szablon dało się uruchomić w testach node.
+import type { ExtractedPolicy, Installment, RiskItem } from '../types.ts';
+import { emptyExtraction } from '../types.ts';
+import type { Line, PdfDoc } from '../pdfDoc.ts';
+import { collapse, digits, grab, toAmount, toDate } from '../parse.ts';
 
 /**
  * Wartości stoją od tej pozycji (zwykle x ≈ 263, w tabeli płatności data raty już od x ≈ 191);
@@ -224,9 +225,10 @@ function parseSublimity(postanowienia: string): RiskItem[] {
 	return ryzyka;
 }
 
-// „Termin płatności i kwota raty:” — każda rata w osobnym wierszu: data i kwota.
+// „Termin płatności i kwota raty:” (jedna rata) albo „Terminy płatności i kwoty rat:” (kilka) — każda rata
+// w osobnym wierszu: data i kwota.
 function parseRaty(linie: Line[]): Installment[] {
-	const wiersze = pole(linie, /^Termin płatności i kwota raty:\s*/) ?? [];
+	const wiersze = pole(linie, /^Terminy? płatności i kwot[ay] raty?:\s*/) ?? [];
 	const raty: Installment[] = [];
 	for (const w of wiersze) {
 		const m = w.match(/^(\d{2}\.\d{2}\.\d{4})\s+([\d\s.,]+)\s*PLN/);

@@ -73,7 +73,7 @@ test('nieodczytana suma gwarancyjna, inna składka, brak klauzuli 6–8 osób, o
 	const e = certyfikat({
 		suma_gwarancyjna: null,
 		skladka: 1250,
-		data_od: '2026-11-10',
+		data_od: '2026-12-20',
 		ryzyka: [{ sekcja: 'UBEZPIECZONE RYZYKA', przedmiot: 'GABINETY KOSMETOLOGICZNE (M30 - 13)', suma: null, skladka: 1250 }],
 		dodatkowe: { 'Klauzule dodatkowe': 'Klauzula kosztów ochrony prawnej (klauzula 7)' }
 	});
@@ -87,9 +87,40 @@ test('nieodczytana suma gwarancyjna, inna składka, brak klauzuli 6–8 osób, o
 			'na polisie klauzula ochrony prawnej, której nie było we wniosku.',
 			'we wniosku 6–8 osób, na polisie nie ma klauzuli „Liczba zatrudnionych od 6 do 8”.',
 			'zakres na polisie „GABINETY KOSMETOLOGICZNE”, z wniosku wynika „Gabinety kosmetyczne, kosmetologiczne, fryzjerskie i podologiczne”.',
-			'początek ochrony na polisie 10.11.2026, we wniosku 07.11.2026.'
+			'początek ochrony na polisie 20.12.2026, we wniosku 07.11.2026.'
 		]
 	);
+});
+
+test('polisa indywidualna (po ocenie ryzyka) wystawiona 2 dni po wniosku: bez porównania zakresu, przesunięcie ochrony do 30 dni bez ostrzeżenia', () => {
+	const e = certyfikat({
+		data_od: '2026-11-09',
+		data_do: '2027-11-08',
+		skladka: 1942,
+		ryzyka: [
+			{ sekcja: 'Warunki ubezpieczenia', przedmiot: 'Ubezpieczenie OC z tytułu wykonywania czynności zawodowych (M30-13)', suma: 300000, skladka: 1942 },
+			{ sekcja: 'Klauzule dodatkowe', przedmiot: 'Klauzula 007 Rozszerzenie zakresu ubezpieczenia o koszty ochrony prawnej poniesione przez Ubezpieczonego', suma: 100000 }
+		],
+		dodatkowe: {}
+	});
+	// Ochrona prawna wskazana w APK (we wniosku pole niezaznaczone) — klauzula 007 na polisie jest oczekiwana.
+	const wniosek: WniosekDoPorownania = {
+		...nowa,
+		skladka_nowa: null,
+		wniosek: { ...nowa.wniosek!, zmiany: { ...nowa.wniosek!.zmiany!, osoby: null, zabiegi_ankieta: ['Zabiegi z użyciem nici PDO, PLLA i PLA/CL'] } },
+		apk: { ...nowa.apk!, osoby: '1-5', ochrona_prawna: 'tak' }
+	};
+	const out = porownajZWnioskiem({ ...e, dodatkowe: { 'Działalność przyjęta do ubezpieczenia': 'zał. nr 2, dodatkowo z włączeniem zabiegów: zabiegi z użyciem nici PDO' } }, wniosek);
+	assert.deepEqual(
+		out.map((i) => [i.level, bezNbsp(i.text)]),
+		[
+			['info', 'Polisa zgodna ze złożonym wnioskiem (wniosek o pierwszą polisę z 06.11.2026): suma 300.000 zł, ochrona prawna, do 5 osób, ochrona od 09.11.2026 (we wniosku od 07.11.2026).'],
+			['info', 'Wniosek zgłasza zabiegi wymagające ankiety (Zabiegi z użyciem nici PDO, PLLA i PLA/CL) — sprawdź, czy polisa włącza je w „Działalności przyjętej do ubezpieczenia”: zał. nr 2, dodatkowo z włączeniem zabiegów: zabiegi z użyciem nici PDO']
+		]
+	);
+	// 31 dni różnicy to już ostrzeżenie.
+	const pozno = porownajZWnioskiem(certyfikat({ ...e, data_od: '2026-12-08' }), wniosek);
+	assert.ok(pozno.some((i) => i.level === 'warn' && /początek ochrony na polisie 08\.12\.2026, we wniosku 07\.11\.2026/.test(i.text)));
 });
 
 test('odnowienie bez zmian: suma i składka z obecnego certyfikatu, ochrona od dnia po jego końcu', () => {
