@@ -24,6 +24,70 @@ const dniMiedzy = (a: string, b: string) => Math.round((Date.parse(a.slice(0, 10
 const norm = (s: string | null | undefined) => (s ?? '').toUpperCase().replace(/\s*,\s*/g, ', ').replace(/\s+/g, ' ').trim();
 /** Polisa wystawiona kilka dni po wniosku to normalna kolej rzeczy — o przesunięciu początku ochrony ostrzegamy dopiero powyżej tylu dni. */
 export const MAKS_PRZESUNIECIE_OCHRONY_DNI = 30;
+
+// ---------- Adres: porównanie odporne na zapis ----------
+// Klient wpisuje adres we wniosku ręcznie („Kościelna, 1/1”, „ul. Ciasna 10 lok. 2”, „Wojskowej 16”), Hestia
+// drukuje go po swojemu („Kościelna 1/1”, „UL. Ciasna 10/2”, „Wojskowa 16”). Porównujemy więc nie napisy,
+// a ich składniki: kod pocztowy po cyfrach, ulicę i miasto po słowach bez ogonków, interpunkcji i przedrostków
+// (ul., al., pl., os.), z tolerancją na odmianę (wspólny rdzeń) i jedną literówkę; numer domu/lokalu po
+// znakach, przy czym „10 lok. 2” to „10/2”, a numer bez lokalu pasuje do numeru z lokalem.
+
+const bezOgonkow = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ł/g, 'l').replace(/Ł/g, 'L');
+const PRZEDROSTKI = /\b(?:UL|ULICA|AL|ALEJA|ALEJE|PL|PLAC|OS|OSIEDLE|RONDO|SKWER)\.?(?=\s|$)/g;
+const LOKAL = /\s*(?:LOK|LOKAL|M|MIESZK\w*)\.?\s*(?=\d)/g;
+
+/** Składniki adresu: słowa i numery, wielkimi literami, bez ogonków, interpunkcji i przedrostków ulicy. */
+export function skladnikiAdresu(s: string | null | undefined): string[] {
+	return bezOgonkow((s ?? '').toUpperCase())
+		.replace(PRZEDROSTKI, ' ')
+		.replace(LOKAL, '/')
+		.replace(/\s*\/\s*/g, '/')
+		.replace(/[.,;:'"()]+/g, ' ')
+		.split(/\s+/)
+		.filter(Boolean);
+}
+
+/** Odległość edycyjna z przestawieniem sąsiednich liter liczonym jako jedna zmiana (literówki). */
+function odleglosc(a: string, b: string): number {
+	const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array<number>(b.length).fill(0)]);
+	for (let j = 1; j <= b.length; j++) d[0][j] = j;
+	for (let i = 1; i <= a.length; i++)
+		for (let j = 1; j <= b.length; j++) {
+			d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+			if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+		}
+	return d[a.length][b.length];
+}
+
+const wspolnyPrzedrostek = (a: string, b: string) => {
+	let n = 0;
+	while (n < a.length && n < b.length && a[n] === b[n]) n++;
+	return n;
+};
+
+/** Czy składnik z wniosku odpowiada składnikowi z polisy (ten sam rdzeń słowa, jedna literówka, ten sam numer). */
+export function skladnikPasuje(wniosek: string, polisa: string): boolean {
+	if (wniosek === polisa) return true;
+	if (/\d/.test(wniosek) || /\d/.test(polisa)) {
+		const a = wniosek.replace(/[^0-9A-Z/]/g, '');
+		const b = polisa.replace(/[^0-9A-Z/]/g, '');
+		// „10” z wniosku pasuje do „10/2” z polisy (i odwrotnie) — lokal bywa pomijany po jednej ze stron.
+		return a === b || a.split('/')[0] === b.split('/')[0];
+	}
+	const krotszy = Math.min(wniosek.length, polisa.length);
+	if (krotszy >= 4 && wspolnyPrzedrostek(wniosek, polisa) >= Math.max(4, krotszy - 2)) return true;
+	return krotszy >= 5 && odleglosc(wniosek, polisa) <= 1;
+}
+
+/** Czy adres z polisy to ten sam adres, który klient podał we wniosku (różnice zapisu nie są różnicą adresu). */
+export function adresZgodny(naPolisie: string, w: { ulica?: string | null; kod?: string | null; miasto?: string | null }): boolean {
+	const kodW = (w.kod ?? '').replace(/\D/g, '');
+	const kodP = naPolisie.match(/\b(\d{2})-?(\d{3})\b/);
+	if (kodW.length === 5 && kodP && `${kodP[1]}${kodP[2]}` !== kodW) return false;
+	const polisa = skladnikiAdresu(naPolisie);
+	const wymagane = [...skladnikiAdresu(w.ulica), ...skladnikiAdresu(w.miasto)].filter((t) => t.length > 2 || /\d/.test(t));
+	return wymagane.every((t) => polisa.some((p) => skladnikPasuje(t, p)));
+}
 const OCHRONA_PRAWNA = /ochron\w*\s+prawn/i;
 const OSOBY_6_8 = /od\s*6\s*do\s*8/i;
 
@@ -119,12 +183,11 @@ export function porownajZWnioskiem(e: ExtractedPolicy, w: WniosekDoPorownania): 
 	// Dane firmy z wniosku o pierwszą polisę (albo nowy adres przy odnowieniu) a dane na certyfikacie.
 	const firma = w.wniosek?.nowa?.firma ?? null;
 	if (firma?.nip && e.klient_nip && firma.nip !== e.klient_nip) roznice.push(`NIP na polisie ${e.klient_nip}, we wniosku ${firma.nip}`);
+	// Adres porównujemy po składnikach (kod, ulica, numer, miasto), nie po napisie — przecinek, „ul.”, odmiana
+	// czy literówka we wniosku to nie inny adres.
 	const adres = firma ?? z?.adres ?? null;
-	if (adres?.kod && e.klient_adres) {
-		const naPolisie = norm(e.klient_adres);
-		if (!naPolisie.includes(adres.kod) || (adres.ulica && !naPolisie.includes(norm(adres.ulica))))
-			roznice.push(`adres na polisie „${e.klient_adres}”, we wniosku „${[adres.ulica, `${adres.kod} ${adres.miasto}`].filter(Boolean).join(', ')}”`);
-	}
+	if (adres?.kod && e.klient_adres && !adresZgodny(e.klient_adres, adres))
+		roznice.push(`adres na polisie „${e.klient_adres}”, we wniosku „${[adres.ulica, `${adres.kod} ${adres.miasto}`].filter(Boolean).join(', ')}”`);
 
 	const kiedy = w.zlozono_at ? ` z ${dataKropki(w.zlozono_at)}` : '';
 	const czego = nowa ? 'wniosek o pierwszą polisę' : 'wniosek o odnowienie';

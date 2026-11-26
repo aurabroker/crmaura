@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { emptyExtraction, type ExtractedPolicy } from './types.ts';
-import { porownajZWnioskiem, wniosekDoPolisy, type WniosekDoPorownania } from './wniosek.ts';
+import { adresZgodny, porownajZWnioskiem, skladnikiAdresu, wniosekDoPolisy, type WniosekDoPorownania } from './wniosek.ts';
 
 const bezNbsp = (s: string) => s.replace(/[  ]/g, ' ');
 
@@ -59,6 +59,22 @@ test('polisa zgodna z wnioskiem o pierwszą polisę: jedna informacja z listą s
 		// pl-PL nie grupuje tysięcy w liczbach czterocyfrowych (1562,50), grupuje od pięciu cyfr.
 		'Polisa zgodna ze złożonym wnioskiem (wniosek o pierwszą polisę z 06.11.2026): suma 300.000 zł, składka 1562,50 zł, bez ochrony prawnej, 6–8 osób, zakres „Gabinety kosmetyczne, kosmetologiczne, fryzjerskie i podologiczne”, ochrona od 07.11.2026.'
 	);
+});
+
+test('adres: przecinek, „ul.”, odmiana, literówka, brak ogonków i „lok.” to ten sam adres; inny kod, ulica albo numer — nie', () => {
+	assert.deepEqual(skladnikiAdresu('ul. Kościelna, 1/1'), ['KOSCIELNA', '1/1']);
+	assert.deepEqual(skladnikiAdresu('UL. Ciasna 10 lok. 2'), ['CIASNA', '10/2']);
+	const polisa = 'Kościelna 1/1, 44-100 Gliwice';
+	// Zostawiony przecinek (przypadek z importu), skrót ulicy, odmiana, literówka, brak ogonków, przestawione litery.
+	for (const ulica of ['Kościelna, 1/1', 'ul. Kościelna 1/1', 'Kościelnej 1/1', 'Koscielna 1/1', 'Kościelan 1/1', 'Kościelna 1 / 1', 'Kościelna 1'])
+		assert.equal(adresZgodny(polisa, { ulica, kod: '44-100', miasto: 'Gliwice' }), true, ulica);
+	assert.equal(adresZgodny('UL. Ciasna 10/2, 41-209 Sosnowiec', { ulica: 'Ciasna 10 lok. 2', kod: '41209', miasto: 'Sosnowiec' }), true);
+	assert.equal(adresZgodny('Al. Niepodległości 12, 02-653 Warszawa', { ulica: 'aleja Niepodległości 12', kod: '02-653', miasto: 'WARSZAWA' }), true);
+	// Inny kod pocztowy, inna ulica, inny numer domu, inne miasto.
+	assert.equal(adresZgodny('ks. Brzóski 26, 08-300 Przywózki', { ulica: 'Wojskowa 16', kod: '08-110', miasto: 'Siedlce' }), false);
+	assert.equal(adresZgodny(polisa, { ulica: 'Kościuszki 1/1', kod: '44-100', miasto: 'Gliwice' }), false);
+	assert.equal(adresZgodny(polisa, { ulica: 'Kościelna 3', kod: '44-100', miasto: 'Gliwice' }), false);
+	assert.equal(adresZgodny(polisa, { ulica: 'Kościelna 1/1', kod: '44-100', miasto: 'Zabrze' }), false);
 });
 
 test('certyfikat z innym adresem niż we wniosku: ostrzeżenie o adresie', () => {

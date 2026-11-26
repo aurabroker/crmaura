@@ -333,7 +333,12 @@ duplikaty).
   zawodowych” i zakresu nie porównujemy. Przesunięcie początku ochrony do
   30 dni (polisa wystawiona po wniosku) to nie ostrzeżenie — dopiero powyżej.
   Zabiegi z ankiety przy polisie indywidualnej zestawiane są z „Działalnością
-  przyjętą do ubezpieczenia”.
+  przyjętą do ubezpieczenia”. Adres porównywany jest po składnikach, nie po
+  napisie: kod pocztowy po cyfrach, ulica i miasto po słowach bez ogonków,
+  interpunkcji i przedrostków („ul.”, „al.”), z tolerancją na odmianę
+  („Kościelnej” = „Kościelna”) i jedną literówkę, numer domu/lokalu po
+  znakach („10 lok. 2” = „10/2”, numer bez lokalu pasuje do numeru z lokalem)
+  — zostawiony przecinek („Kościelna, 1/1”) nie jest inną ulicą.
 - **Raty a składka.** Gdy suma odczytanych rat różni się od składki,
   podgląd pokazuje ostrzeżenie (zwykle ucięty harmonogram) — import nie jest
   blokowany.
