@@ -4,6 +4,8 @@
 // crm_przyjmij_zgloszenia — jedno wywołanie na paczkę, bo Cloudflare ogranicza zapytania wychodzące.
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { powodSpamu } from '../spamZgloszen.ts';
+
 export const MAKS_WIERSZY = 200;
 export const PREFIKS_KLUCZA = 'crmzg_';
 // Klucz asystenta AI (konsultacja-agent) ma osobny zakres: nie wyłącza klucza arkusza i nie przyjmuje zgłoszeń.
@@ -71,11 +73,31 @@ export function wierszeZTresci(tresc: unknown): WierszZgloszenia[] | null {
 
 export class ZlyKlucz extends Error {}
 
+/** Wiersze wypełnione przez bota ($lib/spamZgloszen) — nie trafiają do bazy. */
+export function podzielSpam(wiersze: WierszZgloszenia[]): { dobre: WierszZgloszenia[]; spam: { ref: string | null; powod: string }[] } {
+	const dobre: WierszZgloszenia[] = [];
+	const spam: { ref: string | null; powod: string }[] = [];
+	for (const w of wiersze) {
+		const powod = powodSpamu({ firma: w.company, kontakt: w.contact, nip: w.nip, telefon: w.phone });
+		if (powod) spam.push({ ref: w.ref ?? null, powod });
+		else dobre.push(w);
+	}
+	return { dobre, spam };
+}
+
 export async function przyjmijZgloszenia(admin: SupabaseClient, klucz: string, wiersze: WierszZgloszenia[]): Promise<WynikPrzyjecia> {
-	const { data, error } = await admin.rpc('crm_przyjmij_zgloszenia', { p_hash: await skrotKlucza(klucz), p_wiersze: wiersze });
+	// Spam odpada przed bazą; klucz sprawdza baza zawsze (także gdy cała paczka to spam).
+	const { dobre, spam } = podzielSpam(wiersze);
+	const { data, error } = await admin.rpc('crm_przyjmij_zgloszenia', { p_hash: await skrotKlucza(klucz), p_wiersze: dobre });
 	if (error) {
 		if (error.code === '28000' || /zly_klucz/.test(error.message)) throw new ZlyKlucz('Nieprawidłowy klucz integracji');
 		throw new Error(error.message);
 	}
-	return data as WynikPrzyjecia;
+	const wynik = data as WynikPrzyjecia;
+	if (spam.length) {
+		console.warn(`Zgłoszenia: odrzucono ${spam.length} jako spam:`, spam.map((x) => `${x.ref ?? '—'} (${x.powod})`).join('; '));
+		wynik.pominiete = (wynik.pominiete ?? 0) + spam.length;
+		wynik.wyniki = [...(wynik.wyniki ?? []), ...spam.map((x) => ({ ref: x.ref, status: 'spam' }))];
+	}
+	return wynik;
 }

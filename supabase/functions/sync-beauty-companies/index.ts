@@ -16,6 +16,8 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 // - Maile kampanii (email_messages) trafiają do crm_kampanie_maile ze statusem dostarczenia, otwarcia i kliknięcia.
 // - Scalone duplikaty (od 2026-10-14): identyfikatory BEAUTY usuniętych duplikatów (crm_clients.beauty_ids_scalone)
 //   wskazują na zachowany rekord — firma z takim id uzupełnia ten rekord, a nie wraca jako nowy klient.
+// - Spam (od 2026-11-26): firma wypełniona przez bota (losowe ciągi liter zamiast nazwy i kontaktu, litery w NIP,
+//   telefon spoza Polski) nie staje się klientem — bez leada, kontaktu i maili. Reguła jak w src/lib/spamZgloszen.ts.
 // - Treść { "proba": true } liczy, co by się zmieniło, bez zapisu.
 // Wcześniejsza wersja robiła upsert całych rekordów po beauty_id: odtwarzała usunięte duplikaty
 // i co rano przywracała dane z BEAUTY (w tym RODO = NIE).
@@ -42,6 +44,19 @@ const pusty = (v: unknown) => v === null || v === undefined || (typeof v === 'st
 const nipCyfry = (v: string | null) => (v ?? '').replace(/\D/g, '');
 const emailNorm = (v: string | null) => (v ?? '').trim().toLowerCase();
 const rodoTak = (v: string | null) => !!(v && v !== '' && v !== 'brak');
+
+// Firma wypełniona przez bota („wuYtvHnFxWnjZhpV”, NIP „hvNoEevJqx”). Kopia reguły z src/lib/spamZgloszen.ts
+// (tam testy na prawdziwych nazwach: „KamLanTech”, „NovaSkinGlow”, „KAROline” zostają) — funkcja Deno nie widzi $lib.
+const losoweSlowo = (w: string) => w.length >= 8 && /^[A-Za-z]+$/.test(w) && /[a-z]/.test(w) && (w.slice(1).match(/[A-Z]+/g) ?? []).length >= 3;
+const losowyTekst = (t: string | null) => (t ?? '').split(/\s+/).some(losoweSlowo);
+const nipZLiterami = (nip: string | null) => /[A-Za-z]/.test((nip ?? '').trim().replace(/^PL\s*/i, ''));
+const telefonSpozaPolski = (tel: string | null) => !!(tel ?? '').trim() && !/^(?:48|0048)?\d{9}$/.test((tel ?? '').replace(/\D/g, ''));
+const firmaSpam = (f: Firma) => {
+  const firma = losowyTekst(f.company);
+  const kontakt = losowyTekst(f.contact);
+  if (!firma && !kontakt) return false;
+  return (firma && kontakt) || nipZLiterami(f.nip) || telefonSpozaPolski(f.phone);
+};
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -160,10 +175,15 @@ Deno.serve(async (req: Request) => {
     const klientDlaFirmy = new Map<string, string>(); // beauty_id → id klienta (do kontaktów)
     // Także duplikaty po stronie BEAUTY (ten sam NIP) → klient bazowy: ich zainteresowania i maile należą do tej firmy.
     const klientFirmyLubDuplikatu = new Map<string, string>();
-    const licznik = { firm: firmy.length, nowi: 0, polaczeni: 0, uzupelnieni: 0, pominiete_duplikaty: 0 };
+    const licznik = { firm: firmy.length, nowi: 0, polaczeni: 0, uzupelnieni: 0, pominiete_duplikaty: 0, pominiete_spam: 0 };
 
     for (const f of firmy) {
       const bid = String(f.id);
+      // Bot z formularza: ani nowy klient, ani uzupełnienie istniejącego (bez leada, kontaktu i maili).
+      if (firmaSpam(f)) {
+        licznik.pominiete_spam++;
+        continue;
+      }
       let k = poBeauty.get(bid);
       if (!k) {
         const nip = nipCyfry(f.nip);
